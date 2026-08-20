@@ -101,12 +101,24 @@ export default function CompanyServiceChargePage({
             สรุปยอดรวมทุกสาขา จ่ายพร้อมกันวันเดียว · แยกให้เห็นว่าใครได้จากสาขาไหนเท่าไหร่
           </p>
         </div>
-        <Link
-          href={`/admin/persona/service-charge?month=${month}`}
-          className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 whitespace-nowrap"
-        >
-          ← ดูรายสาขา ({branchRow.name})
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          {canManagePayout && !manual && (
+            <a
+              href={`/api/admin/persona/service-charge/company/pdf?month=${month}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs px-3 py-1.5 rounded bg-brand text-white hover:bg-brand/90 whitespace-nowrap font-medium"
+            >
+              ⬇ PDF สำหรับบัญชี
+            </a>
+          )}
+          <Link
+            href={`/admin/persona/service-charge?month=${month}`}
+            className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 whitespace-nowrap"
+          >
+            ← ดูรายสาขา ({branchRow.name})
+          </Link>
+        </div>
       </div>
 
       {/* Month picker */}

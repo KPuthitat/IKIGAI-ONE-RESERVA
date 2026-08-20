@@ -203,4 +203,72 @@ const exNoop = rollup({ grossRaw: 240, lateMinutes: 0, anyComputable: true,
 assert(!exNoop.forfeited && !exNoop.exempted && exNoop.netPayout === 240,
   "exemption on a NON-forfeited person is a no-op (exempted=false, still paid 240)");
 
+// ── รวมกอง two-tier: cross-company visitor gets ONLY their branch (owner 2026-08-20) ──
+// Company members pool across branches by hours; a cross-company visitor (member of
+// no branch in this company) keeps only their per-branch share and does NOT draw
+// from the cross-branch pool. Mirrors computeCompanySvcSummaryShared's day loop.
+type Worker = { id: string; branch: string; min: number; member: boolean };
+function distributeDay(amountByBranch: Record<string, number>, workers: Worker[]) {
+  const out: Record<string, number> = {};
+  const add = (id: string, s: number) => { out[id] = (out[id] ?? 0) + s; };
+  // stage 1: per-branch split; members → pool, visitors → final. A branch with an
+  // amount but NO workers folds its whole staff share into the pool (no leak).
+  let dayMemberPool = 0;
+  for (const [branch, amount] of Object.entries(amountByBranch)) {
+    if (amount <= 0) continue;
+    const staffPoolB = amount * SVC_STAFF_SHARE_RATIO;
+    const bw = workers.filter((w) => w.branch === branch);
+    const totalB = bw.reduce((s, w) => s + w.min, 0);
+    if (totalB <= 0) { dayMemberPool += staffPoolB; continue; }
+    for (const w of bw) {
+      const shareB = staffPoolB * (w.min / totalB);
+      if (w.member) dayMemberPool += shareB; else add(w.id, shareB);
+    }
+  }
+  // stage 2: re-split pool among members by total hours (any branch)
+  const members = workers.filter((w) => w.member);
+  const totalMemberMin = members.reduce((s, w) => s + w.min, 0);
+  if (dayMemberPool > 0 && totalMemberMin > 0)
+    for (const w of members) add(w.id, dayMemberPool * (w.min / totalMemberMin));
+  return out;
+}
+
+// Scenario A: HYPO has NO amount that day. NAMA=1000. Member A at NAMA, member
+// ทิพวรรณ at HYPO, Sala-Chill visitor at HYPO.
+const dayA = distributeDay(
+  { NAMA: 1000, HYPO: 0 },
+  [
+    { id: "A", branch: "NAMA", min: 480, member: true },
+    { id: "TIP", branch: "HYPO", min: 480, member: true },
+    { id: "SALA", branch: "HYPO", min: 480, member: false }
+  ]
+);
+assert(near(dayA["TIP"], 300), `member ทิพวรรณ at no-amount HYPO STILL shares NAMA's pool = 300 (got ${dayA["TIP"]})`);
+assert(near(dayA["A"], 300), `member A at NAMA pooled with HYPO member = 300 (got ${dayA["A"]})`);
+assert((dayA["SALA"] ?? 0) === 0, "cross-company visitor at no-amount HYPO gets 0 (no cross-branch pool)");
+assert(near((dayA["A"] ?? 0) + (dayA["TIP"] ?? 0) + (dayA["SALA"] ?? 0), 600), "day A reconciles to staff pool 600");
+
+// Scenario B: HYPO=500 too. Sala-Chill must get ONLY its hour-share of HYPO (150),
+// never NAMA's pool.
+const dayB = distributeDay(
+  { NAMA: 1000, HYPO: 500 },
+  [
+    { id: "A", branch: "NAMA", min: 480, member: true },
+    { id: "TIP", branch: "HYPO", min: 480, member: true },
+    { id: "SALA", branch: "HYPO", min: 480, member: false }
+  ]
+);
+assert(near(dayB["SALA"], 150), `Sala-Chill visitor gets ONLY HYPO's share = 300×480/960 = 150 (got ${dayB["SALA"]})`);
+assert(near(dayB["A"], 375) && near(dayB["TIP"], 375), "members pool NAMA+HYPO-member portions → 375 each");
+assert(near(dayB["A"] + dayB["TIP"] + dayB["SALA"], 900), "day B reconciles to staff pool 900 (1500×0.6)");
+
+// Scenario C: HYPO=500 recorded but NOBODY worked HYPO that day (all at NAMA).
+// HYPO's 300 staff share must NOT leak — it folds into the pool and is paid to the
+// members who worked, so the day reconciles to the full 60% (900).
+const dayC = distributeDay(
+  { NAMA: 1000, HYPO: 500 },
+  [{ id: "A", branch: "NAMA", min: 480, member: true }]
+);
+assert(near(dayC["A"], 900), `no-worker HYPO amount folds into pool → A gets full 900 (got ${dayC["A"]})`);
+
 console.log("\nALL SHARED-POOL SVC FIXTURES PASSED");

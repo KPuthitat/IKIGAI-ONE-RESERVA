@@ -1508,15 +1508,40 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
     }
   }
 
+  // Attribute one share to a user at a branch (accumulate gross + byBranch + a
+  // "วิธีคำนวณ" breakdown row).
+  const addShare = (
+    userId: number, branchId: number, share: number, minutes: number,
+    bd: { date: string; dayAmount: number; staffPool: number; userMinutes: number; totalMinutes: number }
+  ) => {
+    if (share <= 0) return;
+    const a = ensureAcc(userId);
+    a.gross += share;
+    const bn = branchNameById.get(branchId) ?? "";
+    let bb = a.byBranch.get(branchId);
+    if (!bb) { bb = { branchId, branchName: bn, grossAllocation: 0, daysWorked: 0, minutesWorked: 0 }; a.byBranch.set(branchId, bb); }
+    bb.grossAllocation += share;
+    bb.daysWorked += 1;
+    bb.minutesWorked += minutes;
+    a.breakdown.push({ date: bd.date, branchId, branchName: bn, dayAmount: bd.dayAmount, staffPool: bd.staffPool, userMinutes: minutes, totalMinutes: bd.totalMinutes, share });
+  };
+
+  // Staff-pool ฿ that couldn't be paid to anyone (an amount recorded on a day no
+  // company member worked) — retained by the company so the books reconcile.
+  let undistributedStaff = 0;
+
   for (const date of allDates) {
-    // Pooled amount = Σ every branch's SVC that day.
-    let pooled = 0;
-    for (const { ctx } of contexts) pooled += ctx.amountByDate.get(date) ?? 0;
+    // Amounts entered per branch this day.
+    const amountByBranch = new Map<number, number>();
+    for (const { branch, ctx } of contexts) {
+      const a = ctx.amountByDate.get(date) ?? 0;
+      if (a > 0) amountByBranch.set(branch.id, a);
+    }
+    const pooled = [...amountByBranch.values()].reduce((s, a) => s + a, 0);
     if (pooled <= 0) continue;
-    // Flat participant list: (userId, branchId, minutes) across all branches, for
-    // company-roster staff only. The divisor is the sum of ALL these minutes so a
-    // person's share follows their real hours regardless of which branch's pool it
-    // came from.
+
+    // Everyone who worked any branch that day, with 480-cap on their COMBINED day
+    // (OT-exempt), scaled proportionally so the per-branch split stays intact.
     const rawUnits: Array<{ userId: number; branchId: number; minutes: number }> = [];
     const combinedByUser = new Map<number, number>();
     for (const { branch, ctx } of contexts) {
@@ -1529,9 +1554,6 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
         combinedByUser.set(userId, (combinedByUser.get(userId) ?? 0) + mins);
       }
     }
-    // Cap each person's COMBINED day at 480 min (OT-exempt) so a cross-branch
-    // worker (e.g. 300+300) doesn't out-weight a single-branch full day — scale
-    // their branch units down proportionally to preserve the per-branch split.
     const scaleByUser = new Map<number, number>();
     for (const [userId, combined] of combinedByUser) {
       scaleByUser.set(userId,
@@ -1539,27 +1561,60 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
           ? SVC_MAX_NORMAL_MINUTES / combined : 1);
     }
     const units = rawUnits.map((u) => ({ ...u, minutes: u.minutes * (scaleByUser.get(u.userId) ?? 1) }));
-    let totalMin = 0;
-    for (const u of units) totalMin += u.minutes;
-    if (totalMin <= 0) continue;
-    const staffPool = pooled * SVC_STAFF_SHARE_RATIO;
+
+    // Stage 1 — split each branch's OWN amount among the people who worked THAT
+    // branch that day. A CROSS-COMPANY visitor (member of no branch in this
+    // company — e.g. a helper from another company at one branch) keeps only this
+    // per-branch share and does NOT draw from the cross-branch pool (owner
+    // 2026-08-20: "ควรได้รับแค่ของสาขานั้น"). Company members' per-branch shares are
+    // instead collected into the day's pool and re-split in stage 2, so a member
+    // who worked a branch with NO amount that day still gets a share.
+    const unitsByBranch = new Map<number, Array<{ userId: number; branchId: number; minutes: number }>>();
     for (const u of units) {
-      const share = staffPool * (u.minutes / totalMin);
-      const a = ensureAcc(u.userId);
-      a.gross += share;
-      const bn = branchNameById.get(u.branchId) ?? "";
-      let bb = a.byBranch.get(u.branchId);
-      if (!bb) {
-        bb = { branchId: u.branchId, branchName: bn, grossAllocation: 0, daysWorked: 0, minutesWorked: 0 };
-        a.byBranch.set(u.branchId, bb);
+      let arr = unitsByBranch.get(u.branchId);
+      if (!arr) { arr = []; unitsByBranch.set(u.branchId, arr); }
+      arr.push(u);
+    }
+    let dayMemberPool = 0;
+    for (const [branchId, amount] of amountByBranch) {
+      const staffPoolB = amount * SVC_STAFF_SHARE_RATIO;
+      const bUnits = unitsByBranch.get(branchId) ?? [];
+      let totalMinB = 0;
+      for (const u of bUnits) totalMinB += u.minutes;
+      if (totalMinB <= 0) {
+        // Amount recorded but nobody worked THIS branch that day (all transferred
+        // out) — its staff share isn't lost: it flows into the company pool and is
+        // re-split among the members who worked, so nothing leaks (owner 2026-08-20).
+        dayMemberPool += staffPoolB;
+        continue;
       }
-      bb.grossAllocation += share;
-      bb.daysWorked += 1;
-      bb.minutesWorked += u.minutes;
-      a.breakdown.push({
-        date, branchId: u.branchId, branchName: bn,
-        dayAmount: pooled, staffPool, userMinutes: u.minutes, totalMinutes: totalMin, share
-      });
+      for (const u of bUnits) {
+        const shareB = staffPoolB * (u.minutes / totalMinB);
+        if (memberIdsCompany.has(u.userId)) {
+          dayMemberPool += shareB;   // → company pool (re-split in stage 2)
+        } else {
+          addShare(u.userId, branchId, shareB, u.minutes,
+            { date, dayAmount: amount, staffPool: staffPoolB, totalMinutes: totalMinB, userMinutes: u.minutes });
+        }
+      }
+    }
+
+    // Stage 2 — re-split the company pool among MEMBERS who worked that day, by
+    // their total hours (any branch, INCLUDING branches with no amount), and
+    // attribute each member's slice to the branch(es) they physically worked at.
+    const memberUnits = units.filter((u) => memberIdsCompany.has(u.userId));
+    let totalMemberMin = 0;
+    for (const u of memberUnits) totalMemberMin += u.minutes;
+    if (dayMemberPool > 0 && totalMemberMin > 0) {
+      for (const u of memberUnits) {
+        const share = dayMemberPool * (u.minutes / totalMemberMin);
+        addShare(u.userId, u.branchId, share, u.minutes,
+          { date, dayAmount: pooled, staffPool: dayMemberPool, totalMinutes: totalMemberMin, userMinutes: u.minutes });
+      }
+    } else if (dayMemberPool > 0) {
+      // No company member worked at all that day — the pool can't be paid to
+      // anyone, so it's retained by the company (keeps the books reconciling).
+      undistributedStaff += dayMemberPool;
     }
   }
 
@@ -1620,6 +1675,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
       totalCollected * SVC_COMPANY_SHARE_RATIO
       + rows.reduce((s, r) => s + (r.forfeited ? r.grossAllocation : 0), 0)
       + rows.reduce((s, r) => s + r.foodClawback, 0)
+      + undistributedStaff
     ),
     totalWht: round2(rows.reduce((s, r) => s + r.whtAmount, 0)),
     totalGroupInsurance: round2(rows.reduce((s, r) => s + r.groupInsurance, 0)),
