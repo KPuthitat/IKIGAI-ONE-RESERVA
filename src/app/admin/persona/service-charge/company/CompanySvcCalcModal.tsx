@@ -54,7 +54,7 @@ export default function CompanySvcCalcModal({
             </div>
             <div className="text-[11px] text-slate-500 mb-3">
               {shared
-                ? "โหมดรวมกอง: เอายอดทุกสาขามารวมกัน แล้วแบ่งตามชั่วโมงทำงานจริงของทุกคนในบริษัท"
+                ? "คำนวณรวมทั้งบริษัท: คนทำสาขามียอดได้ของสาขาตัวเอง · คนที่ถูกส่งไปสาขายังไม่มียอด ถูกดึงเข้าไปรับส่วนแบ่งจากสาขาที่มียอด"
                 : "แต่ละสาขาแบ่งยอดของตัวเองให้พนักงานที่ทำงานสาขานั้น"}
             </div>
 
@@ -104,7 +104,7 @@ export default function CompanySvcCalcModal({
                       <th className="py-1.5 pr-2 font-medium">วันที่</th>
                       <th className="py-1.5 px-2 font-medium">สาขา</th>
                       <th className="py-1.5 px-2 text-right font-medium">
-                        {shared ? "ยอดรวมกอง" : "SVC วันนี้"}
+                        {shared ? "ยอดกองสาขา" : "SVC วันนี้"}
                       </th>
                       <th className="py-1.5 px-2 text-right font-medium">ส่วนแบ่งพนักงาน</th>
                       <th className="py-1.5 px-2 text-right font-medium">นาทีที่ทำ</th>

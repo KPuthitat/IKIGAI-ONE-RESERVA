@@ -1527,8 +1527,14 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
   };
 
   // Staff-pool ฿ that couldn't be paid to anyone (an amount recorded on a day no
-  // company member worked) — retained by the company so the books reconcile.
+  // eligible worker was present) — retained by the company so the books reconcile.
   let undistributedStaff = 0;
+
+  const ensureBB = (a: Acc, branchId: number): CompanySvcBranchShare => {
+    let bb = a.byBranch.get(branchId);
+    if (!bb) { bb = { branchId, branchName: branchNameById.get(branchId) ?? "", grossAllocation: 0, daysWorked: 0, minutesWorked: 0 }; a.byBranch.set(branchId, bb); }
+    return bb;
+  };
 
   for (const date of allDates) {
     // Amounts entered per branch this day.
@@ -1562,59 +1568,73 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
     }
     const units = rawUnits.map((u) => ({ ...u, minutes: u.minutes * (scaleByUser.get(u.userId) ?? 1) }));
 
-    // Stage 1 — split each branch's OWN amount among the people who worked THAT
-    // branch that day. A CROSS-COMPANY visitor (member of no branch in this
-    // company — e.g. a helper from another company at one branch) keeps only this
-    // per-branch share and does NOT draw from the cross-branch pool (owner
-    // 2026-08-20: "ควรได้รับแค่ของสาขานั้น"). Company members' per-branch shares are
-    // instead collected into the day's pool and re-split in stage 2, so a member
-    // who worked a branch with NO amount that day still gets a share.
-    const unitsByBranch = new Map<number, Array<{ userId: number; branchId: number; minutes: number }>>();
+    // Classify each unit (owner 2026-08-20):
+    //  • "placed" — worked a branch that HAS an amount → shares ONLY that branch's
+    //    pool (a NAMA worker never touches HYPO's money). Cross-company visitors at
+    //    an amount branch are placed too (they get that branch's share).
+    //  • "orphan" — a COMPANY MEMBER sent to a branch with NO amount that day → they
+    //    still deserve a share, so they're folded into the amount branches. A
+    //    cross-company visitor at a no-amount branch is dropped (only their branch).
+    const placedByBranch = new Map<number, Array<{ userId: number; branchId: number; minutes: number }>>();
+    const orphanUnits: Array<{ userId: number; branchId: number; minutes: number }> = [];
     for (const u of units) {
-      let arr = unitsByBranch.get(u.branchId);
-      if (!arr) { arr = []; unitsByBranch.set(u.branchId, arr); }
-      arr.push(u);
-    }
-    let dayMemberPool = 0;
-    for (const [branchId, amount] of amountByBranch) {
-      const staffPoolB = amount * SVC_STAFF_SHARE_RATIO;
-      const bUnits = unitsByBranch.get(branchId) ?? [];
-      let totalMinB = 0;
-      for (const u of bUnits) totalMinB += u.minutes;
-      if (totalMinB <= 0) {
-        // Amount recorded but nobody worked THIS branch that day (all transferred
-        // out) — its staff share isn't lost: it flows into the company pool and is
-        // re-split among the members who worked, so nothing leaks (owner 2026-08-20).
-        dayMemberPool += staffPoolB;
-        continue;
+      if (amountByBranch.has(u.branchId)) {
+        let arr = placedByBranch.get(u.branchId);
+        if (!arr) { arr = []; placedByBranch.set(u.branchId, arr); }
+        arr.push(u);
+      } else if (memberIdsCompany.has(u.userId)) {
+        orphanUnits.push(u);
       }
-      for (const u of bUnits) {
-        const shareB = staffPoolB * (u.minutes / totalMinB);
-        if (memberIdsCompany.has(u.userId)) {
-          dayMemberPool += shareB;   // → company pool (re-split in stage 2)
-        } else {
-          addShare(u.userId, branchId, shareB, u.minutes,
-            { date, dayAmount: amount, staffPool: staffPoolB, totalMinutes: totalMinB, userMinutes: u.minutes });
-        }
+    }
+    const orphanMinTotal = orphanUnits.reduce((s, u) => s + u.minutes, 0);
+
+    // Each amount branch's divisor = its own workers' minutes + ALL orphan minutes
+    // (orphans "float" across every amount branch that HAD workers). A branch with
+    // an amount but ZERO workers keeps divisor 0 → its pool is company-retained,
+    // NOT redirected to an unrelated orphan who never worked there (consistent
+    // whether or not an orphan happens to exist that day).
+    const branchCalc = [...amountByBranch].map(([branchId, amount]) => {
+      const placed = placedByBranch.get(branchId) ?? [];
+      const placedMin = placed.reduce((s, u) => s + u.minutes, 0);
+      return {
+        branchId, amount, placed, staffPoolB: amount * SVC_STAFF_SHARE_RATIO,
+        divisor: placedMin > 0 ? placedMin + orphanMinTotal : 0
+      };
+    });
+
+    // Placed workers draw ONLY from their own branch's pool.
+    for (const bc of branchCalc) {
+      if (bc.divisor <= 0) { undistributedStaff += bc.staffPoolB; continue; }
+      for (const u of bc.placed) {
+        const share = bc.staffPoolB * (u.minutes / bc.divisor);
+        addShare(u.userId, bc.branchId, share, u.minutes,
+          { date, dayAmount: bc.amount, staffPool: bc.staffPoolB, totalMinutes: bc.divisor, userMinutes: u.minutes });
       }
     }
 
-    // Stage 2 — re-split the company pool among MEMBERS who worked that day, by
-    // their total hours (any branch, INCLUDING branches with no amount), and
-    // attribute each member's slice to the branch(es) they physically worked at.
-    const memberUnits = units.filter((u) => memberIdsCompany.has(u.userId));
-    let totalMemberMin = 0;
-    for (const u of memberUnits) totalMemberMin += u.minutes;
-    if (dayMemberPool > 0 && totalMemberMin > 0) {
-      for (const u of memberUnits) {
-        const share = dayMemberPool * (u.minutes / totalMemberMin);
-        addShare(u.userId, u.branchId, share, u.minutes,
-          { date, dayAmount: pooled, staffPool: dayMemberPool, totalMinutes: totalMemberMin, userMinutes: u.minutes });
+    // Orphan members draw a slice from EVERY amount branch (their own branch had
+    // none), attributed to the branch they physically worked at — one breakdown row
+    // per source pool for transparency, but the branch day/minutes bumped once.
+    for (const u of orphanUnits) {
+      const a = ensureAcc(u.userId);
+      let total = 0;
+      for (const bc of branchCalc) {
+        if (bc.divisor <= 0) continue;
+        const s = bc.staffPoolB * (u.minutes / bc.divisor);
+        if (s <= 0) continue;
+        total += s;
+        a.breakdown.push({
+          date, branchId: u.branchId,
+          branchName: `${branchNameById.get(u.branchId) ?? ""} · จากกอง ${branchNameById.get(bc.branchId) ?? ""}`,
+          dayAmount: bc.amount, staffPool: bc.staffPoolB, userMinutes: u.minutes, totalMinutes: bc.divisor, share: s
+        });
       }
-    } else if (dayMemberPool > 0) {
-      // No company member worked at all that day — the pool can't be paid to
-      // anyone, so it's retained by the company (keeps the books reconciling).
-      undistributedStaff += dayMemberPool;
+      if (total <= 0) continue;
+      a.gross += total;
+      const bb = ensureBB(a, u.branchId);
+      bb.grossAllocation += total;
+      bb.daysWorked += 1;
+      bb.minutesWorked += u.minutes;
     }
   }
 
