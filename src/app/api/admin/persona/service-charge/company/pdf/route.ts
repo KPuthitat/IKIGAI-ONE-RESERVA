@@ -56,6 +56,8 @@ export async function GET(req: Request) {
     name: r.displayName,
     typeLabel: typeLabel(r.employmentType),
     branchesLabel: r.byBranch.map((b) => b.branchName).join(", ") || "—",
+    gross: r.grossAllocation,
+    foodClawback: r.foodClawback,
     preTax: r.netAllocation,
     wht: r.whtAmount,
     groupInsurance: r.groupInsurance,
@@ -64,6 +66,7 @@ export async function GET(req: Request) {
       ? (r.forfeitReason === "resignation" ? "ตัดสิทธิ์ (ลาออก)" : "ตัดสิทธิ์ (สาย)")
       : r.exempted ? "ยกเว้นให้" : "ได้รับ"
   }));
+  const totalFoodClawback = round2(summary.rows.reduce((s, r) => s + r.foodClawback, 0));
 
   const [yyyy, mm] = month.split("-").map(Number);
   const generatedLabel = new Date().toLocaleString("th-TH", {
@@ -80,6 +83,7 @@ export async function GET(req: Request) {
       collected: round2(summary.totalCollected),
       staffPool: round2(summary.staffPoolTotal),
       companyPool: round2(summary.companyPoolTotal),
+      foodClawback: totalFoodClawback,
       wht: round2(summary.totalWht),
       groupInsurance: round2(summary.totalGroupInsurance),
       netPayout: round2(summary.totalNetPayout)
