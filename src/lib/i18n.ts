@@ -1862,7 +1862,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     "admin.persona.employees.taxMode.wht": "หักภาษี ณ ที่จ่าย",
     "admin.persona.employees.taxMode.whtDesc": "3% ของรายรับในแต่ละรอบจ่าย",
     "admin.persona.employees.groupInsurance.label": "เดือนเริ่มหักประกันกลุ่ม (จากเซอร์วิสชาร์จ)",
-    "admin.persona.employees.groupInsurance.hintSet": "หัก ฿350/เดือน — FT 3 เดือน · PT 12 เดือน นับจากเดือนนี้",
+    "admin.persona.employees.groupInsurance.hintSet": "หัก ฿350/เดือน — FT 3 เดือน · PT 12 เดือน · เดือนที่เลือก = รอบจ่ายที่เริ่มหัก (ไม่ใช่เดือนของ SVC)",
     "admin.persona.employees.groupInsurance.hintUnset": "ยังไม่ตั้ง = ยังไม่หักประกันกลุ่ม (ตั้งเมื่อพนักงานเข้าประกันแล้ว)",
     "admin.persona.employees.taxMode.whtShort": "หักภาษี ณ ที่จ่าย 3%",
     "admin.persona.employees.taxMode.whtTag": "หักภาษี ณ ที่จ่าย",

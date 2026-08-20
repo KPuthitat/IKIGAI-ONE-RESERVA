@@ -194,17 +194,17 @@ export default function CompanySvcCalcModal({
                     )}
                   </>
                 )}
+                {groupInsurance > 0 && (
+                  <div className="flex justify-between text-rose-600">
+                    <span>หักประกันกลุ่ม</span><span>−฿{fmtMoney(groupInsurance)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-slate-600">
-                  <span>ยอดก่อนหักภาษี</span><span>฿{fmtMoney(netAllocation)}</span>
+                  <span>ยอดก่อนหักภาษี</span><span>฿{fmtMoney(Math.max(0, netAllocation - groupInsurance))}</span>
                 </div>
                 {taxMode === "wht" && (
                   <div className="flex justify-between text-rose-600">
                     <span>หัก ณ ที่จ่าย 3%</span><span>−฿{fmtMoney(whtAmount)}</span>
-                  </div>
-                )}
-                {groupInsurance > 0 && (
-                  <div className="flex justify-between text-rose-600">
-                    <span>หักประกันกลุ่ม</span><span>−฿{fmtMoney(groupInsurance)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-emerald-700 pt-0.5 border-t border-slate-100">

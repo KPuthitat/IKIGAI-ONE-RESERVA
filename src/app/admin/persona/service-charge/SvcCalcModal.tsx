@@ -17,7 +17,7 @@ export default function SvcCalcModal({
   displayName, grossAllocation, netAllocation, forfeited, forfeitReason,
   dailyBreakdown, taxMode, whtAmount, netPayout, excludedDays,
   foodClawback = 0, foodClawbackDays = [],
-  otherDeductions = 0, otherDeductionItems = []
+  otherDeductions = 0, otherDeductionItems = [], groupInsurance = 0
 }: {
   displayName: string;
   grossAllocation: number;
@@ -33,6 +33,7 @@ export default function SvcCalcModal({
   foodClawbackDays?: Array<{ date: string; credit: number }>;
   otherDeductions?: number;
   otherDeductionItems?: Array<{ id: number; amount: number; reason: string | null }>;
+  groupInsurance?: number;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -159,8 +160,13 @@ export default function SvcCalcModal({
                     )}
                   </>
                 )}
+                {groupInsurance > 0 && (
+                  <div className="flex justify-between text-rose-600">
+                    <span>หักประกันกลุ่ม</span><span>−฿{fmtMoney(groupInsurance)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-slate-600">
-                  <span>ยอดก่อนหักภาษี</span><span>฿{fmtMoney(netAllocation)}</span>
+                  <span>ยอดก่อนหักภาษี</span><span>฿{fmtMoney(Math.max(0, netAllocation - groupInsurance))}</span>
                 </div>
                 {taxMode === "wht" && (
                   <div className="flex justify-between text-rose-600">
