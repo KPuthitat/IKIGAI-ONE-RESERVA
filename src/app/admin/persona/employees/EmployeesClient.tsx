@@ -114,6 +114,52 @@ export default function EmployeesClient({
   const [pending, startTransition] = useTransition();
   const [editTarget, setEditTarget] = useState<EmployeeRow | null>(null);
 
+  // Inline "ไม่ต้องลงเวลา" toggle from the list (owner 2026-08-21): flip
+  // track_attendance in one click without opening the edit modal. Optimistic
+  // override keyed by user id; reconciled by router.refresh() on success.
+  const [attnOverride, setAttnOverride] = useState<Record<number, number>>({});
+  const [attnBusy, setAttnBusy] = useState<number | null>(null);
+  const trackAttn = (u: EmployeeRow) => attnOverride[u.id] ?? (u.track_attendance ?? 1);
+  async function toggleTrackAttn(u: EmployeeRow) {
+    if (attnBusy !== null) return;
+    const next = trackAttn(u) === 0 ? 1 : 0;
+    // FT: track_attendance also drives payroll (0 = fixed salary, no OT).
+    // Confirm before changing salary semantics from a one-click toggle.
+    if (u.employment_type === "ft") {
+      const msg = next === 0
+        ? `ตั้ง "${u.display_name}" เป็นไม่ต้องลงเวลา?\n\nพนักงานประจำ: จะคิดเงินเดือนแบบ fix เต็มจำนวน ไม่มีค่าล่วงเวลา (OT) และปิดแจ้งเตือนเข้ากะ`
+        : `ให้ "${u.display_name}" กลับมาลงเวลาปกติ?\n\nพนักงานประจำ: จะกลับมาคิดค่าล่วงเวลา (OT) ตามการลงเวลา และเปิดแจ้งเตือนเข้ากะ`;
+      if (!window.confirm(msg)) return;
+    }
+    setAttnBusy(u.id);
+    setAttnOverride((m) => ({ ...m, [u.id]: next }));
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/employees/${u.id}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ track_attendance: next === 1 })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j?.ok) {
+        // Refresh pulls the authoritative track_attendance back into props;
+        // drop the optimistic override so a later change (edit modal, another
+        // admin) isn't masked by a stale entry.
+        startTransition(() => {
+          router.refresh();
+          setAttnOverride((m) => { const n = { ...m }; delete n[u.id]; return n; });
+        });
+      } else {
+        setAttnOverride((m) => { const n = { ...m }; delete n[u.id]; return n; });
+        alert(apiErrText(j, t("common.error")));
+      }
+    } catch {
+      setAttnOverride((m) => { const n = { ...m }; delete n[u.id]; return n; });
+      alert(t("common.error"));
+    } finally {
+      setAttnBusy(null);
+    }
+  }
+
   // ── Filter + sort toolbar ──────────────────────────────────────
   // Search matches across display_name / employee_code / username.
   // Sort defaults to "code" — matches the server's default ORDER BY,
@@ -365,35 +411,63 @@ export default function EmployeesClient({
                       DM at all). Saves admin from opening every row
                       to find who still needs to bind LINE. */}
                   <td className="py-2 pr-3">
-                    {(() => {
-                      const hasLine = !!u.line_user_id?.trim();
-                      const hasNick = !!u.nickname_th?.trim();
-                      if (hasLine && hasNick) {
-                        return (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold whitespace-nowrap">
-                            ✓ ครบ
-                          </span>
-                        );
-                      }
-                      if (hasLine && !hasNick) {
+                    <div className="flex flex-col items-start gap-1.5">
+                      {(() => {
+                        const exempt = trackAttn(u) === 0;
+                        const hasLine = !!u.line_user_id?.trim();
+                        const hasNick = !!u.nickname_th?.trim();
+                        // Non-clocking staff don't get clock-in reminders at all,
+                        // so the LINE-readiness chip is moot — show a neutral tag.
+                        if (exempt) {
+                          return (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold whitespace-nowrap">
+                              ไม่แจ้งเตือน
+                            </span>
+                          );
+                        }
+                        if (hasLine && hasNick) {
+                          return (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold whitespace-nowrap">
+                              ✓ ครบ
+                            </span>
+                          );
+                        }
+                        if (hasLine && !hasNick) {
+                          return (
+                            <span
+                              className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold whitespace-nowrap"
+                              title="เชื่อมต่อ LINE แล้ว แต่ยังไม่มีชื่อเล่น — น้องฮูกจะทักด้วยชื่อจริง"
+                            >
+                              ⚠ ขาดชื่อเล่น
+                            </span>
+                          );
+                        }
                         return (
                           <span
-                            className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold whitespace-nowrap"
-                            title="เชื่อมต่อ LINE แล้ว แต่ยังไม่มีชื่อเล่น — น้องฮูกจะทักด้วยชื่อจริง"
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold whitespace-nowrap"
+                            title="ยังไม่เชื่อมต่อ LINE — ไม่ได้รับการแจ้งเตือนทาง LINE"
                           >
-                            ⚠ ขาดชื่อเล่น
+                            ✗ ยังไม่เชื่อมต่อ LINE
                           </span>
                         );
-                      }
-                      return (
-                        <span
-                          className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold whitespace-nowrap"
-                          title="ยังไม่เชื่อมต่อ LINE — ไม่ได้รับการแจ้งเตือนทาง LINE"
-                        >
-                          ✗ ยังไม่เชื่อมต่อ LINE
-                        </span>
-                      );
-                    })()}
+                      })()}
+                      {/* One-click "ไม่ต้องลงเวลา" toggle (owner 2026-08-21) —
+                          ON = exempt: no clock-in DM + not in HR roll-call. */}
+                      <label
+                        className={`flex items-center gap-1 ${attnBusy === u.id ? "" : "cursor-pointer"}`}
+                        title="เปิด = ไม่ต้องลงเวลา → ไม่รับแจ้งเตือนเข้ากะ และไม่ขึ้นในสรุป HR"
+                      >
+                        <Switch
+                          size="sm"
+                          accent="rose"
+                          checked={trackAttn(u) === 0}
+                          disabled={attnBusy === u.id}
+                          onChange={() => toggleTrackAttn(u)}
+                          aria-label="ไม่ต้องลงเวลา"
+                        />
+                        <span className="text-[10px] text-slate-500 whitespace-nowrap">ไม่ต้องลงเวลา</span>
+                      </label>
+                    </div>
                   </td>
                   <td className="py-2 pr-3 text-right">
                     <div className="flex flex-col items-end gap-1">
