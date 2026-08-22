@@ -24,6 +24,11 @@ function thMonthLabel(month: string): string {
   const [y, m] = month.split("-").map(Number);
   return `${TH_MON_ABBR[m]} ${y + 543}`;
 }
+// "YYYY-MM-DD" → "22 ส.ค." (day + abbreviated Thai month, no year).
+function thDayLabel(date: string): string {
+  const [, m, d] = date.split("-").map(Number);
+  return `${d} ${TH_MON_ABBR[m]}`;
+}
 function shiftMonth(month: string, delta: number): string {
   const [y, m] = month.split("-").map(Number);
   const d = new Date(Date.UTC(y, m - 1 + delta, 1));
@@ -132,11 +137,17 @@ export default function CompanyOverviewPage({
           <div className="text-xs text-slate-500">ยอดขายรวมทั้งบริษัท</div>
           <div className="text-2xl font-bold text-slate-800 mt-1 tabular-nums">{fmtMoney(ov.totals.sales)}</div>
           <div className="mt-1"><Delta now={ov.totals.sales} prev={ov.prev.sales} /></div>
+          {month === nowMonth && (
+            <div className="mt-2 pt-2 border-t border-slate-100 flex items-baseline justify-between">
+              <span className="text-[11px] text-slate-500">วันนี้ ({thDayLabel(ov.today.date)})</span>
+              <span className="text-sm font-semibold text-slate-700 tabular-nums">{fmtMoney(ov.today.sales)}</span>
+            </div>
+          )}
         </div>
         <div className="card">
-          <div className="text-xs text-slate-500">รายจ่ายดำเนินงาน</div>
-          <div className="text-2xl font-bold text-slate-800 mt-1 tabular-nums">{fmtMoney(ov.totals.opExpense)}</div>
-          <div className="mt-1"><Delta now={ov.totals.opExpense} prev={ov.prev.opExpense} goodUp={false} /></div>
+          <div className="text-xs text-slate-500">รายจ่าย</div>
+          <div className="text-2xl font-bold text-slate-800 mt-1 tabular-nums">{fmtMoney(ov.totals.expense)}</div>
+          <div className="mt-1"><Delta now={ov.totals.expense} prev={ov.prev.expense} goodUp={false} /></div>
         </div>
         <div className="card border-l-4 border-emerald-400">
           <div className="text-xs text-slate-500">กำไรสุทธิ (ก่อนภาษี)</div>
@@ -170,7 +181,7 @@ export default function CompanyOverviewPage({
                     </div>
                   </td>
                   <td className="text-right py-2 px-2">{fmtMoney(b.sales)}</td>
-                  <td className="text-right py-2 px-2 text-slate-500">{fmtMoney(b.opExpense)}</td>
+                  <td className="text-right py-2 px-2 text-slate-500">{fmtMoney(b.expense)}</td>
                   <td className={`text-right py-2 px-2 font-semibold ${b.net >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{fmtMoney(b.net)}</td>
                   <td className="text-right py-2 pl-2 text-slate-500">{share}%</td>
                 </tr>
@@ -181,7 +192,7 @@ export default function CompanyOverviewPage({
             <tr className="border-t-2 border-slate-200 font-bold text-slate-800">
               <td className="text-left py-2 pr-2">รวมบริษัท</td>
               <td className="text-right py-2 px-2">{fmtMoney(ov.totals.sales)}</td>
-              <td className="text-right py-2 px-2">{fmtMoney(ov.totals.opExpense)}</td>
+              <td className="text-right py-2 px-2">{fmtMoney(ov.totals.expense)}</td>
               <td className={`text-right py-2 px-2 ${ov.totals.net >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{fmtMoney(ov.totals.net)}</td>
               <td className="text-right py-2 pl-2">100%</td>
             </tr>
@@ -212,13 +223,16 @@ export default function CompanyOverviewPage({
             <div className="flex justify-between"><span className="text-slate-500">ภาษีหัก ณ ที่จ่าย (WHT) ค้าง</span><span className="tabular-nums">{fmtMoney(ov.payables.whtUnpaid)}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">ประกันสังคมค้างนำส่ง</span><span className="tabular-nums">{fmtMoney(ov.payables.ssoUnpaid)}</span></div>
             <div className="flex justify-between border-t border-slate-100 pt-1.5">
-              <span className="text-slate-500">กำไรสะสมปีนี้ ({ov.ytd.monthsElapsed} เดือน)</span>
+              <span className="text-slate-500">กำไรสะสมปีนี้ ฐานภาษี ({ov.ytd.monthsElapsed} เดือน)</span>
               <span className={`tabular-nums ${ov.ytd.net >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{fmtMoney(ov.ytd.net)}</span>
             </div>
             <div className="flex justify-between font-semibold">
               <span>ประมาณภาษีนิติบุคคล (จากกำไรสะสม)</span>
               <span className="tabular-nums">{fmtMoney(ov.ytd.incomeTaxEst.tax)}</span>
             </div>
+            <p className="text-[11px] text-slate-400 pt-0.5">
+              กำไรสะสมฐานภาษี = ยอดขาย − รายจ่ายดำเนินงาน (ตัด CapEx/เงินกู้) จึงต่างจากกำไรสุทธิด้านบนที่รวมทุกบิล
+            </p>
           </div>
         </div>
       </div>
