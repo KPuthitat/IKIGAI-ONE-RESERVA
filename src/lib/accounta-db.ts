@@ -1857,6 +1857,65 @@ export type CompanyFinancialYear = {
   incomeTax: SmeIncomeTax;
 };
 
+// ── Sales parity with the single-branch daybook (owner 2026-08-22) ──
+// The company overview MUST show the same ยอดขาย as each branch's daybook
+// (ledgerDashboard). Sales therefore come from the accounta_income ledger
+// (is_revenue=1) with the per-day per-channel supersede of the shift_close
+// lump, falling back to branch_daily_revenue only for days with no ledger row
+// — NOT from branch_daily_revenue alone, which misses manual รายรับ + revshare
+// income that never lands in branch_daily_revenue.
+const INCOME_SALES_COLS = `
+  income_date AS d,
+  COALESCE(SUM(CASE WHEN COALESCE(is_revenue,1)=1 THEN amount ELSE 0 END),0) AS salesTotal,
+  COALESCE(SUM(CASE WHEN COALESCE(NULLIF(TRIM(channel),''),NULL) IS NOT NULL AND COALESCE(is_revenue,1)=1 THEN 1 ELSE 0 END),0) AS channelled,
+  COALESCE(SUM(CASE WHEN source='shift_close' AND COALESCE(NULLIF(TRIM(channel),''),NULL) IS NULL THEN amount ELSE 0 END),0) AS lump`;
+
+type IncSalesRow = { d: string; salesTotal: number; channelled: number; lump: number };
+
+// Same supersede + fallback rule as ledgerDashboard: a day with a per-channel
+// breakdown drops the redundant channel-less shift_close lump; days with no
+// ledger row fall back to the branch_daily_revenue close total.
+function mergeDailySales(inc: IncSalesRow[], bdr: Array<{ d: string; amt: number }>): Array<{ d: string; amt: number }> {
+  const salesByDate = new Map(inc.map((r) => [r.d, r.channelled > 0 ? round2(r.salesTotal - r.lump) : round2(r.salesTotal)]));
+  const bdrByDate = new Map(bdr.map((r) => [r.d, round2(r.amt)]));
+  return [...new Set([...salesByDate.keys(), ...bdrByDate.keys()])]
+    .map((d) => ({ d, amt: salesByDate.has(d) ? salesByDate.get(d)! : (bdrByDate.get(d) ?? 0) }));
+}
+
+/** ยอดขายของสาขาในช่วงวันที่ [start,end] (inclusive) — ตรงกับ ledgerDashboard.salesRevenue. */
+function branchSalesForRange(branchId: number, start: string, end: string): number {
+  const db = getDb();
+  const inc = db.prepare(
+    `SELECT ${INCOME_SALES_COLS} FROM accounta_income WHERE branch_id = ? AND income_date BETWEEN ? AND ? GROUP BY income_date`
+  ).all(branchId, start, end) as IncSalesRow[];
+  const bdr = db.prepare(
+    "SELECT date AS d, revenue AS amt FROM branch_daily_revenue WHERE branch_id = ? AND date BETWEEN ? AND ?"
+  ).all(branchId, start, end) as Array<{ d: string; amt: number }>;
+  return round2(mergeDailySales(inc, bdr).reduce((s, r) => s + r.amt, 0));
+}
+
+/** ยอดขายรายเดือน (1..12) ของสาขาในปีปฏิทิน — ตรงกับ daybook. */
+function branchSalesByMonth(branchId: number, year: string): Map<number, number> {
+  const db = getDb();
+  const inc = db.prepare(
+    `SELECT ${INCOME_SALES_COLS} FROM accounta_income WHERE branch_id = ? AND substr(income_date,1,4) = ? GROUP BY income_date`
+  ).all(branchId, year) as IncSalesRow[];
+  const bdr = db.prepare(
+    "SELECT date AS d, revenue AS amt FROM branch_daily_revenue WHERE branch_id = ? AND substr(date,1,4) = ?"
+  ).all(branchId, year) as Array<{ d: string; amt: number }>;
+  const byM = new Map<number, number>();
+  for (const r of mergeDailySales(inc, bdr)) {
+    const m = Number(r.d.slice(5, 7));
+    byM.set(m, round2((byM.get(m) ?? 0) + r.amt));
+  }
+  return byM;
+}
+
+/** ยอดขายรวมทุกสาขาของบริษัทในช่วงวันที่ [start,end]. */
+function companySalesForRange(branchIds: number[], start: string, end: string): number {
+  return round2(branchIds.reduce((s, bid) => s + branchSalesForRange(bid, start, end), 0));
+}
+
 /** ภาพรวมการเงินระดับบริษัท ต่อ 1 ปีปฏิทิน (รวมทุกสาขาของ companyId). */
 export function companyFinancialYear(companyId: number, year: number): CompanyFinancialYear {
   const db = getDb();
@@ -1869,16 +1928,20 @@ export function companyFinancialYear(companyId: number, year: number): CompanyFi
   const vatRegistered = !!co?.vat;
   // ทุกสาขาของบริษัท (ทุกสถานะ) ให้ตรงกับ scope ของ aggregation — สาขาที่ปิดไป
   // ก็ยังมีข้อมูลย้อนหลังรวมอยู่ในยอด จึงต้องขึ้นชื่อในหัวข้อด้วย.
-  const branchNames = (db.prepare(
-    "SELECT name FROM branches WHERE company_id = ? ORDER BY display_order, name"
-  ).all(companyId) as Array<{ name: string }>).map((b) => b.name);
+  const branchList = db.prepare(
+    "SELECT id, name FROM branches WHERE company_id = ? ORDER BY display_order, name"
+  ).all(companyId) as Array<{ id: number; name: string }>;
+  const branchNames = branchList.map((b) => b.name);
+  const branchIds = branchList.map((b) => b.id);
 
-  // ยอดขายรวม/เดือน (canonical shift-close feed)
-  const salesRows = db.prepare(
-    `SELECT CAST(substr(r.date,6,2) AS INTEGER) AS m, COALESCE(SUM(r.revenue),0) AS amt
-       FROM branch_daily_revenue r JOIN branches b ON b.id = r.branch_id
-      WHERE b.company_id = ? AND substr(r.date,1,4) = ? GROUP BY m`
-  ).all(companyId, y) as Array<{ m: number; amt: number }>;
+  // ยอดขายรวม/เดือน — ดึงวิธีเดียวกับ daybook (ledger accounta_income + fallback
+  // branch_daily_revenue) เพื่อให้ตรงกับหน้าสาขา (owner 2026-08-22).
+  const salesByM = new Map<number, number>();
+  for (const bid of branchIds) {
+    for (const [m, amt] of branchSalesByMonth(bid, y)) {
+      salesByM.set(m, round2((salesByM.get(m) ?? 0) + amt));
+    }
+  }
   // ฐานภาษีขาย/เดือน (รายรับที่ is_vat=1)
   const taxRows = db.prepare(
     `SELECT CAST(substr(i.income_date,6,2) AS INTEGER) AS m, COALESCE(SUM(i.amount),0) AS amt
@@ -1892,7 +1955,6 @@ export function companyFinancialYear(companyId: number, year: number): CompanyFi
       WHERE b.company_id = ? AND e.review_status = 'confirmed' AND substr(e.bill_date,1,4) = ? GROUP BY m`
   ).all(companyId, y) as Array<{ m: number; amt: number }>;
 
-  const salesByM = new Map(salesRows.map((r) => [r.m, round2(r.amt)]));
   const taxByM = new Map(taxRows.map((r) => [r.m, round2(r.amt)]));
   const inVatByM = new Map(inVatRows.map((r) => [r.m, round2(r.amt)]));
 
@@ -1942,15 +2004,20 @@ export function companyFinancialYear(companyId: number, year: number): CompanyFi
 
 export type CompanyBranchMonth = {
   branchId: number; name: string;
-  sales: number; opExpense: number; net: number;
+  // expense = confirmed bills, ALL categories (incl CapEx + loan repayment) —
+  // matches the branch daybook's รายจ่าย exactly (owner 2026-08-22).
+  sales: number; expense: number; net: number;
 };
 export type CompanyOverviewMonth = {
   companyId: number; companyName: string; month: string; vatRegistered: boolean;
-  totals: { sales: number; opExpense: number; net: number };
-  prev: { month: string; sales: number; opExpense: number; net: number };
+  totals: { sales: number; expense: number; net: number };
+  prev: { month: string; sales: number; expense: number; net: number };
+  today: { date: string; sales: number };   // ยอดขายรวมทั้งบริษัทเฉพาะวันนี้ (owner 2026-08-22)
   branches: CompanyBranchMonth[];
   tax: { taxableSales: number; outputVat: number; inputVat: number; vatPayable: number };
   payables: { whtUnpaid: number; ssoUnpaid: number };
+  // ytd keeps the tax basis (operating expense, excl CapEx/loan) — feeds the
+  // SME income-tax estimate, which is a different figure from the daybook profit.
   ytd: { sales: number; opExpense: number; net: number; incomeTaxEst: ReturnType<typeof smeIncomeTax>; monthsElapsed: number };
 };
 
@@ -1982,54 +2049,46 @@ export function companyOverviewMonth(companyId: number, month: string): CompanyO
   const branchRows = db.prepare(
     "SELECT id, name FROM branches WHERE company_id = ? ORDER BY display_order, name"
   ).all(companyId) as Array<{ id: number; name: string }>;
+  const monthEnd = `${month}-31`;   // safe upper bound for a string BETWEEN
 
-  // Per-branch sales (branch_daily_revenue) for the month.
-  const salesByBranch = new Map<number, number>();
+  // Per-branch EXPENSE = all confirmed bills for the month (every category,
+  // incl CapEx + loan repayment) — matches the branch daybook's รายจ่าย.
+  const expenseByBranch = new Map<number, number>();
   for (const r of db.prepare(
-    `SELECT r.branch_id AS bid, COALESCE(SUM(r.revenue),0) AS amt
-       FROM branch_daily_revenue r JOIN branches b ON b.id = r.branch_id
-      WHERE b.company_id = ? AND substr(r.date,1,7) = ? GROUP BY r.branch_id`
-  ).all(companyId, month) as Array<{ bid: number; amt: number }>) {
-    salesByBranch.set(r.bid, round2(r.amt));
-  }
-
-  // Per-branch operating expense for the month (classify by category code).
-  const expRows = db.prepare(
-    `SELECT e.branch_id AS bid, COALESCE(e.category,'') AS cat, COALESCE(SUM(e.amount_total),0) AS amt
+    `SELECT e.branch_id AS bid, COALESCE(SUM(e.amount_total),0) AS amt
        FROM accounta_expenses e JOIN branches b ON b.id = e.branch_id
-      WHERE b.company_id = ? AND e.review_status = 'confirmed' AND e.capex_bucket IS NULL
-        AND substr(e.bill_date,1,7) = ? GROUP BY e.branch_id, COALESCE(e.category,'')`
-  ).all(companyId, month) as Array<{ bid: number; cat: string; amt: number }>;
-  const opByBranch = new Map<number, Array<{ cat: string; amt: number }>>();
-  for (const r of expRows) {
-    if (!opByBranch.has(r.bid)) opByBranch.set(r.bid, []);
-    opByBranch.get(r.bid)!.push({ cat: r.cat, amt: r.amt });
+      WHERE b.company_id = ? AND e.review_status = 'confirmed' AND substr(e.bill_date,1,7) = ?
+      GROUP BY e.branch_id`
+  ).all(companyId, month) as Array<{ bid: number; amt: number }>) {
+    expenseByBranch.set(r.bid, round2(r.amt));
   }
 
+  // Per-branch SALES from the daybook logic (ledger + fallback), so ยอดขาย /
+  // กำไร here equal the branch's own ACCOUNTA overview (owner 2026-08-22).
   const branches: CompanyBranchMonth[] = branchRows.map((b) => {
-    const sales = salesByBranch.get(b.id) ?? 0;
-    const opExpense = sumOpExpense(opByBranch.get(b.id) ?? [], nameToCode);
-    return { branchId: b.id, name: b.name, sales, opExpense, net: round2(sales - opExpense) };
+    const sales = branchSalesForRange(b.id, `${month}-01`, monthEnd);
+    const expense = expenseByBranch.get(b.id) ?? 0;
+    return { branchId: b.id, name: b.name, sales, expense, net: round2(sales - expense) };
   });
   const totals = branches.reduce(
-    (a, b) => ({ sales: round2(a.sales + b.sales), opExpense: round2(a.opExpense + b.opExpense), net: round2(a.net + b.net) }),
-    { sales: 0, opExpense: 0, net: 0 }
+    (a, b) => ({ sales: round2(a.sales + b.sales), expense: round2(a.expense + b.expense), net: round2(a.net + b.net) }),
+    { sales: 0, expense: 0, net: 0 }
   );
 
-  // Previous-month company totals (for the delta indicators).
+  const branchIds = branchRows.map((b) => b.id);
+
+  // ยอดขายรวมทั้งบริษัทเฉพาะวันนี้ (owner 2026-08-22).
+  const today = bkkToday();
+  const todaySales = companySalesForRange(branchIds, today, today);
+
+  // Previous-month company totals (for the delta indicators) — same basis.
   const prevMonth = shiftMonthStr(month, -1);
-  const prevSales = round2((db.prepare(
-    `SELECT COALESCE(SUM(r.revenue),0) AS s FROM branch_daily_revenue r JOIN branches b ON b.id = r.branch_id
-      WHERE b.company_id = ? AND substr(r.date,1,7) = ?`
+  const prevSales = companySalesForRange(branchIds, `${prevMonth}-01`, `${prevMonth}-31`);
+  const prevExp = round2((db.prepare(
+    `SELECT COALESCE(SUM(e.amount_total),0) AS s FROM accounta_expenses e JOIN branches b ON b.id = e.branch_id
+      WHERE b.company_id = ? AND e.review_status = 'confirmed' AND substr(e.bill_date,1,7) = ?`
   ).get(companyId, prevMonth) as { s: number }).s);
-  const prevExp = db.prepare(
-    `SELECT COALESCE(e.category,'') AS cat, COALESCE(SUM(e.amount_total),0) AS amt
-       FROM accounta_expenses e JOIN branches b ON b.id = e.branch_id
-      WHERE b.company_id = ? AND e.review_status = 'confirmed' AND e.capex_bucket IS NULL
-        AND substr(e.bill_date,1,7) = ? GROUP BY COALESCE(e.category,'')`
-  ).all(companyId, prevMonth) as Array<{ cat: string; amt: number }>;
-  const prevOp = sumOpExpense(prevExp, nameToCode);
-  const prev = { month: prevMonth, sales: prevSales, opExpense: prevOp, net: round2(prevSales - prevOp) };
+  const prev = { month: prevMonth, sales: prevSales, expense: prevExp, net: round2(prevSales - prevExp) };
 
   // This-month VAT (ภพ.30).
   const taxableSales = round2((db.prepare(
@@ -2051,12 +2110,10 @@ export function companyOverviewMonth(companyId: number, month: string): CompanyO
   ).get(category, companyId) as { s: number }).s;
   const payables = { whtUnpaid: round2(payableSql("ภาษีหัก ณ ที่จ่าย")), ssoUnpaid: round2(payableSql("ประกันสังคม")) };
 
-  // YTD (Jan..this month) net + running SME income-tax estimate.
+  // YTD (Jan..this month) net + running SME income-tax estimate. Sales use the
+  // daybook logic; expense stays operating-basis (excl CapEx/loan) — the tax base.
   const year = month.slice(0, 4);
-  const ytdSales = round2((db.prepare(
-    `SELECT COALESCE(SUM(r.revenue),0) AS s FROM branch_daily_revenue r JOIN branches b ON b.id = r.branch_id
-      WHERE b.company_id = ? AND substr(r.date,1,7) >= ? AND substr(r.date,1,7) <= ?`
-  ).get(companyId, `${year}-01`, month) as { s: number }).s);
+  const ytdSales = companySalesForRange(branchIds, `${year}-01-01`, monthEnd);
   const ytdExp = db.prepare(
     `SELECT COALESCE(e.category,'') AS cat, COALESCE(SUM(e.amount_total),0) AS amt
        FROM accounta_expenses e JOIN branches b ON b.id = e.branch_id
@@ -2070,7 +2127,7 @@ export function companyOverviewMonth(companyId: number, month: string): CompanyO
     incomeTaxEst: smeIncomeTax(ytdNet), monthsElapsed: Number(month.slice(5, 7))
   };
 
-  return { companyId, companyName, month, vatRegistered, totals, prev, branches, tax: { taxableSales, outputVat, inputVat, vatPayable }, payables, ytd };
+  return { companyId, companyName, month, vatRegistered, totals, prev, today: { date: today, sales: todaySales }, branches, tax: { taxableSales, outputVat, inputVat, vatPayable }, payables, ytd };
 }
 
 export type AccountaPayables = {
