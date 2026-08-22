@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { companyFinancialYear, type CompanyFinancialYear, companyOverviewMonth } from "@/lib/accounta-db";
 import { fmtMoney } from "@/lib/format";
+import { TH_MONTHS_FULL } from "@/lib/revshare";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ACCOUNTA · ภาพรวมบริษัท (รวมสาขา)" };
@@ -24,10 +25,10 @@ function thMonthLabel(month: string): string {
   const [y, m] = month.split("-").map(Number);
   return `${TH_MON_ABBR[m]} ${y + 543}`;
 }
-// "YYYY-MM-DD" → "22 ส.ค." (day + abbreviated Thai month, no year).
+// "YYYY-MM-DD" → "22 สิงหาคม" (day + full Thai month, no year).
 function thDayLabel(date: string): string {
   const [, m, d] = date.split("-").map(Number);
-  return `${d} ${TH_MON_ABBR[m]}`;
+  return `${d} ${TH_MONTHS_FULL[m]}`;
 }
 function shiftMonth(month: string, delta: number): string {
   const [y, m] = month.split("-").map(Number);
