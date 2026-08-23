@@ -85,7 +85,7 @@ export default function BillForm({
         <div>
           <label className="label !text-xs">ประเภทเอกสาร *</label>
           <Select value={docType} onChange={setDocType} placeholder="— เลือกประเภท —"
-            options={DOC_TYPES.map((d) => ({ value: d, label: DOC_TYPE_LABEL[d] }))} />
+            options={DOC_TYPES.filter((d) => d !== "credit_note").map((d) => ({ value: d, label: DOC_TYPE_LABEL[d] }))} />
         </div>
 
         <div>

@@ -212,6 +212,57 @@ export default function ExpensesClient(props: {
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
   const prefilledVendorRef = useRef<string | null>(null);
 
+  // ── ใบลดหนี้ฝั่งซื้อ (owner 2026-08-23) — บันทึกแยกเป็นรายการต่างหาก ยอดติดลบ
+  //    (ลดรายจ่าย + ลดภาษีซื้อ). ใช้ endpoint /credit-note ที่ negate ให้ ──
+  const blankCn = () => ({
+    credit_date: todayISO(), vendor_name: "", credit_no: "", ref_invoice_no: "",
+    category: "", description: "", amount_total: "", has_tax_invoice: true, vat_override: ""
+  });
+  type CnForm = ReturnType<typeof blankCn>;
+  const [cnOpen, setCnOpen] = useState(false);
+  const [cn, setCn] = useState<CnForm>(blankCn());
+  const setCnField = <K extends keyof CnForm>(k: K, v: CnForm[K]) => setCn((s) => ({ ...s, [k]: v }));
+  // VAT preview from the entered reduction total (matches the server split).
+  const cnVat = useMemo(() => {
+    const total = Number(cn.amount_total) || 0;
+    if (cn.vat_override.trim() !== "") return round2(Number(cn.vat_override) || 0);
+    return cn.has_tax_invoice ? splitVat(total, true).vat : 0;
+  }, [cn.amount_total, cn.has_tax_invoice, cn.vat_override]);
+
+  async function saveCreditNote() {
+    const total = Number(cn.amount_total);
+    if (!cn.amount_total || !Number.isFinite(total) || total <= 0) {
+      setErr("กรอกยอดที่ลด (ต้องมากกว่า 0)"); return;
+    }
+    if (cn.vat_override.trim() !== "" && (Number(cn.vat_override) || 0) > total) {
+      setErr("ภาษีซื้อที่ลดต้องไม่เกินยอดที่ลด"); return;
+    }
+    setBusy(true); setErr(null);
+    try {
+      const body = {
+        branch_id: props.activeBranchId ?? null,
+        company_id: activeCompanyId ?? null,
+        credit_date: cn.credit_date,
+        vendor_name: cn.vendor_name.trim() || null,
+        credit_no: cn.credit_no.trim() || null,
+        ref_invoice_no: cn.ref_invoice_no.trim() || null,
+        category: cn.category.trim() || null,
+        description: cn.description.trim() || null,
+        amount_total: round2(total),
+        has_tax_invoice: cn.has_tax_invoice,
+        vat_amount: cn.vat_override.trim() !== "" ? round2(Number(cn.vat_override) || 0) : undefined
+      };
+      let res: Response;
+      try { res = await submitJson("/api/accounta/expenses/credit-note", "POST", body); }
+      catch (e) { setErr(submitErrMsg(e) ?? "บันทึกไม่สำเร็จ"); return; }
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ")); return; }
+      setCnOpen(false); setCn(blankCn());
+      await reload();
+      startTransition(() => router.refresh());
+    } finally { setBusy(false); }
+  }
+
   // Type/pick a คู่ค้า → prefill EVERY field from its most-recent bill (owner
   // 2026-07-24: "ส่วนใหญ่เป็นเจ้าเดิม ต่างแค่ยอด"). Only the amount is left. Fires
   // once per distinct match so later manual edits aren't clobbered.
@@ -695,6 +746,10 @@ export default function ExpensesClient(props: {
         <button type="button" onClick={openAdd} disabled={busy} className="btn-secondary disabled:opacity-50">
           + เพิ่มด่วนที่นี่
         </button>
+        <button type="button" onClick={() => { setErr(null); setCn(blankCn()); setCnOpen(true); }}
+          disabled={busy} className="btn-secondary disabled:opacity-50">
+          + ใบลดหนี้
+        </button>
         <input type="month" className="input !w-auto" value={month}
           onChange={(e) => { setMonth(e.target.value); reload({ month: e.target.value }); }} />
         {activeBranch && (
@@ -721,6 +776,109 @@ export default function ExpensesClient(props: {
         </span>
       </div>
       {importMsg && <p className="text-sm text-emerald-700">{importMsg}</p>}
+
+      {/* ── ใบลดหนี้ฝั่งซื้อ (owner 2026-08-23) ── */}
+      {cnOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setCnOpen(false); }}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg my-8 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-slate-800">บันทึกใบลดหนี้ (ฝั่งซื้อ)</h3>
+              <button type="button" onClick={() => setCnOpen(false)} disabled={busy}
+                className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+            </div>
+            <p className="text-[11px] text-slate-500 -mt-2">
+              ใบลดหนี้จากผู้ขาย (คืนของ / ลดราคาหลังซื้อ) — บันทึกเป็นรายการแยก จะ<b>ลดรายจ่าย</b>
+              {cn.has_tax_invoice ? " และลดภาษีซื้อ (ภพ.30)" : ""} ของเดือนตามวันที่ในใบลดหนี้
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-xs text-slate-500">วันที่ในใบลดหนี้</span>
+                <input type="date" className="input" value={cn.credit_date}
+                  onChange={(e) => setCnField("credit_date", e.target.value)} />
+              </label>
+              <label className="block">
+                <span className="text-xs text-slate-500">เลขที่ใบลดหนี้</span>
+                <input className="input" value={cn.credit_no} placeholder="(ถ้ามี)"
+                  onChange={(e) => setCnField("credit_no", e.target.value)} />
+              </label>
+            </div>
+
+            <label className="block">
+              <span className="text-xs text-slate-500">ผู้ขาย / ซัพพลายเออร์</span>
+              <input className="input" list="cn-vendors" value={cn.vendor_name}
+                onChange={(e) => setCnField("vendor_name", e.target.value)} placeholder="ชื่อผู้ขาย" />
+              <datalist id="cn-vendors">
+                {vendors.map((v) => <option key={v.id} value={v.name} />)}
+              </datalist>
+            </label>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-xs text-slate-500">อ้างอิงบิล/ใบกำกับเดิม</span>
+                <input className="input" value={cn.ref_invoice_no} placeholder="(ถ้ามี)"
+                  onChange={(e) => setCnField("ref_invoice_no", e.target.value)} />
+              </label>
+              <label className="block">
+                <span className="text-xs text-slate-500">หมวด (ให้ตรงกับบิลเดิม)</span>
+                <select className="input" value={cn.category}
+                  onChange={(e) => setCnField("category", e.target.value)}>
+                  <option value="">— ไม่ระบุ —</option>
+                  {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
+              </label>
+            </div>
+
+            <label className="block">
+              <span className="text-xs text-slate-500">ยอดที่ลด (รวม VAT)</span>
+              <input type="number" step="0.01" min="0" inputMode="decimal" className="input"
+                value={cn.amount_total} onChange={(e) => setCnField("amount_total", e.target.value)}
+                placeholder="0.00" />
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={cn.has_tax_invoice}
+                onChange={(e) => setCnField("has_tax_invoice", e.target.checked)} />
+              <span className="text-sm text-slate-700">
+                มีใบลดหนี้เต็มรูป — ลดภาษีซื้อได้
+                <span className="block text-[11px] text-slate-500">
+                  {cn.has_tax_invoice
+                    ? `จะลดภาษีซื้อ ฿${fmtMoney(cnVat)} (ยอดก่อน VAT ฿${fmtMoney(round2((Number(cn.amount_total) || 0) - cnVat))})`
+                    : "ไม่ลดภาษีซื้อ — ลดเฉพาะยอดรายจ่าย"}
+                </span>
+              </span>
+            </label>
+
+            {cn.has_tax_invoice && (
+              <label className="block">
+                <span className="text-xs text-slate-500">แก้ยอด VAT เอง (ถ้าต่างจาก 7%)</span>
+                <input type="number" step="0.01" min="0" inputMode="decimal" className="input"
+                  value={cn.vat_override} onChange={(e) => setCnField("vat_override", e.target.value)}
+                  placeholder="เว้นว่าง = คิด 7% ให้อัตโนมัติ" />
+              </label>
+            )}
+
+            <label className="block">
+              <span className="text-xs text-slate-500">เหตุผล / รายละเอียด</span>
+              <input className="input" value={cn.description}
+                onChange={(e) => setCnField("description", e.target.value)}
+                placeholder="เช่น คืนของชำรุด, ส่วนลดหลังการขาย" />
+            </label>
+
+            {err && <p className="text-sm text-rose-600">{err}</p>}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setCnOpen(false)} disabled={busy}
+                className="btn-secondary disabled:opacity-50">ยกเลิก</button>
+              <button type="button" onClick={() => saveCreditNote()} disabled={busy}
+                className="btn-primary disabled:opacity-50">
+                {busy ? "กำลังบันทึก…" : "บันทึกใบลดหนี้"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {preview && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
@@ -998,9 +1156,9 @@ export default function ExpensesClient(props: {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-slate-500 text-xs">{e.category || "—"}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-slate-800 whitespace-nowrap">฿{fmtMoney(e.amount_total)}</td>
+                  <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${e.doc_type === "credit_note" ? "text-emerald-700" : "text-slate-800"}`}>฿{fmtMoney(e.amount_total)}</td>
                   <td className="px-3 py-2 text-right text-slate-500 whitespace-nowrap">
-                    {e.vat_amount > 0 ? `฿${fmtMoney(e.vat_amount)}` : "—"}
+                    {e.vat_amount !== 0 ? `฿${fmtMoney(e.vat_amount)}` : "—"}
                   </td>
                   <td className="px-3 py-2">
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
@@ -1013,8 +1171,10 @@ export default function ExpensesClient(props: {
                     {e.payment_status === "paid" && e.paid_date ? formatLongDate(e.paid_date, "th") : "—"}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-right">
-                    <button type="button" onClick={() => openEdit(e)} disabled={busy}
-                      className="text-xs text-slate-500 hover:text-brand">แก้ไข</button>
+                    {e.doc_type !== "credit_note" && (
+                      <button type="button" onClick={() => openEdit(e)} disabled={busy}
+                        className="text-xs text-slate-500 hover:text-brand">แก้ไข</button>
+                    )}
                     <button type="button" onClick={() => remove(e)} disabled={busy}
                       className="text-xs text-slate-400 hover:text-rose-600 ml-3">ลบออก</button>
                   </td>
@@ -1125,7 +1285,9 @@ export default function ExpensesClient(props: {
                     setForm((f) => ({ ...f, doc_type: v, has_tax_invoice: v === "tax_invoice" ? true : f.has_tax_invoice }));
                   }}>
                   <option value="">— เลือก —</option>
-                  {DOC_TYPES.map((t) => <option key={t} value={t}>{DOC_TYPE_LABEL[t]}</option>)}
+                  {/* credit_note is created via the dedicated "+ ใบลดหนี้" flow (stores a
+                      negative row), never picked here on a positive bill. */}
+                  {DOC_TYPES.filter((t) => t !== "credit_note").map((t) => <option key={t} value={t}>{DOC_TYPE_LABEL[t]}</option>)}
                 </select>
               </div>
               <div>

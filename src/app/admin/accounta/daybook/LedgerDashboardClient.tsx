@@ -711,9 +711,11 @@ function DayDetail({
                     // bill_date row, but whether it's past due depends on now).
                     const overdue = unpaid && e.due_date != null && e.due_date < todayStr;
                     const dueToday = unpaid && e.due_date != null && e.due_date === todayStr;
+                    const isCredit = e.doc_type === "credit_note";
                     const tag = [
                       unpaid ? "ค้างชำระ" : "",
-                      e.vat_amount > 0 ? `VAT ฿${fmtMoney(e.vat_amount)}` : ""
+                      isCredit ? "ใบลดหนี้" : "",
+                      e.vat_amount !== 0 ? `VAT ฿${fmtMoney(e.vat_amount)}` : ""
                     ].filter(Boolean).join(" · ");
                     return (
                       <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
@@ -737,12 +739,16 @@ function DayDetail({
                             </div>
                           )}
                         </td>
-                        <td className="py-1 px-2 text-right font-mono text-rose-700">{fmtMoney(e.amount_total)}</td>
+                        <td className={`py-1 px-2 text-right font-mono ${isCredit ? "text-emerald-700" : "text-rose-700"}`}>{fmtMoney(e.amount_total)}</td>
                         <td className="py-1 px-2 text-right whitespace-nowrap">
                           {unpaid && payId !== e.id && (
                             <button type="button" onClick={() => openPay(e)} className="text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded px-2 py-0.5 mr-2">จ่ายแล้ว</button>
                           )}
-                          <button type="button" onClick={() => onEditExpense(e)} className="text-[10px] text-brand hover:underline mr-2">แก้ไข</button>
+                          {/* Credit notes are created via the dedicated flow (negative row) —
+                              editing them through the positive-only expense form would corrupt them. */}
+                          {!isCredit && (
+                            <button type="button" onClick={() => onEditExpense(e)} className="text-[10px] text-brand hover:underline mr-2">แก้ไข</button>
+                          )}
                           <button type="button" onClick={() => removeExpense(e)} disabled={busyExpenseId === e.id} className="text-[10px] text-rose-500 hover:underline disabled:opacity-50">ลบออก</button>
                         </td>
                       </tr>
@@ -1147,7 +1153,8 @@ export default function LedgerDashboardClient({
   const incomeTop = [...dash.incomeByChannel].slice(0, 8);
   // Top spending — the biggest individual bills this period (owner 2026-06-29).
   // From the already-loaded `expenses`; tap a row to edit it in place.
-  const topExpenses = [...expenses].sort((a, b) => b.amount_total - a.amount_total).slice(0, 10);
+  // Exclude credit notes / negative rows — they're reductions, not top spends.
+  const topExpenses = [...expenses].filter((e) => e.amount_total > 0).sort((a, b) => b.amount_total - a.amount_total).slice(0, 10);
   // Aggregated per vendor: total spent + bill count this period, biggest first.
   const topVendors = (() => {
     const m = new Map<string, { vendor: string; amount: number; count: number }>();

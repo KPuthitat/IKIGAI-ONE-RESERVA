@@ -27,7 +27,7 @@ export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
 // when the owner picks "ใบกำกับภาษี (เต็มรูป)". (owner 2026-06-20.)
 export type DocType =
   | "quotation" | "receipt" | "tax_invoice" | "tax_invoice_abbr"
-  | "cash_bill" | "transfer_slip" | "invoice" | "other";
+  | "cash_bill" | "transfer_slip" | "invoice" | "credit_note" | "other";
 
 export const DOC_TYPE_LABEL: Record<DocType, string> = {
   quotation: "ใบเสนอราคา",
@@ -37,6 +37,8 @@ export const DOC_TYPE_LABEL: Record<DocType, string> = {
   cash_bill: "บิลเงินสด",
   transfer_slip: "สลิปโอนเงิน",
   invoice: "ใบแจ้งหนี้",
+  // ใบลดหนี้ฝั่งซื้อ — เก็บเป็นรายจ่ายยอดติดลบ (ลดรายจ่าย + ลดภาษีซื้อ). owner 2026-08-23.
+  credit_note: "ใบลดหนี้",
   other: "อื่นๆ"
 };
 
