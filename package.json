@@ -22,6 +22,7 @@
     "test:income-tax": "node --import tsx scripts/test-income-tax.ts",
     "test:group-insurance": "node --import tsx scripts/test-group-insurance.ts",
     "test:svc": "node --import tsx scripts/verify-svc-rules.ts && node --import tsx scripts/verify-svc-manual.ts && node --import tsx scripts/verify-svc-shared-pool.ts",
+    "test:credit-note": "node --import tsx scripts/verify-credit-note.ts",
     "db:init": "node --import tsx scripts/init-db.ts",
     "db:seed": "node --import tsx scripts/seed.ts",
     "db:backup": "node scripts/backup-local.mjs",

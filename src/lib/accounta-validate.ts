@@ -109,6 +109,76 @@ export const ExpenseBody = z.object({
 
 export type ExpenseBodyT = z.infer<typeof ExpenseBody>;
 
+// ── Purchase credit note (ใบลดหนี้ฝั่งซื้อ) — owner 2026-08-23 ─────────
+// A supplier credit note reduces a purchase: less expense + less input VAT
+// (ภาษีซื้อ). Stored as a SEPARATE accounta_expenses row with NEGATIVE
+// amount_total / vat_amount / base_amount and doc_type='credit_note', so it
+// flows through every existing SUM (expense, ภพ.30, category, daybook) with
+// no aggregation changes. The client enters POSITIVE reduction amounts; the
+// sign is applied here.
+export const CreditNoteBody = z.object({
+  branch_id: z.number().int().positive().nullable().optional(),
+  company_id: z.number().int().positive().nullable().optional(),
+  credit_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),     // วันที่ในใบลดหนี้
+  vendor_id: z.number().int().positive().nullable().optional(),
+  vendor_name: z.string().trim().max(200).nullable().optional(),
+  credit_no: z.string().trim().max(60).nullable().optional(),      // เลขที่ใบลดหนี้
+  ref_invoice_no: z.string().trim().max(120).nullable().optional(), // อ้างอิงบิล/ใบกำกับเดิม
+  category: z.string().trim().max(100).nullable().optional(),
+  description: z.string().trim().max(500).nullable().optional(),   // เหตุผล (คืนของ/ลดราคา)
+  amount_total: z.number().positive().max(1e9),                    // ยอดที่ลด (รวม VAT)
+  has_tax_invoice: z.boolean().optional(),                        // true = ลดภาษีซื้อได้ (ใบลดหนี้เต็มรูป)
+  vat_amount: z.number().min(0).max(1e9).nullable().optional(),    // override; else 7% split
+  note: z.string().trim().max(500).nullable().optional()
+}).refine(
+  // A VAT override can never exceed the reduction total, else the ex-VAT base
+  // would flip positive (over-crediting ภาษีซื้อ while raising base expense).
+  (d) => d.vat_amount == null || d.vat_amount <= d.amount_total,
+  { message: "ภาษีซื้อที่ลดต้องไม่เกินยอดที่ลด", path: ["vat_amount"] }
+);
+
+export type CreditNoteBodyT = z.infer<typeof CreditNoteBody>;
+
+/** Build a negative-amount ExpenseInput representing a purchase credit note. */
+export function toCreditNoteInput(d: CreditNoteBodyT): ExpenseInput {
+  const total = round2(d.amount_total);
+  const hasTax = !!d.has_tax_invoice;
+  let vat: number, base: number;
+  if (d.vat_amount != null) { vat = round2(d.vat_amount); base = round2(total - vat); }
+  else { const s = splitVat(total, hasTax); vat = s.vat; base = s.base; }
+  // Fold the original-invoice reference into the note so it stays visible.
+  const refNote = [d.ref_invoice_no ? `อ้างอิงบิล ${d.ref_invoice_no}` : null, d.note?.trim() || null]
+    .filter(Boolean).join(" · ") || null;
+  return {
+    branch_id: d.branch_id ?? null,
+    company_id: d.company_id ?? null,
+    bill_date: d.credit_date,
+    vendor_id: d.vendor_id ?? null,
+    vendor_name: d.vendor_name ?? null,
+    invoice_no: d.credit_no?.trim() || null,
+    doc_type: "credit_note",
+    category: d.category ?? null,
+    capex_bucket: null,
+    description: d.description ?? null,
+    // Negate so the row reduces expense + input VAT in every aggregation.
+    amount_total: round2(-total),
+    has_tax_invoice: hasTax,
+    vat_amount: round2(-vat),
+    base_amount: round2(-base),
+    wht_rate: 0,
+    awaiting_doc: false,
+    is_fixed: false,
+    // A credit note is a settlement (not a payable) — mark paid so it never
+    // shows up in ค้างชำระ; the accrual (expense/VAT) reduction is date-based.
+    payment_status: "paid",
+    payment_method: null,
+    paid_date: d.credit_date,
+    due_date: null,
+    due_mode: null,
+    note: refNote
+  };
+}
+
 /** Build a normalised ExpenseInput from a validated body. Honours an
  *  explicit vat_amount override; otherwise derives the 7% split. */
 export function toExpenseInput(d: ExpenseBodyT): ExpenseInput {
