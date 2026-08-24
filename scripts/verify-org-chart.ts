@@ -1,49 +1,52 @@
-// Fixture: org-chart tree building + cycle prevention (owner 2026-08-24).
-// buildOrgTree turns flat org_chart_nodes rows into a forest by reports_to,
-// promoting orphans (manager not on the chart) to roots; wouldCreateCycle
-// blocks a manager assignment that would loop the tree.
+// Fixture: org-chart v2 — placements + multi-parent (owner 2026-08-24).
+// A placement can sit under more than one parent (appears under each), the same
+// person can be placed more than once, and cycles are blocked / render-safe.
 // Run:  node --import tsx scripts/verify-org-chart.ts
-import { buildOrgTree, wouldCreateCycle, type OrgMember } from "../src/lib/org-chart";
+import { buildOrgForest, wouldCreateCycle, type OrgPlacementBase as OrgPlacement, type OrgTreeNode } from "../src/lib/org-chart-tree";
 
 function assert(cond: boolean, msg: string) {
   if (!cond) { console.error("✗ " + msg); process.exit(1); }
   console.log("✓ " + msg);
 }
 
-const mk = (userId: number, reportsToUserId: number | null, sortOrder = 100): OrgMember => ({
-  userId, reportsToUserId, sortOrder,
+const mk = (nodeId: number, userId: number, parentNodeIds: number[], sortOrder = 100): OrgPlacement => ({
+  nodeId, userId, parentNodeIds, sortOrder,
   displayName: `U${userId}`, titlePrefix: null, nickname: null, jobTitle: null, role: "staff", department: null
 });
+const flatten = (forest: OrgTreeNode[]): number[] => forest.flatMap((n) => [n.nodeId, ...flatten(n.children)]);
 
-// ── buildOrgTree ────────────────────────────────────────────────────
-// A(root) → B → D ; A → C. One root, B before C by sort.
-const members = [mk(1, null, 10), mk(2, 1, 10), mk(3, 1, 20), mk(4, 2, 10)];
-const roots = buildOrgTree(members);
-assert(roots.length === 1 && roots[0].userId === 1, `single root = A (got ${roots.map((r) => r.userId)})`);
-assert(roots[0].children.map((c) => c.userId).join(",") === "2,3", `A's reports = B,C in sort order`);
-const b = roots[0].children.find((c) => c.userId === 2)!;
-assert(b.children.length === 1 && b.children[0].userId === 4, `B's report = D`);
+// ── basic tree ──────────────────────────────────────────────────────
+const t = buildOrgForest([mk(1, 1, []), mk(2, 2, [1], 10), mk(3, 3, [1], 20)]);
+assert(t.length === 1 && t[0].nodeId === 1, `one root (node 1)`);
+assert(t[0].children.map((c) => c.nodeId).join(",") === "2,3", `node 1 has children 2,3 in order`);
 
-// Orphan: manager 999 not on chart → promoted to root, not dropped.
-const orphanRoots = buildOrgTree([mk(1, null), mk(5, 999)]);
-assert(orphanRoots.some((r) => r.userId === 5), `orphan (manager off-chart) promoted to root`);
-assert(orphanRoots.length === 2, `no member is lost (2 roots)`);
+// ── multi-parent: node under two managers appears under BOTH ─────────
+const dual = buildOrgForest([mk(1, 1, []), mk(2, 2, [1]), mk(3, 3, [1, 2])]);
+const occur = flatten(dual).filter((id) => id === 3).length;
+assert(occur === 2, `node 3 (two parents) is rendered under both (got ${occur})`);
 
-// ── wouldCreateCycle ────────────────────────────────────────────────
-// Chain A ← B ← C (C reports B reports A).
-const chain = [mk(1, null), mk(2, 1), mk(3, 2)];
-assert(wouldCreateCycle(chain, 1, 1) === true, `self-manager is a cycle`);
-assert(wouldCreateCycle(chain, 1, 3) === true, `A→manager C loops (C is under A)`);
-assert(wouldCreateCycle(chain, 2, 3) === true, `B→manager C loops (C is under B)`);
-assert(wouldCreateCycle(chain, 3, 1) === false, `C→manager A is fine (A is above C)`);
-assert(wouldCreateCycle(chain, 1, 2) === true, `A→manager B loops (B is under A)`);
+// ── expand-once: a multi-parent node's SUBTREE isn't duplicated ─────
+// node 4 under {1,2} (appears twice as a leaf); its child 5 expands only once.
+const matrix = buildOrgForest([mk(1, 1, []), mk(2, 2, []), mk(4, 4, [1, 2]), mk(5, 5, [4])]);
+assert(flatten(matrix).filter((id) => id === 4).length === 2, `dual-parent node 4 shown under both`);
+assert(flatten(matrix).filter((id) => id === 5).length === 1, `its child 5 expanded only once (no subtree blowup)`);
 
-// Defensive: a persisted data cycle must NOT hang buildOrgTree (it promotes
-// looping nodes to roots instead of recursing forever).
-const cyclic = [mk(1, 2), mk(2, 1), mk(3, 1)];   // 1↔2 loop, 3 under 1
-const cyclicRoots = buildOrgTree(cyclic);
-assert(cyclicRoots.length >= 1, `cyclic data still yields roots (no hang)`);
-assert(cyclicRoots.every((r) => r.children.every((c) => c.userId !== r.userId)),
-  `no node is its own descendant after cycle-break`);
+// ── same person placed twice = two nodes, both kept ─────────────────
+const twice = buildOrgForest([mk(1, 7, []), mk(2, 7, [1])]);   // user 7 placed as node1 and node2
+assert(flatten(twice).length === 2, `same person placed twice yields two nodes`);
+
+// ── root when all parents are off-chart ─────────────────────────────
+const orphan = buildOrgForest([mk(1, 1, []), mk(5, 5, [999])]);
+assert(orphan.some((r) => r.nodeId === 5) && orphan.length === 2, `off-chart parent → promoted to root`);
+
+// ── wouldCreateCycle over node edges ────────────────────────────────
+const edges = [{ nodeId: 2, parentNodeId: 1 }, { nodeId: 3, parentNodeId: 2 }]; // 1 → 2 → 3
+assert(wouldCreateCycle(edges, 1, 1) === true, `self is a cycle`);
+assert(wouldCreateCycle(edges, 1, 3) === true, `1→parent 3 loops (3 is under 1)`);
+assert(wouldCreateCycle(edges, 3, 1) === false, `3→parent 1 is fine`);
+
+// ── data cycle must not hang render ─────────────────────────────────
+const cyc = buildOrgForest([mk(1, 1, [2]), mk(2, 2, [1]), mk(3, 3, [1])]);
+assert(flatten(cyc).length >= 1, `cyclic data still renders (no hang)`);
 
 console.log("\nALL ORG-CHART FIXTURES PASSED");

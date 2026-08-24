@@ -2968,29 +2968,87 @@ function runMigrations(db: Database.Database): void {
   `);
 
   // ── Organization chart (2026-08-24) ───────────────────────────────
-  // A per-branch, multi-level org tree the owner edits directly. Each row
-  // places one employee on one branch's chart with:
-  //   reports_to_user_id = their manager (another user ON THE SAME branch's
-  //                        chart); NULL = a root (e.g. branch manager)
-  //   department         = free-text grouping label (e.g. "FOH", "BOH")
-  // The tree is built from reports_to_user_id; department is a colour/label
-  // grouping only. A user can appear on more than one branch's chart (they
-  // work multiple branches) — hence the (branch_id, user_id) uniqueness.
+  // Nodes are PLACEMENTS on a branch's chart: (branch_id, user_id, department).
+  // The same employee may be placed more than once, and reporting is stored in
+  // org_chart_edges (node→parent_node), so a placement can sit under several
+  // managers. This is the v2 shape; v1 databases (with reports_to_user_id +
+  // UNIQUE(branch_id,user_id)) are migrated to it in the block below.
   db.exec(`
     CREATE TABLE IF NOT EXISTS org_chart_nodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      reports_to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       department TEXT,
       sort_order INTEGER NOT NULL DEFAULT 100,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE (branch_id, user_id)
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_org_chart_branch ON org_chart_nodes (branch_id);
   `);
+
+  // Org-chart v2 (2026-08-24): nodes are PLACEMENTS, not people — the same
+  // employee can be placed more than once (e.g. branch manager AND head of a
+  // sub-team), and each placement can sit under MORE THAN ONE parent (matrix /
+  // dual reporting). Reporting edges connect node→node (placement ids).
+  //
+  // The v1 org_chart_nodes had UNIQUE(branch_id,user_id) + a single
+  // reports_to_user_id column. Rebuild it once (drop the uniqueness so
+  // duplicates are allowed) and convert the old single-manager pointers into
+  // node→node edges. Detected by the presence of the reports_to_user_id column.
+  const orgNodeCols = db.prepare("PRAGMA table_info(org_chart_nodes)").all() as Array<{ name: string }>;
+  const orgIsV1 = orgNodeCols.some((c) => c.name === "reports_to_user_id");
+  if (orgIsV1) {
+    // Rebuild org_chart_nodes to the v2 shape (drop reports_to_user_id + the
+    // (branch_id,user_id) uniqueness so a person can be placed multiple times).
+    // Ids are preserved. Done BEFORE org_chart_edges exists, so renaming the
+    // table can't rewrite a dependent FK onto the temp copy. The legacy
+    // single-manager pointers are stashed on the _v1 copy for the backfill below.
+    db.exec("ALTER TABLE org_chart_nodes RENAME TO org_chart_nodes_v1");
+    db.exec(`
+      CREATE TABLE org_chart_nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        department TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 100,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    db.exec(`
+      INSERT INTO org_chart_nodes (id, branch_id, user_id, department, sort_order, created_at)
+        SELECT id, branch_id, user_id, department, sort_order, created_at FROM org_chart_nodes_v1
+    `);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_org_chart_branch ON org_chart_nodes (branch_id)");
+  }
+  // Edges reference the final org_chart_nodes.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS org_chart_edges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      node_id INTEGER NOT NULL REFERENCES org_chart_nodes(id) ON DELETE CASCADE,
+      parent_node_id INTEGER NOT NULL REFERENCES org_chart_nodes(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (node_id, parent_node_id)
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_org_edges_branch ON org_chart_edges (branch_id);
+    CREATE INDEX IF NOT EXISTS idx_org_edges_parent ON org_chart_edges (parent_node_id);
+  `);
+  if (orgIsV1) {
+    // Convert legacy reports_to_user_id → node→node edges. Node ids were
+    // preserved above, and v1 had one node per user per branch, so each
+    // manager pointer resolves to exactly one node. Then drop the _v1 copy.
+    db.exec(`
+      INSERT OR IGNORE INTO org_chart_edges (branch_id, node_id, parent_node_id)
+        SELECT o.branch_id, o.id, m.id
+          FROM org_chart_nodes_v1 o
+          JOIN org_chart_nodes_v1 m ON m.branch_id = o.branch_id AND m.user_id = o.reports_to_user_id
+         WHERE o.reports_to_user_id IS NOT NULL AND o.reports_to_user_id <> o.user_id
+    `);
+    db.exec("DROP TABLE org_chart_nodes_v1");
+  }
 
   // current_tier tracks where a pending leave/resignation request is
   // in the approval pipeline. NULL on rows submitted before the
