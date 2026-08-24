@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
-  listCompanyBranchesForOrg, listBranchOrgMembers, listBranchOrgCandidates, listBranchDepartments,
-  type OrgMember
+  listCompanyBranchesForOrg, listBranchOrgPlacements, listBranchOrgCandidates, listBranchDepartments
 } from "@/lib/org-chart";
 import OrgChartClient, { type OrgBranchData } from "./OrgChartClient";
 
@@ -23,7 +22,6 @@ export default function OrgChartPage() {
     ? (db.prepare("SELECT name_th FROM companies WHERE id = ?").get(companyId) as { name_th: string } | undefined)
     : undefined;
 
-  // Company branches (or just the active branch when it has no company).
   const branchList = companyId != null
     ? listCompanyBranchesForOrg(companyId)
     : (db.prepare("SELECT id, name FROM branches WHERE id = ?").all(user.activeBranchId) as Array<{ id: number; name: string }>);
@@ -31,7 +29,7 @@ export default function OrgChartPage() {
   const branches: OrgBranchData[] = branchList.map((b) => ({
     id: b.id,
     name: b.name,
-    members: listBranchOrgMembers(b.id) as OrgMember[],
+    placements: listBranchOrgPlacements(b.id),
     candidates: listBranchOrgCandidates(b.id),
     departments: listBranchDepartments(b.id)
   }));

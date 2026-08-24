@@ -2,17 +2,20 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { addOrgMember, removeOrgMember, setOrgManager, setOrgDepartment } from "@/lib/org-chart";
+import {
+  addOrgPlacement, removeOrgPlacement, addOrgParent, removeOrgParent, setOrgNodeDepartment
+} from "@/lib/org-chart";
 
-// POST /api/admin/persona/orgchart — edit a branch's org chart.
-// action: add | remove | manager | department. The target branch must belong
-// to the caller's company (resolved from their active branch).
+// POST /api/admin/persona/orgchart — edit a branch's org chart (v2, placements).
+// action: add | remove | add-parent | remove-parent | department. The target
+// branch must belong to the caller's company (resolved from their active branch).
 
 const Body = z.object({
-  action: z.enum(["add", "remove", "manager", "department"]),
+  action: z.enum(["add", "remove", "add-parent", "remove-parent", "department"]),
   branchId: z.number().int().positive(),
-  userId: z.number().int().positive(),
-  managerId: z.number().int().positive().nullable().optional(),
+  userId: z.number().int().positive().optional(),
+  nodeId: z.number().int().positive().optional(),
+  parentNodeId: z.number().int().positive().nullable().optional(),
   department: z.string().max(60).nullable().optional()
 });
 
@@ -20,9 +23,7 @@ function sameCompany(branchId: number, activeBranchId: number): boolean {
   const db = getDb();
   const co = (b: number) =>
     (db.prepare("SELECT company_id FROM branches WHERE id = ?").get(b) as { company_id: number | null } | undefined)?.company_id ?? null;
-  const target = co(branchId);
-  const active = co(activeBranchId);
-  // NULL-company branch is its own company of one → must be the same branch.
+  const target = co(branchId), active = co(activeBranchId);
   return target != null && active != null ? target === active : branchId === activeBranchId;
 }
 
@@ -41,20 +42,28 @@ export async function POST(req: Request) {
 
   switch (d.action) {
     case "add": {
-      const ok = addOrgMember(d.branchId, d.userId);
-      if (!ok) return NextResponse.json({ error: "not_branch_member" }, { status: 400 });
-      break;
+      if (d.userId == null) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+      const nodeId = addOrgPlacement(d.branchId, d.userId, d.parentNodeId ?? null);
+      if (nodeId == null) return NextResponse.json({ error: "not_addable" }, { status: 400 });
+      return NextResponse.json({ ok: true, nodeId });
     }
     case "remove":
-      removeOrgMember(d.branchId, d.userId);
+      if (d.nodeId == null) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+      removeOrgPlacement(d.branchId, d.nodeId);
       break;
-    case "manager": {
-      const err = setOrgManager(d.branchId, d.userId, d.managerId ?? null);
+    case "add-parent": {
+      if (d.nodeId == null || d.parentNodeId == null) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+      const err = addOrgParent(d.branchId, d.nodeId, d.parentNodeId);
       if (err) return NextResponse.json({ error: err }, { status: 400 });
       break;
     }
+    case "remove-parent":
+      if (d.nodeId == null || d.parentNodeId == null) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+      removeOrgParent(d.branchId, d.nodeId, d.parentNodeId);
+      break;
     case "department":
-      setOrgDepartment(d.branchId, d.userId, d.department ?? null);
+      if (d.nodeId == null) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+      setOrgNodeDepartment(d.branchId, d.nodeId, d.department ?? null);
       break;
   }
   return NextResponse.json({ ok: true });
