@@ -101,12 +101,15 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
   // Map a period id back to its branch id for the column lookup.
   const branchOfPeriod = new Map<number, number>();
   for (const s of siblings) branchOfPeriod.set(s.id, s.branch_id ?? 0);
-  const netByUserBranch = new Map<number, Map<number, number>>();
+  // Per-branch column shows GROSS (ยอดก่อนหัก ณ ที่จ่าย) — owner 2026-08-24, to
+  // match the payroll summary page: the books record the pre-withholding pay per
+  // branch, then SSO/WHT are shown as separate columns. (Was net before.)
+  const grossByUserBranch = new Map<number, Map<number, number>>();
   for (const r of perBranchRows) {
     const bId = branchOfPeriod.get(r.period_id) ?? 0;
-    if (!netByUserBranch.has(r.user_id)) netByUserBranch.set(r.user_id, new Map());
-    const m = netByUserBranch.get(r.user_id)!;
-    m.set(bId, (m.get(bId) ?? 0) + (r.net ?? 0));
+    if (!grossByUserBranch.has(r.user_id)) grossByUserBranch.set(r.user_id, new Map());
+    const m = grossByUserBranch.get(r.user_id)!;
+    m.set(bId, (m.get(bId) ?? 0) + (r.gross ?? 0));
   }
 
   const ftRows = empRows.filter((r) => r.employment_type === "ft");
@@ -154,7 +157,7 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
           </thead>
           <tbody>
             {rows.map((r) => {
-              const perB = netByUserBranch.get(r.user_id) ?? new Map<number, number>();
+              const perB = grossByUserBranch.get(r.user_id) ?? new Map<number, number>();
               return (
                 <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
                   <td className="py-2 pr-3">
