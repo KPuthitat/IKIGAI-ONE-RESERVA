@@ -28,11 +28,25 @@ type EmpRow = {
   title_prefix: string | null;
   employment_type: string;
   salary_tax_mode_snapshot: string | null;
+  total_regular_minutes: number | null;
+  total_ot_minutes: number | null;
+  total_base_pay: number | null;
+  total_ot_pay: number | null;
   total_gross: number | null;
   total_sso: number | null;
   total_tax: number | null;
   total_net: number | null;
 };
+
+// Minutes → "Xh Ym" (mirror of the per-period detail helper) for the read-only
+// calculation columns on the company cycle page.
+function fmtMin(min: number): string {
+  if (!min) return "—";
+  const h = Math.floor(min / 60), m = Math.round(min % 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
 
 function statusBadge(s: string, lang: Lang): { cls: string; label: string } {
   if (s === "draft") return { cls: "bg-amber-100 text-amber-700", label: t(lang, "admin.persona.payroll.status.draft") };
@@ -74,6 +88,10 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
            u.title_prefix,
            MAX(pl.employment_type) AS employment_type,
            MAX(pl.salary_tax_mode_snapshot) AS salary_tax_mode_snapshot,
+           SUM(pl.regular_minutes) AS total_regular_minutes,
+           SUM(pl.ot_minutes)      AS total_ot_minutes,
+           SUM(pl.base_pay)        AS total_base_pay,
+           SUM(pl.ot_pay)          AS total_ot_pay,
            SUM(pl.gross_pay)  AS total_gross,
            SUM(pl.sso_amount) AS total_sso,
            SUM(pl.tax_amount) AS total_tax,
@@ -132,10 +150,11 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
     if (rows.length === 0) return null;
     const sub = rows.reduce(
       (a, r) => ({
+        base: a.base + (r.total_base_pay ?? 0), otPay: a.otPay + (r.total_ot_pay ?? 0),
         gross: a.gross + (r.total_gross ?? 0), sso: a.sso + (r.total_sso ?? 0),
         tax: a.tax + (r.total_tax ?? 0), net: a.net + (r.total_net ?? 0)
       }),
-      { gross: 0, sso: 0, tax: 0, net: 0 }
+      { base: 0, otPay: 0, gross: 0, sso: 0, tax: 0, net: 0 }
     );
     return (
       <div className="card overflow-x-auto">
@@ -149,6 +168,10 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
               {multiBranch && branchCols.map((b) => (
                 <th key={b.id} className="py-2 pr-3 text-right whitespace-nowrap">{b.name}</th>
               ))}
+              <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.regularHrs")}</th>
+              <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.otHrs")}</th>
+              <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.basePay")}</th>
+              <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.otPay")}</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.gross")}</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.sso")}</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.tax")}</th>
@@ -178,6 +201,10 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
                       </td>
                     );
                   })}
+                  <td className="py-2 pr-3 text-right text-slate-600 tabular-nums">{fmtMin(r.total_regular_minutes ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right text-amber-700 tabular-nums">{(r.total_ot_minutes ?? 0) > 0 ? fmtMin(r.total_ot_minutes ?? 0) : "—"}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{fmtMoney(r.total_base_pay ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right text-amber-700 tabular-nums">{(r.total_ot_pay ?? 0) > 0 ? fmtMoney(r.total_ot_pay ?? 0) : "—"}</td>
                   <td className="py-2 pr-3 text-right">{fmtMoney(r.total_gross ?? 0)}</td>
                   <td className="py-2 pr-3 text-right text-sky-700">{fmtMoney(r.total_sso ?? 0)}</td>
                   <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(r.total_tax ?? 0)}</td>
@@ -191,6 +218,9 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
               <td className="py-2 pr-3" colSpan={multiBranch ? 1 + branchCols.length : 1}>
                 {t(lang, "admin.persona.payroll.detail.total")}
               </td>
+              <td colSpan={2}></td>
+              <td className="py-2 pr-3 text-right">{fmtMoney(sub.base)}</td>
+              <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(sub.otPay)}</td>
               <td className="py-2 pr-3 text-right">{fmtMoney(sub.gross)}</td>
               <td className="py-2 pr-3 text-right text-sky-700">{fmtMoney(sub.sso)}</td>
               <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(sub.tax)}</td>
