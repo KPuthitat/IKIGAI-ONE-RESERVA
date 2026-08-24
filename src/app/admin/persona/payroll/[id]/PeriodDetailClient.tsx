@@ -2378,9 +2378,6 @@ function DayCalcModal({
   const [days, setDays] = useState<BreakdownDay[] | null>(null);
   const [ftMonthly, setFtMonthly] = useState(false);
   const [salaryBase, setSalaryBase] = useState(0);
-  const [doublePremium, setDoublePremium] = useState(0);
-  const [actualOt, setActualOt] = useState(0);
-  const [actualTotal, setActualTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -2398,9 +2395,6 @@ function DayCalcModal({
         setDays(j.days as BreakdownDay[]);
         setFtMonthly(!!j.ftMonthly);
         setSalaryBase(Number(j.salaryBase) || 0);
-        setDoublePremium(Number(j.doublePremium) || 0);
-        setActualOt(Number(j.actualOt) || 0);
-        setActualTotal(Number(j.actualTotal) || 0);
       } catch { if (alive) setErr(t(lang, "common.error")); }
       finally { if (alive) setLoading(false); }
     })();
@@ -2414,6 +2408,14 @@ function DayCalcModal({
   const workedDays = useMemo(() => (days ?? []).filter((d) => d.pairs.some((p) => p.workIn)).length, [days]);
   const clampedPair = (p: BreakdownDay["pairs"][number]) =>
     p.durationMinutes > 0 && (p.effectiveMinutes + p.otMinutes + p.breakMinutes) !== p.durationMinutes;
+  // The daily table is a LIVE recompute from current time records; the period
+  // was PAID from a frozen snapshot (line.*). If OT was approved or times were
+  // edited after the period was computed, the live sum diverges from what was
+  // actually paid — the paid figure (line.gross_pay) is authoritative.
+  const round2v = (x: number) => Math.round(x * 100) / 100;
+  const liveGross = ftMonthly ? round2v(salaryBase + tot.pay) : round2v(tot.pay);
+  const paidGross = line.gross_pay;
+  const divergent = !!days && days.length > 0 && Math.abs(liveGross - paidGross) > 0.5;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
@@ -2533,28 +2535,47 @@ function DayCalcModal({
           </div>
         )}
 
-        {days && days.length > 0 && (ftMonthly ? (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs bg-rose-50/60 rounded-lg px-3 py-2 border border-rose-100">
-            <span className="text-slate-600">คำนวณชั่วโมงทำงานรวม: <b className="text-slate-800">{fmtMin(tot.work)}</b>{tot.ot > 0 && <> + ล่วงเวลา <b className="text-slate-800">{fmtMin(tot.ot)}</b></>}</span>
-            <span className="text-slate-600">เงินเดือน (รวมวันหยุด/วัน off{(Number(line.unpaid_leave_days) || 0) > 0 ? " หลังหักลาแล้ว" : ""}): <b className="text-slate-800">{fmtMoney(salaryBase)}</b></span>
-            {doublePremium > 0 && <span className="text-slate-600">จ่าย 2 เท่า: <b className="text-slate-800">+{fmtMoney(doublePremium)}</b></span>}
-            {actualOt > 0 && <span className="text-slate-600">ล่วงเวลา: <b className="text-slate-800">+{fmtMoney(actualOt)}</b></span>}
-            <span className="text-slate-600">ยอดจ่ายจริงรอบนี้: <b className="text-brand">{fmtMoney(actualTotal)}</b></span>
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs bg-rose-50/60 rounded-lg px-3 py-2 border border-rose-100">
-            <span className="text-slate-600">คำนวณชั่วโมงทำงานรวม: <b className="text-slate-800">{fmtMin(tot.work)}</b>{tot.ot > 0 && <> + ล่วงเวลา <b className="text-slate-800">{fmtMin(tot.ot)}</b></>}</span>
-            <span className="text-slate-600">คำนวณค่าตอบแทนรวม: <b className="text-brand">{fmtMoney(tot.pay)}</b></span>
-          </div>
-        ))}
         {days && days.length > 0 && (
-          <p className="text-[10px] text-slate-400 leading-relaxed">
-            {line.employment_type === "pt"
-              ? "“ชั่วโมงทำงาน” = เวลาหลังปัดเข้ากรอบกะ แล้วหักเวลาพักตามกะ · ส่วนเกิน 8 ชม./วัน นับเป็นทำงานล่วงเวลา"
-              : ftMonthly
-              ? "พนักงานประจำได้เงินเดือนเต็ม (รวมวันหยุด) — ตารางนี้แสดงเฉพาะส่วนที่เพิ่ม/หักจากเงินเดือน (วันจ่าย 2 เท่า, ลาไม่รับค่าจ้าง, ล่วงเวลา) ยอดล่างคือยอดจ่ายจริงรอบนี้"
-              : "พนักงานประจำได้ค่าตอบแทนเป็นเงินเดือน — ยอด “ค่าตอบแทน” รายวันเป็นค่าอ้างอิงต่อวัน (เงินเดือน ÷ 30)"}
-          </p>
+          <>
+            {/* Authoritative: what was actually PAID (frozen snapshot). */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200">
+              <span className="font-semibold text-emerald-800">ยอดที่จ่ายจริง (บันทึกไว้)</span>
+              <span className="text-slate-600">ค่าตอบแทน: <b className="text-slate-800">{fmtMoney(line.base_pay)}</b></span>
+              <span className="text-slate-600">ค่าล่วงเวลา: <b className="text-slate-800">{line.ot_pay > 0 ? fmtMoney(line.ot_pay) : "—"}</b></span>
+              <span className="text-slate-600">รายรับรวม: <b className="text-slate-800">{fmtMoney(line.gross_pay)}</b></span>
+              <span className="text-slate-600">ยอดสุทธิ: <b className="text-emerald-700">{fmtMoney(line.net_pay)}</b></span>
+            </div>
+
+            {/* Divergence warning — the live daily recompute ≠ what was paid. */}
+            {divergent && (
+              <div className="text-xs bg-amber-50 rounded-lg px-3 py-2 border border-amber-300 text-amber-900 space-y-0.5">
+                <div className="font-bold">⚠️ การคำนวณสดต่างจากยอดที่จ่ายจริง</div>
+                <div>
+                  ตารางรายวันด้านบนคำนวณสดจากบันทึกเวลา<b>ปัจจุบัน</b> = <b>{fmtMoney(liveGross)}</b> แต่รอบนี้จ่ายไปแล้วที่ <b>{fmtMoney(paidGross)}</b> (ต่าง {fmtMoney(Math.abs(liveGross - paidGross))})
+                </div>
+                <div className="text-amber-800">
+                  มักเกิดจากมีการอนุมัติ OT หรือแก้เวลาหลังปิดรอบ · <b>ยอดที่จ่ายจริงคือยอดที่บันทึกไว้ด้านบน</b> — ถ้าต้องจ่ายเพิ่ม/คืน ให้ปลดล็อกทำจ่าย (ผู้ดูแลสูงสุด) แล้วคำนวณใหม่
+                </div>
+              </div>
+            )}
+
+            {/* Live recompute reconciliation (reference only). */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
+              <span className="font-semibold text-slate-600">คำนวณสดจากบันทึกเวลาปัจจุบัน (อ้างอิง)</span>
+              <span className="text-slate-500">ชั่วโมงทำงานรวม: <b className="text-slate-700">{fmtMin(tot.work)}</b>{tot.ot > 0 && <> + ล่วงเวลา <b className="text-slate-700">{fmtMin(tot.ot)}</b></>}</span>
+              {ftMonthly
+                ? <span className="text-slate-500">รวม (สด): <b className="text-slate-700">{fmtMoney(liveGross)}</b></span>
+                : <span className="text-slate-500">ค่าตอบแทนรวม (สด): <b className="text-slate-700">{fmtMoney(tot.pay)}</b></span>}
+            </div>
+
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              {line.employment_type === "pt"
+                ? "“ชั่วโมงทำงาน” = เวลาหลังปัดเข้ากรอบกะ แล้วหักเวลาพักตามกะ · ส่วนเกิน 8 ชม./วัน นับเป็นทำงานล่วงเวลา · ตารางรายวันเป็นการคำนวณสด อาจต่างจากยอดที่จ่ายจริงถ้ามีการแก้ไขหลังปิดรอบ"
+                : ftMonthly
+                ? "พนักงานประจำได้เงินเดือนเต็ม (รวมวันหยุด) — ตารางแสดงเฉพาะส่วนที่เพิ่ม/หักจากเงินเดือน · เป็นการคำนวณสดเพื่ออ้างอิง"
+                : "พนักงานประจำได้ค่าตอบแทนเป็นเงินเดือน — ยอดรายวันเป็นค่าอ้างอิงต่อวัน (เงินเดือน ÷ 30)"}
+            </p>
+          </>
         )}
 
         <div className="flex justify-end pt-1">
