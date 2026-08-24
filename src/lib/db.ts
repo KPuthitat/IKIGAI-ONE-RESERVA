@@ -2967,6 +2967,31 @@ function runMigrations(db: Database.Database): void {
       ON branch_approval_tiers (branch_id, tier_level);
   `);
 
+  // ── Organization chart (2026-08-24) ───────────────────────────────
+  // A per-branch, multi-level org tree the owner edits directly. Each row
+  // places one employee on one branch's chart with:
+  //   reports_to_user_id = their manager (another user ON THE SAME branch's
+  //                        chart); NULL = a root (e.g. branch manager)
+  //   department         = free-text grouping label (e.g. "FOH", "BOH")
+  // The tree is built from reports_to_user_id; department is a colour/label
+  // grouping only. A user can appear on more than one branch's chart (they
+  // work multiple branches) — hence the (branch_id, user_id) uniqueness.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS org_chart_nodes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reports_to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      department TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, user_id)
+    );
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_org_chart_branch ON org_chart_nodes (branch_id);
+  `);
+
   // current_tier tracks where a pending leave/resignation request is
   // in the approval pipeline. NULL on rows submitted before the
   // migration — those still use the legacy current_approver_user_id
