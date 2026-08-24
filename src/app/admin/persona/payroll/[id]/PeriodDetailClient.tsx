@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
@@ -144,6 +144,10 @@ export default function PeriodDetailClient({
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [editLine, setEditLine] = useState<PayrollLineRow | null>(null);
+  // Read-only per-day calculation viewer (owner 2026-08-24) — after a period is
+  // finalized/paid the editor is locked, but the daily breakdown must stay
+  // viewable (how each day's pay was computed), not just the payslip.
+  const [viewCalcLine, setViewCalcLine] = useState<PayrollLineRow | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // confirmFinalize is now replaced by pinFinalizeOpen — the PIN modal
   // captures the PIN and sends it together with the finalize action.
@@ -764,6 +768,14 @@ export default function PeriodDetailClient({
                         {t(lang, "common.edit")}
                       </button>
                     )}
+                    {/* After finalize/pay the editor is locked — offer a read-only
+                        per-day calculation view so the breakdown stays visible. */}
+                    {!isDraft && (
+                      <button type="button" onClick={() => setViewCalcLine(l)}
+                        className="ml-1 text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">
+                        ดูการคำนวณ
+                      </button>
+                    )}
                     {isDraft && (
                       <button type="button" onClick={() => toggleReview(l)}
                         disabled={reviewBusy === l.user_id}
@@ -854,6 +866,15 @@ export default function PeriodDetailClient({
             setEditLine(null);
             startTransition(() => router.refresh());
           }}
+        />
+      )}
+
+      {viewCalcLine && (
+        <DayCalcModal
+          lang={lang}
+          periodId={period.id}
+          line={viewCalcLine}
+          onClose={() => setViewCalcLine(null)}
         />
       )}
 
@@ -2345,5 +2366,201 @@ function LineEditModal({
       />
     )}
     </>
+  );
+}
+
+// Read-only per-day calculation viewer (owner 2026-08-24). Reuses the same
+// /breakdown data as the editor but renders ONLY the daily table — no PIN, no
+// edit affordances — so a finalized/paid period's calculation stays viewable.
+function DayCalcModal({
+  lang, periodId, line, onClose
+}: { lang: Lang; periodId: number; line: PayrollLineRow; onClose: () => void }) {
+  const [days, setDays] = useState<BreakdownDay[] | null>(null);
+  const [ftMonthly, setFtMonthly] = useState(false);
+  const [salaryBase, setSalaryBase] = useState(0);
+  const [doublePremium, setDoublePremium] = useState(0);
+  const [actualOt, setActualOt] = useState(0);
+  const [actualTotal, setActualTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(
+          apiUrl(`/api/admin/persona/payroll/periods/${periodId}/lines/${line.user_id}/breakdown`),
+          { headers: { "content-type": "application/json" } }
+        );
+        const j = await res.json().catch(() => ({}));
+        if (!alive) return;
+        if (!res.ok || !j?.ok) { setErr(j?.error ?? t(lang, "common.error")); return; }
+        setDays(j.days as BreakdownDay[]);
+        setFtMonthly(!!j.ftMonthly);
+        setSalaryBase(Number(j.salaryBase) || 0);
+        setDoublePremium(Number(j.doublePremium) || 0);
+        setActualOt(Number(j.actualOt) || 0);
+        setActualTotal(Number(j.actualTotal) || 0);
+      } catch { if (alive) setErr(t(lang, "common.error")); }
+      finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [lang, periodId, line.user_id]);
+
+  const tot = useMemo(() => (days ?? []).reduce((s, d) => ({
+    work: s.work + d.effectiveMinutes, brk: s.brk + d.breakMinutes,
+    ot: s.ot + d.otMinutes, otPay: s.otPay + d.otPay, pay: s.pay + d.pay
+  }), { work: 0, brk: 0, ot: 0, otPay: 0, pay: 0 }), [days]);
+  const workedDays = useMemo(() => (days ?? []).filter((d) => d.pairs.some((p) => p.workIn)).length, [days]);
+  const clampedPair = (p: BreakdownDay["pairs"][number]) =>
+    p.durationMinutes > 0 && (p.effectiveMinutes + p.otMinutes + p.breakMinutes) !== p.durationMinutes;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-8 p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-slate-800">วิธีการคำนวณรายวัน · ดูอย่างเดียว</h3>
+            <p className="text-xs text-slate-500">{nameWithPrefix(line.title_prefix, line.display_name)}
+              {days ? <span className="ml-2 text-slate-400">มาทำงาน {workedDays} วัน · ทั้งรอบ {days.length} วัน</span> : null}</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+
+        {loading && <p className="text-sm text-slate-500">กำลังโหลด…</p>}
+        {err && <p className="text-sm text-rose-600">✗ {err}</p>}
+        {days && days.length === 0 && (
+          <p className="text-sm text-slate-500 italic bg-slate-50 rounded p-3 text-center">ไม่มีบันทึกเวลาเข้า-ออกในรอบนี้</p>
+        )}
+
+        {days && days.length > 0 && (
+          <div className="overflow-x-auto -mx-2">
+            <table className="w-full text-xs whitespace-nowrap">
+              <thead className="bg-slate-100">
+                <tr className="text-slate-600">
+                  <th className="text-left px-2 py-1.5 font-semibold">วันที่</th>
+                  <th className="text-left px-2 py-1.5 font-semibold">บันทึกเวลาเข้าออก</th>
+                  <th className="text-left px-2 py-1.5 font-semibold">เวลาเข้าออกงาน</th>
+                  <th className="text-right px-2 py-1.5 font-semibold">เวลาพัก</th>
+                  <th className="text-right px-2 py-1.5 font-semibold">ชั่วโมงทำงาน</th>
+                  <th className="text-right px-2 py-1.5 font-semibold">ทำงานล่วงเวลา</th>
+                  <th className="text-right px-2 py-1.5 font-semibold">ค่าล่วงเวลา</th>
+                  <th className="text-right px-2 py-1.5 font-semibold">ค่าตอบแทน</th>
+                </tr>
+              </thead>
+              <tbody>
+                {days.flatMap((day) => day.pairs.map((p, i) => (
+                  <tr key={`${day.date}-${i}`} className="border-t border-slate-100">
+                    <td className="px-3 py-2 font-mono align-middle">
+                      {i === 0 && (
+                        <div className="space-y-1">
+                          <div className="text-slate-600">{day.date}</div>
+                          {((!p.statusLabel && day.shift) || day.edited || p.holiday || p.double || (!p.statusLabel && p.branch)) && (
+                          <div className="flex flex-wrap items-center gap-1">
+                            {!p.statusLabel && day.shift && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded font-sans font-bold min-w-[2.5rem] text-center"
+                                style={{ backgroundColor: day.shift.color || "#e2e8f0", color: "#1a1a2e" }}
+                                title={day.shift.name ?? day.shift.code}>{day.shift.code}</span>
+                            )}
+                            {!p.statusLabel && p.branch && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-sans">{p.branch}</span>
+                            )}
+                            {day.edited && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-sans">แก้ไขแล้ว</span>}
+                            {p.holiday && !p.double && <span className="text-[9px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-sans">วันพิเศษ ×1.5</span>}
+                            {p.double && <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-sans font-bold">จ่ายสองเท่า ×2</span>}
+                          </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 font-mono align-middle">
+                      {p.statusLabel ? (
+                        <span className={`text-[9px] font-sans px-1.5 py-0.5 rounded ${
+                          p.statusLabel === "ขาดงาน" ? "bg-rose-100 text-rose-700"
+                            : p.statusLabel === "วันหยุด" ? "bg-slate-100 text-slate-600" : "bg-sky-100 text-sky-700"}`}>{p.statusLabel}</span>
+                      ) : (
+                        <>
+                          {p.workIn ?? <span className="text-rose-500">ขาด</span>}
+                          <span className="text-slate-300">–</span>
+                          {p.workOut ?? <span className="text-rose-500">ขาด</span>}
+                          {clampedPair(p) && (
+                            <span className="block text-[9px] text-slate-400">ลงเวลาจริง {fmtMin(p.durationMinutes)}</span>
+                          )}
+                          {(p.lateMin > 0 || p.earlyMin > 0) && (
+                            <span className="block text-[9px] font-sans">
+                              {p.lateMin > 0 && <span className="text-rose-600">มาสาย {p.lateMin} น.</span>}
+                              {p.lateMin > 0 && p.earlyMin > 0 && " · "}
+                              {p.earlyMin > 0 && <span className="text-amber-600">กลับก่อน {p.earlyMin} น.</span>}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 font-mono text-slate-500">
+                      {p.schedIn && p.schedOut ? `${p.schedIn}–${p.schedOut}` : <span className="text-slate-300">—</span>}
+                      {!p.statusLabel && day.otUntil && (
+                        <span className="block text-[9px] font-sans text-blue-600">
+                          {day.otApprovedUntil ? "ขอ OT ถึง " : "ตั้ง OT ถึง "}{day.otUntil} น.
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono text-slate-500">{p.breakMinutes > 0 ? fmtMin(p.breakMinutes) : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{p.effectiveMinutes > 0 ? fmtMin(p.effectiveMinutes) : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{p.otMinutes > 0 ? fmtMin(p.otMinutes) : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{p.otPay > 0 ? fmtMoney(p.otPay) : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">
+                      {ftMonthly
+                        ? (p.statusLabel ? <span className="text-[10px] font-sans text-slate-400">ได้ค่าจ้าง (ในเงินเดือน)</span>
+                          : p.pay > 0 ? <span className="text-emerald-600">+{fmtMoney(p.pay)}</span>
+                          : <span className="text-[10px] font-sans text-slate-400">อยู่ในเงินเดือน</span>)
+                        : (p.pay > 0 ? fmtMoney(p.pay) : <span className="text-slate-300">—</span>)}
+                    </td>
+                  </tr>
+                )))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 font-semibold text-slate-700">
+                  <td className="px-3 py-2" colSpan={3}>รวม</td>
+                  <td className="px-2 py-1.5 text-right font-mono">{fmtMin(tot.brk)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono">{fmtMin(tot.work)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono">{fmtMin(tot.ot)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono">{fmtMoney(tot.otPay)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono">{ftMonthly ? fmtMoney(salaryBase + tot.pay) : fmtMoney(tot.pay)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+
+        {days && days.length > 0 && (ftMonthly ? (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs bg-rose-50/60 rounded-lg px-3 py-2 border border-rose-100">
+            <span className="text-slate-600">คำนวณชั่วโมงทำงานรวม: <b className="text-slate-800">{fmtMin(tot.work)}</b>{tot.ot > 0 && <> + ล่วงเวลา <b className="text-slate-800">{fmtMin(tot.ot)}</b></>}</span>
+            <span className="text-slate-600">เงินเดือน (รวมวันหยุด/วัน off{(Number(line.unpaid_leave_days) || 0) > 0 ? " หลังหักลาแล้ว" : ""}): <b className="text-slate-800">{fmtMoney(salaryBase)}</b></span>
+            {doublePremium > 0 && <span className="text-slate-600">จ่าย 2 เท่า: <b className="text-slate-800">+{fmtMoney(doublePremium)}</b></span>}
+            {actualOt > 0 && <span className="text-slate-600">ล่วงเวลา: <b className="text-slate-800">+{fmtMoney(actualOt)}</b></span>}
+            <span className="text-slate-600">ยอดจ่ายจริงรอบนี้: <b className="text-brand">{fmtMoney(actualTotal)}</b></span>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs bg-rose-50/60 rounded-lg px-3 py-2 border border-rose-100">
+            <span className="text-slate-600">คำนวณชั่วโมงทำงานรวม: <b className="text-slate-800">{fmtMin(tot.work)}</b>{tot.ot > 0 && <> + ล่วงเวลา <b className="text-slate-800">{fmtMin(tot.ot)}</b></>}</span>
+            <span className="text-slate-600">คำนวณค่าตอบแทนรวม: <b className="text-brand">{fmtMoney(tot.pay)}</b></span>
+          </div>
+        ))}
+        {days && days.length > 0 && (
+          <p className="text-[10px] text-slate-400 leading-relaxed">
+            {line.employment_type === "pt"
+              ? "“ชั่วโมงทำงาน” = เวลาหลังปัดเข้ากรอบกะ แล้วหักเวลาพักตามกะ · ส่วนเกิน 8 ชม./วัน นับเป็นทำงานล่วงเวลา"
+              : ftMonthly
+              ? "พนักงานประจำได้เงินเดือนเต็ม (รวมวันหยุด) — ตารางนี้แสดงเฉพาะส่วนที่เพิ่ม/หักจากเงินเดือน (วันจ่าย 2 เท่า, ลาไม่รับค่าจ้าง, ล่วงเวลา) ยอดล่างคือยอดจ่ายจริงรอบนี้"
+              : "พนักงานประจำได้ค่าตอบแทนเป็นเงินเดือน — ยอด “ค่าตอบแทน” รายวันเป็นค่าอ้างอิงต่อวัน (เงินเดือน ÷ 30)"}
+          </p>
+        )}
+
+        <div className="flex justify-end pt-1">
+          <button type="button" onClick={onClose} className="btn-secondary">{t(lang, "common.close")}</button>
+        </div>
+      </div>
+    </div>
   );
 }
