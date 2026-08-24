@@ -90,6 +90,15 @@ export default function CompanyOverviewPage({
   const ov = companyOverviewMonth(companyId, month);
   const maxBranchSales = Math.max(1, ...ov.branches.map((b) => b.sales));
 
+  // รายได้คาดการณ์ทั้งเดือน (owner 2026-08-24) — run-rate: ยอดขายถึงวันนี้ ÷
+  // วันที่ผ่านไป × วันทั้งเดือน. เฉพาะเดือนปัจจุบัน (เดือนที่ผ่านมามียอดครบแล้ว).
+  const [fcY, fcM] = month.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(fcY, fcM, 0)).getUTCDate();
+  const elapsedDays = Number(todayBkk().slice(8, 10));
+  const forecastSales = month === nowMonth && elapsedDays > 0
+    ? Math.round((ov.totals.sales / elapsedDays) * daysInMonth * 100) / 100
+    : null;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -142,6 +151,13 @@ export default function CompanyOverviewPage({
             <div className="mt-2 pt-2 border-t border-slate-100 flex items-baseline justify-between">
               <span className="text-[11px] text-slate-500">วันนี้ ({thDayLabel(ov.today.date)})</span>
               <span className="text-sm font-semibold text-slate-700 tabular-nums">{fmtMoney(ov.today.sales)}</span>
+            </div>
+          )}
+          {forecastSales != null && (
+            <div className="mt-1 flex items-baseline justify-between"
+              title={`คาดการณ์แบบ run-rate: ยอดขาย ${fmtMoney(ov.totals.sales)} ÷ ${elapsedDays} วัน × ${daysInMonth} วันทั้งเดือน`}>
+              <span className="text-[11px] text-slate-400">คาดการณ์ทั้งเดือน</span>
+              <span className="text-xs font-medium text-slate-500 tabular-nums">{fmtMoney(forecastSales)}</span>
             </div>
           )}
         </div>
