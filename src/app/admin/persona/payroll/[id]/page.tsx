@@ -188,6 +188,17 @@ export default function PeriodDetailPage({
       )
   `).get(id) as { n: number }).n;
 
+  // Approved OT that landed AFTER this period's snapshot was computed (owner
+  // 2026-08-24) — the ธีริศรา case: OT approved post-compute, paid from the stale
+  // snapshot → underpaid. Warn (not block) before finalize/pay so the admin can
+  // recompute first. Only meaningful once the period has been computed.
+  const otApprovedAfterCompute = period.computed_at ? (db.prepare(`
+    SELECT COUNT(*) AS n FROM ot_requests o
+     WHERE o.status = 'approved' AND o.decided_at IS NOT NULL AND o.decided_at > ?
+       AND o.work_date >= ? AND o.work_date <= ?
+       AND o.user_id IN (SELECT user_id FROM payroll_lines WHERE period_id = ?)
+  `).get(period.computed_at, period.period_start, period.period_end, id) as { n: number }).n : 0;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
@@ -208,6 +219,7 @@ export default function PeriodDetailPage({
         unlockHistory={unlockHistory}
         userPinSet={pinSet}
         staleSnapshotCount={staleCount}
+        otApprovedAfterCompute={otApprovedAfterCompute}
       />
     </div>
   );

@@ -128,7 +128,8 @@ export type UnlockEntry = {
 };
 
 export default function PeriodDetailClient({
-  lang, period, lines, addableStaff, missingStaff, unlockHistory, userPinSet, staleSnapshotCount
+  lang, period, lines, addableStaff, missingStaff, unlockHistory, userPinSet, staleSnapshotCount,
+  otApprovedAfterCompute = 0
 }: {
   lang: Lang;
   period: PeriodDetail;
@@ -138,6 +139,7 @@ export default function PeriodDetailClient({
   unlockHistory: UnlockEntry[];
   userPinSet: boolean;
   staleSnapshotCount: number;
+  otApprovedAfterCompute?: number;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -164,6 +166,18 @@ export default function PeriodDetailClient({
   const isFinalized = period.status === "finalized";
   const isPaid = period.status === "paid";
   const isPosted = period.posted_at != null; // ลงบัญชีแล้ว (step 3) — only when paid
+  // Snapshot may be stale vs current inputs — pay settings changed, or OT was
+  // approved after this round was computed (owner 2026-08-24). Warn before
+  // finalize/pay so the admin recomputes first and nobody is underpaid.
+  const needsRecompute = staleSnapshotCount > 0 || otApprovedAfterCompute > 0;
+  const recomputeWarn = needsRecompute ? (
+    <p className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2">
+      ⚠️ ยอดที่คำนวณไว้อาจ<b>ไม่ตรงปัจจุบัน</b>
+      {otApprovedAfterCompute > 0 ? ` — มี OT ที่เพิ่งอนุมัติหลังคำนวณ ${otApprovedAfterCompute} รายการ` : ""}
+      {staleSnapshotCount > 0 ? ` — มีการแก้อัตรา/ประเภทค่าจ้าง ${staleSnapshotCount} คน` : ""}
+      {" "}· ควรกด <b>“คำนวณใหม่”</b> ก่อน ไม่งั้นอาจจ่ายขาด/เกิน
+    </p>
+  ) : null;
 
   async function performAction(
     action: "recompute" | "finalize" | "unfinalize" | "mark_paid" | "repost_accounta" | "post_accounta" | "unpost_accounta",
@@ -893,7 +907,7 @@ export default function PeriodDetailClient({
       {pinFinalizeOpen && (
         <PinPromptModal
           title={t(lang, "admin.persona.payroll.confirmFinalizeTitle")}
-          description={<p className="text-xs text-slate-600">{t(lang, "admin.persona.payroll.confirmFinalize")}</p>}
+          description={<div className="space-y-2">{recomputeWarn}<p className="text-xs text-slate-600">{t(lang, "admin.persona.payroll.confirmFinalize")}</p></div>}
           submitLabel={t(lang, "admin.persona.payroll.action.finalize")}
           onClose={() => setPinFinalizeOpen(false)}
           onSubmit={async (pin) => {
@@ -919,6 +933,7 @@ export default function PeriodDetailClient({
         title={t(lang, "admin.persona.payroll.confirmPayTitle")}
         body={
           <div className="space-y-3">
+            {recomputeWarn}
             <p>{t(lang, "admin.persona.payroll.confirmPay")}</p>
             <div>
               <label className="label">
