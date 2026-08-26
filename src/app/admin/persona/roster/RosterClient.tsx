@@ -657,8 +657,11 @@ function AssignModal({
             {staff.map((s) => {
               const ty = leaveForDate[s.id];
               const dupElsewhere = assignedUserIds.has(s.id) && s.id !== existing?.user_id;
-              // ชื่อเล่นก่อน (ถ้ามี) — ระบุตัวง่ายกว่า (owner 2026-08-04)
-              const label = s.nickname_th?.trim() || nameWithPrefix(s.title_prefix, s.display_name);
+              // ชื่อจริง-นามสกุล (ชื่อเล่น) — ชื่อเล่นซ้ำกันได้ ต้องมีชื่อจริงกำกับ
+              // เพื่อแยกคนออก (owner 2026-08-24).
+              const fullName = nameWithPrefix(s.title_prefix, s.display_name);
+              const nick = s.nickname_th?.trim();
+              const label = nick ? `${fullName} (${nick})` : fullName;
               const note = ty ? ` · ${leaveLabel(ty)}` : dupElsewhere ? " · ลงตำแหน่งอื่นแล้ว" : "";
               return (
                 <option key={s.id} value={s.id} disabled={(!!ty || dupElsewhere) && s.id !== existing?.user_id}>
