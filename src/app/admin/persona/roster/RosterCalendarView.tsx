@@ -45,7 +45,7 @@ type PositionLite = { id: number; title: string };
 
 /** Birthday marker rendered on each matching day of the calendar.
  *  Triggers a greeting modal so colleagues can fire off a quick
- *  "🎂 สุขสันต์วันเกิด" via the LINE OA. Birthdays roll over yearly
+ *  "สุขสันต์วันเกิด" via the LINE OA. Birthdays roll over yearly
  *  (we match month-day, not full date) so a 2002-04-15 dob shows on
  *  April 15 every year. */
 type BirthdayLite = {
@@ -159,7 +159,7 @@ export default function RosterCalendarView({
     return m;
   }, [dayDetailAllAssignments]);
 
-  // Group birthdays by MM-DD so we can render a 🎂 icon on each
+  // Group birthdays by MM-DD so we can render a icon on each
   // matching cell. People with the same dob land in the same bucket
   // (rare but possible — 2 staff sharing 5 January, etc.).
   const birthdaysByMonthDay = useMemo(() => {
@@ -181,9 +181,9 @@ export default function RosterCalendarView({
   const [greetStatus, setGreetStatus] = useState<string | null>(null);
 
   const GREET_PRESETS = [
-    "🎂 สุขสันต์วันเกิดครับ! ขอให้สุขภาพแข็งแรง รวยๆ ปังๆ ทั้งปีนะครับ ✨",
-    "🥳 Happy Birthday! ขอให้สมหวังทุกเรื่องที่ตั้งใจไว้นะครับ 🍰",
-    "🎉 สุขสันต์วันเกิดค่ะ! เป็นเพื่อนร่วมงานที่ดีตลอดมา ขอให้มีความสุขมากๆ นะคะ 💐"
+    "สุขสันต์วันเกิดครับ! ขอให้สุขภาพแข็งแรง รวยๆ ปังๆ ทั้งปีนะครับ",
+    "Happy Birthday! ขอให้สมหวังทุกเรื่องที่ตั้งใจไว้นะครับ",
+    "สุขสันต์วันเกิดค่ะ! เป็นเพื่อนร่วมงานที่ดีตลอดมา ขอให้มีความสุขมากๆ นะคะ"
   ];
 
   async function sendGreeting(): Promise<void> {
@@ -295,17 +295,14 @@ export default function RosterCalendarView({
                   {cell.day}
                 </span>
                 <div className="flex items-center gap-1">
-                  {holiday && (
-                    <span className="text-[10px]" title={holiday}>🎌</span>
-                  )}
                   {isOff && (
                     <span className="text-[8px] uppercase tracking-wider font-bold text-slate-400">
                       OFF
                     </span>
                   )}
                   {dayBirthdays.length > 0 && (
-                    <span className="text-[10px]" title={dayBirthdays.map(b => b.display_name).join(", ")}>
-                      🎂
+                    <span className="text-[10px] text-amber-600" title={dayBirthdays.map(b => b.display_name).join(", ")}>
+                      ★
                     </span>
                   )}
                   {rows.length > 0 && !selfFocusMode && (
@@ -395,7 +392,6 @@ export default function RosterCalendarView({
                       key={b.user_id}
                       className="flex items-center gap-2 text-xs bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5"
                     >
-                      <span className="text-base">🎂</span>
                       <span className="font-bold text-slate-800 flex-1 truncate">
                         วันเกิด {b.nickname_th?.trim() || b.display_name}
                       </span>
@@ -452,7 +448,7 @@ export default function RosterCalendarView({
             </div>
           ) : selfFocusMode ? (
             <div className="text-xs text-slate-500 italic py-2">
-              วันนี้คุณไม่ได้เข้างาน 🛋️
+              วันนี้คุณไม่ได้เข้างาน
             </div>
           ) : null}
 
@@ -472,13 +468,13 @@ export default function RosterCalendarView({
                     onClick={() => setShowColleagues(true)}
                     className="w-full text-xs py-2 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 font-medium"
                   >
-                    👥 ดูเพื่อนร่วมงานในวันนี้ ({colleagues.length} คน) ▼
+                    ดูเพื่อนร่วมงานในวันนี้ ({colleagues.length} คน) ▼
                   </button>
                 ) : (
                   <>
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
-                        👥 เพื่อนร่วมงานในวันนี้ ({colleagues.length})
+                        เพื่อนร่วมงานในวันนี้ ({colleagues.length})
                       </h4>
                       <button
                         type="button"
@@ -527,7 +523,7 @@ export default function RosterCalendarView({
         {selfFocusMode
           ? "ช่อง OFF = วันหยุด · คลิกวันเพื่อดูรายละเอียด + เพื่อนร่วมงาน"
           : "คลิกที่ช่องวันเพื่อดูรายละเอียดทั้งหมด"}
-        {(birthdays?.length ?? 0) > 0 && " · 🎂 = วันเกิดเพื่อนร่วมงาน คลิกเพื่อส่งคำอวยพร"}
+        {(birthdays?.length ?? 0) > 0 && " · = วันเกิดเพื่อนร่วมงาน คลิกเพื่อส่งคำอวยพร"}
       </div>
 
       {/* Birthday greeting modal. Renders only when greetTarget is set
@@ -545,7 +541,6 @@ export default function RosterCalendarView({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3">
-              <span className="text-3xl">🎂</span>
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-bold text-slate-800">
                   ส่งคำอวยพรวันเกิดให้

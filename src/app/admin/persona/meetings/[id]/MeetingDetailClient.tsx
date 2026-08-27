@@ -142,7 +142,7 @@ export default function MeetingDetailClient({
           {aiEnabled && meeting.summary?.trim() && (
             <button type="button" disabled={suggesting} onClick={suggestAI}
               className="text-xs px-3 py-1.5 rounded-md border border-brand text-brand font-bold hover:bg-brand/5 disabled:opacity-50">
-              {suggesting ? "AI กำลังคิด…" : "✨ สร้างเช็กลิสต์ด้วย AI"}
+              {suggesting ? "AI กำลังคิด…" : "สร้างเช็กลิสต์ด้วย AI"}
             </button>
           )}
         </div>

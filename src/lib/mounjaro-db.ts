@@ -16,7 +16,7 @@
 // employees, and doctor reads are filtered by attending_doctor_id at the
 // SQL level. Every clinical read/write writes an audit row.
 //
-// ⚠️  Do NOT query mounjaro_* tables anywhere else. All access goes here.
+// ⚠  Do NOT query mounjaro_* tables anywhere else. All access goes here.
 
 import { getDb } from "./db";
 import { computeAlerts, type Alert } from "./mounjaro-alerts";

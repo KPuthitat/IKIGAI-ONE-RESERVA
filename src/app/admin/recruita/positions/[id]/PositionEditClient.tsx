@@ -487,7 +487,7 @@ function QuestionEditor({
                 <select className="input !w-24 !py-1 !px-2 text-xs"
                   value={q.config?.icon ?? "star"}
                   onChange={(e) => updateConfig({ icon: e.target.value as "star" | "number" })}>
-                  <option value="star">⭐ ดาว</option>
+                  <option value="star">ดาว</option>
                   <option value="number">1 2 3 ตัวเลข</option>
                 </select>
               </label>

@@ -34,7 +34,7 @@ export default function ManagerReportsPage() {
         </div>
         <Link href="/admin/persona/meetings/prep"
           className="text-xs px-3 py-1.5 rounded border border-brand text-brand font-bold hover:bg-brand/5 whitespace-nowrap">
-          🗓 เตรียมประชุม (สรุปด้วย AI) →
+          เตรียมประชุม (สรุปด้วย AI) →
         </Link>
       </div>
       <ManagerReportsClient

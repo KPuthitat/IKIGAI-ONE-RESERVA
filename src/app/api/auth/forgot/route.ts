@@ -63,7 +63,7 @@ export async function POST(req: Request) {
             {
               type: "text",
               text:
-                "🔐 คำขอตั้งรหัสผ่านใหม่ (IKIGAI OS)\n\n" +
+                "คำขอตั้งรหัสผ่านใหม่ (IKIGAI OS)\n\n" +
                 "กดลิงก์นี้เพื่อตั้ง username / รหัสผ่าน / PIN ใหม่:\n" +
                 link +
                 "\n\nลิงก์ใช้ได้ 7 วัน และใช้ได้ครั้งเดียว\n" +

@@ -635,7 +635,7 @@ export default function BookingForm({
               />
               <div>
                 <div className="font-bold">
-                  {merged ? "🔗 " : ""}{t("booking.choose.tableX", { label: c.labels.join("+") })}
+                  {merged ? "" : ""}{t("booking.choose.tableX", { label: c.labels.join("+") })}
                   {idx === 0 && <span className="ml-2 text-[11px] font-medium text-brand">{t("booking.choose.recommended")}</span>}
                 </div>
                 <div className="text-sm text-slate-500">
@@ -789,7 +789,7 @@ export default function BookingForm({
             </p>
             {lunchBreakLabel && (
               <div className="mt-2 text-xs px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 flex items-start gap-2 leading-snug">
-                <span aria-hidden>🕐</span>
+                <span aria-hidden></span>
                 <span>
                   {t("booking.lunchBreakInfo", {
                     start: lunchBreakLabel.start, end: lunchBreakLabel.end

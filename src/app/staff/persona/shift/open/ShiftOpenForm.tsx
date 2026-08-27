@@ -686,7 +686,7 @@ export default function ShiftOpenForm({
                         : hasNote ? "text-amber-700"
                         : "text-slate-400"
                     }`}>
-                      {isChecked ? "✓" : hasNote ? "📝" : "✗"}
+                      {isChecked ? "✓" : hasNote ? "" : "✗"}
                     </span>
                   </label>
 

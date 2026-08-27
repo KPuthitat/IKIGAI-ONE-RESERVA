@@ -63,14 +63,14 @@ const GROUP_DM: ButtonDef[] = [
 export default function TestNotificationsClient() {
   return (
     <div className="space-y-6">
-      <Section title="📲 ส่งเข้า LINE ของคุณ (DM)"
+      <Section title="ส่งเข้า LINE ของคุณ (DM)"
                hint="ต้องเชื่อมต่อ LINE ที่ /staff/persona/profile ก่อน">
         <div className="grid sm:grid-cols-2 gap-3">
           {SELF_DM.map((b) => <TestButton key={b.kind} {...b} />)}
         </div>
       </Section>
 
-      <Section title="👥 ส่งเข้ากลุ่ม Executive"
+      <Section title="ส่งเข้ากลุ่ม Executive"
                hint="ตั้งค่า global_staff_group_id ที่ /admin/system-settings ก่อน">
         <div className="grid sm:grid-cols-2 gap-3">
           {GROUP_DM.map((b) => <TestButton key={b.kind} {...b} />)}
@@ -150,7 +150,7 @@ function TestButton({ kind, label, desc }: ButtonDef) {
         disabled={busy}
         className="btn-primary text-sm w-full disabled:opacity-50"
       >
-        {busy ? "กำลังส่ง…" : "📨 ส่งทดสอบ"}
+        {busy ? "กำลังส่ง…" : "ส่งทดสอบ"}
       </button>
       {result && (
         <div className={`text-xs ${result.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>

@@ -155,11 +155,11 @@ export default function AdminRosterPage({
       <div className="flex flex-wrap items-center gap-2">
         <Link href="/admin/persona/roster/shifts"
           className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
-          ⚙️ {t(lang, "admin.persona.roster.manageShifts")}
+          {t(lang, "admin.persona.roster.manageShifts")}
         </Link>
         <Link href="/admin/persona/roster/positions"
           className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
-          ⚙️ {t(lang, "admin.persona.roster.managePositions")}
+          {t(lang, "admin.persona.roster.managePositions")}
         </Link>
         <CsvImportButton />
         <NotifyShiftsButton />
@@ -216,7 +216,7 @@ export default function AdminRosterPage({
                 : "bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
-            🗓 ปฏิทิน
+            ปฏิทิน
           </Link>
         </div>
       </div>

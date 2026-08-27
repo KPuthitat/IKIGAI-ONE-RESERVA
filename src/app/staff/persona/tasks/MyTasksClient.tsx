@@ -34,7 +34,7 @@ export default function MyTasksClient({ items }: { items: MyActionItem[] }) {
     <div className="space-y-4">
       <div className="card space-y-1.5">
         <h2 className="font-bold text-slate-800 text-sm">ค้างอยู่ ({open.length})</h2>
-        {open.length === 0 && <p className="text-sm text-slate-400">ไม่มีงานค้าง 🎉</p>}
+        {open.length === 0 && <p className="text-sm text-slate-400">ไม่มีงานค้าง</p>}
         {open.map((it) => (
           <Row key={it.id} item={it} today={today} busy={busyId === it.id} onToggle={() => toggle(it)} />
         ))}

@@ -81,8 +81,8 @@ export default function SettingsClient({
         </div>
         <p className="text-[11px] text-slate-500">
           {hasSecret && hasToken
-            ? "✅ ระบบพร้อมส่งแจ้งเตือนผ่าน LINE OA นี้"
-            : "⚠️ ต้องใส่ Channel Secret + Access Token จึงจะส่งข้อความได้"}
+            ? "ระบบพร้อมส่งแจ้งเตือนผ่าน LINE OA นี้"
+            : "ต้องใส่ Channel Secret + Access Token จึงจะส่งข้อความได้"}
         </p>
       </div>
 

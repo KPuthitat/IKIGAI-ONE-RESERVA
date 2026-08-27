@@ -35,7 +35,7 @@ export async function POST(req: Request) {
 
   if (parsed.data.to_user_id === sender.id) {
     return NextResponse.json(
-      { error: "self_greet", message: "ส่งคำอวยพรให้ตัวเองไม่ได้นะ 😄" },
+      { error: "self_greet", message: "ส่งคำอวยพรให้ตัวเองไม่ได้นะ" },
       { status: 400 }
     );
   }
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
     ? `${sender.title_prefix}${sender.display_name}`
     : sender.display_name;
   const text =
-    `🎂 คำอวยพรวันเกิดจาก ${senderLabel}\n\n` +
+    `คำอวยพรวันเกิดจาก ${senderLabel}\n\n` +
     parsed.data.message;
 
   const result = await sendLinePush(channel.channel_token, {

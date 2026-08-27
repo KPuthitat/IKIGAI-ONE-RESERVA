@@ -403,7 +403,7 @@ export default function PatientDetailClient(props: {
                         <td className="py-2 pr-3 text-right tabular-nums">{isRest ? "—" : l.duration_min}</td>
                         <td className="py-2 pr-3 text-right tabular-nums">
                           {isRest ? "—" : l.rpe}
-                          {l.low_energy_flag && <span className="ml-1 text-[#B45309]" title={`เบาแต่เหนื่อยมาก — ${rpeLabel(l.rpe)}`}>⚑</span>}
+                          {l.low_energy_flag && <span className="ml-1 text-[#B45309]" title={`เบาแต่เหนื่อยมาก — ${rpeLabel(l.rpe)}`}>⚠</span>}
                         </td>
                         <td className="py-2 pr-3 text-right tabular-nums">
                           {l.kcal_est != null ? `~${l.kcal_est.toLocaleString("th-TH")}` : "—"}

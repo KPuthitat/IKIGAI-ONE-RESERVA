@@ -325,7 +325,7 @@ export default function RosterClient({
         ) : (
           <div className="space-y-1">
             <label className="label !mb-1">
-              🔍 ค้นชื่อพนักงาน เพื่อมุ่งเน้นเฉพาะคนนี้
+              ค้นชื่อพนักงาน เพื่อมุ่งเน้นเฉพาะคนนี้
             </label>
             <input className="input"
               value={focusQuery}
@@ -357,7 +357,7 @@ export default function RosterClient({
       {Object.keys(holidayMap).length > 0 && (
         <div className="flex items-center gap-1.5 text-[11px] text-amber-700 mb-1">
           <span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-400" />
-          🎌 = วันหยุดประเพณี (คอลัมน์สีเหลือง) — จัด OFF หรือให้มาทำงาน (เข้าโฟลว์ 2×/ใช้สิทธิ์)
+          = วันหยุดประเพณี (คอลัมน์สีเหลือง) — จัด OFF หรือให้มาทำงาน (เข้าโฟลว์ 2×/ใช้สิทธิ์)
         </div>
       )}
 
@@ -384,7 +384,7 @@ export default function RosterClient({
                     <div className="text-sm font-bold">{Number(day)}</div>
                     {holiday && (
                       <div className="text-[8px] leading-tight text-amber-700 font-bold truncate max-w-[64px] mx-auto">
-                        🎌 {holiday}
+                        {holiday}
                       </div>
                     )}
                   </th>

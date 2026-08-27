@@ -260,7 +260,7 @@ export default function CustomerDrillDown({
         {/* Visits (2/3) */}
         <div className="card lg:col-span-2">
           <h2 className="text-sm font-bold text-slate-700 mb-3">
-            🪑 Recent visits ({visits.length})
+            Recent visits ({visits.length})
           </h2>
           {visits.length === 0 ? (
             <div className="text-xs text-slate-400 py-6 text-center">
@@ -300,7 +300,7 @@ export default function CustomerDrillDown({
         {/* Top menu (1/3) */}
         <div className="card">
           <h2 className="text-sm font-bold text-slate-700 mb-3">
-            🍝 Top dishes
+            Top dishes
           </h2>
           {topMenu.length === 0 ? (
             <div className="text-xs text-slate-400 py-6 text-center">
@@ -326,7 +326,7 @@ export default function CustomerDrillDown({
       {/* Feedback */}
       <div className="card">
         <h2 className="text-sm font-bold text-slate-700 mb-3">
-          💬 Feedback ({feedback.length})
+          Feedback ({feedback.length})
         </h2>
         {feedback.length === 0 ? (
           <div className="text-xs text-slate-400 py-6 text-center">
@@ -371,7 +371,7 @@ export default function CustomerDrillDown({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card">
           <h2 className="text-sm font-bold text-slate-700 mb-3">
-            👁 Campaign touchpoints
+            Campaign touchpoints
           </h2>
           {touchpoints.length === 0 ? (
             <div className="text-xs text-slate-400 py-6 text-center">

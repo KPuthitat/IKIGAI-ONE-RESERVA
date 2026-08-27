@@ -79,7 +79,7 @@ export async function POST() {
     to: groupId,
     messages: [{
       type: "text",
-      text: `🧪 ทดสอบการส่งจาก IKIGAI OS PORTAL\nเวลา ${stamp} (UTC+7)\nผู้ทดสอบ: ${user.display_name}`
+      text: `ทดสอบการส่งจาก IKIGAI OS PORTAL\nเวลา ${stamp} (UTC+7)\nผู้ทดสอบ: ${user.display_name}`
     }]
   });
 

@@ -140,7 +140,7 @@ export default function AdminAscendaPage({
           pending: bs.score.pendingCount
         }))}
         // The auto-kind set is computed here so the client can show
-        // a "🔒 อัตโนมัติ" indicator + skip the edit modal for those.
+        // a "อัตโนมัติ" indicator + skip the edit modal for those.
         autoKindIds={branchKpis.concat(companyKpis)
           .filter((k) => isAutoKind(k.kind))
           .map((k) => k.id)}

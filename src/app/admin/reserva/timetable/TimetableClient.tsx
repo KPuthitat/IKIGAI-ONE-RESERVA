@@ -543,7 +543,6 @@ function TableRowComponent({
             title={`${b.customer_name} · ${b.party_size} ที่นั่ง · ${b.booking_time}`}
           >
             <div className="font-semibold truncate">
-              {bookingTables(b).length > 1 && <span title="รวมโต๊ะ">🔗 </span>}
               {b.customer_name}
             </div>
             <div className="opacity-80 truncate">

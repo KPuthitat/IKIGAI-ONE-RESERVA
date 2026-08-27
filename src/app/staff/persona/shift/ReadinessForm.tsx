@@ -288,7 +288,6 @@ export default function ReadinessForm({
   if (items.length === 0) {
     return (
       <div className="card text-center space-y-3 py-8">
-        <div className="text-4xl">⚙</div>
         <h2 className="font-bold text-slate-800">
           {t("staff.persona.readiness.emptyTitle")}
         </h2>

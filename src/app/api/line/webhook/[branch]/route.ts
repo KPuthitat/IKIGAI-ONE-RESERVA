@@ -139,7 +139,7 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // so steer it back to IKIGAI OS.
       let reply: string;
       if (channel.scope === "recruita") {
-        reply = `ℹ️ กลุ่มผู้บริหารรับสมัครงานใช้บอท IKIGAI OS (ไม่ใช่ IKIGAI Recruit)\nกรุณาเชิญบอท IKIGAI OS เข้ากลุ่มนี้แทน\n\nGroup ID:\n${groupId}`;
+        reply = `กลุ่มผู้บริหารรับสมัครงานใช้บอท IKIGAI OS (ไม่ใช่ IKIGAI Recruit)\nกรุณาเชิญบอท IKIGAI OS เข้ากลุ่มนี้แทน\n\nGroup ID:\n${groupId}`;
       } else if (channel.scope === "platform") {
         reply = `เพิ่ม OA เข้ากลุ่มเรียบร้อย\n\nGroup ID:\n${groupId}\n\nคัดลอก Group ID ด้านบนไปใส่ที่ ตั้งค่าระบบ ตามประเภทกลุ่ม:\n• กลุ่มพนักงาน (PERSONA) → กลุ่ม LINE พนักงานรวม\n• กลุ่มผู้บริหารรับสมัครงาน → "RECRUITA · กลุ่ม LINE ผู้บริหาร"`;
       } else {

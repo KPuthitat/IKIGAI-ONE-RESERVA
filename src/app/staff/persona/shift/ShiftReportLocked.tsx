@@ -154,7 +154,6 @@ export default function ShiftReportLocked({
   if (done) {
     return (
       <div className="card text-center space-y-3">
-        <div className="text-5xl">📨</div>
         <h2 className="text-xl font-bold text-slate-800">
           {t("staff.persona.shiftReport.locked.requestSent.title")}
         </h2>
@@ -169,7 +168,6 @@ export default function ShiftReportLocked({
     <div className="space-y-4">
       <div className="card border-l-4 border-emerald-400 bg-emerald-50/50">
         <div className="flex items-start gap-3">
-          <div className="text-3xl">✅</div>
           <div className="flex-1 space-y-1">
             <h2 className="font-bold text-slate-800">
               {t("staff.persona.shiftReport.locked.title")}
@@ -209,7 +207,7 @@ export default function ShiftReportLocked({
           onClick={resendNotification}
           className="text-sm px-3 py-1.5 rounded-lg border border-brand text-brand font-bold hover:bg-rose-50 disabled:opacity-50"
         >
-          📨 {resendBusy ? t("common.submitting") : t("staff.persona.shiftReport.locked.resendBtn")}
+          {resendBusy ? t("common.submitting") : t("staff.persona.shiftReport.locked.resendBtn")}
         </button>
       </div>
       {resendMsg && (
@@ -240,7 +238,7 @@ export default function ShiftReportLocked({
           className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 font-bold hover:bg-slate-50"
           aria-expanded={detailOpen}
         >
-          🔍 {t("staff.persona.shiftReport.locked.viewDetail")}
+          {t("staff.persona.shiftReport.locked.viewDetail")}
           <span className="ml-1 text-[10px] leading-none">
             {detailOpen ? "▴" : "▾"}
           </span>

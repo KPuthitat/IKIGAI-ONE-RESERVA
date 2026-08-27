@@ -165,7 +165,7 @@ export default function CompetencyClient({
               <div className="card space-y-2">
                 <div className="text-sm font-bold text-slate-800">จุดอ่อน (ต่ำกว่าเป้า) → ไปวางแผนพัฒนา</div>
                 {weak.length === 0 ? (
-                  <p className="text-xs text-emerald-700">ไม่มีจุดที่ต่ำกว่าเป้า 🎉</p>
+                  <p className="text-xs text-emerald-700">ไม่มีจุดที่ต่ำกว่าเป้า</p>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {weak.map((w) => (

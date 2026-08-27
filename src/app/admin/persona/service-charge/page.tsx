@@ -171,7 +171,7 @@ export default function AdminServiceChargePage({
                 : "border-slate-300 text-slate-600 hover:bg-slate-50"
             }`}
           >
-            {m}{isManualSvcMonth(m) ? " ✎" : ""}
+            {m}{isManualSvcMonth(m) ? "" : ""}
           </Link>
         ))}
       </div>

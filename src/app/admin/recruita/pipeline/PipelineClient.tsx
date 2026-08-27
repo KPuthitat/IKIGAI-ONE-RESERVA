@@ -148,7 +148,7 @@ export default function PipelineClient({
         <input className="input flex-1 min-w-[200px]"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="🔍 ค้นชื่อ / เบอร์ / ตำแหน่ง" />
+          placeholder="ค้นชื่อ / เบอร์ / ตำแหน่ง" />
         <select className="input !w-auto"
           value={positionFilter}
           onChange={(e) => setPositionFilter(e.target.value)}>

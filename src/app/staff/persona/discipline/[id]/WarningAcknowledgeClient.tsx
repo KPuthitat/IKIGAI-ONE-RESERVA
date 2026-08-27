@@ -137,7 +137,7 @@ export default function WarningAcknowledgeClient({
     <div className="card space-y-3 border-amber-300 bg-amber-50/30">
       <div>
         <h2 className="font-bold text-amber-900">
-          ✋ {t("staff.persona.discipline.ackPrompt")}
+          {t("staff.persona.discipline.ackPrompt")}
         </h2>
         <p className="text-xs text-slate-600 mt-1">
           {t("staff.persona.discipline.ackHint")}

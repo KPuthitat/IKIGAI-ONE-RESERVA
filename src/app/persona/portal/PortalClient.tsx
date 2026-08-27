@@ -327,7 +327,7 @@ export default function PortalClient({ liffId }: { liffId: string }) {
                         onClick={shareUserIdToAdmin}
                         className="flex-1 py-2 rounded-lg bg-slate-600 text-white text-xs font-bold hover:bg-slate-700"
                       >
-                        📤 ส่งให้แอดมิน
+                        ส่งให้แอดมิน
                       </button>
                     </div>
                   </div>

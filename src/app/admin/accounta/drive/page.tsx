@@ -49,7 +49,7 @@ export default function AccountaDrivePage({ searchParams }: { searchParams: { dr
 
       {!serverReady && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          ⚠️ เซิร์ฟเวอร์ยังไม่ได้ตั้งค่า <code>GOOGLE_OAUTH_CLIENT_ID</code> / <code>GOOGLE_OAUTH_CLIENT_SECRET</code> —
+          เซิร์ฟเวอร์ยังไม่ได้ตั้งค่า <code>GOOGLE_OAUTH_CLIENT_ID</code> / <code>GOOGLE_OAUTH_CLIENT_SECRET</code> —
           ต้องวาง 2 ค่านี้บนเซิร์ฟเวอร์ก่อน ปุ่มเชื่อมต่อจึงจะใช้ได้
         </div>
       )}

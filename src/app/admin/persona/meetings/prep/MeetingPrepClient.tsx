@@ -109,7 +109,7 @@ export default function MeetingPrepClient({
           <span className="flex-1" />
           <button type="button" disabled={busy || !aiEnabled || reports.length === 0} onClick={summarize}
             className="text-sm px-4 py-1.5 rounded-md bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">
-            {busy ? "AI กำลังสรุป…" : "✨ สรุปด้วย AI"}
+            {busy ? "AI กำลังสรุป…" : "สรุปด้วย AI"}
           </button>
         </div>
         {!aiEnabled && (
@@ -125,7 +125,7 @@ export default function MeetingPrepClient({
       {summary && (
         <div className="card space-y-2 border-brand/30">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-slate-800">📋 วาระประชุม (จาก AI)</span>
+            <span className="font-bold text-slate-800">วาระประชุม (จาก AI)</span>
             {summaryMeta && <span className="text-[11px] text-slate-400">{summaryMeta}</span>}
             <span className="flex-1" />
             <button type="button" disabled={creating} onClick={createMeeting}

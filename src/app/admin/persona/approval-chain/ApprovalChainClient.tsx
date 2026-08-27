@@ -94,7 +94,7 @@ export default function ApprovalChainClient({
     <div className="space-y-4">
       {!ready && (
         <div className="card bg-amber-50 border-amber-200 text-xs text-amber-800">
-          ⚠️ ทั้งสองชั้นต้องมีอย่างน้อย 1 คน — มิเช่นนั้นพนักงานสาขา{" "}
+          ทั้งสองชั้นต้องมีอย่างน้อย 1 คน — มิเช่นนั้นพนักงานสาขา{" "}
           <span className="font-semibold">{branchName}</span>{" "}
           จะส่งคำขอลา / ลาออก ไม่ได้
         </div>

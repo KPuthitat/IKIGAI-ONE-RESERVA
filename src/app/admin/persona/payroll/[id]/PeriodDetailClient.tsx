@@ -172,7 +172,7 @@ export default function PeriodDetailClient({
   const needsRecompute = staleSnapshotCount > 0 || otApprovedAfterCompute > 0;
   const recomputeWarn = needsRecompute ? (
     <p className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2">
-      ⚠️ ยอดที่คำนวณไว้อาจ<b>ไม่ตรงปัจจุบัน</b>
+      ยอดที่คำนวณไว้อาจ<b>ไม่ตรงปัจจุบัน</b>
       {otApprovedAfterCompute > 0 ? ` — มี OT ที่เพิ่งอนุมัติหลังคำนวณ ${otApprovedAfterCompute} รายการ` : ""}
       {staleSnapshotCount > 0 ? ` — มีการแก้อัตรา/ประเภทค่าจ้าง ${staleSnapshotCount} คน` : ""}
       {" "}· ควรกด <b>“คำนวณใหม่”</b> ก่อน ไม่งั้นอาจจ่ายขาด/เกิน
@@ -606,7 +606,7 @@ export default function PeriodDetailClient({
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
               <h3 className="font-semibold text-rose-900">
-                ⚠️ พนักงาน {missingStaff.length} คนยังไม่อยู่ในรอบนี้
+                พนักงาน {missingStaff.length} คนยังไม่อยู่ในรอบนี้
               </h3>
               <p className="text-sm text-rose-800 mt-1">
                 {missingStaff.map((s) => nameWithPrefix(s.title_prefix, s.display_name)).join(", ")}
@@ -2564,7 +2564,7 @@ function DayCalcModal({
             {/* Divergence warning — the live daily recompute ≠ what was paid. */}
             {divergent && (
               <div className="text-xs bg-amber-50 rounded-lg px-3 py-2 border border-amber-300 text-amber-900 space-y-0.5">
-                <div className="font-bold">⚠️ การคำนวณสดต่างจากยอดที่จ่ายจริง</div>
+                <div className="font-bold">การคำนวณสดต่างจากยอดที่จ่ายจริง</div>
                 <div>
                   ตารางรายวันด้านบนคำนวณสดจากบันทึกเวลา<b>ปัจจุบัน</b> = <b>{fmtMoney(liveGross)}</b> แต่รอบนี้จ่ายไปแล้วที่ <b>{fmtMoney(paidGross)}</b> (ต่าง {fmtMoney(Math.abs(liveGross - paidGross))})
                 </div>

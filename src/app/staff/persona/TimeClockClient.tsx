@@ -1276,7 +1276,6 @@ function ClockAction({
   if (phase === "success") {
     return (
       <div className="bg-emerald-50 border border-emerald-200 rounded-2xl py-6">
-        <div className="text-4xl mb-2">✅</div>
         <div className="text-emerald-800 font-bold">
           {actualAction === "in" ? t("staff.persona.success.in") : t("staff.persona.success.out")}
         </div>
@@ -1705,7 +1704,6 @@ function BranchTransferModal({
 
         {phase === "success" ? (
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl py-6 text-center">
-            <div className="text-4xl mb-2">✅</div>
             <div className="text-emerald-800 font-bold">
               {t("staff.persona.transfer.success", { branch: target?.name ?? "" })}
             </div>
@@ -1970,7 +1968,6 @@ function PinSetup({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="card text-center">
-      <div className="text-4xl mb-2">🔒</div>
       <h2 className="text-lg font-bold text-slate-800">{t("staff.persona.setupPin.title")}</h2>
       <p className="text-sm text-slate-500 mt-1">{t("staff.persona.setupPin.subtitle")}</p>
       <div className="mt-6 mb-3">

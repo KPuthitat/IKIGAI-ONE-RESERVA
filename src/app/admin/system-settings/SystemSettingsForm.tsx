@@ -291,7 +291,7 @@ export default function SystemSettingsForm({
       <div className="card space-y-4">
         <div>
           <h2 className="font-bold text-slate-800 text-sm">
-            🛠️ แบนเนอร์ + หน้า Maintenance
+            แบนเนอร์ + หน้า Maintenance
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             ข้อความเดียวกันใช้ใน <strong>2 ที่</strong>:
@@ -321,13 +321,13 @@ export default function SystemSettingsForm({
                 maintenanceOn ? "text-sky-800" : "text-slate-700"
               }`}>
                 {maintenanceOn
-                  ? "🟢 แบนเนอร์เปิดอยู่ตอนนี้ — พนักงานเห็นข้อความบนหัวทุกหน้า"
-                  : "⚪ แบนเนอร์ปิด — พนักงานไม่เห็นอะไร"}
+                  ? "แบนเนอร์เปิดอยู่ตอนนี้ — พนักงานเห็นข้อความบนหัวทุกหน้า"
+                  : "แบนเนอร์ปิด — พนักงานไม่เห็นอะไร"}
               </div>
               <div className="text-[11px] text-slate-500 mt-0.5">
                 {maintenanceInput.trim()
                   ? "กดสวิตช์เพื่อสลับเปิด/ปิด · ข้อความเก็บไว้ตลอด"
-                  : "⚠️ ต้องพิมพ์ข้อความด้านล่างก่อน ถึงเปิดแล้วถึงจะมีอะไรแสดง"}
+                  : "ต้องพิมพ์ข้อความด้านล่างก่อน ถึงเปิดแล้วถึงจะมีอะไรแสดง"}
               </div>
             </div>
             <Switch
@@ -365,7 +365,6 @@ export default function SystemSettingsForm({
               maintenanceOn ? "border-sky-300" : "border-slate-200 opacity-60"
             }`}>
               <div className="bg-sky-600 text-white px-3 py-2 flex items-center gap-3 text-xs sm:text-sm">
-                <span className="text-base flex-shrink-0">🛠️</span>
                 <div className="flex-1 min-w-0 whitespace-pre-line">
                   {maintenanceInput.trim()}
                 </div>
