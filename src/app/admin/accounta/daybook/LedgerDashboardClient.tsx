@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useTransition, useEffect, useRef } from "react";
+import { Fragment, useState, useTransition, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
@@ -1052,7 +1052,9 @@ export default function LedgerDashboardClient({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  // Multiple days can be expanded at once (owner 2026-08-27) — was a single
+  // accordion. lastOpened = most-recently opened, used to default the add-date.
+  const [openDates, setOpenDates] = useState<Set<string>>(new Set());
   // In-page รายจ่าย edit modal (owner 2026-06-29) — the daybook is the main
   // workspace, so editing a bill opens here instead of jumping to หน้ารายจ่าย.
   const [editExpense, setEditExpense] = useState<LedgerExpenseRow | null>(null);
@@ -1065,33 +1067,57 @@ export default function LedgerDashboardClient({
   const [chartsReady, setChartsReady] = useState(false);
   useEffect(() => { setChartsReady(true); }, []);
 
+  // Expense search/filter over the visible period (owner 2026-08-27):
+  //   vendorQuery   — free-text vendor search → lists every entry for that vendor
+  //   categoryFilter — highlight one category (e.g. COG); non-matching rows dim,
+  //                    so mis-categorised bills stand out.
+  const [vendorQuery, setVendorQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const filterActive = vendorQuery.trim() !== "" || categoryFilter !== "";
+  const filterResults = useMemo(() => {
+    if (!filterActive) return [];
+    const q = vendorQuery.trim().toLowerCase();
+    const base = q ? expenses.filter((e) => (e.vendor_name ?? "").toLowerCase().includes(q)) : expenses;
+    return [...base].sort((a, b) => (a.bill_date < b.bill_date ? -1 : a.bill_date > b.bill_date ? 1 : 0));
+  }, [filterActive, vendorQuery, expenses]);
+  // Rows that "count" toward the total = matching the category highlight (or all
+  // when no category chosen). Dimmed rows are context only.
+  const filterMatches = categoryFilter ? filterResults.filter((e) => (e.category ?? "") === categoryFilter) : filterResults;
+  const filterTotal = filterMatches.reduce((s, e) => s + e.amount_total, 0);
+
   // Per-day income rows (with id + source) for the inline drill-down — fetched
   // on demand and cached by date, so the manual rows can be edited in place.
   // (The dashboard ships only channel-aggregated rows, which can't be edited.)
   const [incCache, setIncCache] = useState<Record<string, IncomeDayRow[]>>({});
-  const [incLoading, setIncLoading] = useState<string | null>(null);
-  const [incErr, setIncErr] = useState<string | null>(null);
+  // Per-date loading/error (multiple days can be open — owner 2026-08-27).
+  const [incLoading, setIncLoading] = useState<Set<string>>(new Set());
+  const [incErrDates, setIncErrDates] = useState<Set<string>>(new Set());
+  const addTo = (s: Set<string>, k: string) => { const n = new Set(s); n.add(k); return n; };
+  const delFrom = (s: Set<string>, k: string) => { const n = new Set(s); n.delete(k); return n; };
 
   async function loadDayIncome(date: string, force = false) {
     if (!force && incCache[date]) return;
-    setIncLoading(date); setIncErr(null);
+    setIncLoading((s) => addTo(s, date));
+    setIncErrDates((s) => delFrom(s, date));
     try {
       const q = new URLSearchParams({ month: date.slice(0, 7), branch: String(branchId) });
       const res = await fetch(apiUrl(`/api/accounta/income?${q}`));
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setIncErr("โหลดรายรับไม่สำเร็จ"); return; }
+      if (!res.ok || !j.ok) { setIncErrDates((s) => addTo(s, date)); return; }
       const rows = (j.income as IncomeDayRow[]).filter((r) => r.income_date === date);
       setIncCache((c) => ({ ...c, [date]: rows }));
-    } catch { setIncErr("โหลดรายรับไม่สำเร็จ"); }
-    finally { setIncLoading(null); }
+    } catch { setIncErrDates((s) => addTo(s, date)); }
+    finally { setIncLoading((s) => delFrom(s, date)); }
   }
 
   function toggleDay(date: string) {
-    setSelectedDate((d) => {
-      const next = d === date ? null : date;
-      if (next) loadDayIncome(next);
+    const isOpening = !openDates.has(date);
+    setOpenDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date); else next.add(date);
       return next;
     });
+    if (isOpening) loadDayIncome(date);
   }
 
   function go(nextPeriod: LedgerPeriod, nextAnchor: string) {
@@ -1108,7 +1134,7 @@ export default function LedgerDashboardClient({
   const [addIncome, setAddIncome] = useState<EditableIncome | null>(null);
 
   function openAdd(mode: "income" | "expense", date?: string) {
-    const d = date ?? selectedDate ?? bkkToday;
+    const d = date ?? bkkToday;
     if (mode === "income") {
       setAddIncome({
         id: 0, branch_id: branchId, company_id: companyId, income_date: d,
@@ -1126,7 +1152,7 @@ export default function LedgerDashboardClient({
   }
   function afterAdd(d: string) {
     setAddExpense(null); setAddIncome(null);
-    setSelectedDate(d);
+    setOpenDates((s) => new Set(s).add(d));
     loadDayIncome(d, true);
     if (d >= dash.start && d <= dash.end) startTransition(() => router.refresh());
     else go("month", d); // jump to the month that now has the new entry
@@ -1640,9 +1666,83 @@ export default function LedgerDashboardClient({
       <div className="card space-y-2">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="text-sm font-bold text-slate-800">บัญชีรายวัน · เปรียบเทียบรายรับ–รายจ่ายรายวัน</div>
-          <span className="text-[11px] text-slate-400">กดที่วันเพื่อดูเอกสารของวันนั้น</span>
+          <div className="flex items-center gap-2">
+            {openDates.size > 0 && !filterActive && (
+              <button type="button" onClick={() => setOpenDates(new Set())}
+                className="text-[11px] text-slate-500 hover:text-brand underline">พับทุกวัน</button>
+            )}
+            <span className="text-[11px] text-slate-400">กดที่วันเพื่อดูเอกสาร (เปิดค้างหลายวันได้)</span>
+          </div>
         </div>
-        {dash.dailyRows.length === 0 ? (
+
+        {/* ค้นหา/กรองรายจ่าย ในเดือนที่ดูอยู่ (owner 2026-08-27) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <input className="input !w-auto !py-1 text-sm" placeholder="🔎 ค้นหาผู้จำหน่าย (เช่น หมูพารวย)"
+            value={vendorQuery} onChange={(e) => setVendorQuery(e.target.value)} style={{ minWidth: "16rem" }} />
+          <select className="input !w-auto !py-1 text-sm" value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}>
+            <option value="">— ทุกหมวด —</option>
+            {expenseCategories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+          </select>
+          {filterActive && (
+            <button type="button" onClick={() => { setVendorQuery(""); setCategoryFilter(""); }}
+              className="text-xs text-slate-500 hover:text-rose-600 underline">ล้างตัวกรอง</button>
+          )}
+          {categoryFilter && <span className="text-[11px] text-slate-400">หมวดอื่นแสดงจางๆ เพื่อเช็คลงผิดหมวด</span>}
+        </div>
+
+        {filterActive ? (
+          <div className="overflow-x-auto">
+            {filterResults.length === 0 ? (
+              <p className="text-xs text-slate-400 py-4 text-center">ไม่พบรายจ่ายที่ตรงกับตัวกรองในช่วงนี้</p>
+            ) : (
+              <table className="w-full text-sm tabular-nums">
+                <thead>
+                  <tr className="text-[11px] text-slate-400 border-b border-slate-200">
+                    <th className="text-left py-1.5 px-2">วันที่</th>
+                    <th className="text-left py-1.5 px-2">ผู้จำหน่าย / รายการ</th>
+                    <th className="text-left py-1.5 px-2">หมวด</th>
+                    <th className="text-right py-1.5 px-2">ยอด</th>
+                    <th className="text-right py-1.5 px-2">VAT</th>
+                    <th className="py-1.5 px-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filterResults.map((e) => {
+                    const dim = categoryFilter !== "" && (e.category ?? "") !== categoryFilter;
+                    return (
+                      <tr key={e.id} className={`border-b border-slate-50 ${dim ? "opacity-40" : ""}`}>
+                        <td className="py-1.5 px-2 whitespace-nowrap text-slate-600">{fmtDayLabel(e.bill_date)}</td>
+                        <td className="py-1.5 px-2">
+                          <div className="text-slate-800">{e.vendor_name || "—"}</div>
+                          {e.description && <div className="text-[11px] text-slate-400">{e.description}</div>}
+                        </td>
+                        <td className="py-1.5 px-2 text-xs text-slate-500">{e.category || "—"}</td>
+                        <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(e.amount_total)}</td>
+                        <td className="py-1.5 px-2 text-right font-mono text-slate-400">{e.vat_amount !== 0 ? fmtMoney(e.vat_amount) : "—"}</td>
+                        <td className="py-1.5 px-2 text-right whitespace-nowrap">
+                          {e.doc_type !== "credit_note" && (
+                            <button type="button" onClick={() => setEditExpense(e)} className="text-[11px] text-brand hover:underline mr-2">แก้ไข</button>
+                          )}
+                          <button type="button" onClick={() => remove(e)} disabled={busyId === e.id} className="text-[11px] text-rose-500 hover:underline disabled:opacity-50">ลบออก</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-200 font-bold text-slate-800">
+                    <td className="py-2 px-2" colSpan={3}>
+                      รวม {filterMatches.length} รายการ{categoryFilter ? ` (หมวด ${categoryFilter})` : ""}
+                    </td>
+                    <td className="py-2 px-2 text-right font-mono">฿{fmtMoney(filterTotal)}</td>
+                    <td colSpan={2}></td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </div>
+        ) : dash.dailyRows.length === 0 ? (
           <p className="text-xs text-slate-400">ไม่พบความเคลื่อนไหวในช่วงเวลานี้</p>
         ) : (
           <div className="overflow-x-auto">
@@ -1662,9 +1762,9 @@ export default function LedgerDashboardClient({
                   <Fragment key={r.date}>
                     <tr
                       onClick={() => toggleDay(r.date)}
-                      className={`border-b border-slate-50 cursor-pointer hover:bg-slate-50 ${selectedDate === r.date ? "bg-brand/5" : ""}`}>
+                      className={`border-b border-slate-50 cursor-pointer hover:bg-slate-50 ${openDates.has(r.date) ? "bg-brand/5" : ""}`}>
                       <td className="py-1.5 px-2 whitespace-nowrap text-slate-600">
-                        {selectedDate === r.date ? "▾ " : "▸ "}{fmtDayLabel(r.date)}
+                        {openDates.has(r.date) ? "▾ " : "▸ "}{fmtDayLabel(r.date)}
                       </td>
                       <td className={`py-1.5 px-2 text-right font-mono ${r.revenue > 0 ? "text-emerald-600" : "text-slate-300"}`}>{fmtMoney(r.revenue)}</td>
                       <td className={`py-1.5 px-2 text-right font-mono ${r.financing > 0 ? "text-sky-600" : "text-slate-300"}`}>{fmtMoney(r.financing)}</td>
@@ -1672,14 +1772,14 @@ export default function LedgerDashboardClient({
                       <td className={`py-1.5 px-2 text-right font-mono ${r.net >= 0 ? "text-slate-700" : "text-rose-600"}`}>{r.net < 0 ? `(${fmtMoney(-r.net)})` : fmtMoney(r.net)}</td>
                       <td className={`py-1.5 px-2 text-right font-mono font-bold ${r.balance >= 0 ? "text-slate-700" : "text-rose-600"}`}>{fmtMoney(r.balance)}</td>
                     </tr>
-                    {selectedDate === r.date && (
+                    {openDates.has(r.date) && (
                       <tr className="bg-brand/5">
                         <td colSpan={6} className="p-0 border-b border-brand/20">
                           <DayDetail
                             date={r.date}
                             rows={incCache[r.date]}
-                            loading={incLoading === r.date}
-                            err={incErr}
+                            loading={incLoading.has(r.date)}
+                            err={incErrDates.has(r.date) ? "โหลดรายรับไม่สำเร็จ" : null}
                             expenses={expenses.filter((e) => e.bill_date === r.date)}
                             channels={incomeChannels}
                             categories={expenseCategories}
