@@ -303,7 +303,7 @@ export default function HRDashboard({
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <KPI label="พนักงานทั้งหมด" value={total} icon="👥" />
+        <KPI label="พนักงานทั้งหมด" value={total} />
         <KPI label="ประจำ (FT)" value={ftRow.n}
           hint={total > 0 ? pct(ftRow.n, total) : ""} tone="emerald" />
         <KPI label="ชั่วคราว (PT)" value={ptRow.n}
@@ -382,7 +382,7 @@ export default function HRDashboard({
       {/* Contracts expiring */}
       <div className="card">
         <h2 className="font-bold text-slate-800 text-sm mb-2">
-          🗓 พนักงานที่ใกล้ครบสัญญา ({expiring.length})
+          พนักงานที่ใกล้ครบสัญญา ({expiring.length})
           <span className="ml-2 text-xs font-normal text-slate-500">90 วันข้างหน้า</span>
         </h2>
         {expiring.length === 0 ? (

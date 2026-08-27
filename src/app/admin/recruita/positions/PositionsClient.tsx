@@ -233,8 +233,8 @@ export default function PositionsClient({
                     )}
                     <div className="text-[11px] text-slate-400 mt-2 flex items-center gap-3 flex-wrap">
                       <span>ใบสมัคร {p.application_count} รายการ</span>
-                      <span>✅ จ้างแล้ว {p.hired_count} คน</span>
-                      <span>❓ คำถามเฉพาะตำแหน่ง {customCount} ข้อ</span>
+                      <span>จ้างแล้ว {p.hired_count} คน</span>
+                      <span>คำถามเฉพาะตำแหน่ง {customCount} ข้อ</span>
                     </div>
                   </div>
                   <div className="flex sm:flex-col gap-2 flex-shrink-0 text-xs">

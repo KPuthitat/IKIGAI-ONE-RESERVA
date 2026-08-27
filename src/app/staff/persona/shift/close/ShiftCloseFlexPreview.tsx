@@ -207,7 +207,7 @@ export default function ShiftCloseFlexPreview({
                 {visibleChecklist.slice(0, 8).map((c, i) => (
                   <div key={i} className="flex items-start gap-2 text-xs">
                     <span className="mt-0.5 text-[10px]">
-                      {c.checked ? "✅" : "⬜"}
+                      {c.checked ? "" : ""}
                     </span>
                     <div className="flex-1 min-w-0">
                       <span

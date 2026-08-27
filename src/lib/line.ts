@@ -553,7 +553,7 @@ export function accountaDueBillsFlex(today: string, bills: DueBillItem[]): LineF
     contents: [
       {
         type: "text", flex: 6, size: "sm", color: COLOR_TEXT_DARK, wrap: true,
-        text: `${b.vendorName ?? "— ไม่ระบุผู้จำหน่าย —"}${b.branchName ? ` · ${b.branchName}` : ""}${b.overdue ? " ⚠️ เกินกำหนด" : ""}`
+        text: `${b.vendorName ?? "— ไม่ระบุผู้จำหน่าย —"}${b.branchName ? ` · ${b.branchName}` : ""}${b.overdue ? " ⚠ เกินกำหนด" : ""}`
       },
       { type: "text", flex: 4, size: "sm", weight: "bold", align: "end", color: "#DC2626", text: `฿${baht(b.amount)}` }
     ]
@@ -573,7 +573,7 @@ export function accountaDueBillsFlex(today: string, bills: DueBillItem[]): LineF
         {
           type: "box", layout: "baseline", spacing: "sm", margin: "md",
           contents: [
-            { type: "text", text: "💸", size: "lg", flex: 0 },
+            { type: "text", text: "", size: "lg", flex: 0 },
             { type: "text", text: "บิลครบกำหนดชำระวันนี้", color: "#ffffff", size: "lg", weight: "bold", wrap: true }
           ]
         }
@@ -651,7 +651,7 @@ export type StaffBookingCardArgs = {
   tableLabel: string | null;
   notes: string | null;
   // Food allergies / dietary restrictions. Rendered with a stronger
-  // visual treatment (rose accent + 🍽️) so staff catches it ahead of
+  // visual treatment (rose accent +) so staff catches it ahead of
   // serving — even when notes is empty. Null = no allergy info given.
   foodAllergy: string | null;
   source: string | null;
@@ -709,27 +709,27 @@ function occasionDisplay(
   lang: Lang
 ): { emoji: string; label: string } {
   const TH: Record<BookingOccasion, { emoji: string; label: string }> = {
-    birthday:    { emoji: "🎂", label: "วันเกิด" },
-    anniversary: { emoji: "💑", label: "วันครบรอบ" },
-    business:    { emoji: "🤝", label: "ประชุมงาน" },
-    date:        { emoji: "💕", label: "เดท" },
-    family:      { emoji: "👨‍👩‍👧", label: "รวมครอบครัว" },
-    friends:     { emoji: "🍽", label: "พบเพื่อน" },
-    celebration: { emoji: "✨", label: "ฉลองโอกาสพิเศษ" },
-    other:       { emoji: "✨", label: "โอกาสพิเศษ" }
+    birthday:    { emoji: "", label: "วันเกิด" },
+    anniversary: { emoji: "", label: "วันครบรอบ" },
+    business:    { emoji: "", label: "ประชุมงาน" },
+    date:        { emoji: "", label: "เดท" },
+    family:      { emoji: "", label: "รวมครอบครัว" },
+    friends:     { emoji: "", label: "พบเพื่อน" },
+    celebration: { emoji: "", label: "ฉลองโอกาสพิเศษ" },
+    other:       { emoji: "", label: "โอกาสพิเศษ" }
   };
   const EN: Record<BookingOccasion, { emoji: string; label: string }> = {
-    birthday:    { emoji: "🎂", label: "Birthday" },
-    anniversary: { emoji: "💑", label: "Anniversary" },
-    business:    { emoji: "🤝", label: "Business meeting" },
-    date:        { emoji: "💕", label: "Date" },
-    family:      { emoji: "👨‍👩‍👧", label: "Family gathering" },
-    friends:     { emoji: "🍽", label: "Friends gathering" },
-    celebration: { emoji: "✨", label: "Celebration" },
-    other:       { emoji: "✨", label: "Special occasion" }
+    birthday:    { emoji: "", label: "Birthday" },
+    anniversary: { emoji: "", label: "Anniversary" },
+    business:    { emoji: "", label: "Business meeting" },
+    date:        { emoji: "", label: "Date" },
+    family:      { emoji: "", label: "Family gathering" },
+    friends:     { emoji: "", label: "Friends gathering" },
+    celebration: { emoji: "", label: "Celebration" },
+    other:       { emoji: "", label: "Special occasion" }
   };
   return (lang === "en" ? EN : TH)[occasion]
-    ?? { emoji: "✨", label: lang === "en" ? "Special occasion" : "โอกาสพิเศษ" };
+    ?? { emoji: "", label: lang === "en" ? "Special occasion" : "โอกาสพิเศษ" };
 }
 
 /** Build the Flex sub-block that surfaces the customer's occasion on
@@ -761,7 +761,7 @@ function occasionStaffBlock(
 export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMessage {
   const isReminder = args.kind === "reminder";
   const titleText = isReminder ? fx(args.lang, "reminderTitle") : fx(args.lang, "confirmTitle");
-  const iconText = isReminder ? "🔔" : "✓";
+  const iconText = isReminder ? "" : "✓";
   const dateStr = localDate(args.bookingDate, args.lang);
   const headerColor = args.headerColor || COLOR_INK_700;
 
@@ -1131,7 +1131,7 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
     : isPending
       ? fx(args.lang, "staffPendingReview")
       : fx(args.lang, "staffNewBooking");
-  const iconText = isReminder ? "🔔" : isPending ? "⏳" : "🆕";
+  const iconText = isReminder ? "" : isPending ? "⏳" : "";
   const dateStr = localDate(args.bookingDate, args.lang);
   const headerColor = args.headerColor || COLOR_INK_700;
 
@@ -1190,7 +1190,7 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
           { type: "separator", margin: "md", color: "#fecdd3" },
           {
             type: "text",
-            text: `🍽️ ${fx(args.lang, "labelFoodAllergy")}`,
+            text: `${fx(args.lang, "labelFoodAllergy")}`,
             size: "xs", color: "#b91c1c", weight: "bold", margin: "sm"
           },
           {
@@ -1353,39 +1353,39 @@ function occasionReplyText(
   if (!occasion) return null;
   const TH: Record<BookingOccasion, string> = {
     birthday:
-      "🎂 ขอบคุณที่เลือกเรามาฉลองวันเกิด — ทีมงานจะเตรียมต้อนรับอย่างพิเศษ ถ้ามีรายละเอียดเพิ่ม (ชื่อบนเค้ก, รสที่ไม่ทาน, ของเซอร์ไพรส์) ตอบกลับมาได้เลยครับ",
+      "ขอบคุณที่เลือกเรามาฉลองวันเกิด — ทีมงานจะเตรียมต้อนรับอย่างพิเศษ ถ้ามีรายละเอียดเพิ่ม (ชื่อบนเค้ก, รสที่ไม่ทาน, ของเซอร์ไพรส์) ตอบกลับมาได้เลยครับ",
     anniversary:
-      "💑 ขอบคุณที่เลือกเป็นพื้นที่ของช่วงเวลาสำคัญ — เราจะจัดโต๊ะในมุมที่อบอุ่นและเป็นส่วนตัวให้ บอกได้เลยถ้าต้องการให้พิเศษกว่านี้",
+      "ขอบคุณที่เลือกเป็นพื้นที่ของช่วงเวลาสำคัญ — เราจะจัดโต๊ะในมุมที่อบอุ่นและเป็นส่วนตัวให้ บอกได้เลยถ้าต้องการให้พิเศษกว่านี้",
     business:
-      "🤝 รับทราบครับ — เราจะจัดโต๊ะในมุมที่คุยงานสะดวก เสียงรบกวนน้อย และพร้อมเสิร์ฟตรงเวลา ถ้ามีลูกค้าหรือพาร์ทเนอร์มาด้วย แจ้งจำนวนล่วงหน้าได้",
+      "รับทราบครับ — เราจะจัดโต๊ะในมุมที่คุยงานสะดวก เสียงรบกวนน้อย และพร้อมเสิร์ฟตรงเวลา ถ้ามีลูกค้าหรือพาร์ทเนอร์มาด้วย แจ้งจำนวนล่วงหน้าได้",
     date:
-      "💕 ขอบคุณที่เลือกเรา — เราจะจัดบรรยากาศที่ผ่อนคลายและเป็นส่วนตัวไว้ให้ ถ้าต้องการเซอร์ไพรส์ใดเป็นพิเศษ ส่งข้อความบอกได้เลยครับ",
+      "ขอบคุณที่เลือกเรา — เราจะจัดบรรยากาศที่ผ่อนคลายและเป็นส่วนตัวไว้ให้ ถ้าต้องการเซอร์ไพรส์ใดเป็นพิเศษ ส่งข้อความบอกได้เลยครับ",
     family:
-      "👨‍👩‍👧 ขอบคุณที่เลือกเรารวมครอบครัว — เราจะจัดโต๊ะที่นั่งสบาย คุยกันสะดวก เสิร์ฟพร้อมกันให้ครบทุกคน",
+      "ขอบคุณที่เลือกเรารวมครอบครัว — เราจะจัดโต๊ะที่นั่งสบาย คุยกันสะดวก เสิร์ฟพร้อมกันให้ครบทุกคน",
     friends:
-      "🍽 ดีใจที่ได้เป็นพื้นที่นัดเจอกันของคุณ — เราจะจัดโต๊ะให้พร้อมพูดคุย อาหารเสิร์ฟพร้อมกันให้ครบทุกที่นั่ง",
+      "ดีใจที่ได้เป็นพื้นที่นัดเจอกันของคุณ — เราจะจัดโต๊ะให้พร้อมพูดคุย อาหารเสิร์ฟพร้อมกันให้ครบทุกที่นั่ง",
     celebration:
-      "✨ ขอบคุณที่เลือกเรามาฉลอง — บอกทีมงานได้เลยถ้าต้องการให้เตรียมเซอร์ไพรส์ใดเป็นพิเศษ",
+      "ขอบคุณที่เลือกเรามาฉลอง — บอกทีมงานได้เลยถ้าต้องการให้เตรียมเซอร์ไพรส์ใดเป็นพิเศษ",
     other:
-      "✨ ขอบคุณที่เลือกเราในโอกาสพิเศษนี้ — ถ้ามีรายละเอียดที่ต้องการให้เตรียม บอกทีมงานได้เสมอครับ"
+      "ขอบคุณที่เลือกเราในโอกาสพิเศษนี้ — ถ้ามีรายละเอียดที่ต้องการให้เตรียม บอกทีมงานได้เสมอครับ"
   };
   const EN: Record<BookingOccasion, string> = {
     birthday:
-      "🎂 Thank you for choosing us to celebrate the birthday — we'll prepare a warm welcome. Reply with any details (name on cake, food preferences, surprises you'd like) and we'll take care of it.",
+      "Thank you for choosing us to celebrate the birthday — we'll prepare a warm welcome. Reply with any details (name on cake, food preferences, surprises you'd like) and we'll take care of it.",
     anniversary:
-      "💑 Thank you for letting us be part of this important moment — we'll arrange a warm and private corner for you. Let us know if you'd like us to make it even more special.",
+      "Thank you for letting us be part of this important moment — we'll arrange a warm and private corner for you. Let us know if you'd like us to make it even more special.",
     business:
-      "🤝 Noted — we'll set up a quieter table that's good for conversation, with on-time service. Feel free to share the number of guests or partners joining in advance.",
+      "Noted — we'll set up a quieter table that's good for conversation, with on-time service. Feel free to share the number of guests or partners joining in advance.",
     date:
-      "💕 Thank you for choosing us — we'll have a relaxed, private setting ready. If you'd like us to prepare any specific surprise, just message us.",
+      "Thank you for choosing us — we'll have a relaxed, private setting ready. If you'd like us to prepare any specific surprise, just message us.",
     family:
-      "👨‍👩‍👧 Thank you for choosing us for your family gathering — we'll set up a comfortable table where everyone can chat and be served together.",
+      "Thank you for choosing us for your family gathering — we'll set up a comfortable table where everyone can chat and be served together.",
     friends:
-      "🍽 Glad to be your meet-up spot — we'll set the table for easy conversation and serve everyone at the same time.",
+      "Glad to be your meet-up spot — we'll set the table for easy conversation and serve everyone at the same time.",
     celebration:
-      "✨ Thank you for celebrating with us — let us know if there's a particular surprise we can prepare.",
+      "Thank you for celebrating with us — let us know if there's a particular surprise we can prepare.",
     other:
-      "✨ Thank you for choosing us for this special occasion — feel free to tell us any details you'd like us to prepare."
+      "Thank you for choosing us for this special occasion — feel free to tell us any details you'd like us to prepare."
   };
   return (lang === "en" ? EN : TH)[occasion];
 }
@@ -1600,7 +1600,7 @@ export type ShiftOpenCardArgs = {
   // shift_checklist_items rows. Empty array is valid (no checklist).
   // Each entry has 3 effective states:
   //   - checked: true              → done ✓
-  //   - checked: false, note: set  → skipped-on-purpose 📝 (with reason)
+  //   - checked: false, note: set  → skipped-on-purpose (with reason)
   //   - checked: false, note: null → not done ✗ (red flag)
   // Optional is_child + description fields propagate from admin rows.
   // kind='section' rows render as non-interactive group headers; the
@@ -1649,7 +1649,7 @@ function revisionChip(isRevision?: boolean): Record<string, unknown> | null {
     contents: [
       {
         type: "text",
-        text: "✏ ฉบับแก้ไข",
+        text: "ฉบับแก้ไข",
         color: "#78350f",
         size: "xxs",
         weight: "bold"
@@ -1719,7 +1719,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
     }
     const note = it.note?.trim();
     const skipped = !it.checked && !!note;
-    const icon = it.checked ? "✓" : skipped ? "📝" : "✗";
+    const icon = it.checked ? "✓" : skipped ? "" : "✗";
     const iconColor = it.checked ? "#059669" : skipped ? "#b45309" : "#dc2626";
     const labelColor = it.checked ? COLOR_TEXT_DARK : skipped ? "#475569" : "#dc2626";
     const rowBox: Record<string, unknown> = {
@@ -1920,7 +1920,7 @@ function checklistFlexBlock(
     const isChild = !!it.is_child;
     // Child rows: prefix with " ↳" so even monochrome rendering keeps
     // the hierarchy. Top-level rows show their checkbox icon as-is.
-    const icon = isChild ? "↳" : (it.checked ? "✓" : skipped ? "📝" : "✗");
+    const icon = isChild ? "↳" : (it.checked ? "✓" : skipped ? "" : "✗");
     const iconColor = isChild
       ? COLOR_TEXT_MUTED
       : (it.checked ? "#059669" : skipped ? "#b45309" : "#dc2626");
@@ -1952,7 +1952,7 @@ function checklistFlexBlock(
     //                        would say "✓ ยอดเงินคงเหลือ" but never
     //                        show the actual amount.
     //   • !checked + note → legacy "skipped with reason" case.
-    // The icon already disambiguates which case it is (📝 vs ↳).
+    // The icon already disambiguates which case it is (vs ↳).
     // Below the row we may stack: description (admin's small help
      // text, when set) and/or note (staff's typed value / skip reason).
      // Both align under the label using a paddingStart wrapper box —
@@ -1980,7 +1980,7 @@ function checklistFlexBlock(
       // Show the note line whenever a note is present. Two cases:
       //   • checked + note  → text/amount item the staff filled in
       //   • !checked + note → legacy "skipped with reason" case.
-      // The leading icon (📝 vs ↳) already disambiguates.
+      // The leading icon (vs ↳) already disambiguates.
       extras.push({
         type: "box",
         layout: "vertical",
@@ -2305,7 +2305,7 @@ function salesTargetBarBlock(
           { type: "text", text: "ยอดขายเทียบเป้าเดือนนี้", size: "xs", weight: "bold", color: COLOR_TEXT_MUTED, flex: 0 },
           {
             type: "text",
-            text: `${st.pct.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%${reached ? " 🎉" : ""}`,
+            text: `${st.pct.toLocaleString("th-TH", { maximumFractionDigits: 1 })}%${reached ? "" : ""}`,
             size: "sm", weight: "bold", color: barColor, align: "end", flex: 1
           }
         ]
@@ -2678,7 +2678,7 @@ export type AttendanceSummaryArgs = {
   branchName: string;
   reportDate: string;          // YYYY-MM-DD Bangkok
   roster: AttendanceRow[];
-  /** Who just clocked in/out — surfaced as a small "📥 just in"
+  /** Who just clocked in/out — surfaced as a small "just in"
    *  line below the title so admin can see what triggered this
    *  particular update. */
   triggerName: string;
@@ -2766,8 +2766,8 @@ export function attendanceSummaryFlex(args: AttendanceSummaryArgs): LineFlexMess
         {
           type: "text",
           text: args.triggerAction === "in"
-            ? `📥 ${args.triggerName} · เข้างานเวลา ${args.triggerTime}`
-            : `📤 ${args.triggerName} · เลิกงานเวลา ${args.triggerTime}`,
+            ? `${args.triggerName} · เข้างานเวลา ${args.triggerTime}`
+            : `${args.triggerName} · เลิกงานเวลา ${args.triggerTime}`,
           size: "xs",
           color: COLOR_BRAND,
           weight: "bold",
@@ -3013,7 +3013,7 @@ export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessa
 
   // Banner colour varies per kind so the recipient knows at a glance
   // which kind of day it is. Owner 2026-05-27 asked to drop the
-  // decorative emoji prefixes (✨🌙📅) — the colour + label alone
+  // decorative emoji prefixes () — the colour + label alone
   // carries the meaning, the icons just felt noisy. The work-kind
   // label is now the duty POSITION title (e.g. "PASTA") instead of
   // the generic "เวรประจำวันของพี่" — one card per shift block.
@@ -3227,13 +3227,13 @@ function approvalBannerFor(variant: ApprovalNotifyArgs["variant"]): {
   switch (variant) {
     case "submitted_primary":
       return {
-        color: "#0ea5e9", icon: "📩",
+        color: "#0ea5e9", icon: "",
         title: "มีคำขอลาใหม่รอพี่อนุมัติ",
         subtitle: "น้องฮูกส่งต่อมาให้พี่ดูครับ"
       };
     case "submitted_backup":
       return {
-        color: "#94a3b8", icon: "👀",
+        color: "#94a3b8", icon: "",
         title: "FYI — มีคำขอลาเข้ามาในระบบ",
         subtitle: "น้องส่งให้หัวหน้าตรงดูก่อน พี่เป็น backup ในสาย"
       };
@@ -3560,7 +3560,7 @@ export function dailyAttendanceSummaryFlex(
 
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
         // ── ลางาน ──
-        sectionHeader("📅", "ลางาน (อนุมัติแล้ว)", "#1d4ed8", onLeave.length),
+        sectionHeader("", "ลางาน (อนุมัติแล้ว)", "#1d4ed8", onLeave.length),
         sectionBody(onLeave, (r) => leaveTypeLabelTh(r.leaveType)),
 
         { type: "separator", margin: "md", color: COLOR_DIVIDER },
@@ -3848,7 +3848,7 @@ export function personaResignationTakenFlex(
         }] : []),
         {
           type: "text",
-          text: "ขอให้พี่โชคดีในเส้นทางใหม่ครับ น้องฮูก 🦉",
+          text: "ขอให้พี่โชคดีในเส้นทางใหม่ครับ น้องฮูก",
           size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "md"
         }
       ]

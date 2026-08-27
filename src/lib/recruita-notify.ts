@@ -566,7 +566,7 @@ export async function notifyExecGroupHealthCertUploaded(applicationId: number): 
   const name = [row.title_prefix, row.first_name_th, row.last_name_th].filter(Boolean).join(" ") || "—";
   const appNo = formatApplicationNo(row.submitted_at, row.day_seq);
   const text =
-    "📄 ผู้สมัครอัปโหลดใบรับรองแพทย์แล้ว\n" +
+    "ผู้สมัครอัปโหลดใบรับรองแพทย์แล้ว\n" +
     `${name}\n` +
     `${row.position_title}${row.branch_name ? " · " + row.branch_name : ""}\n` +
     `ใบสมัคร ${appNo}\n` +

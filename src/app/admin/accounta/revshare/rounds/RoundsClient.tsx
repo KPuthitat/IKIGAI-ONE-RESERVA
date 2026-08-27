@@ -220,7 +220,7 @@ export default function RoundsClient({
     if (res.ok && j.ok) {
       const key = sendModal.key;
       setSentKey(key); setTimeout(() => setSentKey((k) => (k === key ? null : k)), 2200);
-      // Daily sends lock the round — reflect sent_at locally so the 🔒 appears
+      // Daily sends lock the round — reflect sent_at locally so the appears
       // without a refresh (owner 2026-07-25).
       const sentDate = sendModal.body.kind === "daily" ? (sendModal.body.date as string) : null;
       if (sentDate) setRounds((rs) => rs.map((x) => x.period_start === sentDate ? { ...x, sent_at: new Date().toISOString() } : x));
@@ -289,7 +289,7 @@ export default function RoundsClient({
           <input type="file" accept=".xlsx,.xls" className="hidden" onChange={onFile} disabled={busy} />
         </label>
         <span className="text-[11px] text-slate-400">
-          1 วัน/ไฟล์ · นำเข้าจากไฟล์เท่านั้น (เพิ่มยอดเองไม่ได้) · ยอดจากไฟล์ล็อกไว้ 🔒 แก้ต้องใส่ PIN
+          1 วัน/ไฟล์ · นำเข้าจากไฟล์เท่านั้น (เพิ่มยอดเองไม่ได้) · ยอดจากไฟล์ล็อกไว้ แก้ต้องใส่ PIN
           {verified && <span className="ml-1 text-emerald-600">· ✓ ยืนยันตัวตนแล้ว ({operatorName})</span>}
         </span>
         <span className="flex-1" />
@@ -318,7 +318,7 @@ export default function RoundsClient({
                 : <span className="text-emerald-600">✓ ปลดล็อกแล้ว — แก้ไขหมวด/ฐานยอดได้</span>}
             </span>
             {catsLocked
-              ? <button type="button" onClick={unlockCats} disabled={busy} className="text-[11px] text-brand hover:underline">✎ แก้ไขการเลือกหมวด (PIN)</button>
+              ? <button type="button" onClick={unlockCats} disabled={busy} className="text-[11px] text-brand hover:underline">แก้ไขการเลือกหมวด (PIN)</button>
               : <button type="button" onClick={() => setCatsLocked(true)} className="text-[11px] text-slate-400 hover:underline">ล็อกอีกครั้ง</button>}
           </div>
           <div className="flex items-center gap-2">
@@ -376,12 +376,12 @@ export default function RoundsClient({
                       <tr key={r.id} className="border-b border-slate-50">
                         <td className="py-1 px-2 text-slate-600 whitespace-nowrap">
                           {roundLabel(r.period_start, r.period_start)}
-                          {r.sent_at && <span className="ml-1.5 text-[10px] text-emerald-600" title="ส่งเข้ากลุ่มแล้ว — แก้ไข/ลบต้องยืนยัน PIN">🔒</span>}
+                          {r.sent_at && <span className="ml-1.5 text-[10px] text-emerald-600" title="ส่งเข้ากลุ่มแล้ว — แก้ไข/ลบต้องยืนยัน PIN">✓</span>}
                         </td>
                         <td className="py-1 px-2 text-right">
                           {isLocked(r) && editingId !== r.id ? (
                             <span className="tabular-nums font-sans text-slate-700 inline-flex items-center gap-1 justify-end" title="ล็อกอยู่ — กด “แก้ไข” เพื่อปลด (ต้องใส่ PIN)">
-                              <span className="text-[10px] text-slate-400">🔒</span>฿{fmtMoney(r.sales_amount)}
+                              <span className="text-[10px] text-slate-400"></span>฿{fmtMoney(r.sales_amount)}
                             </span>
                           ) : (
                             <SalesInput value={r.sales_amount} disabled={busy} autoFocus={editingId === r.id}
@@ -395,7 +395,7 @@ export default function RoundsClient({
                         <td className="py-1 px-2 text-right whitespace-nowrap">
                           {isLocked(r) && editingId !== r.id && (
                             <button type="button" onClick={() => unlockEdit(r)} disabled={busy}
-                              className="text-[11px] text-slate-500 hover:text-brand hover:underline mr-3" title="ปลดล็อกเพื่อแก้ยอด (ต้องใส่ PIN)">🔒 แก้ไข</button>
+                              className="text-[11px] text-slate-500 hover:text-brand hover:underline mr-3" title="ปลดล็อกเพื่อแก้ยอด (ต้องใส่ PIN)">แก้ไข</button>
                           )}
                           {partner.line_group_id && (
                             <button type="button" onClick={() => setSendModal({
@@ -450,7 +450,7 @@ export default function RoundsClient({
           );
         })()}
         <p className="text-[11px] text-slate-400">
-          ยอดที่นำเข้า/ส่งแล้วล็อกไว้ 🔒 กด “แก้ไข” + ใส่ PIN ก่อนแก้ · ยอดโอนรายสัปดาห์รวมจันทร์–อาทิตย์ให้อัตโนมัติ
+          ยอดที่นำเข้า/ส่งแล้วล็อกไว้ กด “แก้ไข” + ใส่ PIN ก่อนแก้ · ยอดโอนรายสัปดาห์รวมจันทร์–อาทิตย์ให้อัตโนมัติ
           {partner.line_group_id
             ? " · กด “ส่งยอดวันนี้” แจ้งคู่ค้าตอนนำเข้า, “ส่งสรุปสัปดาห์” ตอนจะโอน"
             : " · ตั้ง LINE group ในหน้าตั้งค่าคู่ค้าเพื่อส่งแจ้งเตือนรายวัน/สัปดาห์ได้"}

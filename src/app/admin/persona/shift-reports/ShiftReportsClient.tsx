@@ -431,7 +431,7 @@ export default function ShiftReportsClient({
                         className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold whitespace-nowrap"
                         aria-expanded={expandedDetailIds.has(r.id)}
                       >
-                        🔍 {t("admin.persona.shiftReports.viewDetail")}
+                        {t("admin.persona.shiftReports.viewDetail")}
                         <span className="ml-1 text-[9px] leading-none">
                           {expandedDetailIds.has(r.id) ? "▴" : "▾"}
                         </span>
@@ -450,7 +450,7 @@ export default function ShiftReportsClient({
                         className="text-[10px] px-1.5 py-0.5 rounded border border-brand text-brand hover:bg-rose-50 font-bold whitespace-nowrap disabled:opacity-50"
                         title={t("admin.persona.shiftReports.resendHint")}
                       >
-                        📨 {resendBusyId === r.id
+                        {resendBusyId === r.id
                           ? t("common.submitting")
                           : t("admin.persona.shiftReports.resendBtn")}
                       </button>

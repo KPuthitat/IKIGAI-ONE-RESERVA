@@ -57,7 +57,7 @@ function format(
   context: Record<string, unknown>
 ): string {
   const lines: string[] = [];
-  lines.push("🚨 IKIGAI OS — server error");
+  lines.push("IKIGAI OS — server error");
   lines.push(`at: ${where}`);
   if (err instanceof Error) {
     lines.push(`${err.name}: ${err.message}`);

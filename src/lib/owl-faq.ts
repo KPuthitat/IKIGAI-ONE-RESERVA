@@ -177,11 +177,11 @@ export const FAQ_ENTRIES: FaqEntry[] = [
       "2. ใช้ month picker เลือกเดือนข้างหน้า\n" +
       "3. ก่อนเริ่ม — ตรวจ 'รหัสกะ' (/admin/persona/roster/shifts) และ 'ตำแหน่ง' (/admin/persona/roster/positions) ให้พร้อม\n" +
       "4. คลิกช่องในตาราง → modal ขึ้นมา → เลือกพนักงาน + รหัสกะ\n" +
-      "5. เมื่อกรอกครบ กดปุ่ม '📣 เผยแพร่ตารางเดือนนี้'\n" +
+      "5. เมื่อกรอกครบ กดปุ่ม 'เผยแพร่ตารางเดือนนี้'\n" +
       "6. ระบบจะส่ง Flex เข้ากลุ่ม IKIGAI OS แจ้งพนักงานทุกคน\n\n" +
-      "แก้ไขหลังเผยแพร่: คลิกช่องเดิม → แก้ → กดปุ่ม '✏️ แจ้งว่ามีการแก้ไข' ส่งแจ้งซ้ำได้",
+      "แก้ไขหลังเผยแพร่: คลิกช่องเดิม → แก้ → กดปุ่ม 'แจ้งว่ามีการแก้ไข' ส่งแจ้งซ้ำได้",
     answer_en:
-      "Go to /admin/persona/roster, pick the month, ensure shift codes and positions are set up, click cells to assign, then hit '📣 Publish'. LINE notifies all staff. Edit later → use '✏️ Announce edit'.",
+      "Go to /admin/persona/roster, pick the month, ensure shift codes and positions are set up, click cells to assign, then hit 'Publish'. LINE notifies all staff. Edit later → use 'Announce edit'.",
     keywords: ["จัดตาราง", "roster", "เผยแพร่", "publish", "ตารางมอบหมาย"],
     link: { href: "/admin/persona/roster", label_th: "ไปจัดตาราง", label_en: "Go to roster" }
   },
@@ -248,15 +248,15 @@ export const FAQ_ENTRIES: FaqEntry[] = [
       "ไปที่ /admin/persona/settings\n\n" +
       "GPS geofence:\n" +
       "1. เปิดสวิตช์ 'เปิดใช้ GPS'\n" +
-      "2. กดปุ่ม '📍 ใช้ตำแหน่งปัจจุบัน' ตอนยืนอยู่หน้าร้าน — ระบบจะ pin lat/lng ให้\n" +
+      "2. กดปุ่ม 'ใช้ตำแหน่งปัจจุบัน' ตอนยืนอยู่หน้าร้าน — ระบบจะ pin lat/lng ให้\n" +
       "3. ตั้งรัศมี (ค่าเริ่มต้น 100m เหมาะกับร้านอาหารทั่วไป)\n\n" +
       "QR code:\n" +
       "1. เปิดสวิตช์ 'เปิดใช้ QR code'\n" +
-      "2. กด '🎲 Generate ใหม่' → ระบบสุ่ม token\n" +
+      "2. กด 'Generate ใหม่' → ระบบสุ่ม token\n" +
       "3. พิมพ์ QR ติดในร้าน (สามารถใช้ tool ภายนอกแปลง token เป็น QR)\n\n" +
       "เปิดทั้ง 2 ได้พร้อมกัน — พนักงานต้องผ่านทั้งคู่",
     answer_en:
-      "Go to /admin/persona/settings. GPS: enable + tap '📍 Use current location' while standing in the shop + set radius (100m default). QR: enable + 'Generate' a token + print as a QR poster. Both can be enforced together.",
+      "Go to /admin/persona/settings. GPS: enable + tap 'Use current location' while standing in the shop + set radius (100m default). QR: enable + 'Generate' a token + print as a QR poster. Both can be enforced together.",
     keywords: ["gps", "geofence", "qr", "ลงเวลา", "ตั้งค่า", "anti-cheat"],
     link: { href: "/admin/persona/settings", label_th: "ไปตั้งค่าสาขา", label_en: "Branch settings" }
   },

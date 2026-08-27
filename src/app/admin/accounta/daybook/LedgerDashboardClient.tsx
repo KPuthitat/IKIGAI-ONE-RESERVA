@@ -990,7 +990,7 @@ function FinancialAnalysisCard({
               กำลังวิเคราะห์…
             </>
           ) : (
-            <>✨ {analysis ? "วิเคราะห์อีกครั้ง" : "วิเคราะห์เลย"}</>
+            <>{analysis ? "วิเคราะห์อีกครั้ง" : "วิเคราะห์เลย"}</>
           )}
         </button>
       </div>
@@ -1613,31 +1613,31 @@ export default function LedgerDashboardClient({
       </div>
 
       {/* Sales analytics */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="card text-center py-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="card text-center py-3 flex flex-col justify-center min-h-[92px]">
           <div className="text-[11px] text-slate-400">ยอดขายเฉลี่ยต่อวัน</div>
           <div className="text-lg font-bold text-slate-800">฿{fmtMoney(dash.avgPerDay)}</div>
           <div className="text-[10px] text-slate-400">{dash.daysWithRevenue} วันที่มียอดขาย</div>
         </div>
-        <div className="card text-center py-3">
+        <div className="card text-center py-3 flex flex-col justify-center min-h-[92px]">
           <div className="text-[11px] text-slate-400">เฉลี่ยวันธรรมดา</div>
           <div className="text-lg font-bold text-slate-800">฿{fmtMoney(dash.avgWeekday)}</div>
         </div>
-        <div className="card text-center py-3">
+        <div className="card text-center py-3 flex flex-col justify-center min-h-[92px]">
           <div className="text-[11px] text-slate-400">เฉลี่ยวันหยุดสุดสัปดาห์</div>
           <div className="text-lg font-bold text-slate-800">฿{fmtMoney(dash.avgWeekend)}</div>
         </div>
-        <div className="card text-center py-3">
+        <div className="card text-center py-3 flex flex-col justify-center min-h-[92px]">
           <div className="text-[11px] text-slate-400">ประมาณการยอดขายทั้งเดือน</div>
           <div className="text-lg font-bold text-brand">{dash.forecast != null ? `฿${fmtMoney(dash.forecast)}` : "—"}</div>
           {dash.forecast != null && <div className="text-[10px] text-slate-400">เฉลี่ย × จำนวนวันในเดือน</div>}
         </div>
-        <div className="card text-center py-3">
+        <div className="card text-center py-3 flex flex-col justify-center min-h-[92px]">
           <div className="text-[11px] text-slate-400">ยอดขายต่อบิล (เฉลี่ยเดือนนี้)</div>
           <div className="text-lg font-bold text-slate-800">{dash.salesPerBillMonth != null ? `฿${fmtMoney(dash.salesPerBillMonth)}` : "—"}</div>
           <div className="text-[10px] text-slate-400">ยอดขาย ÷ จำนวนบิล</div>
         </div>
-        <div className="card text-center py-3">
+        <div className="card text-center py-3 flex flex-col justify-center min-h-[92px]">
           <div className="text-[11px] text-slate-400">ยอดขายต่อบิล (เฉลี่ยปีนี้)</div>
           <div className="text-lg font-bold text-slate-800">{dash.salesPerBillYear != null ? `฿${fmtMoney(dash.salesPerBillYear)}` : "—"}</div>
           <div className="text-[10px] text-slate-400">ทั้งปีปัจจุบัน</div>
@@ -1677,7 +1677,7 @@ export default function LedgerDashboardClient({
 
         {/* ค้นหา/กรองรายจ่าย ในเดือนที่ดูอยู่ (owner 2026-08-27) */}
         <div className="flex flex-wrap items-center gap-2">
-          <input className="input !w-auto !py-1 text-sm" placeholder="🔎 ค้นหาผู้จำหน่าย (เช่น หมูพารวย)"
+          <input className="input !w-auto !py-1 text-sm" placeholder="ค้นหาผู้จำหน่าย (เช่น หมูพารวย)"
             value={vendorQuery} onChange={(e) => setVendorQuery(e.target.value)} style={{ minWidth: "16rem" }} />
           <select className="input !w-auto !py-1 text-sm" value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}>

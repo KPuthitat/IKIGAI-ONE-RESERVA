@@ -99,7 +99,7 @@ export default function CsvImportButton() {
         >
           {busy
             ? t("admin.persona.roster.csv.importing")
-            : "📥 " + t("admin.persona.roster.csv.import")}
+            : t("admin.persona.roster.csv.import")}
         </button>
         <button
           type="button"

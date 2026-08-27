@@ -206,7 +206,7 @@ export default function ProfileForm({
     <form onSubmit={submit} className="space-y-4">
       {locked && (
         <div className="card bg-amber-50 border-amber-200 text-sm text-amber-800">
-          🔒 {t("staff.persona.profile.lockedHint")}
+          {t("staff.persona.profile.lockedHint")}
         </div>
       )}
 

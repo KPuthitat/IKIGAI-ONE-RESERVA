@@ -17,7 +17,6 @@ export default function MaintenanceBanner({ message }: { message: string }) {
   return (
     <div className="sticky top-0 z-50 bg-sky-600 text-white shadow-md">
       <div className="max-w-7xl mx-auto px-3 py-2 flex items-center gap-3 text-xs sm:text-sm">
-        <span className="text-base flex-shrink-0">🛠️</span>
         <div className="flex-1 min-w-0 whitespace-pre-line">
           {message}
         </div>

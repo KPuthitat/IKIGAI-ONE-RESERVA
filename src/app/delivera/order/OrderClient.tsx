@@ -180,7 +180,7 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
   if (phase === "branch") return (
     <Shell>
       <h1 className="text-lg font-bold text-slate-800 mb-1">เลือกสาขา</h1>
-      <p className="text-xs text-slate-500 mb-3">สวัสดี {displayName || "ลูกค้า"} 👋</p>
+      <p className="text-xs text-slate-500 mb-3">สวัสดี {displayName || "ลูกค้า"}</p>
       {branches.length === 0 && <p className="text-sm text-slate-400">ยังไม่มีสาขาที่เปิดบริการเดลิเวอรี</p>}
       <div className="space-y-2">
         {branches.map((b) => (
@@ -289,7 +289,7 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
         <div className="space-y-2 mb-3">
           <textarea className="input" rows={2} placeholder="ที่อยู่จัดส่ง" value={address} onChange={(e) => setAddress(e.target.value)} />
           <button onClick={grabLocation} className="w-full py-2 rounded-lg border border-brand text-brand text-sm font-medium">
-            📍 {coords ? `ปักพิกัดแล้ว (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})` : "ดึงพิกัดปัจจุบัน"}
+            {coords ? `ปักพิกัดแล้ว (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})` : "ดึงพิกัดปัจจุบัน"}
           </button>
           {quoteErr && <p className="text-xs text-rose-600">{quoteErr}</p>}
           {quote && (
@@ -324,7 +324,6 @@ export default function OrderClient({ liffId, lockedBranchId = 0 }: { liffId: st
   return (
     <Shell>
       <div className="text-center py-8">
-        <div className="text-4xl mb-2">✅</div>
         <h1 className="text-lg font-bold text-slate-800">รับออเดอร์แล้ว</h1>
         <p className="text-sm text-slate-500 mt-1">เลขที่ {orderNo}</p>
         <p className="text-xs text-slate-400 mt-2">ขั้นตอนถัดไป: ชำระเงิน (PromptPay / เก็บปลายทาง)</p>

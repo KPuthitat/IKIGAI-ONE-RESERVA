@@ -523,7 +523,7 @@ export default function BranchSettingsForm({
               onClick={captureGps}
               className="text-xs px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50 whitespace-nowrap"
             >
-              📍 {t("admin.persona.settings.timeClock.geofence.useCurrent")}
+              {t("admin.persona.settings.timeClock.geofence.useCurrent")}
             </button>
             {geoStatus && (
               <span className="text-[11px] text-slate-500 truncate">{geoStatus}</span>
@@ -583,7 +583,7 @@ export default function BranchSettingsForm({
                 onClick={generateQrToken}
                 className="text-xs px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50 whitespace-nowrap"
               >
-                🎲 {t("admin.persona.settings.timeClock.qr.generate")}
+                {t("admin.persona.settings.timeClock.qr.generate")}
               </button>
             </div>
             <p className="text-[10px] text-slate-400 mt-1">
@@ -611,12 +611,12 @@ export default function BranchSettingsForm({
               rel="noopener"
               className="inline-block text-xs text-brand hover:underline font-medium"
             >
-              🖥️ เปิดจอ QR สำหรับตั้งที่ประตู (เปิดบนแท็บเล็ต/มือถือเก่า ค้างไว้)
+              เปิดจอ QR สำหรับตั้งที่ประตู (เปิดบนแท็บเล็ต/มือถือเก่า ค้างไว้)
             </a>
           )}
           {rotOn && !geoOn && (
             <p className="text-[11px] text-amber-700">
-              ⚠️ ยังไม่ได้เปิด GPS geofence ด้านบน — ควรเปิด + ตั้งพิกัดร้าน เพื่อกันลงเวลา
+              ยังไม่ได้เปิด GPS geofence ด้านบน — ควรเปิด + ตั้งพิกัดร้าน เพื่อกันลงเวลา
               จากนอกร้าน
             </p>
           )}
@@ -639,7 +639,7 @@ export default function BranchSettingsForm({
           </p>
           {selfieOn && !geoOn && (
             <p className="text-[11px] text-amber-700">
-              ⚠️ ยังไม่ได้เปิด GPS geofence ด้านบน — ควรเปิด + ตั้งพิกัดร้าน (เซลฟี่กันกดแทน
+              ยังไม่ได้เปิด GPS geofence ด้านบน — ควรเปิด + ตั้งพิกัดร้าน (เซลฟี่กันกดแทน
               แต่ GPS กันลงจากนอกร้าน)
             </p>
           )}

@@ -194,7 +194,7 @@ export default function StaffCalendarPage({
                 : "bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
-            🗓 ปฏิทิน
+            ปฏิทิน
           </Link>
         </div>
       </div>
@@ -303,7 +303,7 @@ export default function StaffCalendarPage({
                         )}
                         {(a.shift_break_start && a.shift_break_end) && (
                           <div className="text-[10px] text-slate-400 mt-0.5">
-                            ☕ {t(lang, "staff.persona.calendar.break")}: {a.shift_break_start}–{a.shift_break_end}
+                            {t(lang, "staff.persona.calendar.break")}: {a.shift_break_start}–{a.shift_break_end}
                           </div>
                         )}
                       </div>

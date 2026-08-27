@@ -22,7 +22,6 @@ export default function StaffAscendaPage() {
       </div>
 
       <div className="card text-center py-16 max-w-xl mx-auto">
-        <div className="text-6xl mb-4">🚧</div>
         <h2 className="text-xl font-bold text-slate-800 mb-2">
           {t(lang, "ascenda.comingSoonTitle")}
         </h2>

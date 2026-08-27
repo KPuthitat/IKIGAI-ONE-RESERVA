@@ -301,7 +301,7 @@ export default function HoursReportPage({
         )}
         {totalUnpaired > 0 && (
           <p className="text-xs text-amber-700 mt-3">
-            ⚠️ {t(lang, "admin.persona.reports.hours.unpairedHint")}
+            {t(lang, "admin.persona.reports.hours.unpairedHint")}
           </p>
         )}
       </div>

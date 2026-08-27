@@ -81,7 +81,7 @@ export default function SendAttendanceSummaryButton() {
       >
         {busy
           ? t("common.submitting")
-          : "📨 " + t("admin.persona.shiftReports.resendBtn")}
+          : t("admin.persona.shiftReports.resendBtn")}
       </button>
       {result && (
         <div

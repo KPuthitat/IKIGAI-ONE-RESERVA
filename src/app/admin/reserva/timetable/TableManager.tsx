@@ -105,7 +105,7 @@ export default function TableManager({ branch, tables, zones }: Props) {
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
       >
-        <span>⚙ {t("admin.reserva.tableMgr.title")}</span>
+        <span>{t("admin.reserva.tableMgr.title")}</span>
         <span className="text-slate-400">{open ? "▲" : "▼"}</span>
       </button>
 

@@ -151,7 +151,7 @@ export default function ResignationClient({
       {requiresImproperAck && (
         <div className="card border-l-4 border-rose-400 bg-rose-50 space-y-3">
           <h2 className="font-semibold text-slate-800">
-            ⚠️ หากลาออกไม่ถูกระเบียบ จะเสียสิทธิ์
+            หากลาออกไม่ถูกระเบียบ จะเสียสิทธิ์
           </h2>
           <div className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">
             {improperResignationConsequences}
@@ -173,7 +173,6 @@ export default function ResignationClient({
       {/* Locked state — ยังไม่ได้รับการเปิดสิทธิ์ */}
       {!isUnlocked && !hasPending && (
         <div className="card border-2 border-slate-300 bg-slate-50 text-center py-8">
-          <div className="text-5xl mb-3 opacity-50">🔒</div>
           <h3 className="font-semibold text-slate-700 mb-2">
             {t("staff.persona.resignation.lockedTitle")}
           </h3>

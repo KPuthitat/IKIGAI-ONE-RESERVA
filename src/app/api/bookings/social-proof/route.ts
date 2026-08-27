@@ -20,7 +20,7 @@ import { getDb, type Branch } from "@/lib/db";
 //   slots       — per-time-slot booked seats, with a "popular" flag set
 //                 when the slot was the most-booked one over the last
 //                 30 days (top 30% by booking count). Lets the client
-//                 render "🔥 รอบนิยม" badges grounded in real history.
+//                 render "รอบนิยม" badges grounded in real history.
 //   totalCapacity — sum of active tables' capacity (so the client can
 //                 compute "remaining" for any slot if it wants to render
 //                 scarcity hints like "เหลือ 4 ที่").

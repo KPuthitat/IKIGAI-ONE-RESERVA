@@ -437,7 +437,7 @@ export default function ApplyClient({
     //
     // Owner decision 2026-06-01: only consume userId, not the
     // displayName. LINE display names are nicknames more often
-    // than legal names ("Tom Cruise 🎬" / "MintCH" / etc.) so
+    // than legal names ("Tom Cruise" / "MintCH" / etc.) so
     // pre-filling first/last/nickname created more "wait, this
     // isn't me" friction than typing saved. The pictureUrl is
     // similarly skipped — it's a LINE profile photo, not a
@@ -1463,7 +1463,7 @@ function FileField({
           {file ? (
             <span className="text-emerald-700">✓ {file.name} ({(file.size / 1024).toFixed(0)} KB)</span>
           ) : (
-            <span>{trBy(lang, "📤 แตะเพื่อเลือกไฟล์", "📤 Tap to choose a file")}</span>
+            <span>{trBy(lang, "แตะเพื่อเลือกไฟล์", "Tap to choose a file")}</span>
           )}
           <input type="file" className="hidden" accept={accept}
             onChange={(e) => onChange(e.target.files?.[0] ?? null)} />

@@ -47,7 +47,6 @@ export default function BranchSwitchPrompt({
       onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
       <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
         <div className="text-center space-y-1">
-          <div className="text-2xl">📍</div>
           <h3 className="font-bold text-slate-800">เปลี่ยนสาขาก่อนลงเวลา</h3>
           <p className="text-sm text-slate-600 leading-relaxed">
             วันนี้ <b>{nickname}</b> มีชื่อทำงานที่{" "}

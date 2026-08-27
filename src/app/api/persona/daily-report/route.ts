@@ -39,7 +39,7 @@ import { nameWithPrefix } from "@/lib/name";
 //
 // Optional `note` lets staff explain why an item is being skipped today
 // ("ฝนตกหนัก ตั้งป้ายไม่ได้" etc.). When set on an unchecked row, the
-// LINE card renders it under the label as a 📝 skipped-with-reason
+// LINE card renders it under the label as a skipped-with-reason
 // item rather than a red ✗ "not done".
 const ChecklistEntry = z.object({
   label: z.string().min(1).max(200),

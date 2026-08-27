@@ -13,7 +13,7 @@
 // mirror the LINE Flex card + staff form so what admin sees here
 // matches what staff saw when filling it:
 //   ✓ checked    emerald
-//   📝 skipped   amber + reason indented
+//   skipped   amber + reason indented
 //   ✗ not done   rose bold
 //   section      muted small-caps header
 //   amount/text  shows the typed value as the "↳ value" line
@@ -156,7 +156,7 @@ export default function ReportDetailView({
             }
             const note = it.note?.trim();
             const skipped = !it.checked && !!note;
-            const icon = it.checked ? "✓" : skipped ? "📝" : "✗";
+            const icon = it.checked ? "✓" : skipped ? "" : "✗";
             const iconCls = it.checked
               ? "text-emerald-700"
               : skipped ? "text-amber-700"

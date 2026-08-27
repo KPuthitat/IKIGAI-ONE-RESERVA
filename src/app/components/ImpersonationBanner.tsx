@@ -36,7 +36,6 @@ export default function ImpersonationBanner({
   return (
     <div className="sticky top-0 z-50 bg-amber-500 text-white shadow-md">
       <div className="max-w-7xl mx-auto px-3 py-2 flex items-center gap-3 text-xs sm:text-sm">
-        <span className="text-base">👁️</span>
         <div className="flex-1 min-w-0">
           <span className="font-bold">{impersonatorName}</span>
           <span className="mx-1 opacity-80">→ ดูแทน</span>

@@ -61,7 +61,7 @@ export default function Sandbox() {
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-sm font-bold text-amber-800">
-            🧪 Sandbox · sandbox · sandbox
+            Sandbox · sandbox · sandbox
           </h2>
           <p className="text-[11px] text-amber-700/70 mt-0.5">
             Test events ติด tag <code className="font-mono bg-amber-100 px-1 rounded">__test__</code>
@@ -125,7 +125,7 @@ export default function Sandbox() {
             disabled={!!busy}
             className="text-xs px-3 py-1.5 rounded-md border border-rose-300 text-rose-700 hover:bg-rose-50 disabled:opacity-50"
           >
-            🗑 ลบ test data ทั้งหมด
+            ลบ test data ทั้งหมด
           </button>
         )}
       </div>

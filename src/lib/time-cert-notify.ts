@@ -96,14 +96,14 @@ export async function notifyTimeCertDecision(input: CertDecisionInput): Promise<
 
   const text = input.decision === "approved"
     ? [
-        `✅ คำขอแก้ไขเวลา${entryLabelTh} ของ${greet}ได้รับการอนุมัติแล้วครับ`,
+        `คำขอแก้ไขเวลา${entryLabelTh} ของ${greet}ได้รับการอนุมัติแล้วครับ`,
         ``,
         `เวลาเดิม:  ${bkkDisplay(row.original_ts)}`,
         `เวลาใหม่:  ${bkkDisplay(row.proposed_ts)}`,
         input.decisionNote ? `\nหมายเหตุจากแอดมิน:\n${input.decisionNote}` : ``
       ].filter(Boolean).join("\n")
     : [
-        `❌ คำขอแก้ไขเวลา${entryLabelTh} ของ${greet}ถูกปฏิเสธครับ`,
+        `คำขอแก้ไขเวลา${entryLabelTh} ของ${greet}ถูกปฏิเสธครับ`,
         ``,
         `เวลาเดิม (ไม่ถูกแก้):  ${bkkDisplay(row.original_ts)}`,
         input.decisionNote
@@ -151,10 +151,10 @@ export async function notifyMissingPunchOffence(args: {
   const th = args.entryType === "out" ? "ออกงาน" : "เข้างาน";
   const dateTh = args.workDate ? ` (วันที่ ${args.workDate})` : "";
   const text = [
-    `⚠️ เตือนด้วยวาจา — ${greet}ลืมลงเวลา${th}${dateTh} และแอดมินได้รับรองเวลาให้แล้วครับ`,
+    `⚠ เตือนด้วยวาจา — ${greet}ลืมลงเวลา${th}${dateTh} และแอดมินได้รับรองเวลาให้แล้วครับ`,
     ``,
     `นับรวมแล้วเป็น “ครั้งที่ ${args.count}” ของการลืมลงเวลา`,
-    `รบกวนช่วยกันลงเวลาเข้า–ออกให้ครบทุกครั้งนะครับ 🙏`,
+    `รบกวนช่วยกันลงเวลาเข้า–ออกให้ครบทุกครั้งนะครับ`,
     `(เป็นการเตือนเพื่อทราบ ยังไม่มีผลทางวินัยเพิ่มเติม)`
   ].join("\n");
 

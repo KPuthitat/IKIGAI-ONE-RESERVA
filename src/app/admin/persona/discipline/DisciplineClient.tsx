@@ -236,7 +236,7 @@ export default function DisciplineClient({
             <button type="button" disabled={busy || !userId || !title.trim() || !body.trim()}
               onClick={issue}
               className="flex-1 py-2.5 rounded-lg bg-rose-600 text-white text-sm font-bold disabled:opacity-50">
-              {busy ? t("common.submitting") : "📨 " + t("admin.persona.discipline.issueAndNotify")}
+              {busy ? t("common.submitting") : t("admin.persona.discipline.issueAndNotify")}
             </button>
           </div>
         </div>

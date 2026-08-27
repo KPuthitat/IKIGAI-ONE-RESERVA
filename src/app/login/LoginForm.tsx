@@ -166,10 +166,10 @@ export default function LoginForm({
                   : "text-violet-800"
             }`}>
               {accountNotice.kind === "resigned"
-                ? "🌅 ขอบคุณสำหรับการทำงานที่ผ่านมา"
+                ? "ขอบคุณสำหรับการทำงานที่ผ่านมา"
                 : accountNotice.kind === "disabled"
-                  ? "⛔ บัญชีถูกปิดใช้งาน"
-                  : "✉️ ยังไม่ได้ตั้งค่าครั้งแรก"}
+                  ? "บัญชีถูกปิดใช้งาน"
+                  : "ยังไม่ได้ตั้งค่าครั้งแรก"}
             </div>
             <div className="text-xs text-slate-700 leading-relaxed">
               {accountNotice.title}
@@ -204,7 +204,7 @@ export default function LoginForm({
         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
           {forgotDone ? (
             <div className="text-xs text-slate-700 leading-relaxed">
-              ✅ ถ้ามีบัญชีที่ผูก LINE ไว้ ระบบได้ส่ง<b>ลิงก์ตั้งรหัสใหม่ไปที่ LINE</b>แล้ว
+              ถ้ามีบัญชีที่ผูก LINE ไว้ ระบบได้ส่ง<b>ลิงก์ตั้งรหัสใหม่ไปที่ LINE</b>แล้ว
               กรุณาเปิดแอป LINE แล้วกดลิงก์เพื่อตั้ง username / รหัสผ่าน / PIN ใหม่
               <div className="mt-2 text-[11px] text-slate-500">
                 ไม่ได้รับลิงก์? แปลว่าบัญชียังไม่ได้ผูก LINE — กรุณาติดต่อแอดมิน

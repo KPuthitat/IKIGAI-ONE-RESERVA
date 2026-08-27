@@ -287,7 +287,7 @@ export default function BookingActionsModal({
           {booking.food_allergy && (
             <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm">
               <div className="text-xs text-rose-700 font-bold mb-1">
-                🍽️ {t("admin.bookings.allergyLabel")}
+                {t("admin.bookings.allergyLabel")}
               </div>
               <div className="text-rose-900 whitespace-pre-wrap font-bold">
                 {booking.food_allergy}
@@ -327,7 +327,7 @@ export default function BookingActionsModal({
                 {combos === null ? (
                   <button type="button" onClick={loadCombos} disabled={busy}
                     className="text-xs text-brand hover:underline">
-                    🔗 แนะนำรวมโต๊ะ (ลูกค้ากลุ่มใหญ่)
+                    แนะนำรวมโต๊ะ (ลูกค้ากลุ่มใหญ่)
                   </button>
                 ) : combos.length === 0 ? (
                   <p className="text-xs text-slate-400">ไม่มีชุดโต๊ะว่างที่พอสำหรับ {booking.party_size} คน</p>
@@ -340,7 +340,7 @@ export default function BookingActionsModal({
                           onClick={() => assignTables(c.table_ids)}
                           className="text-xs px-2 py-1 rounded border border-brand/40 bg-brand/5 hover:bg-brand/10 text-slate-700 disabled:opacity-50"
                           title={c.crossZone ? "ข้ามโซน" : c.table_ids.length > 1 ? "โต๊ะติดกันในโซนเดียวกัน" : "โต๊ะเดียว"}>
-                          {c.table_ids.length > 1 ? "🔗 " : ""}{c.labels.join("+")}
+                          {c.table_ids.length > 1 ? "" : ""}{c.labels.join("+")}
                           <span className="text-slate-400"> · {c.totalCapacity} ที่นั่ง{c.waste > 0 ? ` (เหลือ ${c.waste})` : ""}</span>
                           {c.crossZone && <span className="text-amber-600"> · ข้ามโซน</span>}
                         </button>

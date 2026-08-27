@@ -457,7 +457,7 @@ export default function ExpensesClient(props: {
       if (j.usage) setUsage(j.usage);
       const matchNote = matched ? ` · จับคู่ร้าน “${matched.name}”${matched.by === "tax_id" ? " (จากเลขผู้เสียภาษี)" : ""}` : "";
       const dup = (j.duplicate ?? null) as { vendor_name: string | null; bill_date: string; amount_total: number } | null;
-      if (dup) setErr(`⚠️ บิลนี้อาจซ้ำ — เลขที่ ${r.invoice_no ?? "-"}${dup.vendor_name ? ` · ${dup.vendor_name}` : ""} ฿${fmtMoney(dup.amount_total)} บันทึกไว้แล้วเมื่อ ${dup.bill_date} (ตรวจสอบก่อนบันทึกซ้ำ)`);
+      if (dup) setErr(`บิลนี้อาจซ้ำ — เลขที่ ${r.invoice_no ?? "-"}${dup.vendor_name ? ` · ${dup.vendor_name}` : ""} ฿${fmtMoney(dup.amount_total)} บันทึกไว้แล้วเมื่อ ${dup.bill_date} (ตรวจสอบก่อนบันทึกซ้ำ)`);
       else setErr(null);
       setScanMsg(`อ่านแล้ว (สแกนนี้ ~฿${fmtMoney(j.costBaht ?? 0)})${matchNote} — ตรวจทานก่อนบันทึก`);
     } finally { setScanning(false); }
@@ -969,7 +969,7 @@ export default function ExpensesClient(props: {
       {drafts.length > 0 && (
         <div className="card border-amber-300 bg-amber-50/60 space-y-2 p-3">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-amber-900">📥 ร่างรอตรวจ (จากไลน์)</span>
+            <span className="text-sm font-bold text-amber-900">ร่างรอตรวจ (จากไลน์)</span>
             <span className="text-xs bg-amber-500 text-white font-bold rounded-full px-2 py-0.5">{drafts.length}</span>
           </div>
           <p className="text-[11px] text-amber-800/80">

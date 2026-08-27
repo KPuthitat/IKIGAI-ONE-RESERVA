@@ -630,7 +630,7 @@ export default function ApplicationDetailClient({
           {showId ? (
             <span className="text-sm font-mono">{nationalIdPlain ?? "—"}</span>
           ) : (
-            <span className="text-sm font-mono text-slate-400">••••••••••••• 🔒</span>
+            <span className="text-sm font-mono text-slate-400">•••••••••••••</span>
           )}
           <button type="button" onClick={() => setShowId(!showId)}
             className="text-xs text-brand hover:underline ml-auto">
@@ -1116,7 +1116,7 @@ function renderAnswer(q: CustomQuestion, ans: unknown): React.ReactNode {
   if (q.type === "rating") {
     const n = typeof ans === "number" ? ans : 0;
     const scale = q.config?.scale ?? 5;
-    return <span className="font-bold">{n}/{scale} {q.config?.icon === "number" ? "" : "⭐".repeat(n)}</span>;
+    return <span className="font-bold">{n}/{scale} {q.config?.icon === "number" ? "" : "".repeat(n)}</span>;
   }
   if (q.type === "grid") {
     if (typeof ans !== "object" || Array.isArray(ans)) return <Empty />;
@@ -1250,8 +1250,8 @@ function HireDialog({
         }`}>
           <span>
             {locked
-              ? "🔒 สาขา / ตำแหน่ง / ค่าตอบแทน / วันเริ่มงาน ดึงจากใบสมัคร + ข้อเสนอ และถูกล็อกไว้"
-              : "🔓 ปลดล็อกแล้ว — แก้ไขได้ (ค่าจะไม่ตรงกับข้อเสนอเดิม)"}
+              ? "สาขา / ตำแหน่ง / ค่าตอบแทน / วันเริ่มงาน ดึงจากใบสมัคร + ข้อเสนอ และถูกล็อกไว้"
+              : "ปลดล็อกแล้ว — แก้ไขได้ (ค่าจะไม่ตรงกับข้อเสนอเดิม)"}
           </span>
           {locked && (
             <button type="button" onClick={() => setPinOpen(true)}
@@ -1358,7 +1358,7 @@ function HireDialog({
         {err && <div className="text-rose-600 text-sm">✗ {err}</div>}
 
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
-          ⚠️ การกระทำนี้สร้าง user ใน PERSONA ทันที — หลังจากนี้ขั้นตอนการเลิกจ้าง
+          การกระทำนี้สร้าง user ใน PERSONA ทันที — หลังจากนี้ขั้นตอนการเลิกจ้าง
           จะต้องผ่านระบบ resignation ปกติ ตรวจสอบข้อมูลให้แน่ใจก่อนยืนยัน
         </div>
 
@@ -1436,7 +1436,7 @@ function InviteLinkBox({ result }: { result: HireResult }) {
       </p>
       {result.liff_url && (
         <div className="bg-white border border-slate-200 rounded p-2 text-xs space-y-1">
-          <div className="font-bold text-slate-700">🔗 ลิงก์ LINE (แนะนำ — เชื่อมต่อ LINE อัตโนมัติ)</div>
+          <div className="font-bold text-slate-700">ลิงก์ LINE (แนะนำ — เชื่อมต่อ LINE อัตโนมัติ)</div>
           <div className="flex items-center gap-2">
             <code className="flex-1 truncate font-mono text-[10px] text-slate-600">{result.liff_url}</code>
             <button type="button" onClick={() => copy(result.liff_url!, "liff")}
@@ -1447,7 +1447,7 @@ function InviteLinkBox({ result }: { result: HireResult }) {
         </div>
       )}
       <div className="bg-white border border-slate-200 rounded p-2 text-xs space-y-1">
-        <div className="font-bold text-slate-700">🌐 ลิงก์เบราว์เซอร์ปกติ (สำรอง)</div>
+        <div className="font-bold text-slate-700">ลิงก์เบราว์เซอร์ปกติ (สำรอง)</div>
         <div className="flex items-center gap-2">
           <code className="flex-1 truncate font-mono text-[10px] text-slate-600">{result.direct_url}</code>
           <button type="button" onClick={() => copy(result.direct_url, "direct")}

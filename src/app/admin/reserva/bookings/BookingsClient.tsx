@@ -370,7 +370,7 @@ function PendingBookingCard({
           {b.notes && <div className="text-sm text-slate-600 mt-1">{t("admin.bookings.notesLabel")}: {b.notes}</div>}
           {b.food_allergy && (
             <div className="text-sm text-rose-700 mt-1 font-bold">
-              🍽️ {t("admin.bookings.allergyLabel")}: {b.food_allergy}
+              {t("admin.bookings.allergyLabel")}: {b.food_allergy}
             </div>
           )}
         </div>
@@ -476,7 +476,7 @@ function DateGroup({
               {b.notes && <div className="text-sm text-slate-600 mt-1">{t("admin.bookings.notesLabel")}: {b.notes}</div>}
           {b.food_allergy && (
             <div className="text-sm text-rose-700 mt-1 font-bold">
-              🍽️ {t("admin.bookings.allergyLabel")}: {b.food_allergy}
+              {t("admin.bookings.allergyLabel")}: {b.food_allergy}
             </div>
           )}
             </div>

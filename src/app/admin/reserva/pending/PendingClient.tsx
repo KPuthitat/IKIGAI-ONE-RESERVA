@@ -173,7 +173,7 @@ export default function PendingClient({
                 )}
                 {b.food_allergy && (
                   <div className="text-sm text-rose-700 mt-1 font-bold">
-                    🍽️ {t("admin.bookings.allergyLabel")}: {b.food_allergy}
+                    {t("admin.bookings.allergyLabel")}: {b.food_allergy}
                   </div>
                 )}
                 {b.occasion && (
