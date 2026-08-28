@@ -81,15 +81,20 @@ input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Buttons (rounded 10px, bold weight, no easing — matches payroll) ── */
+/* ── Buttons — pill-shaped (owner redesign 2026-08, PEAK-style). Was
+   rounded-[10px]; now fully rounded so every CTA reads as a capsule. ── */
 .btn {
-  @apply inline-flex items-center justify-center px-5 py-2.5 rounded-[10px]
-         font-bold transition-opacity disabled:opacity-50 disabled:cursor-not-allowed;
+  @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full
+         font-bold transition-[filter,background-color] disabled:opacity-50 disabled:cursor-not-allowed;
 }
-.btn-primary { @apply btn bg-brand text-white shadow-[0_2px_8px_rgba(160,104,32,.4)] hover:opacity-90 active:opacity-80; }
+.btn-primary { @apply btn bg-brand text-white shadow-sm hover:brightness-[1.06] active:brightness-95; }
 .btn-secondary { @apply btn bg-white border-[1.5px] border-slate-200 text-slate-700 hover:bg-slate-50; }
-.btn-danger { @apply btn bg-red-600 text-white hover:opacity-90; }
-.btn-success { @apply btn bg-emerald-600 text-white hover:opacity-90; }
+.btn-danger { @apply btn bg-red-600 text-white hover:brightness-[1.06]; }
+.btn-success { @apply btn bg-emerald-600 text-white hover:brightness-[1.06]; }
+/* Income / expense semantic actions — sage green vs terracotta, tuned to
+   the coffee palette (calmer than pure green/red). */
+.btn-inc { @apply btn text-white shadow-sm hover:brightness-[1.06]; background:#4F8A67; }
+.btn-exp { @apply btn text-white shadow-sm hover:brightness-[1.06]; background:#B26A47; }
 
 /* ── Inputs (matches payroll: f8fafc bg, e2e8f0 border, brand focus) ── */
 .input {
@@ -114,7 +119,10 @@ input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
   padding-right: 0.5rem;
 }
 .label { @apply block text-[13px] font-semibold text-slate-500 mb-1.5; }
-.card { @apply bg-white rounded-2xl shadow-card p-6; }
+/* Card — soft elevation + a warm hairline border (owner redesign 2026-08).
+   The border keeps cards legible against cream page backgrounds now that
+   the drop shadow is subtle. */
+.card { @apply bg-white rounded-2xl shadow-card p-6 border border-[#EFE4D3]; }
 
 /* ── Brand wordmark used in headers ── */
 .brand-wordmark {

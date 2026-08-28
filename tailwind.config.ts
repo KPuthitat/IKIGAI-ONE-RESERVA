@@ -55,7 +55,11 @@ const config: Config = {
           "linear-gradient(160deg, #281a0e 0%, #3a2716 60%, #4e351f 100%)"
       },
       boxShadow: {
-        card: "0 20px 60px rgba(0,0,0,.3)"
+        // Softened 2026-08 (owner redesign) — the old heavy 60px/.3 drop
+        // shadow read as "loud"; PEAK-style soft elevation instead. Warm
+        // espresso-tinted rgba so it sits right on the cream surfaces.
+        card: "0 1px 3px rgba(58,39,22,.05), 0 8px 24px rgba(58,39,22,.06)",
+        "card-lg": "0 2px 6px rgba(58,39,22,.07), 0 18px 40px rgba(58,39,22,.10)"
       }
     }
   },
