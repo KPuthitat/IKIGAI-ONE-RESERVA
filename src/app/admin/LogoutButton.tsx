@@ -13,7 +13,7 @@ export default function LogoutButton() {
         router.push("/login");
         router.refresh();
       }}
-      className="text-sm font-medium text-slate-600 hover:text-slate-900"
+      className="inline-flex items-center rounded-full border border-white/30 px-4 py-1 text-sm font-medium text-white/90 hover:bg-white/10 hover:text-white transition-colors"
     >{t("nav.logout")}</button>
   );
 }

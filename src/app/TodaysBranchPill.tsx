@@ -34,9 +34,9 @@ export default function TodaysBranchPill({
   // branch happens to be selected.
   if (pathname.startsWith("/admin/recruita")) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-[11px] bg-white border border-[#DDCBAE] rounded-full px-2.5 py-0.5">
-        <span className="text-slate-800 font-bold">{lang === "en" ? "All branches" : "ทุกสาขา"}</span>
-        <span className="text-slate-400">· {lang === "en" ? "company-wide" : "ส่วนกลาง"}</span>
+      <span className="inline-flex items-center gap-1.5 text-[11px] bg-white/[.10] border border-white/[.20] rounded-full px-2.5 py-0.5">
+        <span className="text-white font-bold">{lang === "en" ? "All branches" : "ทุกสาขา"}</span>
+        <span className="text-white/50">· {lang === "en" ? "company-wide" : "ส่วนกลาง"}</span>
       </span>
     );
   }
@@ -47,12 +47,12 @@ export default function TodaysBranchPill({
   // drop "วันนี้" prefix and the emoji. Same horizontal style as
   // before, just less crowded.
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] bg-white border border-[#DDCBAE] rounded-full pl-2.5 pr-1 py-0.5">
-      <span className="text-slate-800 font-bold">{branchName}</span>
+    <span className="inline-flex items-center gap-1.5 text-[11px] bg-white/[.10] border border-white/[.20] rounded-full pl-2.5 pr-1 py-0.5">
+      <span className="text-white font-bold">{branchName}</span>
       {hasChoice && (
         <Link
           href={`${pickerPath}?next=${encodeURIComponent(pathname)}`}
-          className="text-brand-dark hover:text-white px-1.5 py-0.5 rounded-full bg-brand/15 hover:bg-brand ml-0.5 transition"
+          className="text-brand-light hover:text-white px-1.5 py-0.5 rounded-full bg-brand/30 hover:bg-brand/50 ml-0.5 transition"
         >
           {t("staff.topbar.changeBranch")}
         </Link>

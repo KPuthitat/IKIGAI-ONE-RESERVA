@@ -52,7 +52,12 @@ const config: Config = {
       },
       backgroundImage: {
         "ink-gradient":
-          "linear-gradient(160deg, #281a0e 0%, #3a2716 60%, #4e351f 100%)"
+          "linear-gradient(160deg, #281a0e 0%, #3a2716 60%, #4e351f 100%)",
+        // Header bar gradient (owner 2026-08, PGH-style) — a visible warm
+        // sweep espresso → coffee → caramel. All stops stay dark enough for
+        // white text; richer/more "gradient" than the flat espresso ink one.
+        "coffee-gradient":
+          "linear-gradient(105deg, #2C1D0F 0%, #4E3115 52%, #7A4F16 100%)"
       },
       boxShadow: {
         // Softened 2026-08 (owner redesign) — the old heavy 60px/.3 drop
