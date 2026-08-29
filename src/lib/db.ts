@@ -7191,6 +7191,17 @@ function runMigrations(db: Database.Database): void {
       ["LN", "ชำระเงินกู้"]
     ].forEach(([code, name], i) => seedCat.run(code, name, (i + 1) * 10));
   }
+  // Partner revenue-share payout category (owner 2026-08). Added AFTER the
+  // initial seed set, so upsert it idempotently every boot — this reaches
+  // existing installs too (the seed block above only runs on an empty table).
+  // code has no CHECK constraint and name is UNIQUE, so INSERT OR IGNORE is
+  // safe + non-duplicating. NOT a COG: this is money collected on a partner's
+  // behalf and forwarded (e.g. ศาลาชิลล์), booked here only when the owner
+  // records revshare as gross-sales-then-expense. Placed before the benchmark
+  // backfill below so its description gets filled on the same boot.
+  db.prepare(
+    "INSERT OR IGNORE INTO accounta_categories (code, name, sort_order) VALUES ('PR', 'ส่วนแบ่งจ่ายพันธมิตร', 130)"
+  ).run();
   // Backfill the chart description + benchmark % BY CODE — runs every boot but
   // COALESCE only fills blanks, so it works for both fresh seeds + existing
   // installs and never clobbers an owner edit (owner 2026-06-18).
@@ -7205,7 +7216,8 @@ function runMigrations(db: Database.Database): void {
     ["AO", "ค่าบริหาร/สำนักงาน · Admin & Office (เครื่องเขียน, ค่าบัญชี, ประกัน)", 1, 3],
     ["FC", "ค่าธรรมเนียมการเงิน/แพลตฟอร์ม · Financial & Platform (ค่าธรรมเนียมบัตร, GP เช่น GRAB)", 6, 12],
     ["MI", "เบ็ดเตล็ด · Miscellaneous (ข้าวพนักงาน, เลี้ยงทีม, ค่าปรับ ฯลฯ)", 0.5, 1],
-    ["CP", "รายจ่ายลงทุน/ครุภัณฑ์ · CapEx (ลงทุนครั้งเดียว: อุปกรณ์, เฟอร์นิเจอร์, โครงสร้าง)", null, null]
+    ["CP", "รายจ่ายลงทุน/ครุภัณฑ์ · CapEx (ลงทุนครั้งเดียว: อุปกรณ์, เฟอร์นิเจอร์, โครงสร้าง)", null, null],
+    ["PR", "ส่วนแบ่งจ่ายพันธมิตร · Revenue-share payout (ยอดที่เก็บแทนแล้วโอนคืนพันธมิตร เช่น ศาลาชิลล์ — ไม่ใช่ COG/ต้นทุนสินค้า)", null, null]
   ];
   const setBench = db.prepare(
     "UPDATE accounta_categories SET description = COALESCE(description, ?), " +
