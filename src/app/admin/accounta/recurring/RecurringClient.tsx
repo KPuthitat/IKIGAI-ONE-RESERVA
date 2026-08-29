@@ -128,7 +128,7 @@ export default function RecurringClient({
     <div className="space-y-3">
       {ConfirmDialog}
       <div className="flex justify-end">
-        <button type="button" onClick={openNew} className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ เพิ่มรายจ่ายประจำ</button>
+        <button type="button" onClick={openNew} className="rounded-full bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ เพิ่มรายจ่ายประจำ</button>
       </div>
 
       <div className="card overflow-x-auto">
