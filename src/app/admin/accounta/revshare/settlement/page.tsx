@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { isRevshareBranch, getPartner, previewSettlement } from "@/lib/revshare-db";
+import { isRevshareBranch, getPartner, previewSettlement, monthPickerOptions } from "@/lib/revshare-db";
 import SettlementClient from "./SettlementClient";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ function nowBkk(): { y: number; m: number } {
   return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1 };
 }
 
-export default function RevshareSettlementPage({ searchParams }: { searchParams: { partner?: string; year?: string; month?: string; span?: string } }) {
+export default function RevshareSettlementPage({ searchParams }: { searchParams: { partner?: string; year?: string; month?: string; months?: string } }) {
   const user = requirePermission("accounta.manage");
   const branchId = user.activeBranchId ?? null;
   const partnerId = Number(searchParams.partner);
@@ -32,8 +32,10 @@ export default function RevshareSettlementPage({ searchParams }: { searchParams:
   const now = nowBkk();
   const year = Number(searchParams.year) || now.y;
   const month = Number(searchParams.month) || now.m;
-  const span = Math.max(1, Math.min(12, Number(searchParams.span) || 1));
-  const preview = previewSettlement(partner.id, branchId, year, month, span)!;
+  const months = (searchParams.months ?? "")
+    .split(",").map((s) => s.trim()).filter((s) => /^\d{4}-\d{2}$/.test(s));
+  const preview = previewSettlement(partner.id, branchId, year, month, months.length ? months : undefined)!;
+  const monthOptions = monthPickerOptions(partner.id, branchId, year, month, 6);
 
   const seller = getDb().prepare(
     `SELECT b.name, b.reg_address, b.tax_branch_code, b.contact_phone, c.name_th AS company_name
@@ -51,9 +53,10 @@ export default function RevshareSettlementPage({ searchParams }: { searchParams:
         <p className="text-sm text-slate-500 mt-1">สรุปส่วนแบ่งรายเดือน → ออกใบเรียกเก็บส่วนแบ่งยอดขายครั้งเดียวสิ้นเดือน</p>
       </div>
       <SettlementClient
+        key={`${year}-${month}-${preview.months.join(",")}`}
         partner={{ id: partner.id, name: partner.name, venue: partner.venue, pos_categories: partner.pos_categories, vat_enabled: partner.vat_enabled, line_group_id: partner.line_group_id }}
         seller={{ name: seller.name, company: seller.company_name, address: seller.reg_address, taxBranchCode: seller.tax_branch_code, phone: seller.contact_phone }}
-        initial={preview} year={year} month={month} span={span}
+        initial={preview} year={year} month={month} monthOptions={monthOptions}
       />
     </div>
   );

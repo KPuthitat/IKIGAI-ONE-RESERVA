@@ -7,7 +7,7 @@ import { getDb } from "./db";
 import {
   computeSettlement, computeRoundBreakdown, opMonthFor, floorFor, roundLabel, round2,
   groupDailyIntoWeeks, salesVat, salesBaseIncludesVat, partnerShopName,
-  DEFAULT_TIERS, DEFAULT_FLOORS,
+  DEFAULT_TIERS, DEFAULT_FLOORS, TH_MONTHS_FULL,
   type Tier, type Floor, type SettlementResult
 } from "./revshare";
 
@@ -31,7 +31,8 @@ export type RsRound = {
 };
 export type RsSettlement = SettlementResult & {
   id: number; partner_id: number; settle_year: number; settle_month: number; op_month: number;
-  span_months: number;   // 1 = single month; >1 = combined (ends at settle_month)
+  span_months: number;         // count of covered months (= covered_months.length)
+  covered_months: string[];    // exact set of "YYYY-MM" rolled up, includes the anchor (settle month)
   status: "draft" | "issued" | "paid"; invoice_no: string | null;
   issued_at: string | null; paid_at: string | null;
 };
@@ -367,41 +368,134 @@ export type SettlementPreview = {
   result: SettlementResult;
   breakdown: WeekBreakdown[];   // weekly transfer + GP (owner 2026-06-23: daily → weekly → monthly)
   opMonth: number;
-  span: number;                 // # of months this preview covers (ends at settle month)
+  months: string[];             // covered "YYYY-MM" (ascending, always includes the anchor)
   stored: RsSettlement | null;
-  stale: boolean;   // a snapshot exists but no longer matches current rounds/span
+  stale: boolean;   // a snapshot exists but no longer matches current rounds / covered set
 };
 
-/** Live-compute the month from current rounds (no write). Also returns any
- *  stored snapshot + whether it's stale (rounds changed since it was saved). */
+// ── month-key helpers (owner 2026-08 redesign) ──────────────────────
+// A settlement covers an explicit SET of months, keyed on the anchor (settle
+// month) but able to roll up any chosen still-unsettled preceding months. Month
+// keys are "YYYY-MM".
+function monthKey(y: number, m: number): string { return `${y}-${pad2(m)}`; }
+function parseMonthKey(k: string): { y: number; m: number } | null {
+  const mm = /^(\d{4})-(\d{2})$/.exec(k);
+  if (!mm) return null;
+  const y = Number(mm[1]), m = Number(mm[2]);
+  return m >= 1 && m <= 12 ? { y, m } : null;
+}
+function monthsBefore(y: number, m: number, n: number): { y: number; m: number } {
+  const d = new Date(Date.UTC(y, m - 1 - n, 1));
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1 };
+}
+function sameKeySet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sb = new Set(b);
+  return a.every((k) => sb.has(k));
+}
+/** The set of months a stored row covers: the covered_months JSON when present,
+ *  otherwise derived from settle_month + span_months (old contiguous rows). */
+function coveredKeysOfRow(r: { settle_year: number; settle_month: number; span_months: number | null; covered_months: string | null }): string[] {
+  if (r.covered_months) {
+    try {
+      const a = JSON.parse(r.covered_months);
+      if (Array.isArray(a)) {
+        const keys = a.filter((x) => typeof x === "string" && parseMonthKey(x));
+        if (keys.length) return keys;
+      }
+    } catch { /* fall through to span derivation */ }
+  }
+  const span = Math.max(1, r.span_months ?? 1);
+  const keys: string[] = [];
+  for (let i = 0; i < span; i++) { const b = monthsBefore(r.settle_year, r.settle_month, i); keys.push(monthKey(b.y, b.m)); }
+  return keys;
+}
+
+/** Months already rolled up by SOME settlement of this partner (draft/issued/
+ *  paid) — the ones that must NOT be re-selectable. Pass the anchor to exclude
+ *  its own row so the anchor's current selection isn't blocked against itself. */
+export function settledMonthKeys(partnerId: number, branchId: number, exclYear?: number, exclMonth?: number): Set<string> {
+  const set = new Set<string>();
+  if (!partnerGuard(partnerId, branchId)) return set;
+  const rows = getDb().prepare(
+    "SELECT settle_year, settle_month, span_months, covered_months FROM revshare_settlements WHERE partner_id = ?"
+  ).all(partnerId) as any[];
+  for (const row of rows) {
+    if (exclYear != null && row.settle_year === exclYear && row.settle_month === exclMonth) continue;
+    for (const k of coveredKeysOfRow(row)) set.add(k);
+  }
+  return set;
+}
+
+export type MonthOption = {
+  ym: string; year: number; month: number; label: string;
+  sales: number;      // this month's total rounds
+  settled: boolean;   // already rolled up by another settlement → not selectable
+  isAnchor: boolean;  // the current settle month (always included, always checked)
+};
+/** Choices for the "combine which preceding months" checklist: the anchor plus
+ *  `lookback` months before it, each with its sales total and whether another
+ *  settlement already covers it. Newest (anchor) first. */
+export function monthPickerOptions(
+  partnerId: number, branchId: number, anchorY: number, anchorM: number, lookback = 6
+): MonthOption[] {
+  if (!partnerGuard(partnerId, branchId)) return [];
+  const blocked = settledMonthKeys(partnerId, branchId, anchorY, anchorM);
+  const opts: MonthOption[] = [];
+  for (let i = 0; i <= lookback; i++) {
+    const b = monthsBefore(anchorY, anchorM, i);
+    const ym = monthKey(b.y, b.m);
+    const sales = round2(listRounds(partnerId, branchId, b.y, b.m).reduce((s, r) => s + r.sales_amount, 0));
+    opts.push({
+      ym, year: b.y, month: b.m, label: `${TH_MONTHS_FULL[b.m]} ${b.y + 543}`,
+      sales, settled: i > 0 && blocked.has(ym), isAnchor: i === 0
+    });
+  }
+  return opts;
+}
+
+/** Normalise a requested covered set: force-in the anchor, drop invalid /
+ *  future-of-anchor keys, dedup, ascending. */
+function normalizeCoveredSet(anchorY: number, anchorM: number, months: string[]): string[] {
+  const anchorKey = monthKey(anchorY, anchorM);
+  const set = new Set(months);
+  set.add(anchorKey);
+  return [...set]
+    .map((k) => parseMonthKey(k))
+    .filter((x): x is { y: number; m: number } => !!x)
+    .map((x) => monthKey(x.y, x.m))
+    .filter((k) => k <= anchorKey)
+    .sort();
+}
+
+/** Live-compute the settlement from current rounds over the covered set (no
+ *  write). `months` = the exact months to roll up (defaults to the stored
+ *  snapshot's set, else just the anchor month). Also returns any stored
+ *  snapshot + whether it's stale (rounds/covered set changed since it saved). */
 export function previewSettlement(
-  partnerId: number, branchId: number, year: number, month: number, span = 1
+  partnerId: number, branchId: number, year: number, month: number, months?: string[]
 ): SettlementPreview | null {
   const partner = getPartner(partnerId, branchId);
   if (!partner) return null;
-  const s = Math.max(1, Math.min(12, Math.floor(span || 1)));
   const tiers = getTiers(partnerId);
   const floors = getFloors(partnerId);
-  const opMonth = opMonthFor(partner.start_date, year, month); // end month's contract month
-  // Rounds over the covered span [firstMonth .. settle month]. span=1 keeps the
-  // original single-month path byte-for-byte.
-  let rounds: RsRound[];
+  const opMonth = opMonthFor(partner.start_date, year, month); // anchor month's contract month
+  const stored = getStoredSettlement(partnerId, branchId, year, month);
+  // Resolve the covered set: explicit request → stored snapshot → anchor only.
+  const requested = months && months.length ? months
+    : stored ? stored.covered_months
+    : [monthKey(year, month)];
+  const covered = normalizeCoveredSet(year, month, requested);
+  // Gather rounds across every covered month.
+  const rounds: RsRound[] = [];
+  for (const k of covered) { const p = parseMonthKey(k)!; rounds.push(...listRounds(partnerId, branchId, p.y, p.m)); }
+  rounds.sort((a, b) => (a.period_start < b.period_start ? -1 : 1));
+  // Minimum-billing floor: single month → natural floorFor(opMonth); combined →
+  // sum of each covered op-month's floor (each month keeps its own minimum).
   let floorOverride: number | undefined;
-  if (s === 1) {
-    rounds = listRounds(partnerId, branchId, year, month);
-  } else {
-    const startD = new Date(Date.UTC(year, month - 1 - (s - 1), 1));
-    const startIso = `${startD.getUTCFullYear()}-${String(startD.getUTCMonth() + 1).padStart(2, "0")}-01`;
-    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    const endIso = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-    rounds = listRoundsRange(partnerId, branchId, startIso, endIso);
-    // Minimum-billing floor for a combined settlement = sum of each covered
-    // op-month's floor (each month carries its own monthly minimum).
+  if (covered.length > 1) {
     let floorSum = 0;
-    for (let i = 0; i < s; i++) {
-      const d = new Date(Date.UTC(year, month - 1 - i, 1));
-      floorSum += floorFor(opMonthFor(partner.start_date, d.getUTCFullYear(), d.getUTCMonth() + 1), floors);
-    }
+    for (const k of covered) { const p = parseMonthKey(k)!; floorSum += floorFor(opMonthFor(partner.start_date, p.y, p.m), floors); }
     floorOverride = round2(floorSum);
   }
   const totalSales = rounds.reduce((sum, r) => sum + r.sales_amount, 0);
@@ -412,19 +506,18 @@ export function previewSettlement(
     totalSales, opMonth, tiers, floors, floorOverride,
     vatEnabled: partner.vat_enabled, vatRate: partner.vat_rate, whtRate: partner.wht_rate
   });
-  // Group the month's daily entries into ISO weeks (= the weekly transfer),
+  // Group the covered daily entries into ISO weeks (= the weekly transfer),
   // then split GP per week via cumulative-difference so weeks sum to the
-  // monthly tier GP.
+  // combined tier GP.
   const weeks = groupDailyIntoWeeks(rounds.map((r) => ({ date: r.period_start, amount: r.sales_amount })));
   const rb = computeRoundBreakdown(weeks.map((w) => w.sales), tiers);
   const breakdown: WeekBreakdown[] = rb.map((row, i) => ({
     label: weeks[i].label, start: weeks[i].start, end: weeks[i].end,
     sales: row.sales, roundGP: row.roundGP, gpPct: row.gpPct
   }));
-  const stored = getStoredSettlement(partnerId, branchId, year, month);
   const stale = !!stored &&
-    (round2(stored.totalSales) !== result.totalSales || (stored.span_months ?? 1) !== s);
-  return { result, breakdown, opMonth, span: s, stored, stale };
+    (round2(stored.totalSales) !== result.totalSales || !sameKeySet(stored.covered_months, covered));
+  return { result, breakdown, opMonth, months: covered, stored, stale };
 }
 
 function shapeSettlement(r: any): RsSettlement {
@@ -433,6 +526,7 @@ function shapeSettlement(r: any): RsSettlement {
   return {
     id: r.id, partner_id: r.partner_id, settle_year: r.settle_year, settle_month: r.settle_month, op_month: r.op_month,
     span_months: r.span_months ?? 1,
+    covered_months: coveredKeysOfRow(r),
     totalSales: r.total_sales, tierGP: r.tier_gp, floorApplied: r.floor_applied, topup: r.topup,
     billedGP: r.billed_gp, avgGpPct: r.avg_gp_pct, vatAmount: r.vat_amount, whtAmount: r.wht_amount, netAmount,
     drinkPassthrough,
@@ -453,33 +547,40 @@ export function getStoredSettlement(partnerId: number, branchId: number, year: n
 /** Upsert the snapshot from current rounds. Keeps existing status/invoice when
  *  the row is already issued/paid (just refreshes the numbers — the page warns
  *  before this). A fresh row starts 'draft'. */
-export function saveSettlement(partnerId: number, branchId: number, year: number, month: number, span = 1): RsSettlement | null {
-  const preview = previewSettlement(partnerId, branchId, year, month, span);
+export function saveSettlement(partnerId: number, branchId: number, year: number, month: number, months?: string[]): RsSettlement | null {
+  const preview = previewSettlement(partnerId, branchId, year, month, months);
   if (!preview) return null;
+  // Guard: a non-anchor covered month must not already belong to ANOTHER
+  // settlement — no month may be settled twice (owner 2026-08 redesign).
+  const anchorKey = monthKey(year, month);
+  const blocked = settledMonthKeys(partnerId, branchId, year, month);
+  if (preview.months.some((k) => k !== anchorKey && blocked.has(k))) return null;
+  const coveredJson = JSON.stringify(preview.months);
+  const spanCount = preview.months.length;
   const db = getDb();
   const r = preview.result;
   const existing = getStoredSettlement(partnerId, branchId, year, month);
   if (existing) {
     db.prepare(`
-      UPDATE revshare_settlements SET op_month = ?, span_months = ?, total_sales = ?, tier_gp = ?, floor_applied = ?, topup = ?,
+      UPDATE revshare_settlements SET op_month = ?, span_months = ?, covered_months = ?, total_sales = ?, tier_gp = ?, floor_applied = ?, topup = ?,
         billed_gp = ?, avg_gp_pct = ?, vat_amount = ?, wht_amount = ?, net_amount = ?, drink_passthrough = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(preview.opMonth, preview.span, r.totalSales, r.tierGP, r.floorApplied, r.topup, r.billedGP, r.avgGpPct,
+    `).run(preview.opMonth, spanCount, coveredJson, r.totalSales, r.tierGP, r.floorApplied, r.topup, r.billedGP, r.avgGpPct,
       r.vatAmount, r.whtAmount, r.netAmount, r.drinkPassthrough, existing.id);
   } else {
     db.prepare(`
-      INSERT INTO revshare_settlements (partner_id, settle_year, settle_month, op_month, span_months, total_sales, tier_gp,
+      INSERT INTO revshare_settlements (partner_id, settle_year, settle_month, op_month, span_months, covered_months, total_sales, tier_gp,
         floor_applied, topup, billed_gp, avg_gp_pct, vat_amount, wht_amount, net_amount, drink_passthrough)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(partnerId, year, month, preview.opMonth, preview.span, r.totalSales, r.tierGP, r.floorApplied, r.topup,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(partnerId, year, month, preview.opMonth, spanCount, coveredJson, r.totalSales, r.tierGP, r.floorApplied, r.topup,
       r.billedGP, r.avgGpPct, r.vatAmount, r.whtAmount, r.netAmount, r.drinkPassthrough);
   }
   return getStoredSettlement(partnerId, branchId, year, month);
 }
 
-export function issueSettlement(partnerId: number, branchId: number, year: number, month: number, invoiceNo: string | null, when: string, span = 1): boolean {
-  const saved = saveSettlement(partnerId, branchId, year, month, span);   // always recompute on issue
+export function issueSettlement(partnerId: number, branchId: number, year: number, month: number, invoiceNo: string | null, when: string, months?: string[]): boolean {
+  const saved = saveSettlement(partnerId, branchId, year, month, months);   // always recompute on issue
   if (!saved) return false;
   return getDb().prepare(
     "UPDATE revshare_settlements SET status = 'issued', invoice_no = ?, issued_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"

@@ -15,40 +15,59 @@ type Result = {
 };
 type BreakRow = { label: string; start: string; end: string; sales: number; roundGP: number; gpPct: number };
 type Stored = { status: "draft" | "issued" | "paid"; invoice_no: string | null; issued_at: string | null; paid_at: string | null } | null;
-type Preview = { result: Result; breakdown: BreakRow[]; opMonth: number; span?: number; stored: Stored; stale: boolean };
+type Preview = { result: Result; breakdown: BreakRow[]; opMonth: number; months: string[]; stored: Stored; stale: boolean };
+type MonthOption = { ym: string; year: number; month: number; label: string; sales: number; settled: boolean; isAnchor: boolean };
 type Partner = { id: number; name: string; venue: string | null; pos_categories: string[]; vat_enabled: boolean; line_group_id: string | null };
 type Seller = { name: string; company: string | null; address: string | null; taxBranchCode: string | null; phone: string | null };
 
+function monthKeyLabel(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  return `${TH_MONTHS_FULL[m]} ${y + 543}`;
+}
+
 export default function SettlementClient({
-  partner, seller, initial, year, month, span = 1
-}: { partner: Partner; seller: Seller; initial: Preview; year: number; month: number; span?: number }) {
+  partner, seller, initial, year, month, monthOptions
+}: { partner: Partner; seller: Seller; initial: Preview; year: number; month: number; monthOptions: MonthOption[] }) {
   const router = useRouter();
   const [pv, setPv] = useState<Preview>(initial);
   const [invoiceNo, setInvoiceNo] = useState(initial.stored?.invoice_no ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  // Which months are rolled into this settlement (the anchor is always in).
+  const [selected, setSelected] = useState<Set<string>>(new Set(initial.months));
 
   const r = pv.result;
   const monthLabel = `${TH_MONTHS_FULL[month]} ${year + 543}`;
-  // Combined range label when span > 1 (e.g. "ก.ค.–ส.ค. 2569").
-  const startD = new Date(Date.UTC(year, month - 1 - (span - 1), 1));
-  const startMon = startD.getUTCMonth() + 1, startYr = startD.getUTCFullYear();
-  const periodLabel = span > 1
-    ? `${TH_MONTHS_FULL[startMon]}${startYr !== year ? " " + (startYr + 543) : ""}–${TH_MONTHS_FULL[month]} ${year + 543}`
-    : monthLabel;
+  const coveredMonths = pv.months.length ? pv.months : [`${year}-${String(month).padStart(2, "0")}`];
+  const combined = coveredMonths.length > 1;
+  // No abbreviations — full month names joined with "+" (owner 2026-08).
+  const periodLabel = coveredMonths.map(monthKeyLabel).join(" + ");
   const shop = partnerShopName(partner);
   const status = pv.stored?.status ?? "draft";
   const withVat = partner.vat_enabled && r.vatAmount > 0;
   const grandTotal = r.billedGP + r.vatAmount;   // ยอดบนใบกำกับภาษี
   const hasDrinks = r.drinkPassthrough > 0;      // สวัสดิการเครื่องดื่มพนักงาน (ไม่คิด GP)
 
+  // Navigate to a covered set (server recomputes preview + the picker). Month
+  // shift resets to a single-month (the new anchor); toggling a month re-navs
+  // with the new set. `key` on this component (in page.tsx) remounts it so the
+  // seeded state stays in sync with the URL.
+  function goToMonths(y: number, m: number, keys: string[]) {
+    const uniq = Array.from(new Set(keys)).sort();
+    const qs = `partner=${partner.id}&year=${y}&month=${m}` + (uniq.length ? `&months=${uniq.join(",")}` : "");
+    router.push(`/admin/accounta/revshare/settlement?${qs}`);
+  }
   function shift(delta: number) {
     const d = new Date(Date.UTC(year, month - 1 + delta, 1));
-    router.push(`/admin/accounta/revshare/settlement?partner=${partner.id}&year=${d.getUTCFullYear()}&month=${d.getUTCMonth() + 1}&span=${span}`);
+    goToMonths(d.getUTCFullYear(), d.getUTCMonth() + 1, []);
   }
-  function goSpan(s: number) {
-    router.push(`/admin/accounta/revshare/settlement?partner=${partner.id}&year=${year}&month=${month}&span=${s}`);
+  function toggleMonth(ym: string, on: boolean) {
+    const next = new Set(selected);
+    if (on) next.add(ym); else next.delete(ym);
+    next.add(`${year}-${String(month).padStart(2, "0")}`);   // anchor is mandatory
+    setSelected(next);
+    goToMonths(year, month, [...next]);
   }
 
   async function action(act: "save" | "issue" | "mark_paid" | "revert") {
@@ -56,11 +75,11 @@ export default function SettlementClient({
     try {
       const res = await fetch(apiUrl("/api/accounta/revshare/settlement"), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ partner: partner.id, year, month, span, action: act, invoice_no: invoiceNo.trim() || null })
+        body: JSON.stringify({ partner: partner.id, year, month, months: coveredMonths, action: act, invoice_no: invoiceNo.trim() || null })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "ทำรายการไม่สำเร็จ")); return; }
-      setPv({ result: j.result, breakdown: j.breakdown, opMonth: j.opMonth, span: j.span, stored: j.stored, stale: j.stale });
+      setPv({ result: j.result, breakdown: j.breakdown, opMonth: j.opMonth, months: j.months, stored: j.stored, stale: j.stale });
       router.refresh();
     } finally { setBusy(false); }
   }
@@ -88,29 +107,50 @@ export default function SettlementClient({
     <div className="space-y-4">
       {err && <p className="text-sm text-rose-600">{err}</p>}
 
-      {/* Month nav + status */}
+      {/* Anchor-month nav + status */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => shift(-1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">←</button>
-          <span className="text-sm font-bold text-slate-700">{periodLabel}</span>
+          <span className="text-sm font-bold text-slate-700">{monthLabel}</span>
           <button type="button" onClick={() => shift(1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">→</button>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-slate-400">รวมเดือน</span>
-          {[1, 2, 3].map((s) => (
-            <button key={s} type="button" onClick={() => goSpan(s)} disabled={busy}
-              className={`text-xs px-2.5 py-1 rounded-full border ${span === s ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
-              {s} ด.
-            </button>
-          ))}
         </div>
         <span className={`text-xs px-2 py-1 rounded font-medium ${STATUS[status].c}`}>{STATUS[status].t} · สัญญาเดือนที่ {pv.opMonth}</span>
       </div>
-      {span > 1 && (
-        <p className="text-[11px] text-slate-400 -mt-2">
-          คิด GP รวมยอดขาย {span} เดือน ({periodLabel}) แบบขั้นบันไดจากยอดรวม · ขั้นต่ำ = ผลรวมขั้นต่ำรายเดือน · อย่าออกใบแยกเดือนซ้ำในช่วงที่รวมแล้ว
+
+      {/* Combine-months checklist (owner 2026-08 redesign) */}
+      <div className="card space-y-2">
+        <div className="text-sm font-bold text-slate-800">รวมยอดขายเพื่อคิดส่วนแบ่ง</div>
+        <p className="text-[11px] text-slate-400">
+          เลือกเดือนก่อนหน้าที่ยังไม่ได้สรุปยอด มารวมคิดส่วนแบ่งกับ{monthLabel} · เดือนที่สรุปยอดไปแล้วจะเลือกไม่ได้
         </p>
-      )}
+        <div className="grid sm:grid-cols-2 gap-1.5">
+          {monthOptions.map((o) => {
+            const checked = o.isAnchor || coveredMonths.includes(o.ym);
+            const locked = o.isAnchor || o.settled;
+            return (
+              <label key={o.ym}
+                className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${checked ? "border-brand bg-brand/5" : "border-slate-200"} ${o.settled ? "opacity-60" : ""} ${busy || locked ? "cursor-default" : "cursor-pointer hover:border-slate-300"}`}>
+                <span className="flex items-center gap-2 min-w-0">
+                  <input type="checkbox" checked={checked} disabled={busy || locked}
+                    onChange={(e) => toggleMonth(o.ym, e.target.checked)}
+                    className="accent-brand h-4 w-4 shrink-0" />
+                  <span className="truncate text-sm">
+                    <span className="text-slate-700">{o.label}</span>
+                    {o.isAnchor && <span className="text-[10px] text-brand ml-1.5">เดือนที่สรุป</span>}
+                    {o.settled && <span className="text-[10px] text-slate-400 ml-1.5">สรุปยอดแล้ว</span>}
+                  </span>
+                </span>
+                <span className="text-xs font-mono text-slate-500 shrink-0">฿{fmtMoney(o.sales)}</span>
+              </label>
+            );
+          })}
+        </div>
+        {combined && (
+          <p className="text-[11px] text-slate-500">
+            รวม {coveredMonths.length} เดือน ({periodLabel}) — คิดส่วนแบ่งแบบขั้นบันไดจากยอดขายรวม และใช้ยอดขั้นต่ำเป็นผลรวมขั้นต่ำของแต่ละเดือน
+          </p>
+        )}
+      </div>
 
       {pv.stale && status !== "draft" && (
         <div className="card bg-amber-50 border border-amber-200 text-sm text-amber-800">
@@ -120,7 +160,7 @@ export default function SettlementClient({
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card label={span > 1 ? `ยอดขายรวม ${span} เดือน` : "ยอดขายรวมทั้งเดือน"} value={r.totalSales} />
+        <Card label={combined ? `ยอดขายรวม ${coveredMonths.length} เดือน` : "ยอดขายรวมทั้งเดือน"} value={r.totalSales} />
         <Card label="ส่วนแบ่งตามขั้นบันได" value={r.tierGP} sub={`เฉลี่ย ${(r.avgGpPct * 100).toFixed(2)}%`} />
         <Card label="ส่วนต่างขั้นต่ำ (top-up)" value={r.topup} sub={r.topup > 0 ? `ขั้นต่ำ ฿${fmtMoney(r.floorApplied)}` : "ไม่ถึงขั้นต่ำ"} tone={r.topup > 0 ? "amber" : undefined} />
         <Card label="ส่วนแบ่งยอดขาย (ก่อนภาษี)" value={r.billedGP} tone="brand" big />
@@ -209,7 +249,8 @@ export default function SettlementClient({
             partnerLegal={partner.name !== shop ? partner.name : null}
             sellerName={seller.name}
             sellerCompany={seller.company}
-            monthLabel={monthLabel}
+            monthLabel={periodLabel}
+            combined={combined}
             invoiceNo={invoiceNo.trim() || null}
             r={r} withVat={withVat} grandTotal={grandTotal}
           />
@@ -224,10 +265,10 @@ export default function SettlementClient({
  *  Full-width so long baht amounts never wrap. Billed by the seller
  *  (HYPOPLARAEMIA · อิคิไก เวลล์เทรด). The daily/weekly cards are separate. */
 function FlexCardPreview({
-  shop, partnerLegal, sellerName, sellerCompany, monthLabel, invoiceNo, r, withVat, grandTotal
+  shop, partnerLegal, sellerName, sellerCompany, monthLabel, combined, invoiceNo, r, withVat, grandTotal
 }: {
   shop: string; partnerLegal: string | null; sellerName: string; sellerCompany: string | null; monthLabel: string;
-  invoiceNo: string | null;
+  combined: boolean; invoiceNo: string | null;
   r: Result; withVat: boolean; grandTotal: number;
 }) {
   const baht = (n: number) => `${fmtMoney(n)} บาท`;
@@ -256,7 +297,7 @@ function FlexCardPreview({
         {/* ── ส่วนแบ่งยอดขาย (billed by the seller) ── */}
         <div className="border-t border-slate-100 my-1" />
         <div className="text-[10px] text-slate-400">ผู้เรียกเก็บ: {sellerIssuer}</div>
-        <Row label="ยอดขายรวมทั้งเดือน" value={baht(r.totalSales)} />
+        <Row label={combined ? "ยอดขายรวมทุกเดือนที่รวม" : "ยอดขายรวมทั้งเดือน"} value={baht(r.totalSales)} />
         {belowFloor && (
           <>
             <Row label={`ส่วนแบ่งตามขั้นบันได (${(r.avgGpPct * 100).toFixed(2)}%)`} value={baht(r.tierGP)} />
