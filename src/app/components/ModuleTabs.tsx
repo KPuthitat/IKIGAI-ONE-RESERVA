@@ -63,7 +63,7 @@ export default function ModuleTabs({ tabs }: { tabs: ModuleTab[] }) {
             key={t.key}
             href={t.href}
             aria-current={active ? "page" : undefined}
-            className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-[13.5px] font-semibold transition-colors ${
+            className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-[13.5px] font-normal transition-colors ${
               active
                 ? "bg-brand/10 text-brand-dark"
                 : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
