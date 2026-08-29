@@ -2130,6 +2130,14 @@ function runMigrations(db: Database.Database): void {
     if (!rsCols.some((c) => c.name === "span_months")) {
       db.exec("ALTER TABLE revshare_settlements ADD COLUMN span_months INTEGER NOT NULL DEFAULT 1");
     }
+    // covered_months (owner 2026-08 redesign): the EXACT set of months this
+    // settlement rolls up, as a JSON array of "YYYY-MM" (always includes the
+    // anchor = settle month). Lets the owner pick specific still-unsettled
+    // months to combine instead of a fixed span. NULL on old rows → derive the
+    // set from settle_month + span_months.
+    if (!rsCols.some((c) => c.name === "covered_months")) {
+      db.exec("ALTER TABLE revshare_settlements ADD COLUMN covered_months TEXT");
+    }
   }
 
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which
