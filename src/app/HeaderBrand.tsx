@@ -36,19 +36,19 @@ export default function HeaderBrand({ role }: { role: "admin" | "staff" }) {
 
   return (
     <div className="flex items-baseline gap-1 whitespace-nowrap text-sm sm:text-base">
-      <Link href={`/${role}`} className="brand-wordmark text-white">
+      <Link href={`/${role}`} className="brand-wordmark text-brand-dark">
         IKIGAI OS
       </Link>
       {moduleName && (
         <>
-          <span className="text-white/40 px-0.5">•</span>
-          <span className="text-white/85 font-light tracking-[0.5px]">
+          <span className="text-slate-400 px-0.5">•</span>
+          <span className="text-slate-600 font-light tracking-[0.5px]">
             {moduleName}
           </span>
         </>
       )}
-      <span className="text-white/40 ml-2 hidden sm:inline">/</span>
-      <span className="text-white/60 font-light tracking-[1.5px] uppercase hidden sm:inline">
+      <span className="text-slate-300 ml-2 hidden sm:inline">/</span>
+      <span className="text-slate-500 font-light tracking-[1.5px] uppercase hidden sm:inline">
         {roleLabel}
       </span>
     </div>
