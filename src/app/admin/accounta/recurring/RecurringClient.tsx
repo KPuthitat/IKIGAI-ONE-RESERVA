@@ -284,7 +284,7 @@ export default function RecurringClient({
             </div>
             <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-100">
               <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-slate-300 bg-white text-slate-600 px-5 py-2 text-sm font-medium hover:bg-slate-50">ยกเลิก</button>
-              <button type="button" onClick={save} disabled={busy} className="rounded-md bg-brand text-white px-5 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
+              <button type="button" onClick={save} disabled={busy} className="rounded-full bg-brand text-white px-5 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
                 {busy ? "กำลังบันทึก…" : "บันทึก"}
               </button>
             </div>

@@ -630,7 +630,7 @@ function CancelModal({
             กลับ
           </button>
           <button type="button" onClick={go} disabled={working || busy}
-            className="flex-1 py-2.5 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 disabled:opacity-50">
+            className="flex-1 py-2.5 rounded-full bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 disabled:opacity-50">
             {working ? "กำลังยกเลิก…" : "ยกเลิกคำขอ"}
           </button>
         </div>

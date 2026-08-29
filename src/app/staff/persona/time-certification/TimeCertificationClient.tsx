@@ -307,7 +307,7 @@ export default function TimeCertificationClient({
       {immediateOk && (
         <div className="text-center">
           <a href="/staff/persona"
-            className="inline-block text-sm font-bold bg-brand hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg">
+            className="inline-block text-sm font-bold bg-brand hover:bg-amber-700 text-white px-5 py-2.5 rounded-full">
             กลับไปหน้าลงเวลา → กดออกงาน
           </a>
         </div>

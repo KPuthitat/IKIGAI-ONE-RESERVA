@@ -298,7 +298,7 @@ export default function RoundsClient({
           สร้างรอบโอนเอง
         </button>
         <Link href={`/admin/accounta/revshare/settlement?partner=${partner.id}&year=${year}&month=${month}`}
-          className="rounded-md bg-brand text-white px-4 py-2 text-sm font-bold hover:opacity-90">
+          className="rounded-full bg-brand text-white px-4 py-2 text-sm font-bold hover:opacity-90">
           สรุปยอด / สร้างใบวางบิล →
         </Link>
       </div>
@@ -576,7 +576,7 @@ export default function RoundsClient({
               <button type="button" onClick={() => setXferOpen(false)} className="btn-secondary text-sm">ปิด</button>
               <button type="button" disabled={!xferPreview || xferPreview.rows.length === 0 || xferLoading}
                 onClick={() => setXferPinOpen(true)}
-                className="rounded-md bg-brand text-white px-4 py-2 text-sm font-bold hover:opacity-90 disabled:opacity-50">
+                className="rounded-full bg-brand text-white px-4 py-2 text-sm font-bold hover:opacity-90 disabled:opacity-50">
                 ยืนยันโอน + ส่งการ์ด (PIN)
               </button>
             </div>

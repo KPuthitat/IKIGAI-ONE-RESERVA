@@ -227,7 +227,7 @@ export default function InventaClient({
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
           <button type="button"
             onClick={() => setAdding({})}
-            className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold hover:opacity-90">
+            className="text-sm px-4 py-2 rounded-full bg-brand text-white font-bold hover:opacity-90">
             {t("inv.btn.addItem")}
           </button>
           <Link href="/staff/inventa/count"

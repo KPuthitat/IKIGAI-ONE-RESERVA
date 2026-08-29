@@ -979,7 +979,7 @@ function FinancialAnalysisCard({
           type="button"
           onClick={run}
           disabled={loading}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-brand px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:opacity-90 disabled:opacity-60"
         >
           {loading ? (
             <>

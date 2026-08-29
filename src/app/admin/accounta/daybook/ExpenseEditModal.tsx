@@ -376,7 +376,7 @@ export default function ExpenseEditModal({
             ยกเลิก
           </button>
           <button type="button" onClick={save} disabled={busy}
-            className="rounded-md bg-brand text-white px-5 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
+            className="rounded-full bg-brand text-white px-5 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
             {busy ? "กำลังบันทึก…" : isCreate ? "เพิ่ม" : "บันทึก"}
           </button>
         </div>
@@ -408,7 +408,7 @@ export default function ExpenseEditModal({
                 ข้าม
               </button>
               <button type="button" onClick={() => saveNewVendor(false)} disabled={nvBusy}
-                className="rounded-md bg-brand text-white px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                className="rounded-full bg-brand text-white px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
                 {nvBusy ? "กำลังบันทึก…" : "บันทึกผู้จำหน่าย"}
               </button>
             </div>

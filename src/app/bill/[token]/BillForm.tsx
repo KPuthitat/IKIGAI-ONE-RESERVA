@@ -138,7 +138,7 @@ export default function BillForm({
         {err && <div className="text-sm text-rose-600">{err}</div>}
 
         <button type="button" onClick={submit} disabled={busy}
-          className="w-full rounded-md bg-brand text-white py-2.5 text-sm font-semibold hover:opacity-90 disabled:opacity-50">
+          className="w-full rounded-full bg-brand text-white py-2.5 text-sm font-semibold hover:opacity-90 disabled:opacity-50">
           {busy ? "กำลังส่ง…" : "ส่งให้แอดมินตรวจ"}
         </button>
         <p className="text-[11px] text-slate-400 text-center">บิลจะรอแอดมินของสาขาตรวจสอบก่อนบันทึกเข้าระบบ</p>

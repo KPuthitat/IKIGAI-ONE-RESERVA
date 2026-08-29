@@ -131,7 +131,7 @@ export default function PrintActions({
       {canApprove && status === "sent" && (
         <button type="button" disabled={busy}
           onClick={() => act("approve", t("inv.po.cfApprove"))}
-          className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
+          className="text-xs px-3 py-1.5 rounded-full bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
           {t("inv.po.approve")}
         </button>
       )}
@@ -148,7 +148,7 @@ export default function PrintActions({
         <>
           <button type="button" disabled={busy}
             onClick={() => act("pay", "บันทึกว่าชำระเงินแล้ว?")}
-            className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
+            className="text-xs px-3 py-1.5 rounded-full bg-teal-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
             บันทึกชำระเงิน
           </button>
           <button type="button" disabled={busy}
@@ -161,14 +161,14 @@ export default function PrintActions({
       {canManage && status === "paid" && (
         <button type="button" disabled={busy}
           onClick={() => act("ship", "บันทึกว่ากำลังจัดส่ง?")}
-          className="text-xs px-3 py-1.5 rounded-lg bg-sky-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
+          className="text-xs px-3 py-1.5 rounded-full bg-sky-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
           เริ่มจัดส่ง
         </button>
       )}
       {canManage && status === "shipping" && (
         <button type="button" disabled={busy}
           onClick={openReceive}
-          className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
+          className="text-xs px-3 py-1.5 rounded-full bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
           รับเข้าคลัง
         </button>
       )}
@@ -195,7 +195,7 @@ export default function PrintActions({
         <button type="button" disabled={busy}
           onClick={() => act("apply_stock",
             "บวกจำนวนสินค้าในใบนี้เข้ายอดคงเหลือ?\n\nใช้สำหรับใบที่รับเข้าไว้ก่อนระบบบวกอัตโนมัติ — ทำได้ครั้งเดียวต่อใบ (กดซ้ำไม่บวกซ้ำ)")}
-          className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
+          className="text-xs px-3 py-1.5 rounded-full bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-50">
           ปรับสต๊อกตามใบนี้ (บวกยอดคงเหลือ)
         </button>
       )}
@@ -207,7 +207,7 @@ export default function PrintActions({
         href={apiUrl(`/api/inventa/orders/${orderId}/pdf`)}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-xs px-3 py-1.5 rounded-lg bg-brand text-white font-bold hover:opacity-90">
+        className="text-xs px-3 py-1.5 rounded-full bg-brand text-white font-bold hover:opacity-90">
         เปิด / ดาวน์โหลด PDF
       </a>
       {/* Supplier link (owner 2026-06-08) — a public PDF (cost hidden, no

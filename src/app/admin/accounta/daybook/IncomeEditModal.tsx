@@ -126,7 +126,7 @@ export default function IncomeEditModal({
             ยกเลิก
           </button>
           <button type="button" onClick={save} disabled={busy}
-            className="rounded-md bg-brand text-white px-5 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
+            className="rounded-full bg-brand text-white px-5 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
             {busy ? "กำลังบันทึก…" : isCreate ? "เพิ่ม" : "บันทึก"}
           </button>
         </div>

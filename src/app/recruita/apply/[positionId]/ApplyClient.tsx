@@ -742,7 +742,7 @@ export default function ApplyClient({
                 href={pdpaImageUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-lg">
+                className="inline-flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-full">
                 {tr("เปิดดูนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) →", "Open the privacy policy (PDPA) →")}
               </a>
             </>

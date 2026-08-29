@@ -78,7 +78,7 @@ export default function InboxClient({
                   <Link href={`/admin/accounta/expenses?edit=${d.id}`} className="text-xs text-slate-500 hover:text-brand">ตรวจ/แก้ไข</Link>
                   {canConfirm(d.branch_id) ? (
                     <button type="button" onClick={() => confirm(d)} disabled={busyId === d.id}
-                      className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md px-2.5 py-1 disabled:opacity-50">
+                      className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-full px-2.5 py-1 disabled:opacity-50">
                       {busyId === d.id ? "…" : "ยืนยันลงบัญชี"}
                     </button>
                   ) : (

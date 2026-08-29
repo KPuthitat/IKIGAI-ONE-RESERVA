@@ -457,7 +457,7 @@ export default function PeriodDetailClient({
               </button>
               <button type="button" onClick={() => setConfirmPay(true)}
                 disabled={busy !== null}
-                className="text-sm px-4 py-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white font-medium">
+                className="text-sm px-4 py-1.5 rounded-full bg-sky-600 hover:bg-sky-700 text-white font-medium">
                 {busy === "mark_paid" ? "..." : t(lang, "admin.persona.payroll.action.markPaid")}
               </button>
             </>
@@ -476,7 +476,7 @@ export default function PeriodDetailClient({
             <button type="button" onClick={() => performAction("post_accounta")}
               disabled={busy !== null}
               title={t(lang, "admin.persona.payroll.action.repostAccountaHint")}
-              className="text-sm px-4 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-medium">
+              className="text-sm px-4 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium">
               {busy === "post_accounta" ? "..." : t(lang, "admin.persona.payroll.action.repostAccounta")}
             </button>
           )}
@@ -629,7 +629,7 @@ export default function PeriodDetailClient({
               <button type="button"
                 onClick={addAllMissing}
                 disabled={busy !== null}
-                className="text-sm px-4 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white font-medium whitespace-nowrap disabled:opacity-50">
+                className="text-sm px-4 py-1.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white font-medium whitespace-nowrap disabled:opacity-50">
                 {busy === "add_all" ? "กำลังเพิ่ม..." : `+ เพิ่มทั้งหมดเข้ารอบ (${missingStaff.length})`}
               </button>
             </div>
@@ -1079,7 +1079,7 @@ function AddStaffModal({
           <button type="button"
             onClick={() => typeof pickedId === "number" && onConfirm(pickedId)}
             disabled={busy || pickedId === ""}
-            className="flex-1 py-2.5 rounded-lg bg-brand text-white text-sm font-bold hover:opacity-90 disabled:opacity-50">
+            className="flex-1 py-2.5 rounded-full bg-brand text-white text-sm font-bold hover:opacity-90 disabled:opacity-50">
             {busy ? "…" : t(lang, "common.confirm")}
           </button>
         </div>
@@ -1143,7 +1143,7 @@ function UnpayModal({
           <button type="button"
             onClick={() => onConfirm(pin, reason)}
             disabled={busy || pin.length < 4 || reason.trim().length === 0}
-            className="flex-1 py-2.5 rounded-lg bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 disabled:opacity-50">
+            className="flex-1 py-2.5 rounded-full bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 disabled:opacity-50">
             {busy ? "…" : t(lang, "admin.persona.payroll.action.unpay")}
           </button>
         </div>
@@ -2328,7 +2328,7 @@ function LineEditModal({
               </p>
               {locked ? (
                 <button type="button" onClick={() => setDayPinOpen(true)}
-                  className="w-full py-2 rounded-lg bg-brand hover:opacity-90 text-white text-sm font-bold">
+                  className="w-full py-2 rounded-full bg-brand hover:opacity-90 text-white text-sm font-bold">
                   แก้ไข (ใส่ PIN)
                 </button>
               ) : (
@@ -2344,7 +2344,7 @@ function LineEditModal({
                     </button>
                   )}
                   <button type="button" onClick={doSaveDay} disabled={daySaving}
-                    className="flex-1 py-2 rounded-lg bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
+                    className="flex-1 py-2 rounded-full bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
                     {daySaving ? "กำลังบันทึก…" : "บันทึก"}
                   </button>
                 </div>
@@ -2357,7 +2357,7 @@ function LineEditModal({
 
         <div className="flex gap-2 pt-2 border-t border-slate-200">
           <button type="button" onClick={() => { if (dirty) onSaved(); else onClose(); }}
-            className="flex-1 py-2.5 rounded-lg bg-brand hover:opacity-90 text-white text-sm font-bold">
+            className="flex-1 py-2.5 rounded-full bg-brand hover:opacity-90 text-white text-sm font-bold">
             {dirty ? "เสร็จสิ้น" : t(lang, "common.close")}
           </button>
         </div>

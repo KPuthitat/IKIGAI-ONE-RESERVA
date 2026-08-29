@@ -214,7 +214,7 @@ export default function EditBookingForm({
               {t("common.cancel")}
             </button>
             <button type="button" onClick={cancelBooking} disabled={busy}
-              className="flex-1 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold">
+              className="flex-1 py-2.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold">
               {busy ? "…" : t("edit.btn.confirmCancel")}
             </button>
           </div>

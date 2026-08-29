@@ -1023,7 +1023,7 @@ function EditModal({
                 <button type="button"
                   onClick={loadInviteLink}
                   disabled={inviteLinkBusy !== null}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-brand text-white font-bold hover:opacity-90 disabled:opacity-50">
+                  className="text-xs px-3 py-1.5 rounded-full bg-brand text-white font-bold hover:opacity-90 disabled:opacity-50">
                   {inviteLinkBusy === "show" ? "กำลังโหลด..." : "ดูลิงก์เชิญ"}
                 </button>
               )}
@@ -1925,7 +1925,7 @@ function EditModal({
                 <button type="button"
                   onClick={disableUser}
                   disabled={deleteBusy}
-                  className="flex-1 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold disabled:opacity-50">
+                  className="flex-1 py-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold disabled:opacity-50">
                   {deleteBusy ? "กำลังลบ..." : "ยืนยันลบ"}
                 </button>
               </div>
@@ -1939,7 +1939,7 @@ function EditModal({
             {t("common.cancel")}
           </button>
           <button type="button" onClick={save} disabled={busy}
-            className="flex-1 py-2.5 rounded-lg bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
+            className="flex-1 py-2.5 rounded-full bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
             {busy ? t("common.submitting") : t("common.save")}
           </button>
         </div>

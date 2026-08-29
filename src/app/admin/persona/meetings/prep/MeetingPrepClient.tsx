@@ -108,7 +108,7 @@ export default function MeetingPrepClient({
           )}
           <span className="flex-1" />
           <button type="button" disabled={busy || !aiEnabled || reports.length === 0} onClick={summarize}
-            className="text-sm px-4 py-1.5 rounded-md bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">
+            className="text-sm px-4 py-1.5 rounded-full bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">
             {busy ? "AI กำลังสรุป…" : "สรุปด้วย AI"}
           </button>
         </div>
@@ -129,7 +129,7 @@ export default function MeetingPrepClient({
             {summaryMeta && <span className="text-[11px] text-slate-400">{summaryMeta}</span>}
             <span className="flex-1" />
             <button type="button" disabled={creating} onClick={createMeeting}
-              className="text-xs px-3 py-1.5 rounded-md bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-40">
+              className="text-xs px-3 py-1.5 rounded-full bg-emerald-600 text-white font-bold hover:opacity-90 disabled:opacity-40">
               {creating ? "กำลังสร้าง…" : "＋ สร้างประชุมจากสรุปนี้"}
             </button>
           </div>

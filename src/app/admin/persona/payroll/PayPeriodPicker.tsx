@@ -399,7 +399,7 @@ function ForceOpenModal({
           </button>
           <button type="button" onClick={submit}
             disabled={busy || pin.length < 4 || reason.trim().length === 0}
-            className="flex-1 py-2.5 rounded-lg bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-50">
+            className="flex-1 py-2.5 rounded-full bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-50">
             {busy ? "…" : t(lang, "common.confirm")}
           </button>
         </div>
@@ -532,7 +532,7 @@ function PeriodCard({
                 type="button"
                 onClick={() => onCreate("auto")}
                 disabled={busyAuto || busyManual}
-                className="w-full py-1.5 rounded-md bg-brand/90 hover:bg-brand text-white text-xs font-bold disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                className="w-full py-1.5 rounded-full bg-brand/90 hover:bg-brand text-white text-xs font-bold disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
               >
                 {busyAuto ? "…" : <><Icon name="building" className="h-3.5 w-3.5" />{t(lang, "admin.persona.payroll.hub.fillOtherBranches")}</>}
               </button>
@@ -559,7 +559,7 @@ function PeriodCard({
             type="button"
             onClick={() => onCreate("auto")}
             disabled={busyAuto || busyManual}
-            className="w-full py-1.5 rounded-md bg-brand hover:opacity-90 text-white text-xs font-bold disabled:opacity-50"
+            className="w-full py-1.5 rounded-full bg-brand hover:opacity-90 text-white text-xs font-bold disabled:opacity-50"
             title={t(lang, "admin.persona.payroll.hub.allBranchesHint")}
           >
             <span className="inline-flex items-center justify-center gap-1.5">
@@ -572,7 +572,7 @@ function PeriodCard({
               type="button"
               onClick={() => onCreate("auto")}
               disabled={busyAuto || busyManual}
-              className="w-full py-1.5 rounded-md bg-brand hover:opacity-90 text-white text-xs font-bold disabled:opacity-50"
+              className="w-full py-1.5 rounded-full bg-brand hover:opacity-90 text-white text-xs font-bold disabled:opacity-50"
               title={t(lang, "admin.persona.payroll.hub.dataSourceAutoHint")}
             >
               {busyAuto ? "…" : t(lang, "admin.persona.payroll.hub.createAuto")}

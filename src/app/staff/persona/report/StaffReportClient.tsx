@@ -97,7 +97,7 @@ export default function StaffReportClient({
           {err && <span className="text-xs text-rose-600">{err}</span>}
           {saved && !err && <span className="text-xs text-emerald-600">✓ ส่งแล้ว ขอบคุณครับ</span>}
           <button type="button" disabled={!ready || busy} onClick={save}
-            className="text-sm px-5 py-2 rounded-md bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">
+            className="text-sm px-5 py-2 rounded-full bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">
             {busy ? "กำลังส่ง…" : "ส่งรายงาน"}
           </button>
         </div>

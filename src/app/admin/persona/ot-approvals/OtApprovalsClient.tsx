@@ -214,7 +214,7 @@ function AddOtForm({ staff, onAdded }: { staff: OtStaff[]; onAdded: () => void }
             onChange={(e) => setUntil(e.target.value)} />
         </div>
         <button type="button" disabled={busy || !ready} onClick={() => setPinOpen(true)}
-          className="text-xs px-4 py-1.5 rounded-md bg-brand text-white font-bold hover:opacity-90 disabled:opacity-50">
+          className="text-xs px-4 py-1.5 rounded-full bg-brand text-white font-bold hover:opacity-90 disabled:opacity-50">
           เพิ่ม OT
         </button>
       </div>
@@ -320,7 +320,7 @@ function SegmentEditor({
             ไม่อนุมัติ
           </button>
           <button type="button" disabled={busy} onClick={onApprove}
-            className="text-xs px-4 py-1.5 rounded-md bg-emerald-500 text-white font-bold hover:bg-emerald-600 disabled:opacity-50">
+            className="text-xs px-4 py-1.5 rounded-full bg-emerald-500 text-white font-bold hover:bg-emerald-600 disabled:opacity-50">
             อนุมัติ
           </button>
         </div>
