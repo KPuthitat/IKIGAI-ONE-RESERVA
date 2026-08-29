@@ -11,6 +11,7 @@ import AdminModeToggle from "../components/AdminModeToggle";
 import { type SidebarSection } from "../components/Sidebar";
 import ModuleTabs, { type ModuleTab } from "../components/ModuleTabs";
 import ModuleSubnav from "../components/ModuleSubnav";
+import { ActionBarProvider } from "../components/ActionBar";
 import TodaysBranchPill from "../TodaysBranchPill";
 import HookFab from "../components/HookFab";
 import RefreshButton from "../components/RefreshButton";
@@ -266,7 +267,9 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           </div>
           {/* overflow-x-clip — page-level guard so nothing spills past the
               viewport on mobile. Wide tables keep their own overflow-x-auto. */}
-          <main className="flex-1 min-w-0 overflow-x-clip pb-8">{children}</main>
+          <main className="flex-1 min-w-0 overflow-x-clip pb-8">
+            <ActionBarProvider maxWidth="max-w-6xl">{children}</ActionBarProvider>
+          </main>
         </div>
       </div>
 

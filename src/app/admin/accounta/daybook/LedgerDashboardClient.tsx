@@ -11,6 +11,7 @@ import ExpenseEditModal, { type EditableExpense } from "./ExpenseEditModal";
 import IncomeEditModal, { type EditableIncome } from "./IncomeEditModal";
 import { STARTUP_CATEGORY_LABEL } from "@/lib/feasibility";
 import Select from "@/app/components/Select";
+import ActionBar from "@/app/components/ActionBar";
 import { useConfirm } from "@/app/components/useConfirm";
 
 // grpMoney / parseMoney now shared from @/lib/format (separators in every money input).
@@ -1362,11 +1363,14 @@ export default function LedgerDashboardClient({
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => openAdd("income")} className="rounded-full bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700">+ เพิ่มรายรับ</button>
-          <button type="button" onClick={() => openAdd("expense")} className="rounded-full bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ เพิ่มรายจ่าย</button>
-        </div>
       </div>
+
+      {/* Add income / expense — pinned to the bottom action bar (owner
+          2026-08) so they're always reachable while scrolling the daybook. */}
+      <ActionBar left={<><span className="font-semibold text-slate-700">บัญชีรายวัน</span> · {branchName} · {PERIOD_LABEL[period]}</>}>
+        <button type="button" onClick={() => openAdd("income")} className="rounded-full bg-emerald-600 text-white px-4 py-2 text-sm font-semibold hover:bg-emerald-700">+ เพิ่มรายรับ</button>
+        <button type="button" onClick={() => openAdd("expense")} className="rounded-full bg-rose-600 text-white px-4 py-2 text-sm font-semibold hover:bg-rose-700">+ เพิ่มรายจ่าย</button>
+      </ActionBar>
 
       {/* Range nav — month shows a big number + small month/year (owner 2026-06-23) */}
       <div className="flex items-center justify-center gap-5">
