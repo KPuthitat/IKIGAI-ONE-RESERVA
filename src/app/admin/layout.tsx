@@ -7,10 +7,10 @@ import LogoutButton from "./LogoutButton";
 import HeaderBrand from "../HeaderBrand";
 import LangToggle from "../LangToggle";
 import Footer from "../Footer";
-import Sidebar, { type SidebarSection } from "../components/Sidebar";
-import ProgramInfo from "../components/ProgramInfo";
+import { type SidebarSection } from "../components/Sidebar";
+import ModuleTabs, { type ModuleTab } from "../components/ModuleTabs";
+import ModuleSubnav from "../components/ModuleSubnav";
 import AdminModeToggle from "../components/AdminModeToggle";
-import AdminSidebarBrand from "./AdminSidebarBrand";
 import TodaysBranchPill from "../TodaysBranchPill";
 import HookFab from "../components/HookFab";
 import RefreshButton from "../components/RefreshButton";
@@ -320,6 +320,36 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   ];
 
+  // Redesign 2026-08: the module switcher moved out of the (removed) dark
+  // left sidebar and into a top tab bar. moduleTabs mirrors the RBAC of the
+  // old "Modules" sidebar section (same canModule gates, same branch gate),
+  // but carries a clean `base` path for active detection + an icon key,
+  // separate from `href` (which may be a branch-picker gate URL). The
+  // remaining pathPrefix-scoped sections become the contextual sub-nav.
+  const moduleTabs: ModuleTab[] = [
+    { key: "home", label: t(lang, "sidebar.modulePicker"), href: "/admin", base: "/admin", exact: true },
+    ...(canModule(user, "persona.manage") ? [{ key: "persona", label: "PERSONA", href: gate("/admin/persona"), base: "/admin/persona" }] : []),
+    ...(canModule(user, "reserva.manage") ? [{ key: "reserva", label: "RESERVA", href: gate("/admin/reserva"), base: "/admin/reserva" }] : []),
+    { key: "inventa", label: "INVENTA", href: gate("/staff/inventa"), base: "/staff/inventa" },
+    ...(canModule(user, "ascenda.view") ? [{ key: "ascenda", label: "ASCENDA", href: gate("/admin/ascenda"), base: "/admin/ascenda" }] : []),
+    ...(canModule(user, "insigna.view") ? [{ key: "insigna", label: "INSIGNA", href: gate("/admin/insigna"), base: "/admin/insigna" }] : []),
+    ...(canModule(user, "recruita.access") ? [{ key: "recruita", label: "RECRUITA", href: gate("/admin/recruita"), base: "/admin/recruita" }] : []),
+    ...(canModule(user, "accounta.manage") ? [{ key: "accounta", label: "ACCOUNTA", href: gate("/admin/accounta"), base: "/admin/accounta" }] : []),
+    ...(canModule(user, "delivera.manage") ? [{ key: "delivera", label: "DELIVERA", href: gate("/admin/delivera/kitchen"), base: "/admin/delivera" }] : []),
+    ...(isSuperAdmin ? [
+      { key: "roles", label: "บทบาทและสิทธิ์", href: "/admin/roles", base: "/admin/roles" },
+      { key: "settings", label: t(lang, "admin.systemSettings.title"), href: "/admin/system-settings", base: "/admin/system-settings" },
+      { key: "companies", label: t(lang, "admin.companies.title"), href: "/admin/companies", base: "/admin/companies" },
+      { key: "quota", label: t(lang, "admin.persona.nav.messagingQuota"), href: "/admin/persona/messaging/quota", base: "/admin/persona/messaging/quota", exact: true }
+    ] : []),
+    { key: "help", label: t(lang, "owl.help.menu"), href: "/help", base: "/help", exact: true }
+  ];
+  // Contextual sub-nav = every section except the first (the module
+  // switcher, now the tab bar). Always-visible sections (no pathPrefix,
+  // e.g. employee health) keep showing on every page exactly as before —
+  // nothing is hidden by the restructure.
+  const subSections = sections.slice(1);
+
   // Impersonation banner — only renders when super_admin/admin has
   // started a "log in as" session for debugging. Sticky orange
   // banner at the top reminds them they're viewing another user's
@@ -340,45 +370,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     maintenanceMsg = null;
   }
 
-  // Mobile-only footer for the sidebar: branch pill, lang toggle,
-  // logout. Desktop keeps these in the topbar (md+). On mobile the
-  // topbar reduces to just the program name so the row never wraps
-  // or collides with the menu button, and these controls live one
-  // tap away inside the slide-in sidebar instead.
-  const mobileSidebarFooter = (
-    <div className="space-y-3">
-      {/* STAFF / ADMIN switch — shown to anyone with admin powers:
-          super_admin (so the owner can pop into staff mode for
-          testing), branch-admins (employee first, admin rights
-          second), and — since RBAC (2026-06-04) — any staffer granted
-          an admin-module role. Plain staff get no toggle. */}
-      {(user.role === "super_admin" ||
-        (user.role === "admin" && user.adminBranchIds.length > 0) ||
-        user.permissions.length > 0) && (
-        <AdminModeToggle view="admin" defaultView={user.role === "super_admin" ? "admin" : "staff"} />
-      )}
-      <div className="md:hidden space-y-3">
-        {/* Branch pill removed from mobile sidebar footer 2026-05-25
-            — it's now in the sidebar brand area (visible to all
-            viewport sizes), so the footer-duplicate is redundant. */}
-        <div className="text-xs text-white/60 truncate">
-          {nameWithPrefix(user.title_prefix, user.display_name)} · {t(lang, "role.adminShort")}
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <LangToggle variant="dark" />
-          <LogoutButton />
-        </div>
-        {/* Program metadata — mobile only (full-width Footer hidden
-            below md to keep the cramped main content area clean). */}
-        <div className="border-t border-white/10 pt-3">
-          <ProgramInfo />
-        </div>
-      </div>
-    </div>
-  );
+  // Privileged users (super_admin, branch-admins, RBAC-granted staff) get
+  // the STAFF/ADMIN view switch. Plain staff never see it.
+  const canSwitchView =
+    user.role === "super_admin" ||
+    (user.role === "admin" && user.adminBranchIds.length > 0) ||
+    user.permissions.length > 0;
 
   return (
-    <div className="min-h-screen flex bg-amber-50">
+    <div className="min-h-screen flex flex-col bg-amber-50">
       {/* Maintenance banner above impersonation banner — see staff
           layout for the same ordering rationale. */}
       {maintenanceMsg && <MaintenanceBanner message={maintenanceMsg} />}
@@ -388,68 +388,58 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           targetName={impCtx.targetName}
         />
       )}
-      <Sidebar
-        sections={sections}
-        brand={
-          <div className="space-y-2">
-            <AdminSidebarBrand />
-            {/* Branch pill under brand (2026-05-25 per owner direction
-                — moved from desktop topbar). Always visible in the
-                sidebar so admin can swap branches at any point
-                without hunting in the topbar. */}
-            {activeBranch && (
-              <TodaysBranchPill
-                branchName={activeBranch.name}
-                hasChoice={hasBranchChoice}
-                pickerPath="/admin/branch-picker"
-              />
-            )}
-          </div>
-        }
-        footer={mobileSidebarFooter}
-      />
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="bg-ink-gradient text-white shadow-md">
-          {/* Topbar — single row.
-              Mobile: brand only. The branch pill, language toggle,
-                and logout live in the sidebar footer instead, so
-                the row stays compact next to the hamburger menu.
-              Desktop (md+): brand + branch pill on the left,
-                username chip + lang toggle + logout on the right
-                (the classic layout). */}
-          <div className="px-4 py-3 pl-16 flex items-center gap-2 sm:gap-3">
-            <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <HeaderBrand role="admin" />
-              {/* Branch pill moved into sidebar 2026-05-25 — see
-                  sidebar brand slot above. Topbar now carries only
-                  brand + user info + lang / logout. */}
+
+      {/* Topbar — dark espresso brand bar. Now carries every control that
+          used to live in the (removed) sidebar: brand, active-branch pill,
+          user chip, STAFF/ADMIN switch, refresh, language, logout. The row
+          wraps on narrow viewports so nothing is unreachable on mobile. */}
+      <header className="bg-ink-gradient text-white shadow-md">
+        <div className="w-full max-w-screen-2xl mx-auto px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <HeaderBrand role="admin" />
+          {activeBranch && (
+            <TodaysBranchPill
+              branchName={activeBranch.name}
+              hasChoice={hasBranchChoice}
+              pickerPath="/admin/branch-picker"
+            />
+          )}
+          <div className="flex-1 min-w-0" />
+          <span className="hidden sm:block text-xs text-white/60 truncate max-w-[180px]">
+            {nameWithPrefix(user.title_prefix, user.display_name)} · {t(lang, "role.adminShort")}
+          </span>
+          {canSwitchView && (
+            <div className="flex-shrink-0 [&>button]:!w-auto [&>button]:!px-3 [&>button]:!py-1.5">
+              <AdminModeToggle view="admin" defaultView={user.role === "super_admin" ? "admin" : "staff"} />
             </div>
-            <div className="hidden md:block text-xs text-white/60 truncate max-w-[200px] flex-shrink-0">
-              {nameWithPrefix(user.title_prefix, user.display_name)} · {t(lang, "role.adminShort")}
-            </div>
-            {/* Refresh — all breakpoints (web-app users have no browser
-                reload button). */}
-            <RefreshButton variant="dark" />
-            <div className="hidden md:flex items-center gap-2 flex-shrink-0">
-              <LangToggle variant="dark" />
-              <LogoutButton />
-            </div>
-          </div>
-        </header>
-        {/* 2026-05-27: bumped max-w-6xl → max-w-screen-2xl (1152 → 1536 px)
-            so data-heavy tables (employees, leave list, payroll) don't
-            wrap Thai names onto 2 lines on common desktop widths.
-            Long-form text pages can still narrow themselves inside with
-            their own max-w wrapper if they want. */}
-        {/* overflow-x-clip — page-level guard so nothing can spill past the
-            viewport on mobile (owner R1). Wide tables wrapped in their own
-            overflow-x-auto still scroll internally. */}
-        <main className="flex-1 w-full p-4 max-w-screen-2xl mx-auto overflow-x-clip">{children}</main>
-        {/* Desktop only — on mobile this info moves into the sidebar
-            bottom (see mobileSidebarFooter) so the page isn't crowded. */}
-        <div className="hidden md:block mt-auto">
-          <Footer />
+          )}
+          <RefreshButton variant="dark" />
+          <LangToggle variant="dark" />
+          <LogoutButton />
         </div>
+      </header>
+
+      {/* App body — top module tabs + contextual sub-nav (left rail on
+          desktop, horizontal chips on mobile) + page content. max-w-screen-2xl
+          so data-heavy tables don't wrap Thai names on common widths. */}
+      <div className="w-full max-w-screen-2xl mx-auto px-4 pt-4 flex-1 flex flex-col min-w-0">
+        <ModuleTabs tabs={moduleTabs} />
+        <div className="md:hidden mt-3">
+          <ModuleSubnav sections={subSections} mode="chips" />
+        </div>
+        <div className="mt-4 md:flex md:gap-5 flex-1 min-w-0">
+          <div className="hidden md:block md:w-[236px] md:flex-shrink-0">
+            <div className="sticky top-4">
+              <ModuleSubnav sections={subSections} mode="list" />
+            </div>
+          </div>
+          {/* overflow-x-clip — page-level guard so nothing spills past the
+              viewport on mobile. Wide tables keep their own overflow-x-auto. */}
+          <main className="flex-1 min-w-0 overflow-x-clip pb-8">{children}</main>
+        </div>
+      </div>
+
+      <div className="hidden md:block mt-auto">
+        <Footer />
       </div>
       <HookFab
         audience="admin"
