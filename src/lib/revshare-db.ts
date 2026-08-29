@@ -485,15 +485,67 @@ export function issueSettlement(partnerId: number, branchId: number, year: numbe
     "UPDATE revshare_settlements SET status = 'issued', invoice_no = ?, issued_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
   ).run(invoiceNo, when, saved.id).changes > 0;
 }
-export function markPaidSettlement(partnerId: number, branchId: number, year: number, month: number, when: string): boolean {
+// ── GP → ACCOUNTA income (owner 2026-08) ─────────────────────────────
+// The settled GP (billedGP, before VAT/WHT) is the shop's own revenue-share
+// earning. On "paid" it is recorded as ACCOUNTA income under a dedicated
+// channel so it shows in the daybook/reports as the shop's ส่วนแบ่งยอดขาย.
+// source='revshare_gp' is owned by this flow: delete-then-insert keyed by
+// (branch, source, channel, income_date) so re-paying never doubles, and
+// revert removes it.
+function settlementGpChannel(partnerName: string): string {
+  return `ส่วนแบ่งยอดขาย · ${partnerName}`;
+}
+function monthEndIso(year: number, month: number): string {
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+}
+export function postSettlementGpIncome(partnerId: number, branchId: number, year: number, month: number, userId: number): void {
+  const partner = getPartner(partnerId, branchId);
+  const stored = getStoredSettlement(partnerId, branchId, year, month);
+  if (!partner || !stored) return;
+  const db = getDb();
+  const channel = settlementGpChannel(partner.name);
+  const incomeDate = monthEndIso(year, month);
+  const amount = round2(stored.billedGP);
+  const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
+    .get(branchId) as { company_id: number | null } | undefined)?.company_id ?? null;
+  const txn = db.transaction(() => {
+    db.prepare(
+      "DELETE FROM accounta_income WHERE branch_id = ? AND source = 'revshare_gp' AND channel IS ? AND income_date = ?"
+    ).run(branchId, channel, incomeDate);
+    if (amount <= 0) return;
+    db.prepare(
+      `INSERT INTO accounta_income (branch_id, company_id, income_date, channel, amount, note, created_by, source, is_vat, is_revenue)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'revshare_gp', ?, 1)`
+    ).run(branchId, companyId, incomeDate, channel, amount,
+      `ส่วนแบ่งยอดขาย (GP) · ${partner.name}${stored.span_months > 1 ? ` · รวม ${stored.span_months} เดือน` : ""}`,
+      userId, partner.vat_enabled ? 1 : 0);
+  });
+  txn();
+}
+export function removeSettlementGpIncome(partnerId: number, branchId: number, year: number, month: number): void {
+  const partner = getPartner(partnerId, branchId);
+  if (!partner) return;
+  getDb().prepare(
+    "DELETE FROM accounta_income WHERE branch_id = ? AND source = 'revshare_gp' AND channel IS ? AND income_date = ?"
+  ).run(branchId, settlementGpChannel(partner.name), monthEndIso(year, month));
+}
+
+export function markPaidSettlement(partnerId: number, branchId: number, year: number, month: number, when: string, userId: number): boolean {
   if (!partnerGuard(partnerId, branchId)) return false;
-  return getDb().prepare(
+  const done = getDb().prepare(
     "UPDATE revshare_settlements SET status = 'paid', paid_at = ?, updated_at = CURRENT_TIMESTAMP WHERE partner_id = ? AND settle_year = ? AND settle_month = ? AND status = 'issued'"
   ).run(when, partnerId, year, month).changes > 0;
+  // Auto-post the GP into ACCOUNTA the moment it's marked paid (owner 2026-08).
+  if (done) postSettlementGpIncome(partnerId, branchId, year, month, userId);
+  return done;
 }
 export function revertSettlement(partnerId: number, branchId: number, year: number, month: number): boolean {
   if (!partnerGuard(partnerId, branchId)) return false;
-  return getDb().prepare(
+  const done = getDb().prepare(
     "UPDATE revshare_settlements SET status = 'draft', invoice_no = NULL, issued_at = NULL, paid_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE partner_id = ? AND settle_year = ? AND settle_month = ?"
   ).run(partnerId, year, month).changes > 0;
+  // Reverting to draft un-posts any GP income that a prior "paid" recorded.
+  if (done) removeSettlementGpIncome(partnerId, branchId, year, month);
+  return done;
 }

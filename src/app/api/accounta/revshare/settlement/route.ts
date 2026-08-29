@@ -21,7 +21,7 @@ const PostZ = z.object({
 function ctx() {
   const user = requirePermission("accounta.manage");
   const branchId = user.activeBranchId ?? null;
-  return { branchId, ok: branchId != null && isRevshareBranch(branchId) };
+  return { branchId, ok: branchId != null && isRevshareBranch(branchId), userId: user.id };
 }
 function bkkNowIso(): string { return new Date().toISOString(); }
 
@@ -38,7 +38,7 @@ export function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { branchId, ok } = ctx();
+  const { branchId, ok, userId } = ctx();
   if (!ok) return NextResponse.json({ error: "not_revshare_branch" }, { status: 403 });
   const parsed = PostZ.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
   let done = false;
   if (action === "save") done = !!saveSettlement(partner, branchId!, year, month, span);
   else if (action === "issue") done = issueSettlement(partner, branchId!, year, month, invoice_no ?? null, bkkNowIso(), span);
-  else if (action === "mark_paid") done = markPaidSettlement(partner, branchId!, year, month, bkkNowIso());
+  else if (action === "mark_paid") done = markPaidSettlement(partner, branchId!, year, month, bkkNowIso(), userId);
   else if (action === "revert") done = revertSettlement(partner, branchId!, year, month);
   if (!done) return NextResponse.json({ error: `${action}_failed` }, { status: 400 });
   const preview = previewSettlement(partner, branchId!, year, month, span);
