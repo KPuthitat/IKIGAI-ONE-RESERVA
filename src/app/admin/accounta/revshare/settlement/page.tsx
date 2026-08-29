@@ -13,7 +13,7 @@ function nowBkk(): { y: number; m: number } {
   return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1 };
 }
 
-export default function RevshareSettlementPage({ searchParams }: { searchParams: { partner?: string; year?: string; month?: string } }) {
+export default function RevshareSettlementPage({ searchParams }: { searchParams: { partner?: string; year?: string; month?: string; span?: string } }) {
   const user = requirePermission("accounta.manage");
   const branchId = user.activeBranchId ?? null;
   const partnerId = Number(searchParams.partner);
@@ -32,7 +32,8 @@ export default function RevshareSettlementPage({ searchParams }: { searchParams:
   const now = nowBkk();
   const year = Number(searchParams.year) || now.y;
   const month = Number(searchParams.month) || now.m;
-  const preview = previewSettlement(partner.id, branchId, year, month)!;
+  const span = Math.max(1, Math.min(12, Number(searchParams.span) || 1));
+  const preview = previewSettlement(partner.id, branchId, year, month, span)!;
 
   const seller = getDb().prepare(
     `SELECT b.name, b.reg_address, b.tax_branch_code, b.contact_phone, c.name_th AS company_name
@@ -52,7 +53,7 @@ export default function RevshareSettlementPage({ searchParams }: { searchParams:
       <SettlementClient
         partner={{ id: partner.id, name: partner.name, venue: partner.venue, pos_categories: partner.pos_categories, vat_enabled: partner.vat_enabled, line_group_id: partner.line_group_id }}
         seller={{ name: seller.name, company: seller.company_name, address: seller.reg_address, taxBranchCode: seller.tax_branch_code, phone: seller.contact_phone }}
-        initial={preview} year={year} month={month}
+        initial={preview} year={year} month={month} span={span}
       />
     </div>
   );

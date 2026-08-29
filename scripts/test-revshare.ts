@@ -150,6 +150,28 @@ const F: Floor[] = [
   eq("drink.flip netAfter negative", flip.netAfterDrinks, -500);
 }
 
+// Combined multi-month settlement (owner 2026-08): GP on the COMBINED total
+// (progressive tiers see the whole span) and floor = sum of each month's floor.
+{
+  const combined = computeSettlement({
+    totalSales: 500_000, opMonth: 2, tiers: T, floors: F, floorOverride: 30_000,
+    vatEnabled: true, vatRate: 0.07, whtRate: 0.03
+  });
+  eq("combine.tierGP(500k)", combined.tierGP, 81_000);      // 200k*.18 + 150k*.15 + 150k*.15
+  eq("combine.floor summed(15k+15k)", combined.floorApplied, 30_000);
+  eq("combine.billedGP", combined.billedGP, 81_000);
+  // Combining is NOT the same as settling each 250k month separately: progressive
+  // tiers push more volume into lower rates, so combined GP is lower.
+  const separate = marginalGP(250_000, T) * 2;                // 43,500 * 2 = 87,000
+  ok("combine.progressive < separate", combined.tierGP < separate);
+  // floorOverride wins over the single end-month floorFor path.
+  const floorWins = computeSettlement({
+    totalSales: 10_000, opMonth: 2, tiers: T, floors: F, floorOverride: 30_000,
+    vatEnabled: false, vatRate: 0.07, whtRate: 0.03
+  });
+  eq("combine.floorOverride applies", floorWins.billedGP, 30_000);
+}
+
 if (failed > 0) {
   console.error(`\nREVSHARE TESTS FAILED: ${failed}`);
   process.exit(1);

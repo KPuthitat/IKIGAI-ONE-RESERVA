@@ -127,6 +127,11 @@ export type SettlementInput = {
   // pure pass-through the company pays the partner, so it reduces what the
   // partner nets out on the GP invoice. Default 0.
   drinkPassthrough?: number;
+  // Combined multi-month settlement (owner 2026-08): when a settlement spans
+  // several months, the minimum-billing floor is the SUM of each covered
+  // op-month's floor (not the single end-month's). Pass that pre-summed floor
+  // here; when set it wins over floorFor(opMonth). Single-month keeps floors.
+  floorOverride?: number;
 };
 
 export type SettlementResult = {
@@ -151,7 +156,9 @@ export type SettlementResult = {
 export function computeSettlement(inp: SettlementInput): SettlementResult {
   const totalSales = round2(Math.max(0, inp.totalSales));
   const tierGP = round2(marginalGP(totalSales, inp.tiers));
-  const floorApplied = round2(floorFor(inp.opMonth, inp.floors));
+  const floorApplied = round2(
+    inp.floorOverride != null ? Math.max(0, inp.floorOverride) : floorFor(inp.opMonth, inp.floors)
+  );
   const billedGP = Math.max(tierGP, floorApplied);
   const topup = round2(Math.max(0, billedGP - tierGP));
   const avgGpPct = totalSales > 0 ? tierGP / totalSales : 0;
