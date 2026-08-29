@@ -214,7 +214,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-amber-50">
+    <div className="min-h-screen flex flex-col bg-[#F6F0E5]">
       {/* Maintenance banner rendered ABOVE the impersonation banner so
           the more urgent "system updating" message wins eye-catch when
           both are active simultaneously. */}

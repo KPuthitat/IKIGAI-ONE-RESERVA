@@ -378,7 +378,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     user.permissions.length > 0;
 
   return (
-    <div className="min-h-screen flex flex-col bg-amber-50">
+    <div className="min-h-screen flex flex-col bg-[#F6F0E5]">
       {/* Maintenance banner above impersonation banner — see staff
           layout for the same ordering rationale. */}
       {maintenanceMsg && <MaintenanceBanner message={maintenanceMsg} />}

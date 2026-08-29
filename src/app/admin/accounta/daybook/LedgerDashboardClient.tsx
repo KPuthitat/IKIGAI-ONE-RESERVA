@@ -672,7 +672,7 @@ function DayDetail({
               <tr className="bg-slate-50/60">
                 <td colSpan={3} className="py-2 px-2">
                   <button type="button" onClick={onAddIncome}
-                    className="w-full sm:w-auto text-center rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700">
+                    className="w-full sm:w-auto text-center rounded-full bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700">
                     + เพิ่มรายรับ
                   </button>
                 </td>
@@ -761,7 +761,7 @@ function DayDetail({
                 <tr className="bg-slate-50/60 border-t border-slate-100">
                   <td colSpan={3} className="px-2 py-2">
                     <button type="button" onClick={onAddExpense}
-                      className="w-full sm:w-auto text-center rounded-md bg-rose-600 text-white px-4 py-2 text-sm font-medium hover:bg-rose-700">
+                      className="w-full sm:w-auto text-center rounded-full bg-rose-600 text-white px-4 py-2 text-sm font-medium hover:bg-rose-700">
                       + เพิ่มรายจ่าย
                     </button>
                     {draftExpenses.length > 0 && (
@@ -1363,8 +1363,8 @@ export default function LedgerDashboardClient({
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => openAdd("income")} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700">+ เพิ่มรายรับ</button>
-          <button type="button" onClick={() => openAdd("expense")} className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ เพิ่มรายจ่าย</button>
+          <button type="button" onClick={() => openAdd("income")} className="rounded-full bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700">+ เพิ่มรายรับ</button>
+          <button type="button" onClick={() => openAdd("expense")} className="rounded-full bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700">+ เพิ่มรายจ่าย</button>
         </div>
       </div>
 
