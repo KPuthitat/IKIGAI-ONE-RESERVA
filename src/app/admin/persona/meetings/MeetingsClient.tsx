@@ -27,7 +27,7 @@ export default function MeetingsClient({ meetings, staff }: { meetings: MeetingR
     <div className="space-y-4">
       <div className="flex justify-end">
         <button type="button" onClick={() => setOpen((v) => !v)}
-          className="text-sm px-4 py-1.5 rounded-md bg-brand text-white font-bold hover:opacity-90">
+          className="text-sm px-4 py-1.5 rounded-full bg-brand text-white font-bold hover:opacity-90">
           {open ? "ปิดฟอร์ม" : "＋ สร้างการประชุม"}
         </button>
       </div>
@@ -182,7 +182,7 @@ function CreateForm({ staff, onDone }: { staff: StaffOption[]; onDone: () => voi
       {err && <p className="text-xs text-rose-600">{err}</p>}
       <div className="flex justify-end">
         <button type="button" disabled={busy || !ready} onClick={submit}
-          className="text-sm px-5 py-1.5 rounded-md bg-brand text-white font-bold hover:opacity-90 disabled:opacity-50">
+          className="text-sm px-5 py-1.5 rounded-full bg-brand text-white font-bold hover:opacity-90 disabled:opacity-50">
           บันทึกการประชุม
         </button>
       </div>

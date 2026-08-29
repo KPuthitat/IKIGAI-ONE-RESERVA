@@ -270,7 +270,7 @@ export default function OrderEditor({
             {t("inv.po.editCancel")}
           </button>
           <button type="button" onClick={trySave}
-            className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold hover:opacity-90">
+            className="text-xs px-3 py-1.5 rounded-full bg-emerald-600 text-white font-bold hover:opacity-90">
             {t("inv.po.editSave")}
           </button>
         </div>

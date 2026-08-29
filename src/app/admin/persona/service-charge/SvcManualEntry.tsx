@@ -91,7 +91,7 @@ export default function SvcManualEntry({
           <div className="flex items-center gap-2">
             {saved && !error && <span className="text-xs text-emerald-600">✓ บันทึกแล้ว</span>}
             <button type="button" disabled={busy} onClick={save}
-              className="text-sm px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-900 text-white font-medium disabled:opacity-50">
+              className="text-sm px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-900 text-white font-medium disabled:opacity-50">
               {busy ? "..." : "บันทึก"}
             </button>
           </div>

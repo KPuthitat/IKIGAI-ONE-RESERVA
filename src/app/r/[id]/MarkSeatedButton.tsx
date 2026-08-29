@@ -42,7 +42,7 @@ export default function MarkSeatedButton({
         type="button"
         onClick={markSeated}
         disabled={busy}
-        className="w-full py-3 rounded-lg bg-brand hover:opacity-90 text-white font-bold text-base disabled:opacity-50"
+        className="w-full py-3 rounded-full bg-brand hover:opacity-90 text-white font-bold text-base disabled:opacity-50"
       >
         {busy ? "…" : t(lang, "shortlink.markSeated")}
       </button>

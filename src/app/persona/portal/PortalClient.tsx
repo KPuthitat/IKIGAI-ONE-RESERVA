@@ -300,7 +300,7 @@ export default function PortalClient({ liffId }: { liffId: string }) {
                 <button
                   type="button"
                   onClick={() => setShowRegister(true)}
-                  className="block w-full py-2.5 rounded-lg bg-brand text-white text-sm font-bold hover:bg-brand/90"
+                  className="block w-full py-2.5 rounded-full bg-brand text-white text-sm font-bold hover:bg-brand/90"
                 >
                   ลงทะเบียนพนักงานใหม่ (สมัครด้วยตัวเอง)
                 </button>
@@ -325,7 +325,7 @@ export default function PortalClient({ liffId }: { liffId: string }) {
                       <button
                         type="button"
                         onClick={shareUserIdToAdmin}
-                        className="flex-1 py-2 rounded-lg bg-slate-600 text-white text-xs font-bold hover:bg-slate-700"
+                        className="flex-1 py-2 rounded-full bg-slate-600 text-white text-xs font-bold hover:bg-slate-700"
                       >
                         ส่งให้แอดมิน
                       </button>

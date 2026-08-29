@@ -401,7 +401,7 @@ export default function RosterCalendarView({
                         <button
                           type="button"
                           onClick={() => openGreet(b)}
-                          className="text-[10px] px-2 py-1 rounded-md bg-brand text-white font-bold hover:bg-brand/90"
+                          className="text-[10px] px-2 py-1 rounded-full bg-brand text-white font-bold hover:bg-brand/90"
                         >
                           ส่งคำอวยพร
                         </button>

@@ -952,7 +952,7 @@ function ClockAction({
               หากลืมกดเข้า กรุณารับรองเวลาเข้าก่อน จึงจะลงเวลาออกได้ครับ
             </p>
             <a href={`/staff/persona/time-certification?missing=1&type=in&date=${todayBkk}`}
-              className="inline-block text-sm font-bold bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg">
+              className="inline-block text-sm font-bold bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-full">
               ไปรับรองเวลาเข้า
             </a>
           </div>
@@ -1012,7 +1012,7 @@ function ClockAction({
           </button>
           <button
             onClick={() => callApi(replaceState.pin, true)}
-            className="py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold active:scale-95 transition"
+            className="py-3 rounded-full bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold active:scale-95 transition"
           >
             {t("staff.persona.replace.use", { time: proposedHHMM })}
           </button>
@@ -1857,7 +1857,7 @@ function HolidayOtRequest({ todayBkk, onDone }: { todayBkk: string; onDone: () =
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-block text-sm font-bold bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg active:scale-95 transition"
+        className="inline-block text-sm font-bold bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-full active:scale-95 transition"
       >
         โดนเรียกเข้างานวันหยุด — ขออนุมัติ OT
       </button>
@@ -1890,7 +1890,7 @@ function HolidayOtRequest({ todayBkk, onDone }: { todayBkk: string; onDone: () =
           type="button"
           onClick={submit}
           disabled={busy}
-          className="py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold disabled:opacity-50"
+          className="py-2 rounded-full bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold disabled:opacity-50"
         >
           {busy ? "กำลังส่ง…" : "ส่งขออนุมัติ"}
         </button>

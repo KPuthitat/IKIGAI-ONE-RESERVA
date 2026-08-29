@@ -331,7 +331,7 @@ export default function TerminationClient({
             type="button"
             disabled={submitting}
             onClick={submit}
-            className="rounded-md bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+            className="rounded-full bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-50"
           >
             {submitting ? "กำลังบันทึก…" : "บันทึกการเลิกจ้าง"}
           </button>

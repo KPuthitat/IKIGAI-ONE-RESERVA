@@ -453,7 +453,7 @@ function CheckupModal({
             ยกเลิก
           </button>
           <button type="button" onClick={save} disabled={busy}
-            className="flex-1 py-2.5 rounded-lg bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
+            className="flex-1 py-2.5 rounded-full bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
             {busy ? "กำลังบันทึก..." : editMode === "edit" ? "บันทึกการแก้ไข" : "บันทึกผลตรวจ"}
           </button>
         </div>

@@ -204,7 +204,7 @@ export default function LeaveAdminClient({
         <button
           type="button"
           onClick={() => setCreateOpen((o) => !o)}
-          className="ml-auto px-3 py-1.5 rounded-md text-sm font-medium bg-brand text-white hover:opacity-90"
+          className="ml-auto px-3 py-1.5 rounded-full text-sm font-medium bg-brand text-white hover:opacity-90"
         >
           {createOpen ? t("common.cancel") : `+ ${t("admin.persona.leave.createForStaff")}`}
         </button>

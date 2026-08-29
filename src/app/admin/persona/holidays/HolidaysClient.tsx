@@ -76,7 +76,7 @@ export default function HolidaysClient({
         <button
           type="button"
           onClick={() => setShowAdd(true)}
-          className="ml-auto px-3 py-1.5 rounded-md text-sm font-medium bg-brand text-white hover:opacity-90"
+          className="ml-auto px-3 py-1.5 rounded-full text-sm font-medium bg-brand text-white hover:opacity-90"
         >
           + {t("admin.persona.holidays.add")}
         </button>
@@ -280,7 +280,7 @@ function HolidayModal({
             {t("common.cancel")}
           </button>
           <button type="button" onClick={save} disabled={busy}
-            className="flex-1 py-2.5 rounded-lg bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
+            className="flex-1 py-2.5 rounded-full bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
             {busy ? t("common.submitting") : t("common.save")}
           </button>
         </div>

@@ -61,7 +61,7 @@ export default function RevshareHomeClient({ initialPartners }: { initialPartner
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <Link href={`/admin/accounta/revshare/rounds?partner=${p.id}`}
-                  className="rounded-md bg-brand text-white px-3 py-1.5 text-sm font-medium hover:bg-brand-dark">รอบยอดขาย / นำเข้าไฟล์</Link>
+                  className="rounded-full bg-brand text-white px-3 py-1.5 text-sm font-medium hover:bg-brand-dark">รอบยอดขาย / นำเข้าไฟล์</Link>
                 <Link href={`/admin/accounta/revshare/settlement?partner=${p.id}`}
                   className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">สรุปยอด / สร้างใบวางบิล</Link>
                 <Link href={`/admin/accounta/revshare/config?partner=${p.id}`}

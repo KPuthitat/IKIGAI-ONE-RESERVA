@@ -162,7 +162,7 @@ export default function SettlementClient({
           <div><label className="label">เลขที่ใบเรียกเก็บ/ใบกำกับ (ถ้ามี)</label><input className="input w-48" value={invoiceNo} maxLength={60} placeholder="เช่น GP-2569-06" onChange={(e) => setInvoiceNo(e.target.value)} /></div>
           <button type="button" onClick={() => action("save")} disabled={busy} className="btn-secondary text-sm">บันทึก/คำนวณใหม่ (ร่าง)</button>
           {status === "draft" && <button type="button" onClick={() => action("issue")} disabled={busy || r.billedGP <= 0} className="btn-primary text-sm disabled:opacity-50">ออกใบเรียกเก็บ</button>}
-          {status === "issued" && <button type="button" onClick={() => action("mark_paid")} disabled={busy} className="rounded-md bg-sky-600 text-white px-4 py-1.5 text-sm font-medium hover:bg-sky-700">บันทึกรับชำระ</button>}
+          {status === "issued" && <button type="button" onClick={() => action("mark_paid")} disabled={busy} className="rounded-full bg-sky-600 text-white px-4 py-1.5 text-sm font-medium hover:bg-sky-700">บันทึกรับชำระ</button>}
           {status !== "draft" && <button type="button" onClick={() => action("revert")} disabled={busy} className="text-sm text-rose-600 hover:underline px-2">ย้อนกลับเป็นร่าง</button>}
         </div>
         {pv.stored?.issued_at && <p className="text-[11px] text-slate-400">ออกใบเมื่อ {new Date(pv.stored.issued_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}{pv.stored.paid_at ? ` · รับชำระ ${new Date(pv.stored.paid_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}` : ""}</p>}
@@ -174,7 +174,7 @@ export default function SettlementClient({
           <div className="text-sm font-bold text-slate-800">สรุปยอดขายประจำเดือน (พร้อมส่วนแบ่งยอดขาย)</div>
           <div className="flex items-center gap-2 flex-wrap">
             {partner.line_group_id
-              ? <button type="button" onClick={sendNotify} disabled={busy} className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งสรุปประจำเดือนเข้ากลุ่มคู่ค้า"}</button>
+              ? <button type="button" onClick={sendNotify} disabled={busy} className="rounded-full bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งสรุปประจำเดือนเข้ากลุ่มคู่ค้า"}</button>
               : <span className="text-[11px] text-slate-400">ตั้ง LINE group ในหน้าตั้งค่าคู่ค้าเพื่อส่งได้</span>}
             <a href={apiUrl(`/api/accounta/revshare/statement/pdf?partner=${partner.id}&year=${year}&month=${month}`)} className="btn-secondary text-sm" download>ดาวน์โหลด PDF</a>
           </div>

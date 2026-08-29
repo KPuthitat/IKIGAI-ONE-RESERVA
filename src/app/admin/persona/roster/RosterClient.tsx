@@ -543,7 +543,7 @@ export default function RosterClient({
         </div>
         <button type="button"
           onClick={() => { setPublishKind("publish"); setPublishOpen(true); }}
-          className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold hover:opacity-90">
+          className="text-sm px-4 py-2 rounded-full bg-brand text-white font-bold hover:opacity-90">
           {t("admin.persona.roster.publish.publishBtn")}
         </button>
         <button type="button"

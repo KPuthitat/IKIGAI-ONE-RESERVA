@@ -93,7 +93,7 @@ export default function AccountActions({
       <div className="flex justify-end">
         <button type="button"
           onClick={() => setMode("onboard")}
-          className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-bold hover:opacity-90">
+          className="text-sm px-4 py-2 rounded-full bg-brand text-white font-bold hover:opacity-90">
           + เพิ่มพนักงานใหม่
         </button>
       </div>

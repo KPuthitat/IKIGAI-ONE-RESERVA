@@ -105,7 +105,7 @@ export default function ClaimIceCreamPanel({
         type="button"
         onClick={claim}
         disabled={busy}
-        className="w-full py-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-base disabled:opacity-50"
+        className="w-full py-3 rounded-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-base disabled:opacity-50"
       >
         {busy ? "…" : t(lang, "shortlink.claimBtn")}
       </button>

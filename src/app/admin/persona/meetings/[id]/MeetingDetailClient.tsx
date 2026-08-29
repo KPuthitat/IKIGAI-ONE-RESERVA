@@ -174,7 +174,7 @@ export default function MeetingDetailClient({
             <div className="flex justify-end">
               <button type="button" disabled={savingAll || !suggested.some((s) => s.include && s.title.trim())}
                 onClick={addSelected}
-                className="text-xs px-4 py-1.5 rounded-md bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">
+                className="text-xs px-4 py-1.5 rounded-full bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">
                 {savingAll ? "กำลังเพิ่ม…" : `＋ เพิ่มที่เลือก (${suggested.filter((s) => s.include && s.title.trim()).length})`}
               </button>
             </div>
@@ -285,7 +285,7 @@ function AddItem({ meetingId, staff, onAdded }: { meetingId: number; staff: Staf
       <input type="date" className="input !w-auto !py-1 text-sm" value={due}
         onChange={(e) => setDue(e.target.value)} />
       <button type="button" disabled={busy || !title.trim()} onClick={add}
-        className="text-xs px-4 py-1.5 rounded-md bg-brand text-white font-bold hover:opacity-90 disabled:opacity-50">
+        className="text-xs px-4 py-1.5 rounded-full bg-brand text-white font-bold hover:opacity-90 disabled:opacity-50">
         เพิ่ม
       </button>
     </div>

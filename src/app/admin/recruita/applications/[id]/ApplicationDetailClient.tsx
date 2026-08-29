@@ -343,7 +343,7 @@ export default function ApplicationDetailClient({
               <button type="button"
                 onClick={() => setApproveModalOpen(true)}
                 disabled={busy || !viewerHasPin}
-                className="flex-1 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50">
+                className="flex-1 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-50">
                 ✓ อนุมัติ (ใส่ PIN)
               </button>
             )}
@@ -1633,7 +1633,7 @@ function CancelPromptModal({
             ปิด
           </button>
           <button type="button" onClick={submit} disabled={busy}
-            className="flex-1 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold disabled:opacity-50">
+            className="flex-1 py-2.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold disabled:opacity-50">
             {busy ? "กำลังยกเลิก…" : "ยกเลิกคำขอ"}
           </button>
         </div>

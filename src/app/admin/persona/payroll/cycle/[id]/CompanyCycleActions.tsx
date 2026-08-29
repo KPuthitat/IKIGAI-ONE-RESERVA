@@ -86,7 +86,7 @@ export default function CompanyCycleActions({
           type="button"
           onClick={() => setConfirmPay(true)}
           disabled={busy !== null || !anyFinalized}
-          className="text-sm px-4 py-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+          className="text-sm px-4 py-1.5 rounded-full bg-sky-600 hover:bg-sky-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {busy === "mark_paid_all" ? "..." : t(lang, "admin.persona.payroll.cycle.payAll")}
         </button>
@@ -95,7 +95,7 @@ export default function CompanyCycleActions({
           type="button"
           onClick={() => cascade("post_all")}
           disabled={busy !== null || !anyPaidUnposted}
-          className="text-sm px-4 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+          className="text-sm px-4 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {busy === "post_all" ? "..." : t(lang, "admin.persona.payroll.cycle.postAll")}
         </button>

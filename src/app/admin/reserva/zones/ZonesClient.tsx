@@ -237,7 +237,7 @@ function ZoneFormModal({
             {t(lang, "common.cancel")}
           </button>
           <button type="button" onClick={save} disabled={busy || !name.trim()}
-            className="flex-1 py-2.5 rounded-lg bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
+            className="flex-1 py-2.5 rounded-full bg-brand hover:opacity-90 text-white text-sm font-bold disabled:opacity-50">
             {busy ? "…" : t(lang, "common.save")}
           </button>
         </div>

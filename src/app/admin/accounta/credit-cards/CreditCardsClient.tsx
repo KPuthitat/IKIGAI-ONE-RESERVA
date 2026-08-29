@@ -105,7 +105,7 @@ export default function CreditCardsClient({
           {cards.length === 0 ? "ยังไม่มีบัตรเครดิตในระบบ — เพิ่มบัตรที่หน้า “ช่องทางการเงิน / บัญชี” ก่อน" : ""}
         </div>
         <button type="button" onClick={() => openNew()} disabled={cards.length === 0}
-          className="rounded-md bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700 disabled:opacity-50">+ เพิ่มรายการรูดบัตร</button>
+          className="rounded-full bg-rose-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-rose-700 disabled:opacity-50">+ เพิ่มรายการรูดบัตร</button>
       </div>
 
       {reserve.length === 0 ? (
@@ -234,7 +234,7 @@ export default function CreditCardsClient({
             </div>
             <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-100">
               <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-slate-300 bg-white text-slate-600 px-5 py-2 text-sm font-medium hover:bg-slate-50">ยกเลิก</button>
-              <button type="button" onClick={save} disabled={busy} className="rounded-md bg-brand text-white px-5 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
+              <button type="button" onClick={save} disabled={busy} className="rounded-full bg-brand text-white px-5 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50">
                 {busy ? "กำลังบันทึก…" : "บันทึก"}
               </button>
             </div>

@@ -106,7 +106,7 @@ export default function ManagerReportsClient({
           {err && <span className="text-xs text-rose-600">{err}</span>}
           {saved && !err && <span className="text-xs text-emerald-600">✓ บันทึกแล้ว</span>}
           <button type="button" disabled={!ready || busy} onClick={save}
-            className="text-sm px-4 py-1.5 rounded-md bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">
+            className="text-sm px-4 py-1.5 rounded-full bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">
             {busy ? "กำลังบันทึก…" : "บันทึกรายงาน"}
           </button>
         </div>

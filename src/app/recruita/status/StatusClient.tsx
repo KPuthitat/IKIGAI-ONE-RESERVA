@@ -437,7 +437,7 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
             <div className="text-center">
               <Link
                 href="/recruita/positions"
-                className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg">
+                className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-5 py-2.5 rounded-full">
                 ดูตำแหน่งที่เปิดรับ →
               </Link>
             </div>
@@ -531,7 +531,7 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                             <div className="flex gap-2">
                               <button type="button" disabled={bookingSlotId !== null}
                                 onClick={() => bookSlot(row.application_id, pendingSlot)}
-                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-lg">
+                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-full">
                                 {bookingSlotId !== null ? "กำลังยืนยัน…" : "ยืนยันนัดหมาย"}
                               </button>
                               <button type="button" disabled={bookingSlotId !== null}
@@ -572,7 +572,7 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                           <div className="flex gap-2">
                             <button type="button" disabled={cancelBusy}
                               onClick={() => cancelBooking(row.application_id)}
-                              className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-lg">
+                              className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-full">
                               {cancelBusy ? "กำลังยกเลิก…" : "ยืนยันยกเลิกนัด"}
                             </button>
                             <button type="button" disabled={cancelBusy}
@@ -597,7 +597,7 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                               setPendingSlot(null);
                               if (slots === null) void loadSlots();
                             }}
-                            className="text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg">
+                            className="text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-full">
                             {row.interview_at ? "เปลี่ยนวันเวลา" : "เลือกวันเวลาสัมภาษณ์"}
                           </button>
                           {row.interview_at && (
@@ -664,7 +664,7 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
                           type="button"
                           onClick={() => handleDelete(row.application_id)}
                           disabled={deletingId === row.application_id}
-                          className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-lg">
+                          className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-full">
                           {deletingId === row.application_id ? "กำลังลบ…" : "ยืนยันลบ"}
                         </button>
                         <button
@@ -786,7 +786,7 @@ function HealthCertUpload({
           <button type="button"
             onClick={upload}
             disabled={busy || !file}
-            className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-bold px-4 py-2 rounded-lg">
+            className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-bold px-4 py-2 rounded-full">
             {busy ? "กำลังอัพโหลด…" : "อัพโหลดใบรับรองแพทย์"}
           </button>
         </>
@@ -858,7 +858,7 @@ function OfferResponse({
       ) : step === "view" ? (
         <div className="flex gap-2">
           <button type="button" onClick={() => { setStep("confirm_accept"); setErr(null); }}
-            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg">
+            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-full">
             ตอบรับข้อเสนอ
           </button>
           <button type="button" onClick={() => { setStep("confirm_reject"); setErr(null); }}
@@ -924,7 +924,7 @@ function PhoneSearchBox({
         type="button"
         onClick={onSearch}
         disabled={busy || phone.trim().replace(/\D/g, "").length < 9}
-        className="w-full bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors">
+        className="w-full bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors">
         {busy ? "กำลังค้นหา…" : "ค้นหาใบสมัคร"}
       </button>
     </div>

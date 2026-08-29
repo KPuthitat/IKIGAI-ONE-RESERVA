@@ -340,7 +340,7 @@ export default function CountClient({
               {lastSubmitted.submitted_at && <> · ปิดรอบเมื่อ {lastSubmitted.submitted_at} น.</>}
             </div>
             <button type="button" onClick={() => setReopenPin(true)}
-              className="w-full py-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold">
+              className="w-full py-2.5 rounded-full bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold">
               เปิดรอบนี้อีกครั้งเพื่อแก้ไข (ใส่ PIN)
             </button>
             <p className="text-[11px] text-amber-700/80">
@@ -422,7 +422,7 @@ export default function CountClient({
               type="button"
               onClick={prefillFromCurrentQty}
               disabled={busy}
-              className="text-xs px-3 py-2 rounded-md bg-amber-500 text-white font-bold hover:bg-amber-600 disabled:opacity-50 flex-shrink-0"
+              className="text-xs px-3 py-2 rounded-full bg-amber-500 text-white font-bold hover:bg-amber-600 disabled:opacity-50 flex-shrink-0"
             >
               ใช้ตัวเลขเดิมจากคลังปัจจุบัน ({total - done})
             </button>
