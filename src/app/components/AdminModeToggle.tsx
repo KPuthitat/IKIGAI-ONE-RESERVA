@@ -98,9 +98,9 @@ export default function AdminModeToggle({
         type="button"
         onClick={go}
         className="group w-full flex items-center justify-center gap-2 px-3.5 py-2.5
-                   rounded-xl border border-white/15 bg-white/[0.06]
-                   hover:bg-white/[0.12] hover:border-white/30
-                   text-white/90 hover:text-white text-sm font-semibold
+                   rounded-xl border border-[#DDCBAE] bg-white
+                   hover:bg-slate-50 hover:border-brand-light
+                   text-slate-700 hover:text-slate-900 text-sm font-semibold
                    tracking-wide transition-colors"
       >
         {inAdmin && (
