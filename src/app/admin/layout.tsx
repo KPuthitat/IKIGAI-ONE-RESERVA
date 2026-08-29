@@ -393,7 +393,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           used to live in the (removed) sidebar: brand, active-branch pill,
           user chip, STAFF/ADMIN switch, refresh, language, logout. The row
           wraps on narrow viewports so nothing is unreachable on mobile. */}
-      <header className="bg-gradient-to-r from-[#EFE3CF] to-[#E6D3B5] text-slate-800 border-b border-[#DDCBAE] shadow-sm">
+      <header className="bg-coffee-gradient text-white shadow-md">
         <div className="w-full max-w-screen-2xl mx-auto px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
           <HeaderBrand role="admin" />
           {activeBranch && (
@@ -404,7 +404,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             />
           )}
           <div className="flex-1 min-w-0" />
-          <span className="hidden sm:block text-xs text-slate-500 truncate max-w-[180px]">
+          <span className="hidden sm:block text-xs text-white/60 truncate max-w-[180px]">
             {nameWithPrefix(user.title_prefix, user.display_name)} · {t(lang, "role.adminShort")}
           </span>
           {canSwitchView && (
@@ -412,8 +412,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <AdminModeToggle view="admin" defaultView={user.role === "super_admin" ? "admin" : "staff"} />
             </div>
           )}
-          <RefreshButton variant="light" />
-          <LangToggle variant="light" />
+          <RefreshButton variant="dark" />
+          <LangToggle variant="dark" />
           <LogoutButton />
         </div>
       </header>
