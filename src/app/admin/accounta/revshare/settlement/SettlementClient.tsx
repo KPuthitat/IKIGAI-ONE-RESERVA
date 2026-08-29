@@ -15,13 +15,13 @@ type Result = {
 };
 type BreakRow = { label: string; start: string; end: string; sales: number; roundGP: number; gpPct: number };
 type Stored = { status: "draft" | "issued" | "paid"; invoice_no: string | null; issued_at: string | null; paid_at: string | null } | null;
-type Preview = { result: Result; breakdown: BreakRow[]; opMonth: number; stored: Stored; stale: boolean };
+type Preview = { result: Result; breakdown: BreakRow[]; opMonth: number; span?: number; stored: Stored; stale: boolean };
 type Partner = { id: number; name: string; venue: string | null; pos_categories: string[]; vat_enabled: boolean; line_group_id: string | null };
 type Seller = { name: string; company: string | null; address: string | null; taxBranchCode: string | null; phone: string | null };
 
 export default function SettlementClient({
-  partner, seller, initial, year, month
-}: { partner: Partner; seller: Seller; initial: Preview; year: number; month: number }) {
+  partner, seller, initial, year, month, span = 1
+}: { partner: Partner; seller: Seller; initial: Preview; year: number; month: number; span?: number }) {
   const router = useRouter();
   const [pv, setPv] = useState<Preview>(initial);
   const [invoiceNo, setInvoiceNo] = useState(initial.stored?.invoice_no ?? "");
@@ -31,6 +31,12 @@ export default function SettlementClient({
 
   const r = pv.result;
   const monthLabel = `${TH_MONTHS_FULL[month]} ${year + 543}`;
+  // Combined range label when span > 1 (e.g. "ก.ค.–ส.ค. 2569").
+  const startD = new Date(Date.UTC(year, month - 1 - (span - 1), 1));
+  const startMon = startD.getUTCMonth() + 1, startYr = startD.getUTCFullYear();
+  const periodLabel = span > 1
+    ? `${TH_MONTHS_FULL[startMon]}${startYr !== year ? " " + (startYr + 543) : ""}–${TH_MONTHS_FULL[month]} ${year + 543}`
+    : monthLabel;
   const shop = partnerShopName(partner);
   const status = pv.stored?.status ?? "draft";
   const withVat = partner.vat_enabled && r.vatAmount > 0;
@@ -39,7 +45,10 @@ export default function SettlementClient({
 
   function shift(delta: number) {
     const d = new Date(Date.UTC(year, month - 1 + delta, 1));
-    router.push(`/admin/accounta/revshare/settlement?partner=${partner.id}&year=${d.getUTCFullYear()}&month=${d.getUTCMonth() + 1}`);
+    router.push(`/admin/accounta/revshare/settlement?partner=${partner.id}&year=${d.getUTCFullYear()}&month=${d.getUTCMonth() + 1}&span=${span}`);
+  }
+  function goSpan(s: number) {
+    router.push(`/admin/accounta/revshare/settlement?partner=${partner.id}&year=${year}&month=${month}&span=${s}`);
   }
 
   async function action(act: "save" | "issue" | "mark_paid" | "revert") {
@@ -47,11 +56,11 @@ export default function SettlementClient({
     try {
       const res = await fetch(apiUrl("/api/accounta/revshare/settlement"), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ partner: partner.id, year, month, action: act, invoice_no: invoiceNo.trim() || null })
+        body: JSON.stringify({ partner: partner.id, year, month, span, action: act, invoice_no: invoiceNo.trim() || null })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "ทำรายการไม่สำเร็จ")); return; }
-      setPv({ result: j.result, breakdown: j.breakdown, opMonth: j.opMonth, stored: j.stored, stale: j.stale });
+      setPv({ result: j.result, breakdown: j.breakdown, opMonth: j.opMonth, span: j.span, stored: j.stored, stale: j.stale });
       router.refresh();
     } finally { setBusy(false); }
   }
@@ -83,11 +92,25 @@ export default function SettlementClient({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => shift(-1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">←</button>
-          <span className="text-sm font-bold text-slate-700">{monthLabel}</span>
+          <span className="text-sm font-bold text-slate-700">{periodLabel}</span>
           <button type="button" onClick={() => shift(1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">→</button>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-400">รวมเดือน</span>
+          {[1, 2, 3].map((s) => (
+            <button key={s} type="button" onClick={() => goSpan(s)} disabled={busy}
+              className={`text-xs px-2.5 py-1 rounded-full border ${span === s ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+              {s} ด.
+            </button>
+          ))}
         </div>
         <span className={`text-xs px-2 py-1 rounded font-medium ${STATUS[status].c}`}>{STATUS[status].t} · สัญญาเดือนที่ {pv.opMonth}</span>
       </div>
+      {span > 1 && (
+        <p className="text-[11px] text-slate-400 -mt-2">
+          คิด GP รวมยอดขาย {span} เดือน ({periodLabel}) แบบขั้นบันไดจากยอดรวม · ขั้นต่ำ = ผลรวมขั้นต่ำรายเดือน · อย่าออกใบแยกเดือนซ้ำในช่วงที่รวมแล้ว
+        </p>
+      )}
 
       {pv.stale && status !== "draft" && (
         <div className="card bg-amber-50 border border-amber-200 text-sm text-amber-800">
@@ -97,7 +120,7 @@ export default function SettlementClient({
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card label="ยอดขายรวมทั้งเดือน" value={r.totalSales} />
+        <Card label={span > 1 ? `ยอดขายรวม ${span} เดือน` : "ยอดขายรวมทั้งเดือน"} value={r.totalSales} />
         <Card label="ส่วนแบ่งตามขั้นบันได" value={r.tierGP} sub={`เฉลี่ย ${(r.avgGpPct * 100).toFixed(2)}%`} />
         <Card label="ส่วนต่างขั้นต่ำ (top-up)" value={r.topup} sub={r.topup > 0 ? `ขั้นต่ำ ฿${fmtMoney(r.floorApplied)}` : "ไม่ถึงขั้นต่ำ"} tone={r.topup > 0 ? "amber" : undefined} />
         <Card label="ส่วนแบ่งยอดขาย (ก่อนภาษี)" value={r.billedGP} tone="brand" big />

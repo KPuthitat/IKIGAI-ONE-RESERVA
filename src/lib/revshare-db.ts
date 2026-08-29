@@ -5,7 +5,7 @@
 
 import { getDb } from "./db";
 import {
-  computeSettlement, computeRoundBreakdown, opMonthFor, roundLabel, round2,
+  computeSettlement, computeRoundBreakdown, opMonthFor, floorFor, roundLabel, round2,
   groupDailyIntoWeeks, salesVat, salesBaseIncludesVat, partnerShopName,
   DEFAULT_TIERS, DEFAULT_FLOORS,
   type Tier, type Floor, type SettlementResult
@@ -31,6 +31,7 @@ export type RsRound = {
 };
 export type RsSettlement = SettlementResult & {
   id: number; partner_id: number; settle_year: number; settle_month: number; op_month: number;
+  span_months: number;   // 1 = single month; >1 = combined (ends at settle_month)
   status: "draft" | "issued" | "paid"; invoice_no: string | null;
   issued_at: string | null; paid_at: string | null;
 };
@@ -366,25 +367,49 @@ export type SettlementPreview = {
   result: SettlementResult;
   breakdown: WeekBreakdown[];   // weekly transfer + GP (owner 2026-06-23: daily → weekly → monthly)
   opMonth: number;
+  span: number;                 // # of months this preview covers (ends at settle month)
   stored: RsSettlement | null;
-  stale: boolean;   // a snapshot exists but no longer matches current rounds
+  stale: boolean;   // a snapshot exists but no longer matches current rounds/span
 };
 
 /** Live-compute the month from current rounds (no write). Also returns any
  *  stored snapshot + whether it's stale (rounds changed since it was saved). */
-export function previewSettlement(partnerId: number, branchId: number, year: number, month: number): SettlementPreview | null {
+export function previewSettlement(
+  partnerId: number, branchId: number, year: number, month: number, span = 1
+): SettlementPreview | null {
   const partner = getPartner(partnerId, branchId);
   if (!partner) return null;
-  const rounds = listRounds(partnerId, branchId, year, month);
+  const s = Math.max(1, Math.min(12, Math.floor(span || 1)));
   const tiers = getTiers(partnerId);
   const floors = getFloors(partnerId);
-  const opMonth = opMonthFor(partner.start_date, year, month);
-  const totalSales = rounds.reduce((s, r) => s + r.sales_amount, 0);
+  const opMonth = opMonthFor(partner.start_date, year, month); // end month's contract month
+  // Rounds over the covered span [firstMonth .. settle month]. span=1 keeps the
+  // original single-month path byte-for-byte.
+  let rounds: RsRound[];
+  let floorOverride: number | undefined;
+  if (s === 1) {
+    rounds = listRounds(partnerId, branchId, year, month);
+  } else {
+    const startD = new Date(Date.UTC(year, month - 1 - (s - 1), 1));
+    const startIso = `${startD.getUTCFullYear()}-${String(startD.getUTCMonth() + 1).padStart(2, "0")}-01`;
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const endIso = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    rounds = listRoundsRange(partnerId, branchId, startIso, endIso);
+    // Minimum-billing floor for a combined settlement = sum of each covered
+    // op-month's floor (each month carries its own monthly minimum).
+    let floorSum = 0;
+    for (let i = 0; i < s; i++) {
+      const d = new Date(Date.UTC(year, month - 1 - i, 1));
+      floorSum += floorFor(opMonthFor(partner.start_date, d.getUTCFullYear(), d.getUTCMonth() + 1), floors);
+    }
+    floorOverride = round2(floorSum);
+  }
+  const totalSales = rounds.reduce((sum, r) => sum + r.sales_amount, 0);
   // Staff drink welfare is NOT part of the monthly GP settlement (owner
   // 2026-07-30) — it is its own report/card read from the redemptions, on the
   // weekly-transfer cadence. So this settlement stays GP-only (no drink line).
   const result = computeSettlement({
-    totalSales, opMonth, tiers, floors,
+    totalSales, opMonth, tiers, floors, floorOverride,
     vatEnabled: partner.vat_enabled, vatRate: partner.vat_rate, whtRate: partner.wht_rate
   });
   // Group the month's daily entries into ISO weeks (= the weekly transfer),
@@ -397,8 +422,9 @@ export function previewSettlement(partnerId: number, branchId: number, year: num
     sales: row.sales, roundGP: row.roundGP, gpPct: row.gpPct
   }));
   const stored = getStoredSettlement(partnerId, branchId, year, month);
-  const stale = !!stored && round2(stored.totalSales) !== result.totalSales;
-  return { result, breakdown, opMonth, stored, stale };
+  const stale = !!stored &&
+    (round2(stored.totalSales) !== result.totalSales || (stored.span_months ?? 1) !== s);
+  return { result, breakdown, opMonth, span: s, stored, stale };
 }
 
 function shapeSettlement(r: any): RsSettlement {
@@ -406,6 +432,7 @@ function shapeSettlement(r: any): RsSettlement {
   const drinkPassthrough = round2(r.drink_passthrough ?? 0);
   return {
     id: r.id, partner_id: r.partner_id, settle_year: r.settle_year, settle_month: r.settle_month, op_month: r.op_month,
+    span_months: r.span_months ?? 1,
     totalSales: r.total_sales, tierGP: r.tier_gp, floorApplied: r.floor_applied, topup: r.topup,
     billedGP: r.billed_gp, avgGpPct: r.avg_gp_pct, vatAmount: r.vat_amount, whtAmount: r.wht_amount, netAmount,
     drinkPassthrough,
@@ -426,33 +453,33 @@ export function getStoredSettlement(partnerId: number, branchId: number, year: n
 /** Upsert the snapshot from current rounds. Keeps existing status/invoice when
  *  the row is already issued/paid (just refreshes the numbers — the page warns
  *  before this). A fresh row starts 'draft'. */
-export function saveSettlement(partnerId: number, branchId: number, year: number, month: number): RsSettlement | null {
-  const preview = previewSettlement(partnerId, branchId, year, month);
+export function saveSettlement(partnerId: number, branchId: number, year: number, month: number, span = 1): RsSettlement | null {
+  const preview = previewSettlement(partnerId, branchId, year, month, span);
   if (!preview) return null;
   const db = getDb();
   const r = preview.result;
   const existing = getStoredSettlement(partnerId, branchId, year, month);
   if (existing) {
     db.prepare(`
-      UPDATE revshare_settlements SET op_month = ?, total_sales = ?, tier_gp = ?, floor_applied = ?, topup = ?,
+      UPDATE revshare_settlements SET op_month = ?, span_months = ?, total_sales = ?, tier_gp = ?, floor_applied = ?, topup = ?,
         billed_gp = ?, avg_gp_pct = ?, vat_amount = ?, wht_amount = ?, net_amount = ?, drink_passthrough = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(preview.opMonth, r.totalSales, r.tierGP, r.floorApplied, r.topup, r.billedGP, r.avgGpPct,
+    `).run(preview.opMonth, preview.span, r.totalSales, r.tierGP, r.floorApplied, r.topup, r.billedGP, r.avgGpPct,
       r.vatAmount, r.whtAmount, r.netAmount, r.drinkPassthrough, existing.id);
   } else {
     db.prepare(`
-      INSERT INTO revshare_settlements (partner_id, settle_year, settle_month, op_month, total_sales, tier_gp,
+      INSERT INTO revshare_settlements (partner_id, settle_year, settle_month, op_month, span_months, total_sales, tier_gp,
         floor_applied, topup, billed_gp, avg_gp_pct, vat_amount, wht_amount, net_amount, drink_passthrough)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(partnerId, year, month, preview.opMonth, r.totalSales, r.tierGP, r.floorApplied, r.topup,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(partnerId, year, month, preview.opMonth, preview.span, r.totalSales, r.tierGP, r.floorApplied, r.topup,
       r.billedGP, r.avgGpPct, r.vatAmount, r.whtAmount, r.netAmount, r.drinkPassthrough);
   }
   return getStoredSettlement(partnerId, branchId, year, month);
 }
 
-export function issueSettlement(partnerId: number, branchId: number, year: number, month: number, invoiceNo: string | null, when: string): boolean {
-  const saved = saveSettlement(partnerId, branchId, year, month);   // always recompute on issue
+export function issueSettlement(partnerId: number, branchId: number, year: number, month: number, invoiceNo: string | null, when: string, span = 1): boolean {
+  const saved = saveSettlement(partnerId, branchId, year, month, span);   // always recompute on issue
   if (!saved) return false;
   return getDb().prepare(
     "UPDATE revshare_settlements SET status = 'issued', invoice_no = ?, issued_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"

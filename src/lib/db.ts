@@ -2121,6 +2121,15 @@ function runMigrations(db: Database.Database): void {
     if (!rsCols.some((c) => c.name === "drink_passthrough")) {
       db.exec("ALTER TABLE revshare_settlements ADD COLUMN drink_passthrough REAL NOT NULL DEFAULT 0");
     }
+    // revshare_settlements.span_months (owner 2026-08): a settlement may cover
+    // several consecutive months (e.g. ก.ค.+ส.ค.) so GP is computed on the
+    // COMBINED sales (progressive tiers see the combined total) and the floor
+    // is the sum of the covered op-months' floors. The row is keyed on the END
+    // month; span_months (>=1) says how many months back it reaches. Default 1
+    // keeps every existing settlement exactly as-is.
+    if (!rsCols.some((c) => c.name === "span_months")) {
+      db.exec("ALTER TABLE revshare_settlements ADD COLUMN span_months INTEGER NOT NULL DEFAULT 1");
+    }
   }
 
   // Daily attendance summary (TC-6) — per-branch HH:MM time at which
