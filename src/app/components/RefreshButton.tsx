@@ -22,9 +22,9 @@ export default function RefreshButton({
       aria-label="รีเฟรชข้อมูล"
       title="รีเฟรชข้อมูล"
       className={
-        "flex-shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-lg border " +
+        "flex-shrink-0 inline-flex items-center justify-center h-10 w-10 rounded-xl border transition-colors " +
         (dark
-          ? "text-white border-white/25 bg-white/10 hover:bg-white/20"
+          ? "text-white border-white/20 bg-white/10 hover:bg-white/20"
           : "text-slate-700 border-slate-300 bg-white hover:bg-slate-100") +
         " disabled:opacity-50"
       }
