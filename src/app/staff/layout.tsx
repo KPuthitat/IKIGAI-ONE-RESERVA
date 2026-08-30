@@ -227,39 +227,52 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         />
       )}
 
-      {/* Topbar — brand + every control the sidebar used to host. Wraps on
-          narrow viewports so nothing is unreachable on mobile. */}
+      {/* Topbar (mobile-tidy redesign 2026-08). Two clean rows on phones —
+          brand + primary controls on row 1, branch + view-switch on row 2 —
+          collapsing to a single row on md+ via CSS order + a full-basis break
+          (no duplicated controls). */}
       <header className="bg-coffee-gradient text-white shadow-md">
         <div className="w-full max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <HeaderBrand role="staff" />
-          {activeBranch && (
-            <TodaysBranchPill
-              branchName={activeBranch.name}
-              hasChoice={hasBranchChoice}
-              pickerPath="/staff/branch-picker"
-            />
-          )}
-          <div className="flex-1 min-w-0" />
-          <span className="hidden sm:block text-xs text-white/60 truncate max-w-[180px]">
-            {nameWithPrefix(user.title_prefix, user.display_name)}
-          </span>
-          {canSwitchView && (
-            <div className="flex-shrink-0 [&>button]:!w-auto [&>button]:!px-3 [&>button]:!py-1.5">
-              <AdminModeToggle view={adminView ? "admin" : "staff"} defaultView={defaultView} />
-            </div>
-          )}
-          <RefreshButton variant="dark" />
-          <LangToggle variant="dark" />
-          <LogoutButton />
+          <div className="order-1 flex-shrink-0 min-w-0">
+            <HeaderBrand role="staff" />
+          </div>
+
+          {/* Branch + view-switch — its own row on mobile, inline on md+ */}
+          <div className="order-3 md:order-2 basis-full md:basis-auto flex items-center gap-2 flex-wrap min-w-0">
+            {activeBranch && (
+              <TodaysBranchPill
+                branchName={activeBranch.name}
+                hasChoice={hasBranchChoice}
+                pickerPath="/staff/branch-picker"
+              />
+            )}
+            {canSwitchView && (
+              <div className="flex-shrink-0 [&>button]:!w-auto [&>button]:!px-3 [&>button]:!py-1.5">
+                <AdminModeToggle view={adminView ? "admin" : "staff"} defaultView={defaultView} />
+              </div>
+            )}
+          </div>
+
+          {/* Primary controls — pinned right on both rows/layouts */}
+          <div className="order-2 md:order-3 ml-auto flex items-center gap-2 flex-shrink-0">
+            <span className="hidden md:block text-xs text-white/60 truncate max-w-[180px]">
+              {nameWithPrefix(user.title_prefix, user.display_name)}
+            </span>
+            <RefreshButton variant="dark" />
+            <LangToggle variant="dark" />
+            <LogoutButton />
+          </div>
         </div>
       </header>
 
       <div className="w-full max-w-6xl mx-auto px-4 pt-4 flex-1 flex flex-col min-w-0">
         <ModuleTabs tabs={moduleTabs} />
-        <div className="md:hidden mt-3">
+        {/* Sub-nav chips read as part of the nav — snug under the tabs, with a
+            clear gap before the page title so they never crowd it on mobile. */}
+        <div className="md:hidden mt-2">
           <ModuleSubnav sections={subSections} mode="chips" />
         </div>
-        <div className="mt-4 md:flex md:gap-5 flex-1 min-w-0">
+        <div className="mt-5 md:mt-4 md:flex md:gap-5 flex-1 min-w-0">
           <div className="hidden md:block md:w-[236px] md:flex-shrink-0">
             <div className="sticky top-4">
               <ModuleSubnav sections={subSections} mode="list" />
