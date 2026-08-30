@@ -5,7 +5,7 @@
 
 import { getDb } from "./db";
 import {
-  computeSettlement, computeRoundBreakdown, opMonthFor, floorFor, roundLabel, round2,
+  computeSettlement, computeRoundBreakdown, opMonthFor, roundLabel, round2,
   groupDailyIntoWeeks, salesVat, salesBaseIncludesVat, partnerShopName,
   DEFAULT_TIERS, DEFAULT_FLOORS, TH_MONTHS_FULL,
   type Tier, type Floor, type SettlementResult
@@ -479,31 +479,29 @@ export function previewSettlement(
   if (!partner) return null;
   const tiers = getTiers(partnerId);
   const floors = getFloors(partnerId);
-  const opMonth = opMonthFor(partner.start_date, year, month); // anchor month's contract month
   const stored = getStoredSettlement(partnerId, branchId, year, month);
   // Resolve the covered set: explicit request → stored snapshot → anchor only.
   const requested = months && months.length ? months
     : stored ? stored.covered_months
     : [monthKey(year, month)];
-  const covered = normalizeCoveredSet(year, month, requested);
+  const covered = normalizeCoveredSet(year, month, requested);   // ascending
+  // The minimum bill (floor) is per BILLING ROUND, not per calendar month
+  // (owner 2026-08). A settlement is ONE bill = ONE round, whatever months it
+  // rolls up — so ก.ค.+ส.ค. รวมกัน = "รอบบิลที่ 1" (ของ ก.ค.), ไม่ใช่ผลรวมขั้นต่ำสองเดือน.
+  // The round is the op-month of the EARLIEST covered month; computeSettlement
+  // then applies that single floor (no summing across months).
+  const first = parseMonthKey(covered[0])!;
+  const opMonth = opMonthFor(partner.start_date, first.y, first.m);
   // Gather rounds across every covered month.
   const rounds: RsRound[] = [];
   for (const k of covered) { const p = parseMonthKey(k)!; rounds.push(...listRounds(partnerId, branchId, p.y, p.m)); }
   rounds.sort((a, b) => (a.period_start < b.period_start ? -1 : 1));
-  // Minimum-billing floor: single month → natural floorFor(opMonth); combined →
-  // sum of each covered op-month's floor (each month keeps its own minimum).
-  let floorOverride: number | undefined;
-  if (covered.length > 1) {
-    let floorSum = 0;
-    for (const k of covered) { const p = parseMonthKey(k)!; floorSum += floorFor(opMonthFor(partner.start_date, p.y, p.m), floors); }
-    floorOverride = round2(floorSum);
-  }
   const totalSales = rounds.reduce((sum, r) => sum + r.sales_amount, 0);
   // Staff drink welfare is NOT part of the monthly GP settlement (owner
   // 2026-07-30) — it is its own report/card read from the redemptions, on the
   // weekly-transfer cadence. So this settlement stays GP-only (no drink line).
   const result = computeSettlement({
-    totalSales, opMonth, tiers, floors, floorOverride,
+    totalSales, opMonth, tiers, floors,
     vatEnabled: partner.vat_enabled, vatRate: partner.vat_rate, whtRate: partner.wht_rate
   });
   // Group the covered daily entries into ISO weeks (= the weekly transfer),
