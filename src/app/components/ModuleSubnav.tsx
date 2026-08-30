@@ -81,10 +81,15 @@ export default function ModuleSubnav({
     b !== undefined && b !== 0 && b !== "0" && b !== "";
 
   if (mode === "chips") {
-    // Mobile: one flat scrollable pill row (section headings dropped —
-    // the tab bar already names the module).
+    // Mobile: a scrollable pill row inside a white card — same shell + pill
+    // style as the main module tab bar (owner 2026-08: sub-nav should read
+    // like the primary nav). Section headings dropped; the tab bar already
+    // names the module.
     return (
-      <div className="flex gap-2 overflow-x-auto no-scrollbar py-0.5" aria-label="เมนูย่อย">
+      <nav
+        className="flex gap-1 overflow-x-auto no-scrollbar rounded-2xl border border-[#EFE4D3] bg-white p-1.5 shadow-card"
+        aria-label="เมนูย่อย"
+      >
         {items.map((item) => {
           const active = isActive(item.href);
           return (
@@ -92,10 +97,10 @@ export default function ModuleSubnav({
               key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
+              className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-[13.5px] font-normal transition-colors ${
                 active
-                  ? "border-brand-light bg-brand/10 text-brand-dark"
-                  : "border-[#E6DAC7] bg-white text-slate-600 hover:text-slate-900"
+                  ? "bg-brand/10 text-brand-dark"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
               }`}
             >
               {item.label}
@@ -107,7 +112,7 @@ export default function ModuleSubnav({
             </Link>
           );
         })}
-      </div>
+      </nav>
     );
   }
 

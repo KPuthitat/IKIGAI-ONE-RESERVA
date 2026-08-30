@@ -31,13 +31,15 @@ function writeView(v: "admin" | "staff") {
 }
 
 export default function AdminModeToggle({
-  view, defaultView = "staff"
+  view, defaultView = "staff", className = ""
 }: {
   view?: "admin" | "staff";
   /** This user's home mode (owner 2026-06-11): super_admin → "admin",
    *  everyone else → "staff". Switching INTO the non-default mode requires
    *  the user's PIN; returning to the default mode is free. */
   defaultView?: "admin" | "staff";
+  /** Extra classes from the layout (e.g. flex-1 for balanced widths). */
+  className?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname() ?? "";
@@ -97,11 +99,11 @@ export default function AdminModeToggle({
       <button
         type="button"
         onClick={go}
-        className="group w-full flex items-center justify-center gap-2 px-3.5 py-2.5
-                   rounded-xl border border-white/15 bg-white/[0.06]
-                   hover:bg-white/[0.12] hover:border-white/30
-                   text-white/90 hover:text-white text-sm font-semibold
-                   tracking-wide transition-colors"
+        className={`group flex items-center justify-center gap-2 h-10 px-3
+                   rounded-xl border border-white/20 bg-white/10
+                   hover:bg-white/20
+                   text-white/90 hover:text-white text-[13px] font-semibold
+                   tracking-wide transition-colors min-w-0 ${className}`}
       >
         {inAdmin && (
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"
@@ -111,7 +113,7 @@ export default function AdminModeToggle({
               strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
-        <span>{label}</span>
+        <span className="truncate">{label}</span>
         {!inAdmin && (
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"
             className="opacity-60 group-hover:opacity-100 transition-transform

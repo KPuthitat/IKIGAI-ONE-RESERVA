@@ -16,15 +16,22 @@ import { useLang } from "@/lib/LangProvider";
 //      static branch name (no "เปลี่ยน" link).
 
 export default function TodaysBranchPill({
-  branchName, hasChoice, pickerPath
+  branchName, hasChoice, pickerPath, className = ""
 }: {
   branchName: string | null;
   hasChoice: boolean;
   pickerPath: string;
+  /** Extra classes from the layout (e.g. flex-1 for balanced widths). */
+  className?: string;
 }) {
   const { t, lang } = useLang();
   const pathname = usePathname() || "";
   if (pathname === pickerPath || pathname.startsWith(pickerPath + "/")) return null;
+
+  // Shared topbar-control shell so the branch pill matches the view-switch
+  // button (owner 2026-08: same look + balanced). h-10 rounded-xl on the dark
+  // gradient.
+  const shell = `flex items-center gap-2 h-10 px-3 rounded-xl bg-white/10 border border-white/20 text-[13px] min-w-0 ${className}`;
 
   // RECRUITA is a company-wide module — applications are NOT scoped to
   // the selected branch (the branch is decided at hire time, when the
@@ -34,29 +41,32 @@ export default function TodaysBranchPill({
   // branch happens to be selected.
   if (pathname.startsWith("/admin/recruita")) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-[11px] bg-white/[.10] border border-white/[.20] rounded-full px-2.5 py-0.5">
-        <span className="text-white font-bold">{lang === "en" ? "All branches" : "ทุกสาขา"}</span>
-        <span className="text-white/50">· {lang === "en" ? "company-wide" : "ส่วนกลาง"}</span>
+      <span className={shell}>
+        <span className="text-white font-bold truncate">{lang === "en" ? "All branches" : "ทุกสาขา"}</span>
+        <span className="text-white/50 truncate">· {lang === "en" ? "company-wide" : "ส่วนกลาง"}</span>
       </span>
     );
   }
 
   if (!branchName) return null;
 
-  // 2026-05-25 final layout — revert to original inline pill but
-  // drop "วันนี้" prefix and the emoji. Same horizontal style as
-  // before, just less crowded.
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] bg-white/[.10] border border-white/[.20] rounded-full pl-2.5 pr-1 py-0.5">
-      <span className="text-white font-bold">{branchName}</span>
+  // The whole pill is the "change branch" tap target when the user has a
+  // choice (bigger + matches the view-switch button); otherwise a static pill.
+  const inner = (
+    <>
+      <span className="text-white font-bold truncate flex-1 min-w-0">{branchName}</span>
       {hasChoice && (
-        <Link
-          href={`${pickerPath}?next=${encodeURIComponent(pathname)}`}
-          className="text-brand-light hover:text-white px-1.5 py-0.5 rounded-full bg-brand/30 hover:bg-brand/50 ml-0.5 transition"
-        >
+        <span className="flex-shrink-0 text-[11px] text-brand-light px-2 py-0.5 rounded-full bg-brand/30">
           {t("staff.topbar.changeBranch")}
-        </Link>
+        </span>
       )}
-    </span>
+    </>
+  );
+  return hasChoice ? (
+    <Link href={`${pickerPath}?next=${encodeURIComponent(pathname)}`} className={`${shell} hover:bg-white/[0.16] transition-colors`}>
+      {inner}
+    </Link>
+  ) : (
+    <span className={shell}>{inner}</span>
   );
 }

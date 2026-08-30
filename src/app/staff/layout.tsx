@@ -237,29 +237,29 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
             <HeaderBrand role="staff" />
           </div>
 
-          {/* Branch + view-switch — its own row on mobile, inline on md+ */}
-          <div className="order-3 md:order-2 basis-full md:basis-auto flex items-center gap-2 flex-wrap min-w-0">
+          {/* Branch + view-switch — its own row on mobile (equal widths for a
+              balanced look), inline on md+ */}
+          <div className="order-3 md:order-2 basis-full md:basis-auto flex items-center gap-2 min-w-0">
             {activeBranch && (
               <TodaysBranchPill
                 branchName={activeBranch.name}
                 hasChoice={hasBranchChoice}
                 pickerPath="/staff/branch-picker"
+                className="flex-1 md:flex-none"
               />
             )}
             {canSwitchView && (
-              <div className="flex-shrink-0 [&>button]:!w-auto [&>button]:!px-3 [&>button]:!py-1.5">
-                <AdminModeToggle view={adminView ? "admin" : "staff"} defaultView={defaultView} />
-              </div>
+              <AdminModeToggle view={adminView ? "admin" : "staff"} defaultView={defaultView} className="flex-1 md:flex-none" />
             )}
           </div>
 
-          {/* Primary controls — pinned right on both rows/layouts */}
+          {/* Primary controls — equal 40×40 buttons, pinned right */}
           <div className="order-2 md:order-3 ml-auto flex items-center gap-2 flex-shrink-0">
             <span className="hidden md:block text-xs text-white/60 truncate max-w-[180px]">
               {nameWithPrefix(user.title_prefix, user.display_name)}
             </span>
             <RefreshButton variant="dark" />
-            <LangToggle variant="dark" />
+            <LangToggle variant="dark" compact />
             <LogoutButton />
           </div>
         </div>
