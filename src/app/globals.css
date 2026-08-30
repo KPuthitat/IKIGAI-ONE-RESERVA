@@ -119,6 +119,32 @@ input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
   padding-right: 0.5rem;
 }
 .label { @apply block text-[13px] font-semibold text-slate-500 mb-1.5; }
+
+/* ── Label-inside field (PGH-style mobile forms, owner 2026-08). The small
+   field name sits at the top of a rounded, cream-filled box and the control
+   sits flush beneath it — saves vertical space and reads tidier on phones.
+   Used via <Field> (components/FormKit.tsx): pass a bare control (no .input
+   class) as the child and these descendant rules style it. ── */
+.field {
+  @apply block bg-[#FAF6EF] border-[1.5px] border-[#E7DDCC] rounded-2xl px-3.5 pt-2 pb-2.5
+         transition-[border-color,background-color,box-shadow];
+}
+.field:focus-within { @apply border-brand bg-white; box-shadow: 0 0 0 3px rgba(160,104,32,.12); }
+.field > .field-label { @apply block text-[11.5px] font-medium text-[#8A7A63] mb-0.5 leading-tight; }
+.field .field-hint { @apply text-amber-700 ml-1.5 font-medium; }
+.field :is(input, select, textarea) {
+  @apply block w-full border-0 bg-transparent p-0 text-slate-800
+         focus:outline-none focus:ring-0 placeholder:text-[#B9AB93];
+  font-size: 16px;   /* ≥16px กัน iOS zoom */
+  min-width: 0;
+}
+.field textarea { @apply resize-none; }
+.field select {
+  @apply appearance-none pr-5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238A7A63' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right center;
+}
 /* Card — soft elevation + a warm hairline border (owner redesign 2026-08).
    The border keeps cards legible against cream page backgrounds now that
    the drop shadow is subtle. */
