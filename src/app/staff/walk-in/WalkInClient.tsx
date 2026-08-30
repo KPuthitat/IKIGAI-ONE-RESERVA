@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { t, type Lang } from "@/lib/i18n";
+import { FormSection, Field } from "@/app/components/FormKit";
 
 export type TableOpt = { id: number; label: string };
 
@@ -181,81 +182,63 @@ export default function WalkInClient({
   return (
     <div className="space-y-6">
       <form onSubmit={submit} className="card space-y-4">
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">
-            {t(lang, "staff.walkIn.guestName")}
-          </label>
-          <input
-            type="text"
-            value={guestName}
-            onChange={(e) => setGuestName(e.target.value)}
-            placeholder={t(lang, "staff.walkIn.guestPlaceholder")}
-            className="input w-full"
-            maxLength={80}
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">
-            {t(lang, "staff.walkIn.phone")}
-            <span className="text-amber-700 ml-2 font-medium">
-              {t(lang, "staff.walkIn.phoneHint")}
-            </span>
-          </label>
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="081-234-5678"
-            className="input w-full"
-            inputMode="tel"
-            maxLength={30}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">
-              {t(lang, "staff.walkIn.partySize")}
-            </label>
+        <FormSection title={t(lang, "staff.walkIn.guestInfo")}>
+          <Field label={t(lang, "staff.walkIn.guestName")}>
             <input
-              type="number"
-              value={partySize}
-              onChange={(e) => setPartySize(Math.max(1, Number(e.target.value) || 1))}
-              min={1}
-              max={50}
-              className="input w-full"
+              type="text"
+              value={guestName}
+              onChange={(e) => setGuestName(e.target.value)}
+              placeholder={t(lang, "staff.walkIn.guestPlaceholder")}
+              maxLength={80}
             />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">
-              {t(lang, "staff.walkIn.table")}
-            </label>
-            <select
-              value={tableId}
-              onChange={(e) => setTableId(e.target.value === "" ? "" : Number(e.target.value))}
-              className="input w-full"
-            >
-              <option value="">{t(lang, "staff.walkIn.tableAny")}</option>
-              {tables.map((tb) => (
-                <option key={tb.id} value={tb.id}>{tb.label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+          </Field>
 
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">
-            {t(lang, "staff.walkIn.notes")}
-          </label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            maxLength={500}
-            className="input w-full"
-          />
-        </div>
+          <Field
+            label={t(lang, "staff.walkIn.phone")}
+            hint={t(lang, "staff.walkIn.phoneHint")}
+          >
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="081-234-5678"
+              inputMode="tel"
+              maxLength={30}
+            />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            <Field label={t(lang, "staff.walkIn.partySize")}>
+              <input
+                type="number"
+                value={partySize}
+                onChange={(e) => setPartySize(Math.max(1, Number(e.target.value) || 1))}
+                min={1}
+                max={50}
+              />
+            </Field>
+            <Field label={t(lang, "staff.walkIn.table")}>
+              <select
+                value={tableId}
+                onChange={(e) => setTableId(e.target.value === "" ? "" : Number(e.target.value))}
+              >
+                <option value="">{t(lang, "staff.walkIn.tableAny")}</option>
+                {tables.map((tb) => (
+                  <option key={tb.id} value={tb.id}>{tb.label}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          <Field label={t(lang, "staff.walkIn.notes")}>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              maxLength={500}
+            />
+          </Field>
+        </FormSection>
 
         {error && (
           <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-sm text-rose-700">
