@@ -225,8 +225,8 @@ export default function SettlementClient({
           <div><label className="label">เลขที่ใบเรียกเก็บ/ใบกำกับ (ถ้ามี)</label><input className="input w-48" value={invoiceNo} maxLength={60} placeholder="เช่น GP-2569-06" onChange={(e) => setInvoiceNo(e.target.value)} /></div>
           <button type="button" onClick={() => action("save")} disabled={busy} className="btn-secondary text-sm">บันทึก/คำนวณใหม่ (ร่าง)</button>
           {status === "draft" && <button type="button" onClick={() => action("issue")} disabled={busy || r.billedGP <= 0} className="btn-primary text-sm disabled:opacity-50">ออกใบเรียกเก็บ</button>}
-          {status === "issued" && <button type="button" onClick={() => action("mark_paid")} disabled={busy} className="rounded-full bg-sky-600 text-white px-4 py-1.5 text-sm font-medium hover:bg-sky-700">บันทึกรับชำระ</button>}
-          {status !== "draft" && <button type="button" onClick={() => action("revert")} disabled={busy} className="text-sm text-rose-600 hover:underline px-2">ย้อนกลับเป็นร่าง</button>}
+          {status === "issued" && <button type="button" onClick={() => action("mark_paid")} disabled={busy} className="btn bg-sky-600 text-white text-sm hover:brightness-[1.06]">บันทึกรับชำระ</button>}
+          {status !== "draft" && <button type="button" onClick={() => action("revert")} disabled={busy} className="btn-secondary text-sm !text-rose-600 !border-rose-200 hover:!bg-rose-50">ย้อนกลับเป็นร่าง</button>}
         </div>
         {pv.stored?.issued_at && <p className="text-[11px] text-slate-400">ออกใบเมื่อ {new Date(pv.stored.issued_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}{pv.stored.paid_at ? ` · รับชำระ ${new Date(pv.stored.paid_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}` : ""}</p>}
       </div>

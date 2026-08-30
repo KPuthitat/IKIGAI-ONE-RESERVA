@@ -82,8 +82,12 @@ export function generateStatementPdf(d: StatementPdfData): Promise<Buffer> {
       const line = (label: string, value: string, bold = false, color = "#281a0e") => {
         doc.font(bold ? "th-b" : "th").fontSize(bold ? 12 : 10).fillColor(color);
         doc.text(label, left, y, { width: contentW - 150 });
-        doc.text(value, right - 150, y, { width: 150, align: "right" });
-        y = doc.y + (bold ? 6 : 4);
+        const labelBottom = doc.y;   // capture the label's own advance first
+        // Only draw the value when there is one — an empty doc.text() at `y`
+        // resets doc.y back to the row top, which made the next line overlap the
+        // label (owner 2026-08-31). Advance y from whichever column is taller.
+        if (value) doc.text(value, right - 150, y, { width: 150, align: "right" });
+        y = Math.max(labelBottom, doc.y) + (bold ? 6 : 4);
       };
       line("ยอดขายรวมทั้งเดือน", baht(r.totalSales));
       if (r.topup > 0) {
