@@ -607,12 +607,14 @@ export function issueSettlement(partnerId: number, branchId: number, year: numbe
   ).run(invoiceNo, when, saved.id).changes > 0;
 }
 // ── GP → ACCOUNTA income (owner 2026-08) ─────────────────────────────
-// The settled GP (billedGP, before VAT/WHT) is the shop's own revenue-share
-// earning. On "paid" it is recorded as ACCOUNTA income under a dedicated
-// channel so it shows in the daybook/reports as the shop's ส่วนแบ่งยอดขาย.
-// source='revshare_gp' is owned by this flow: delete-then-insert keyed by
-// (branch, source, channel, income_date) so re-paying never doubles, and
-// revert removes it.
+// When the partner pays, the shop records the WHOLE tax-invoice amount as
+// income = billedGP + VAT (VAT-inclusive), dated the settle month-end (owner
+// 2026-08-31: "ลงยอดรวม VAT ไปเลย ไม่สนหัก ณ ที่จ่าย"). is_vat=1 lets ACCOUNTA
+// derive the base + output VAT back out of that inclusive figure. The 3% WHT the
+// partner withholds is NOT netted off the recorded income (it's a prepaid tax
+// credit) — it's kept as a small note. source='revshare_gp' is owned by this
+// flow: delete-then-insert keyed by (branch, source, channel, income_date) so
+// re-paying never doubles, and revert removes it.
 function settlementGpChannel(partnerName: string): string {
   return `ส่วนแบ่งยอดขาย · ${partnerName}`;
 }
@@ -627,9 +629,12 @@ export function postSettlementGpIncome(partnerId: number, branchId: number, year
   const db = getDb();
   const channel = settlementGpChannel(partner.name);
   const incomeDate = monthEndIso(year, month);
-  const amount = round2(stored.billedGP);
+  // Record the VAT-inclusive tax-invoice amount (GP + VAT). WHT stays a note.
+  const amount = round2(stored.billedGP + (partner.vat_enabled ? stored.vatAmount : 0));
   const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
     .get(branchId) as { company_id: number | null } | undefined)?.company_id ?? null;
+  const combined = stored.span_months > 1 ? ` · รวม ${stored.span_months} เดือน` : "";
+  const whtNote = stored.whtAmount > 0 ? ` · หัก ณ ที่จ่าย 3% ฿${stored.whtAmount.toFixed(2)}` : "";
   const txn = db.transaction(() => {
     db.prepare(
       "DELETE FROM accounta_income WHERE branch_id = ? AND source = 'revshare_gp' AND channel IS ? AND income_date = ?"
@@ -639,7 +644,7 @@ export function postSettlementGpIncome(partnerId: number, branchId: number, year
       `INSERT INTO accounta_income (branch_id, company_id, income_date, channel, amount, note, created_by, source, is_vat, is_revenue)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'revshare_gp', ?, 1)`
     ).run(branchId, companyId, incomeDate, channel, amount,
-      `ส่วนแบ่งยอดขาย (GP) · ${partner.name}${stored.span_months > 1 ? ` · รวม ${stored.span_months} เดือน` : ""}`,
+      `ส่วนแบ่งยอดขาย (GP รวม VAT) · ${partner.name}${combined}${whtNote}`,
       userId, partner.vat_enabled ? 1 : 0);
   });
   txn();
