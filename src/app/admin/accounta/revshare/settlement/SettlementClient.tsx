@@ -114,7 +114,7 @@ export default function SettlementClient({
           <span className="text-sm font-bold text-slate-700">{monthLabel}</span>
           <button type="button" onClick={() => shift(1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">→</button>
         </div>
-        <span className={`text-xs px-2 py-1 rounded font-medium ${STATUS[status].c}`}>{STATUS[status].t} · สัญญาเดือนที่ {pv.opMonth}</span>
+        <span className={`text-xs px-2 py-1 rounded font-medium ${STATUS[status].c}`}>{STATUS[status].t} · รอบบิลที่ {pv.opMonth}</span>
       </div>
 
       {/* Combine-months checklist (owner 2026-08 redesign) */}
@@ -147,7 +147,7 @@ export default function SettlementClient({
         </div>
         {combined && (
           <p className="text-[11px] text-slate-500">
-            รวม {coveredMonths.length} เดือน ({periodLabel}) — คิดส่วนแบ่งแบบขั้นบันไดจากยอดขายรวม และใช้ยอดขั้นต่ำเป็นผลรวมขั้นต่ำของแต่ละเดือน
+            รวม {coveredMonths.length} เดือน ({periodLabel}) — คิดส่วนแบ่งแบบขั้นบันไดจากยอดขายรวม และนับเป็น 1 รอบบิล จึงใช้ยอดขั้นต่ำของรอบบิลเดียว (ไม่ใช่รวมขั้นต่ำหลายเดือน)
           </p>
         )}
       </div>

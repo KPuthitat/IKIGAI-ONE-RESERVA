@@ -46,6 +46,7 @@ export default function RevshareRoundsPage({ searchParams }: { searchParams: { p
         <p className="text-sm text-slate-500 mt-1">นำเข้าไฟล์ยอดขายประจำวัน · ระบบรวมยอดโอนรายสัปดาห์ (จันทร์–อาทิตย์) ให้อัตโนมัติ · ส่วนแบ่งคำนวณรายเดือนที่หน้าสรุปยอด</p>
       </div>
       <RoundsClient
+        key={`${partner.id}-${year}-${month}`}
         partner={partner}
         tiers={getTiers(partner.id)}
         rounds={listRounds(partner.id, branchId, year, month)}
