@@ -5,7 +5,7 @@
 
 import { getDb } from "./db";
 import {
-  computeSettlement, computeRoundBreakdown, opMonthFor, roundLabel, round2,
+  computeSettlement, computeRoundBreakdown, roundLabel, round2,
   groupDailyIntoWeeks, salesVat, salesBaseIncludesVat, partnerShopName,
   DEFAULT_TIERS, DEFAULT_FLOORS, TH_MONTHS_FULL,
   type Tier, type Floor, type SettlementResult
@@ -427,6 +427,29 @@ export function settledMonthKeys(partnerId: number, branchId: number, exclYear?:
   return set;
 }
 
+/** The BILLING ROUND number of a settlement whose earliest covered month is
+ *  `firstYm` (owner 2026-08 chose "นับตามลำดับใบวางบิลจริง"): rounds are counted
+ *  per BILL, not per calendar month, so combining months does not skip a round.
+ *  = 1 + how many of the partner's OTHER settlements start before this one.
+ *  (Each month belongs to at most one settlement, so earliest months are
+ *  distinct → the order is well-defined.) The floor schedule is indexed by this. */
+export function billingRoundNumber(
+  partnerId: number, branchId: number, firstYm: string, exclYear?: number, exclMonth?: number
+): number {
+  if (!partnerGuard(partnerId, branchId)) return 1;
+  const rows = getDb().prepare(
+    "SELECT settle_year, settle_month, span_months, covered_months FROM revshare_settlements WHERE partner_id = ?"
+  ).all(partnerId) as Array<{ settle_year: number; settle_month: number; span_months: number | null; covered_months: string | null }>;
+  let before = 0;
+  for (const row of rows) {
+    if (exclYear != null && row.settle_year === exclYear && row.settle_month === exclMonth) continue;
+    const keys = coveredKeysOfRow(row);
+    const earliest = keys.reduce((a, b) => (a < b ? a : b), keys[0]);
+    if (earliest && earliest < firstYm) before++;
+  }
+  return before + 1;
+}
+
 export type MonthOption = {
   ym: string; year: number; month: number; label: string;
   sales: number;      // this month's total rounds
@@ -485,13 +508,12 @@ export function previewSettlement(
     : stored ? stored.covered_months
     : [monthKey(year, month)];
   const covered = normalizeCoveredSet(year, month, requested);   // ascending
-  // The minimum bill (floor) is per BILLING ROUND, not per calendar month
-  // (owner 2026-08). A settlement is ONE bill = ONE round, whatever months it
-  // rolls up — so ก.ค.+ส.ค. รวมกัน = "รอบบิลที่ 1" (ของ ก.ค.), ไม่ใช่ผลรวมขั้นต่ำสองเดือน.
-  // The round is the op-month of the EARLIEST covered month; computeSettlement
-  // then applies that single floor (no summing across months).
-  const first = parseMonthKey(covered[0])!;
-  const opMonth = opMonthFor(partner.start_date, first.y, first.m);
+  // The minimum bill (floor) is indexed by BILLING ROUND, not calendar month
+  // (owner 2026-08 chose "นับตามลำดับใบวางบิลจริง"). A settlement is ONE bill = ONE
+  // round whatever months it rolls up, and rounds count sequentially by bill —
+  // so ก.ค.+ส.ค.=รอบ 1, ก.ย.=รอบ 2, ต.ค.=รอบ 3. op_month now carries this round
+  // number; computeSettlement applies floorFor(round) — one floor, never summed.
+  const opMonth = billingRoundNumber(partnerId, branchId, covered[0], year, month);
   // Gather rounds across every covered month.
   const rounds: RsRound[] = [];
   for (const k of covered) { const p = parseMonthKey(k)!; rounds.push(...listRounds(partnerId, branchId, p.y, p.m)); }

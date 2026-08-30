@@ -189,11 +189,11 @@ export default function PartnerConfigClient({ partner, tiers, floors, branches }
 
       {/* Floors */}
       <div className="card space-y-2">
-        <div className="text-sm font-bold text-slate-800">ยอดเรียกเก็บขั้นต่ำ (ตามเดือนที่ของสัญญา)</div>
+        <div className="text-sm font-bold text-slate-800">ยอดเรียกเก็บขั้นต่ำ (ตามรอบบิล)</div>
         <div className="space-y-1.5">
           {floorRows.map((r, i) => (
             <div key={i} className="flex items-center gap-2 text-sm">
-              <span className="text-[11px] text-slate-500">เดือนที่</span>
+              <span className="text-[11px] text-slate-500">รอบบิลที่</span>
               <input type="number" className="input w-16 text-right" value={r.monthFrom} onChange={(e) => setFloor(i, "monthFrom", e.target.value)} />
               <span className="text-[11px] text-slate-500">ถึง</span>
               <input type="number" className="input w-16 text-right" value={r.monthTo} onChange={(e) => setFloor(i, "monthTo", e.target.value)} />
@@ -204,7 +204,7 @@ export default function PartnerConfigClient({ partner, tiers, floors, branches }
           ))}
         </div>
         <button type="button" onClick={() => setFloorRows((rs) => [...rs, { monthFrom: "", monthTo: "", amount: "" }])} className="text-[11px] text-brand hover:underline">+ เพิ่มช่วง</button>
-        <p className="text-[11px] text-slate-400">นอกช่วงที่กำหนด = ไม่มีขั้นต่ำ (เช่น เดือนที่ 7 เป็นต้นไป ใส่ ฿{fmtMoney(0)})</p>
+        <p className="text-[11px] text-slate-400">นอกช่วงที่กำหนด = ไม่มีขั้นต่ำ (เช่น รอบบิลที่ 7 เป็นต้นไป ใส่ ฿{fmtMoney(0)}) · รวมหลายเดือน = 1 รอบบิล</p>
       </div>
 
       <div className="flex items-center gap-2">
