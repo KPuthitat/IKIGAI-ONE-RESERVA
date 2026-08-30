@@ -9,6 +9,7 @@ import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
 import { resolveCompanyCycle } from "@/lib/payroll-cycle";
 import CompanyCycleActions from "./CompanyCycleActions";
+import PtBreakdownTable from "./PtBreakdownTable";
 
 export const dynamic = "force-dynamic";
 
@@ -133,6 +134,18 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
   const ftRows = empRows.filter((r) => r.employment_type === "ft");
   const ptRows = empRows.filter((r) => r.employment_type === "pt");
   const otherRows = empRows.filter((r) => r.employment_type !== "ft" && r.employment_type !== "pt");
+
+  // Which sibling period(s) each employee has a line in — so the PT table can
+  // lazy-fetch each person's per-day breakdown (recheck before paying, owner
+  // 2026-08). A PT working two branches has one line per branch-period.
+  const periodIdsByUser: Record<number, number[]> = {};
+  for (const r of perBranchRows) {
+    (periodIdsByUser[r.user_id] ??= []).push(r.period_id);
+  }
+  const grossByUserBranchObj: Record<number, Record<number, number>> = {};
+  for (const [uid, m] of grossByUserBranch) {
+    grossByUserBranchObj[uid] = Object.fromEntries(m);
+  }
 
   // Combined status counts.
   const n = siblings.length;
@@ -328,7 +341,15 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
         </p>
       )}
       {empTable(t(lang, "admin.persona.employees.employment.ft"), "text-emerald-700", ftRows)}
-      {empTable(t(lang, "admin.persona.employees.employment.pt"), "text-violet-700", ptRows)}
+      {ptRows.length > 0 && (
+        <PtBreakdownTable
+          rows={ptRows}
+          periodIdsByUser={periodIdsByUser}
+          branchCols={branchCols}
+          grossByUserBranch={grossByUserBranchObj}
+          multiBranch={multiBranch}
+        />
+      )}
       {empTable(t(lang, "admin.persona.payroll.cycle.other"), "text-slate-600", otherRows)}
     </div>
   );
