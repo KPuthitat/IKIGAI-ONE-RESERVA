@@ -51,6 +51,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Open incident reports (new/reviewing/action) on the active branch — badge
   // on the IR sub-nav so the RM team sees pending work without polling.
   let irOpenCount = 0;
+  // Clinic-only Doctor Fee (DF): the active branch has df_enabled — gates the
+  // PERSONA → ค่าตอบแทนแพทย์ link so it shows only at the clinic.
+  let dfBranch = false;
   if (user.activeBranchId) {
     try {
       // Auto-expire stale rows first so the count reflects only bookings
@@ -76,11 +79,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         ).get(user.activeBranchId) as { n: number } | undefined;
         irOpenCount = irRow?.n ?? 0;
       }
+      const dfRow = db.prepare("SELECT df_enabled FROM branches WHERE id = ?")
+        .get(user.activeBranchId) as { df_enabled: number } | undefined;
+      dfBranch = dfRow?.df_enabled === 1;
     } catch {
       // schema not migrated yet (fresh deploy) → just show 0
       pendingCount = 0;
       unlockPendingCount = 0;
       irOpenCount = 0;
+      dfBranch = false;
     }
   }
 
@@ -159,7 +166,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         ...(userCanViewPayroll(user)
           ? [
               { href: "/admin/persona/payroll", label: t(lang, "admin.persona.nav.payroll") },
-              { href: "/admin/persona/payroll/company", label: t(lang, "admin.persona.nav.payrollCompany") }
+              { href: "/admin/persona/payroll/company", label: t(lang, "admin.persona.nav.payrollCompany") },
+              // ค่าตอบแทนแพทย์ (Doctor Fee) — clinic branch only (owner 2026-08).
+              ...(dfBranch ? [{ href: "/admin/persona/doctor-fee", label: "ค่าตอบแทนแพทย์ (DF)" }] : [])
             ]
           : []),
         { href: "/admin/persona/service-charge", label: t(lang, "admin.persona.nav.svc") },

@@ -1596,6 +1596,14 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE branches ADD COLUMN revshare_enabled INTEGER NOT NULL DEFAULT 0");
     db.prepare("UPDATE branches SET revshare_enabled = 1 WHERE name = 'HYPOPLARAEMIA'").run();
   }
+  // Doctor Fee (DF) — clinic-only (owner 2026-08). A doctor's pay = a % of the
+  // clinic's HSC/HSC-GRP service revenue on the days they're on the roster.
+  // Gated per branch, seeded ON for the clinic (HYPOPLARAEMIA) by name — same
+  // pattern as revshare_enabled (never hardcode the prod branch id).
+  if (!bnames2.has("df_enabled")) {
+    db.exec("ALTER TABLE branches ADD COLUMN df_enabled INTEGER NOT NULL DEFAULT 0");
+    db.prepare("UPDATE branches SET df_enabled = 1 WHERE name = 'HYPOPLARAEMIA'").run();
+  }
 
   // Revenue-Share GP tables. Money = REAL (round2 at the boundaries, matching
   // the rest of ACCOUNTA); dates are ISO (ค.ศ.) rendered พ.ศ. at the UI. Every
@@ -1727,6 +1735,62 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_ir_reports_occurred
       ON ir_reports(occurred_at);
   `);
+
+  // ── DF — Doctor Fee (clinic only) ────────────────────────────────
+  // Owner 2026-08: a doctor's pay = rate% of the clinic's service revenue on
+  // the days they're rostered. A "rule" bundles the service item-code tags that
+  // earn the fee at one rate — HSC + HSC-GRP together for consultations now;
+  // procedure groups (ฉีดยา/เย็บแผล) can be added later as more rules, no code
+  // change. item_tags is a JSON array of the leading [TAG]s in the POS export.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS df_fee_rules (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id   INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL,                        -- "ค่าตรวจ (HSC)"
+      item_tags   TEXT NOT NULL DEFAULT '[]',           -- JSON: ["HSC","HSC-GRP"]
+      rate        REAL NOT NULL DEFAULT 0.30,           -- 0.30 = 30%
+      active      INTEGER NOT NULL DEFAULT 1,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_df_fee_rules_branch ON df_fee_rules(branch_id, active);
+
+    -- Imported clinic invoice lines that earn a doctor fee. One row per matched
+    -- service line; net is the fee base (ราคาสุทธิ). Re-importing the same file
+    -- is idempotent: UNIQUE(branch_id, invoice_no, item_tag) + upsert (a bill
+    -- carries at most one HSC and one HSC-GRP line).
+    CREATE TABLE IF NOT EXISTS df_invoice_lines (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id    INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      invoice_no   TEXT NOT NULL,
+      line_date    TEXT NOT NULL,                       -- YYYY-MM-DD (ค.ศ.)
+      item_code    TEXT,                                -- GEN001 …
+      item_tag     TEXT NOT NULL,                       -- HSC / HSC-GRP
+      description  TEXT,
+      qty          REAL NOT NULL DEFAULT 0,
+      gross        REAL NOT NULL DEFAULT 0,
+      discount     REAL NOT NULL DEFAULT 0,
+      net          REAL NOT NULL DEFAULT 0,
+      source_file  TEXT,
+      imported_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, invoice_no, item_tag)
+    );
+    CREATE INDEX IF NOT EXISTS idx_df_invoice_lines_branch_date
+      ON df_invoice_lines(branch_id, line_date);
+  `);
+  // Seed the default HSC consultation rule for each DF branch (clinic), once.
+  {
+    const dfBranches = db.prepare("SELECT id FROM branches WHERE df_enabled = 1").all() as Array<{ id: number }>;
+    const hasRule = db.prepare("SELECT 1 FROM df_fee_rules WHERE branch_id = ? LIMIT 1");
+    const insRule = db.prepare(
+      `INSERT INTO df_fee_rules (branch_id, name, item_tags, rate, active, sort_order)
+       VALUES (?, 'ค่าตรวจ (HSC)', '["HSC","HSC-GRP"]', 0.30, 1, 0)`
+    );
+    for (const b of dfBranches) {
+      if (!hasRule.get(b.id)) insRule.run(b.id);
+    }
+  }
 
   // line_group_id (owner 2026-06-23): the partner's LINE group — the IKIGAI OS
   // platform OA is added to it so weekly-transfer / monthly-GP cards can be

@@ -15,6 +15,7 @@
     "test:mealpass": "node --import tsx scripts/test-mealpass.ts",
     "test:rbac": "node --import tsx scripts/test-rbac.ts",
     "test:ir": "node --import tsx scripts/test-ir.ts",
+    "test:df": "node --import tsx scripts/test-df.ts",
     "test:payroll": "node --import tsx scripts/test-payroll.ts",
     "test:clock": "node --import tsx scripts/test-clock-code.ts",
     "test:revshare": "node --import tsx scripts/test-revshare.ts",
