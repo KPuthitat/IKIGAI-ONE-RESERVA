@@ -171,7 +171,7 @@ export default function PtBreakdownTable({
                     <td colSpan={colSpan} className="px-3 py-2">
                       {st === "loading" && <div className="text-xs text-slate-400 py-2">กำลังคำนวณ…</div>}
                       {st === "error" && <div className="text-xs text-rose-600 py-2">โหลดรายละเอียดไม่สำเร็จ</div>}
-                      {Array.isArray(st) && <DayTable days={st} baseTotal={r.total_base_pay ?? 0} otTotal={r.total_ot_pay ?? 0} />}
+                      {Array.isArray(st) && <DayTable days={st} baseTotal={r.total_base_pay ?? 0} otTotal={r.total_ot_pay ?? 0} multiBranch={multiBranch} />}
                     </td>
                   </tr>
                 )}
@@ -201,9 +201,21 @@ export default function PtBreakdownTable({
 // right-aligned columns that line up down the page. A flexible spacer column
 // absorbs the slack so nothing sprawls. Each day breaks down as ค่าตอบแทน
 // (regular) + ล่วงเวลา (OT) = รวมวันนี้, so no figure is shown twice.
-function DayTable({ days, baseTotal, otTotal }: { days: BreakDay[]; baseTotal: number; otTotal: number }) {
+//
+// Reconciliation: the paid line total (baseTotal+otTotal, stored) can sit a few
+// baht above the sum of the live per-day rows when someone works two branches
+// the same day — they clock OUT of the first and IN to the second, and the gap
+// in between (travel) falls outside every single day's window. Owner policy
+// 2026-08: that gap is credited to the employee ("ยกให้"), so the higher paid
+// total is correct — we just explain the difference plainly rather than flag it.
+// The one case worth an alert is the opposite: live days summing to MORE than
+// what's booked, which would mean the stored line is stale and underpays.
+function DayTable({ days, baseTotal, otTotal, multiBranch }: { days: BreakDay[]; baseTotal: number; otTotal: number; multiBranch: boolean }) {
   const worked = days.filter((d) => !d.statusLabel);
   const regMinTotal = days.reduce((s, d) => s + d.effectiveMinutes, 0);
+  const daySum = Math.round(days.reduce((s, d) => s + d.pay, 0) * 100) / 100;
+  const lineTotal = Math.round((baseTotal + otTotal) * 100) / 100;
+  const diff = Math.round((lineTotal - daySum) * 100) / 100;   // + = paid above day-sum
   const numTh = "py-1.5 px-3 text-right font-medium";
   const numTd = "py-1.5 px-3 text-right tabular-nums whitespace-nowrap";
   return (
@@ -261,8 +273,28 @@ function DayTable({ days, baseTotal, otTotal }: { days: BreakDay[]; baseTotal: n
             <td className={`${numTd} text-slate-600`}>{regMinTotal ? fmtMin(regMinTotal) : "—"}</td>
             <td className={numTd}>฿{fmtMoney(baseTotal)}</td>
             <td className={`${numTd} text-amber-700`}>{otTotal ? `฿${fmtMoney(otTotal)}` : "—"}</td>
-            <td className={`${numTd} font-bold text-slate-800`}>฿{fmtMoney(baseTotal + otTotal)}</td>
+            <td className={`${numTd} font-bold text-slate-800`}>฿{fmtMoney(lineTotal)}</td>
           </tr>
+          {Math.abs(diff) >= 0.5 && (
+            diff > 0 ? (
+              // Paid above the live day-sum — cross-branch travel gap, credited
+              // to the employee per owner policy. Benign, explained in plain text.
+              <tr className="border-t border-slate-100">
+                <td colSpan={8} className="py-1.5 px-3 text-[11px] text-slate-500 leading-relaxed">
+                  รวมรายวัน ฿{fmtMoney(daySum)} · จ่ายจริง <span className="font-medium text-slate-700">฿{fmtMoney(lineTotal)}</span>
+                  {" "}— ส่วนต่าง ฿{fmtMoney(diff)}{multiBranch ? " จากช่วงเดินทางข้ามสาขา (กดออกที่แรก–กดเข้าที่สอง)" : ""} ยกให้พนักงาน
+                </td>
+              </tr>
+            ) : (
+              // Live days sum to MORE than what's booked — stored line looks
+              // stale and would underpay. This one is worth an alert.
+              <tr className="border-t border-amber-200 bg-amber-50/60">
+                <td colSpan={8} className="py-1.5 px-3 text-[11px] text-amber-800 leading-relaxed">
+                  ⚠︎ รวมรายวันคำนวณสดได้ ฿{fmtMoney(daySum)} มากกว่ายอดที่บันทึก ฿{fmtMoney(lineTotal)} อยู่ ฿{fmtMoney(-diff)} — ยอดที่บันทึกอาจล้าสมัย ควรกดคำนวณรอบนี้ใหม่ก่อนจ่าย
+                </td>
+              </tr>
+            )
+          )}
         </tfoot>
       </table>
     </div>
