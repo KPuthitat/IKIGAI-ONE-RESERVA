@@ -3242,6 +3242,13 @@ function runMigrations(db: Database.Database): void {
   // weekly round never pays for days past the transition month — those defer to that
   // month's monthly round (see computeLineForEmployee). NULL = normal salary/30×days.
   if (!unames3.has("ft_salary_paid_through")) db.exec("ALTER TABLE users ADD COLUMN ft_salary_paid_through TEXT");
+  // FT→PT switch (owner 2026-08-31): the date a full-timer converts to part-time
+  // (clean month boundary). The record stays employment_type='ft' + pay_cycle so
+  // they keep running in the monthly cycle, but the pay engine treats them as PT
+  // (hourly, from the roster when no-clock) for periods in/after this date's
+  // month, and as FT (salary) before it — period-relative, so backfilled months
+  // still compute correctly. NULL = not converting. hourly_rate holds the PT rate.
+  if (!unames3.has("pt_started_at")) db.exec("ALTER TABLE users ADD COLUMN pt_started_at TEXT");
   // Month-aware flip (replaces the old blanket flip above): move FT-weekly →
   // monthly once their transition month has passed. FT converted THIS month stay
   // weekly; legacy FT-weekly with no ft_started_at flip immediately (old rule).

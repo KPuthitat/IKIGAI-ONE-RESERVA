@@ -82,6 +82,13 @@ export type EmployeePayrollSnapshot = {
    *  ftEffectiveCycle), so it computes correctly whether the period is paid in
    *  real time or backfilled. null = legacy FT (always monthly). */
   ft_started_at: string | null;
+  /** วันเริ่มเป็นพาร์ทไทม์ (YYYY-MM-DD) — the FT→PT switch date (owner 2026-08-31).
+   *  Clean month boundary: the pay engine treats the employee as PART-TIME
+   *  (hourly; from the roster when they don't clock) for periods in/after this
+   *  date's month, and as FULL-TIME (salary) before it. The stored
+   *  employment_type stays 'ft' so they keep running in the monthly cycle;
+   *  hourly_rate holds the PT rate. null = not converting. */
+  pt_started_at?: string | null;
   /** ค่าจ้างช่วยงานรายวัน (บาท/วัน) ของสาขานี้ (owner 2026-08-17). Set on the host
    *  branch's user_branches row for a CROSS-COMPANY/BRANCH helper (e.g. an FT from
    *  another company who comes to help). When non-null for THIS period's branch the
@@ -337,6 +344,25 @@ export function countMondaysInMonth(dateInMonth: string): number {
 type Entry = { user_id: number; ts: string; type: "in" | "out" };
 
 export type Shift = { startTs: string; endTs: string; durationMinutes: number };
+
+/** Synthetic shifts from the ROSTER (owner 2026-08-31) — for a no-clock part-timer
+ *  whose hours come from the scheduled กะ, not a time-clock. Each scheduled shift
+ *  in the period becomes a Shift filling its exact window, so the normal pay loop
+ *  (grace clamp → break → regular/OT split → PT pay) then credits scheduled hours
+ *  minus the scheduled break. */
+export function rosterShifts(
+  scheduledByDate: Map<string, ScheduledShift[]>, periodStart: string, periodEnd: string
+): Shift[] {
+  const out: Shift[] = [];
+  for (const [date, list] of scheduledByDate) {
+    if (date < periodStart || date > periodEnd) continue;
+    for (const s of list) {
+      const dur = Math.max(0, Math.round((Date.parse(s.endTs) - Date.parse(s.startTs)) / 60000));
+      if (dur > 0) out.push({ startTs: s.startTs, endTs: s.endTs, durationMinutes: dur });
+    }
+  }
+  return out.sort((a, b) => (a.startTs < b.startTs ? -1 : 1));
+}
 
 // YYYY-MM-DD + 1 calendar day (UTC-safe; dates are date-only strings).
 function addDayYmd(ymd: string): string {
@@ -970,7 +996,21 @@ export function computeLineForEmployee(args: {
   // not on this set = ขาดงานไม่ลา → หักเป็นลาไม่รับค่าจ้าง (daily FT groups only).
   leaveDates?: Set<string>;
 }): ComputedLine {
-  const { employee: e, shifts, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates } = args;
+  const { employee: eIn, shifts: shiftsIn, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates } = args;
+  // FT→PT switch (owner 2026-08-31): from pt_started_at's calendar month the
+  // employee is treated as PART-TIME (hourly), before it as FULL-TIME (salary) —
+  // period-relative so backfilled months still compute correctly. The stored
+  // employment_type stays 'ft' (keeps them in the monthly run); we flip only the
+  // EFFECTIVE type the pay logic branches on.
+  const effType: "pt" | "ft" | null =
+    eIn.pt_started_at != null && periodStart.slice(0, 7) >= eIn.pt_started_at.slice(0, 7)
+      ? "pt" : eIn.employment_type;
+  const e: EmployeePayrollSnapshot = effType === eIn.employment_type ? eIn : { ...eIn, employment_type: effType };
+  // No-clock part-timer → hours from the ROSTER, not a time-clock (owner
+  // 2026-08-31). track_attendance = 0 means "doesn't punch"; for a PT that means
+  // the scheduled กะ hours ARE the worked hours.
+  const noClockPt = e.employment_type === "pt" && e.track_attendance === 0;
+  const shifts = noClockPt && scheduledByDate ? rosterShifts(scheduledByDate, periodStart, periodEnd) : shiftsIn;
   // Extra FT base for double-pay days: FT base is salary (not per-day) so the 2×
   // is credited as one extra day-equivalent (ftHourlyEquivalent × regular hours)
   // per double day worked — added to basePay below (owner 2026-07-21).
@@ -1308,10 +1348,16 @@ export function computeLineFromMinutes(args: {
   otherDeductions?: number;
 }): ComputedLine {
   const {
-    employee: e, regularMinutes, otMinutes, holidayMinutes, leaveDays,
+    employee: eIn, regularMinutes, otMinutes, holidayMinutes, leaveDays,
     unpaidLeaveDays = 0, daysWorked, unpaired, cycle, periodStart, periodEnd, settings,
     serviceCharge = 0, otherAdditions = 0, otherDeductions = 0
   } = args;
+  // FT→PT switch (owner 2026-08-31) — mirror computeLineForEmployee so a manually
+  // entered/edited line for a post-switch period computes as PART-TIME too.
+  const effTypeM: "pt" | "ft" | null =
+    eIn.pt_started_at != null && periodStart.slice(0, 7) >= eIn.pt_started_at.slice(0, 7)
+      ? "pt" : eIn.employment_type;
+  const e: EmployeePayrollSnapshot = effTypeM === eIn.employment_type ? eIn : { ...eIn, employment_type: effTypeM };
 
   const hMode = helperMode(e);
   // Hourly helper (owner 2026-08-18): pay by the hour like a PT (OT + วันพิเศษ×1.5,
@@ -1677,7 +1723,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   const staffSql = `
     SELECT id AS user_id, display_name, employment_type, employee_code,
            ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-           hire_date, ft_started_at, ft_salary_paid_through,
+           hire_date, ft_started_at, ft_salary_paid_through, pt_started_at,
            ${branchDailyRateSelect(period.branch_id)},
            ${branchOnlyHourlyRateSelect(period.branch_id)},
            ${LAST_WORKING_DAY_SELECT},
@@ -2094,7 +2140,7 @@ export function recomputeLine(
 
   const fresh = db.prepare(`
     SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-           hire_date, ft_started_at, ft_salary_paid_through,
+           hire_date, ft_started_at, ft_salary_paid_through, pt_started_at,
            ${branchDailyRateSelect(period.branch_id)},
            ${branchOnlyHourlyRateSelect(period.branch_id)},
            ${LAST_WORKING_DAY_SELECT}
@@ -2104,6 +2150,7 @@ export function recomputeLine(
     monthly_salary: number | null; pay_cycle: "weekly" | "monthly" | null;
     salary_tax_mode: "sso" | "wht" | null; track_attendance: number | null;
     hire_date: string | null; ft_started_at: string | null; ft_salary_paid_through: string | null;
+    pt_started_at: string | null;
     daily_rate: number | null; branch_hourly_rate: number | null;
     resign_last_day: string | null; term_last_day: string | null;
   } | undefined;
@@ -2294,6 +2341,7 @@ export function recomputeLine(
     hire_date: fresh?.hire_date ?? null,
     last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null,
     ft_started_at: fresh?.ft_started_at ?? null,
+    pt_started_at: fresh?.pt_started_at ?? null,
     daily_rate: fresh?.daily_rate ?? null,
     branch_hourly_rate: fresh?.branch_hourly_rate ?? null,
     ft_salary_paid_through: fresh?.ft_salary_paid_through ?? null

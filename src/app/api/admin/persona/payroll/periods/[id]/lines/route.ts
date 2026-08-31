@@ -51,7 +51,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const target = db.prepare(`
     SELECT id, display_name, employment_type, employee_code,
            ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-           hire_date, ft_started_at, ft_salary_paid_through,
+           hire_date, ft_started_at, ft_salary_paid_through, pt_started_at,
            ${branchDailyRateSelect(period.branch_id)},
            ${branchOnlyHourlyRateSelect(period.branch_id)},
            (SELECT MAX(proposed_last_day) FROM resignation_requests
@@ -72,6 +72,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     hire_date: string | null;
     ft_started_at: string | null;
     ft_salary_paid_through: string | null;
+    pt_started_at: string | null;
     daily_rate: number | null;
     branch_hourly_rate: number | null;
     resign_last_day: string | null;
@@ -121,6 +122,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     hire_date: target.hire_date ?? null,
     last_working_day: earliestDate(target.resign_last_day, target.term_last_day),
     ft_started_at: target.ft_started_at ?? null,
+    pt_started_at: target.pt_started_at ?? null,
     daily_rate: target.daily_rate ?? null,
     branch_hourly_rate: target.branch_hourly_rate ?? null,
     ft_salary_paid_through: target.ft_salary_paid_through ?? null

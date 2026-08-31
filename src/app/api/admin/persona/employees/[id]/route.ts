@@ -44,6 +44,11 @@ const Body = z.object({
   // person lands in the FT-monthly table and the first partial month prorates by
   // hire_date. "เป็นประจำมาแต่แรก ไม่เคยเป็น PT" in the edit form.
   clear_ft_transition: z.boolean().optional(),
+  // วันที่มีผลของการเปลี่ยน FT→PT (owner 2026-08-31) — ใช้เป็น pt_started_at. จากเดือน
+  // ของวันที่นี้ระบบคิดเป็นพาร์ทไทม์รายชั่วโมง (จากตารางกะเมื่อไม่ลงเวลา), ก่อนหน้าเป็นเงินเดือนประจำ.
+  pt_effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // ยกเลิกการเปลี่ยนเป็นพาร์ทไทม์ที่ตั้งไว้ → ล้าง pt_started_at (กลับเป็นประจำเต็มตัว).
+  clear_pt_switch: z.boolean().optional(),
   // LINE userId (33-char string starting with 'U'). Empty / null = unbind.
   line_user_id: z.string().max(64).nullable().optional(),
   // Expected shift start "HH:MM" — used by late-detection. Empty / null = unset
@@ -313,6 +318,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // weekly). Client only sends this when the admin actually changed the date.
     fields.push("ft_started_at = ?");
     vals.push(parsed.data.ft_effective_date);
+  }
+  // FT→PT switch date (owner 2026-08-31) — payroll-gated (money). From this date's
+  // month the pay engine treats the (stored-FT) employee as part-time hourly.
+  // clear_pt_switch wins (cancels a pending switch).
+  if (userCanViewPayroll(user)) {
+    if (parsed.data.clear_pt_switch) {
+      fields.push("pt_started_at = ?");
+      vals.push(null);
+    } else if (parsed.data.pt_effective_date) {
+      fields.push("pt_started_at = ?");
+      vals.push(parsed.data.pt_effective_date);
+    }
   }
   addField("line_user_id");
   // shift_start_time: empty string from form = clear to NULL
