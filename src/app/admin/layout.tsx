@@ -48,6 +48,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // similar badge next to the "เช็คลิสต์ก่อนเริ่มงาน" admin entry so
   // admin acts on staff edit-requests without polling.
   let unlockPendingCount = 0;
+  // Open incident reports (new/reviewing/action) on the active branch — badge
+  // on the IR sub-nav so the RM team sees pending work without polling.
+  let irOpenCount = 0;
   if (user.activeBranchId) {
     try {
       // Auto-expire stale rows first so the count reflects only bookings
@@ -66,10 +69,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
          WHERE r.status = 'pending' AND dr.branch_id = ?`
       ).get(user.activeBranchId) as { n: number } | undefined;
       unlockPendingCount = unlockRow?.n ?? 0;
+      if (canModule(user, "ir.manage")) {
+        const irRow = db.prepare(
+          `SELECT COUNT(*) AS n FROM ir_reports
+           WHERE branch_id = ? AND status IN ('new','reviewing','action')`
+        ).get(user.activeBranchId) as { n: number } | undefined;
+        irOpenCount = irRow?.n ?? 0;
+      }
     } catch {
       // schema not migrated yet (fresh deploy) → just show 0
       pendingCount = 0;
       unlockPendingCount = 0;
+      irOpenCount = 0;
     }
   }
 
@@ -112,6 +123,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // DELIVERA — self-run delivery (owner 2026-07). RBAC-gated; ships dark per
         // branch (delivera_enabled) so the link is harmless until a branch opts in.
         ...(canModule(user, "delivera.manage") ? [{ href: gate("/admin/delivera/kitchen"), label: "DELIVERA" }] : []),
+        // IR — incident report / risk management (owner 2026-08). RBAC-gated;
+        // every branch runs it (no per-branch opt-in), so the link is plain.
+        ...(canModule(user, "ir.manage") ? [{ href: gate("/admin/ir"), label: "IR" }] : []),
         // System-wide entries — only super_admin can manage these,
         // so hide them from regular admins to keep the sidebar clean.
         // The pages still enforce requireSuperAdmin() server-side as
@@ -191,6 +205,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // Global LINE creds — admin-only (the page enforces requireAdmin too).
         ...((user.role === "admin" || user.role === "super_admin") ? [{ href: "/admin/delivera/connection", label: "เชื่อมต่อ LINE" }] : []),
         { href: "/admin/delivera/report", label: "ยอดขายเดลิเวอรี่" }
+      ]
+    }] : []),
+    // IR — incident report / risk management (owner 2026-08). Contextual
+    // section shown inside /admin/ir. The open-reports badge sits on the list.
+    ...(canModule(user, "ir.manage") ? [{
+      label: "IR / ความเสี่ยง",
+      pathPrefix: "/admin/ir",
+      items: [
+        { href: "/admin/ir", label: "แดชบอร์ด / เทรนด์" },
+        {
+          href: "/admin/ir/reports",
+          label: "รายการเหตุการณ์",
+          badge: irOpenCount > 0 ? irOpenCount : undefined
+        },
+        { href: "/admin/ir/reports?new=1", label: "+ แจ้งเหตุการณ์" }
       ]
     }] : []),
     // สุขภาพพนักงาน — รวม "ผลตรวจสุขภาพ" (ย้ายมาจาก PERSONA) + โครงการ Mounjaro.
@@ -337,6 +366,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     ...(canModule(user, "recruita.access") ? [{ key: "recruita", label: "RECRUITA", href: gate("/admin/recruita"), base: "/admin/recruita" }] : []),
     ...(canModule(user, "accounta.manage") ? [{ key: "accounta", label: "ACCOUNTA", href: gate("/admin/accounta"), base: "/admin/accounta" }] : []),
     ...(canModule(user, "delivera.manage") ? [{ key: "delivera", label: "DELIVERA", href: gate("/admin/delivera/kitchen"), base: "/admin/delivera" }] : []),
+    ...(canModule(user, "ir.manage") ? [{ key: "ir", label: "IR", href: gate("/admin/ir"), base: "/admin/ir" }] : []),
     ...(isSuperAdmin ? [
       { key: "roles", label: "บทบาทและสิทธิ์", href: "/admin/roles", base: "/admin/roles" },
       { key: "settings", label: t(lang, "admin.systemSettings.title"), href: "/admin/system-settings", base: "/admin/system-settings" },
