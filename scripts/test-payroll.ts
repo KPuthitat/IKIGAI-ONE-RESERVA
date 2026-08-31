@@ -769,5 +769,52 @@ console.log("\nนับวันที่มีลงเวลา (helper):");
   eq("ไม่มี in → 0 วัน", countClockInDays([{ ts: "2026-08-03T10:00:00.000Z", type: "out" }]), 0);
 }
 
+// ── FT→PT switch (pt_started_at) + no-clock PT from roster (owner 2026-08-31) ──
+console.log("\nเปลี่ยนประจำ→พาร์ทไทม์ (วันที่เริ่ม) + พาร์ทไทม์ไม่ลงเวลา:");
+{
+  const sept5: ScheduledShift = {
+    startTs: "2026-09-05T03:00:00.000Z",  // 10:00 BKK
+    endTs:   "2026-09-05T08:00:00.000Z"   // 15:00 BKK → 5h, no break
+  };
+  const sepRoster = new Map<string, ScheduledShift[]>([["2026-09-05", [sept5]]]);
+  // Stored as FT (keeps her in the monthly run) + keeps salary; hourly rate for
+  // after the switch; ไม่ต้องลงเวลา (track_attendance 0); becomes PT on 1 ก.ย.
+  const emp: EmployeePayrollSnapshot = {
+    ...ftMonthly(30000), hourly_rate: 50, track_attendance: 0, pt_started_at: "2026-09-01"
+  };
+
+  // AUGUST (before the switch) → still FULL-TIME: flat salary, snapshot 'ft'.
+  const aug = computeLineForEmployee({
+    employee: emp, shifts: [], unpaired: 0, leaveDays: 0,
+    cycle: "monthly", periodStart: "2026-08-01", periodEnd: "2026-08-31",
+    settings: SETTINGS, holidaySet: new Set<string>()
+  });
+  okv("ส.ค. (ก่อนสลับ) = ประจำ", aug.employment_type, "ft");
+  eq("ส.ค. ได้เงินเดือนเต็ม 30000", aug.base_pay, 30000);
+
+  // SEPTEMBER (from the switch) → PART-TIME, hours from the roster (no clock):
+  // 5h × 50 = 250, WHT 3% = 7.5, no SSO.
+  const sep = computeLineForEmployee({
+    employee: emp, shifts: [], unpaired: 0, leaveDays: 0,
+    cycle: "monthly", periodStart: "2026-09-01", periodEnd: "2026-09-30",
+    settings: SETTINGS, holidaySet: new Set<string>(), scheduledByDate: sepRoster
+  });
+  okv("ก.ย. (หลังสลับ) = พาร์ทไทม์", sep.employment_type, "pt");
+  eq("ก.ย. คิดจากกะ 5 ชม × 50 = 250", sep.base_pay, 250);
+  eq("ก.ย. หัก ณ ที่จ่าย 3% = 7.5", sep.tax_amount, 7.5);
+  eq("ก.ย. ไม่มีประกันสังคม", sep.sso_amount, 0);
+  eq("ก.ย. สุทธิ = 242.5", sep.net_pay, 242.5);
+  eq("ก.ย. นับ 1 วันทำงาน", sep.days_worked, 1);
+
+  // A plain PT with track_attendance=1 but NO clock + NO roster → 0 (regression:
+  // roster path only kicks in for the no-clock flag).
+  const noHours = computeLineForEmployee({
+    employee: ptHourly(50), shifts: [], unpaired: 0, leaveDays: 0,
+    cycle: "monthly", periodStart: "2026-09-01", periodEnd: "2026-09-30",
+    settings: SETTINGS, holidaySet: new Set<string>(), scheduledByDate: sepRoster
+  });
+  eq("PT ปกติ (ลงเวลา) ไม่มีบัตร → 0", noHours.base_pay, 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

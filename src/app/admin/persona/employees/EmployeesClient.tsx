@@ -40,6 +40,8 @@ export type EmployeeRow = {
   // วันที่เริ่มเป็นประจำ (PT→FT transition date). Drives which payroll table the
   // transition month lands in. NULL on legacy FT converted before this existed.
   ft_started_at: string | null;
+  // วันเริ่มเป็นพาร์ทไทม์ (FT→PT switch, owner 2026-08-31). NULL = ไม่เปลี่ยน.
+  pt_started_at?: string | null;
   // จ่ายเงินเดือนช่วงเปลี่ยนผ่านครบถึงวันที่ (owner 2026-08-18). NULL = คิดปกติ.
   ft_salary_paid_through?: string | null;
   // 0 = ผู้บริหาร/ไม่ลงเวลา → เงินเดือน fix ไม่มี OT (owner 2026-07-12).
@@ -687,6 +689,11 @@ function EditModal({
   // PT→FT weekly transition (owner 2026-07-30). Clears ft_started_at + forces
   // monthly on save so they compute as a plain monthly FT.
   const [clearFtTransition, setClearFtTransition] = useState<boolean>(false);
+  // FT→PT switch (owner 2026-08-31): the date this full-timer becomes part-time
+  // (hourly, from the roster). Prefill from pt_started_at; the reveal toggle
+  // shows the control for an FT not yet scheduled to convert.
+  const [ptEffectiveDate, setPtEffectiveDate] = useState<string>(employee.pt_started_at ?? "");
+  const [becomePtReveal, setBecomePtReveal] = useState<boolean>(false);
   const [hireDate, setHireDate] = useState<string>(employee.hire_date ?? "");
   // Phase 1D — Payroll fields
   const [employeeCode, setEmployeeCode] = useState<string>(employee.employee_code ?? "");
@@ -936,6 +943,16 @@ function EditModal({
         ftEffectiveDate !== (employee.ft_started_at ?? "")
       ) {
         body.ft_effective_date = ftEffectiveDate;
+      }
+      // FT→PT switch date (owner 2026-08-31) — only for an FT with the control
+      // shown (already scheduled, or the reveal toggle). Clearing the date
+      // cancels a pending switch.
+      if (isAlreadyFt && (employee.pt_started_at || becomePtReveal)) {
+        if (ptEffectiveDate.trim() === "") {
+          if (employee.pt_started_at) body.clear_pt_switch = true;
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(ptEffectiveDate)) {
+          body.pt_effective_date = ptEffectiveDate;
+        }
       }
       // Account role (staff↔admin) — super_admin only, and never for a
       // super_admin target (the render guard hides the dropdown; the
@@ -1358,6 +1375,39 @@ function EditModal({
                         className="shrink-0 text-brand hover:underline">
                         + ตั้งเดือนเปลี่ยนผ่าน (คนที่แปลงจากพาร์ทไทม์)
                       </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* เปลี่ยนประจำ → พาร์ทไทม์ (owner 2026-08-31) — สลับต้นเดือน: ตั้งแต่เดือน
+                  ของวันที่นี้ คิดเป็นพาร์ทไทม์รายชั่วโมง, ก่อนหน้ายังเป็นเงินเดือนประจำ. */}
+              {employmentType === "ft" && employee.employment_type === "ft" && (
+                <div className="mb-3">
+                  {employee.pt_started_at || becomePtReveal ? (
+                    <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2.5">
+                      <label className="label !text-violet-800">เปลี่ยนเป็นพาร์ทไทม์ — วันที่เริ่ม</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="date" className="input" value={ptEffectiveDate}
+                          onChange={(e) => setPtEffectiveDate(e.target.value)} />
+                        <div className="flex items-center gap-1.5">
+                          <input type="number" step="0.01" min="0" inputMode="decimal" className="input"
+                            placeholder="เรตรายชั่วโมง" value={hourlyRate}
+                            onChange={(e) => setHourlyRate(e.target.value)} />
+                          <span className="text-sm text-slate-500 whitespace-nowrap">บาท/ชม.</span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                        ตั้งแต่<b>เดือน</b>ของวันที่นี้ = คิดเป็น<b>พาร์ทไทม์รายชั่วโมง</b> (หัก ณ ที่จ่าย 3%) · ก่อนหน้านั้นยังเป็น
+                        เงินเดือนประจำ · ถ้าไม่ตอกบัตร ให้ติ๊ก <b>“ไม่ต้องลงเวลา”</b> ด้านล่าง ระบบจะคิดชั่วโมงจาก<b>ตารางกะ</b>ให้
+                        (ต้องจัดกะเดือนนั้นด้วย)
+                      </p>
+                      <button type="button" onClick={() => { setPtEffectiveDate(""); setBecomePtReveal(false); }}
+                        className="mt-2 text-xs text-rose-600 hover:underline">↺ ยกเลิกการเปลี่ยนเป็นพาร์ทไทม์</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-end">
+                      <button type="button" onClick={() => setBecomePtReveal(true)}
+                        className="text-xs text-violet-700 hover:underline">+ เปลี่ยนเป็นพาร์ทไทม์ (ระบุวันที่เริ่ม)</button>
                     </div>
                   )}
                 </div>
