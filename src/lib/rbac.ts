@@ -21,6 +21,7 @@ export type RbacPermissionKey =
   | "ascenda.view"
   | "accounta.manage"
   | "delivera.manage"
+  | "ir.manage"
   | "partner.drink.redeem"
   | "partner.mealpass.confirm";
 
@@ -75,6 +76,12 @@ export const RBAC_PERMISSIONS: RbacPermissionDef[] = [
     module: "DELIVERA",
     labelTh: "DELIVERA — เดลิเวอรี่ส่งเอง",
     descTh: "กระดานครัวรับออเดอร์เดลิเวอรี่ ยืนยันสลิป จัดการเมนู/โซนส่ง และทีมงานส่งสุข"
+  },
+  {
+    key: "ir.manage",
+    module: "IR",
+    labelTh: "IR — ความเสี่ยง/อุบัติการณ์",
+    descTh: "รับแจ้งเหตุการณ์ไม่พึงประสงค์/ความเสี่ยง ทบทวนหาสาเหตุ ติดตามการแก้ไข และดูเทรนด์รายสัปดาห์ (Risk Management)"
   },
   {
     key: "partner.drink.redeem",

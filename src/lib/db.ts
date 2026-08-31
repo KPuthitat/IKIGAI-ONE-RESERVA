@@ -1680,6 +1680,54 @@ function runMigrations(db: Database.Database): void {
       UNIQUE (partner_id, settle_year, settle_month)
     );
   `);
+
+  // ── IR — Incident Report / Risk Management ───────────────────────
+  // Owner 2026-08: staff file an อุบัติการณ์/near-miss report (แนว รพ. IR),
+  // the RM team reviews it weekly, records root cause + a corrective
+  // action (PDCA), and tracks it to closure. Non-punitive (HA): the
+  // reporter may stay anonymous, so reporter_user_id is NULLABLE and
+  // is_anonymous flags a deliberate withhold vs. a system row.
+  //   severity 1..5 (1 near-miss … 5 critical), owner-adaptable labels.
+  //   category is a free key from a code-defined list (clinic/restaurant/
+  //   general) — stored as TEXT so we can extend without a migration.
+  //   status flows new → reviewing → action → closed (+ dismissed).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ir_reports (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      code           TEXT,                                   -- IR-2026-0001 (assigned on insert)
+      branch_id      INTEGER NOT NULL REFERENCES branches(id),
+      reporter_user_id INTEGER REFERENCES users(id),         -- NULL when reported anonymously
+      is_anonymous   INTEGER NOT NULL DEFAULT 0,             -- staff chose to withhold identity
+      occurred_at    TEXT NOT NULL,                          -- when the incident happened (ISO)
+      location_detail TEXT,                                  -- where in the shop/clinic
+      category       TEXT NOT NULL DEFAULT 'general.other',  -- category key (see ir-db.ts)
+      incident_type  TEXT NOT NULL DEFAULT 'actual'
+        CHECK (incident_type IN ('near_miss','actual','complaint')),
+      severity       INTEGER NOT NULL DEFAULT 2
+        CHECK (severity BETWEEN 1 AND 5),
+      description    TEXT NOT NULL,                           -- what happened
+      immediate_action TEXT,                                 -- what was done on the spot
+      status         TEXT NOT NULL DEFAULT 'new'
+        CHECK (status IN ('new','reviewing','action','closed','dismissed')),
+      -- review / PDCA (filled by the RM team)
+      root_cause     TEXT,
+      corrective_action TEXT,
+      assigned_to    INTEGER REFERENCES users(id),
+      due_date       TEXT,                                   -- YYYY-MM-DD
+      discussed_at   TEXT,                                   -- weekly-meeting date it was reviewed
+      reviewed_by    INTEGER REFERENCES users(id),
+      reviewed_at    TEXT,
+      resolved_by    INTEGER REFERENCES users(id),
+      resolved_at    TEXT,
+      created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_ir_reports_branch_status
+      ON ir_reports(branch_id, status, occurred_at);
+    CREATE INDEX IF NOT EXISTS idx_ir_reports_occurred
+      ON ir_reports(occurred_at);
+  `);
+
   // line_group_id (owner 2026-06-23): the partner's LINE group — the IKIGAI OS
   // platform OA is added to it so weekly-transfer / monthly-GP cards can be
   // pushed there. NULL = no group set (the send button is disabled).
@@ -5026,7 +5074,7 @@ function runMigrations(db: Database.Database): void {
     "SELECT id FROM rbac_roles WHERE key = 'legacy_admin'"
   ).get() as { id: number } | undefined;
   if (legacyRoleForBackfill) {
-    for (const perm of ["accounta.manage"]) {
+    for (const perm of ["accounta.manage", "ir.manage"]) {
       const already = db.prepare(
         "SELECT 1 FROM rbac_perm_backfills WHERE permission_key = ?"
       ).get(perm);
