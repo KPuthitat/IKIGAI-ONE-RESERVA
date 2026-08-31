@@ -196,21 +196,29 @@ export default function PtBreakdownTable({
   );
 }
 
-// Per-day calculation detail — every day the person worked (or a status row),
-// the regular pay for the day, OT, and ×1.5/×2 flags. base ค่าตอบแทน = pay − OT.
+// Per-day calculation detail — a financial-table layout: descriptive columns
+// (date / shift / clock) hug the left, all money + hours hug the right in tidy
+// right-aligned columns that line up down the page. A flexible spacer column
+// absorbs the slack so nothing sprawls. Each day breaks down as ค่าตอบแทน
+// (regular) + ล่วงเวลา (OT) = รวมวันนี้, so no figure is shown twice.
 function DayTable({ days, baseTotal, otTotal }: { days: BreakDay[]; baseTotal: number; otTotal: number }) {
   const worked = days.filter((d) => !d.statusLabel);
+  const regMinTotal = days.reduce((s, d) => s + d.effectiveMinutes, 0);
+  const numTh = "py-1.5 px-3 text-right font-medium";
+  const numTd = "py-1.5 px-3 text-right tabular-nums whitespace-nowrap";
   return (
     <div className="rounded-lg border border-violet-100 bg-white overflow-x-auto">
       <table className="w-full text-[12.5px]">
         <thead>
-          <tr className="text-left text-[11px] text-slate-400 border-b border-slate-100">
-            <th className="py-1.5 px-2.5">วันที่</th>
-            <th className="py-1.5 px-2.5">กะ / สถานะ</th>
-            <th className="py-1.5 px-2.5">เวลาเข้า–ออก</th>
-            <th className="py-1.5 px-2.5 text-right">ชม.ทำงาน</th>
-            <th className="py-1.5 px-2.5 text-right">ล่วงเวลา</th>
-            <th className="py-1.5 px-2.5 text-right">ค่าตอบแทนวันนี้</th>
+          <tr className="text-[11px] text-slate-400 border-b border-slate-100">
+            <th className="py-1.5 px-3 text-left">วันที่</th>
+            <th className="py-1.5 px-3 text-left">กะ / สถานะ</th>
+            <th className="py-1.5 px-3 text-left">เวลาเข้า–ออก</th>
+            <th className="w-full" aria-hidden></th>
+            <th className={numTh}>ชม.ทำงาน</th>
+            <th className={numTh}>ค่าตอบแทน</th>
+            <th className={numTh}>ล่วงเวลา</th>
+            <th className={`${numTh} text-slate-500`}>รวมวันนี้</th>
           </tr>
         </thead>
         <tbody>
@@ -220,32 +228,40 @@ function DayTable({ days, baseTotal, otTotal }: { days: BreakDay[]; baseTotal: n
               .map((p) => `${p.workIn ?? "—"}–${p.workOut ?? "—"}`).join(", ");
             return (
               <tr key={d.date} className={`border-b border-slate-50 last:border-0 ${d.statusLabel ? "text-slate-400" : ""}`}>
-                <td className="py-1.5 px-2.5 whitespace-nowrap">{fmtDay(d.date)}</td>
-                <td className="py-1.5 px-2.5">
+                <td className="py-1.5 px-3 whitespace-nowrap text-slate-700">{fmtDay(d.date)}</td>
+                <td className="py-1.5 px-3">
                   {d.statusLabel
                     ? <span className="text-slate-400">{d.statusLabel}</span>
                     : (
-                      <span className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1.5">
                         <span className="text-slate-600">{d.shift?.code ?? "—"}</span>
                         {d.double && <span className="text-[10px] px-1 rounded bg-rose-100 text-rose-700">×2</span>}
                         {d.holiday && !d.double && <span className="text-[10px] px-1 rounded bg-amber-100 text-amber-700">×1.5</span>}
                       </span>
                     )}
                 </td>
-                <td className="py-1.5 px-2.5 whitespace-nowrap text-slate-500">{times || "—"}</td>
-                <td className="py-1.5 px-2.5 text-right tabular-nums text-slate-600">{d.effectiveMinutes ? fmtMin(d.effectiveMinutes) : "—"}</td>
-                <td className="py-1.5 px-2.5 text-right tabular-nums text-amber-700">{d.otMinutes ? `${fmtMin(d.otMinutes)} · ฿${fmtMoney(d.otPay)}` : "—"}</td>
-                <td className="py-1.5 px-2.5 text-right tabular-nums font-medium">{d.pay ? `฿${fmtMoney(dayBase)}${d.otPay ? ` + ฿${fmtMoney(d.otPay)}` : ""}` : "—"}</td>
+                <td className="py-1.5 px-3 whitespace-nowrap tabular-nums text-slate-500">{times || "—"}</td>
+                <td className="w-full" aria-hidden></td>
+                <td className={`${numTd} text-slate-600`}>{d.effectiveMinutes ? fmtMin(d.effectiveMinutes) : "—"}</td>
+                <td className={numTd}>{dayBase ? `฿${fmtMoney(dayBase)}` : "—"}</td>
+                <td className={`${numTd} text-amber-700`}>
+                  {d.otMinutes
+                    ? <>฿{fmtMoney(d.otPay)}<span className="text-[10px] text-amber-600/70 ml-1">{fmtMin(d.otMinutes)}</span></>
+                    : "—"}
+                </td>
+                <td className={`${numTd} font-semibold text-slate-800`}>{d.pay ? `฿${fmtMoney(d.pay)}` : "—"}</td>
               </tr>
             );
           })}
         </tbody>
         <tfoot>
-          <tr className="border-t border-slate-200 font-medium bg-slate-50/50">
-            <td className="py-1.5 px-2.5" colSpan={3}>รวม {worked.length} วันทำงาน</td>
-            <td className="py-1.5 px-2.5"></td>
-            <td className="py-1.5 px-2.5 text-right tabular-nums text-amber-700">฿{fmtMoney(otTotal)}</td>
-            <td className="py-1.5 px-2.5 text-right tabular-nums">฿{fmtMoney(baseTotal + otTotal)}</td>
+          <tr className="border-t border-slate-200 font-medium bg-slate-50/60">
+            <td className="py-1.5 px-3 whitespace-nowrap" colSpan={3}>รวม {worked.length} วันทำงาน</td>
+            <td className="w-full" aria-hidden></td>
+            <td className={`${numTd} text-slate-600`}>{regMinTotal ? fmtMin(regMinTotal) : "—"}</td>
+            <td className={numTd}>฿{fmtMoney(baseTotal)}</td>
+            <td className={`${numTd} text-amber-700`}>{otTotal ? `฿${fmtMoney(otTotal)}` : "—"}</td>
+            <td className={`${numTd} font-bold text-slate-800`}>฿{fmtMoney(baseTotal + otTotal)}</td>
           </tr>
         </tfoot>
       </table>
