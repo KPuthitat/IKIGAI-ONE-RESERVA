@@ -1598,11 +1598,13 @@ function runMigrations(db: Database.Database): void {
   }
   // Doctor Fee (DF) — clinic-only (owner 2026-08). A doctor's pay = a % of the
   // clinic's HSC/HSC-GRP service revenue on the days they're on the roster.
-  // Gated per branch, seeded ON for the clinic (HYPOPLARAEMIA) by name — same
-  // pattern as revshare_enabled (never hardcode the prod branch id).
+  // Gated per branch, seeded ON for the clinic (AT HOME CLINIC) by name — same
+  // pattern as revshare_enabled (never hardcode the prod branch id). NOTE: the
+  // first release wrongly seeded HYPOPLARAEMIA (a restaurant); the one-time
+  // df_migrations fix below corrects existing DBs (owner 2026-09-01).
   if (!bnames2.has("df_enabled")) {
     db.exec("ALTER TABLE branches ADD COLUMN df_enabled INTEGER NOT NULL DEFAULT 0");
-    db.prepare("UPDATE branches SET df_enabled = 1 WHERE name = 'HYPOPLARAEMIA'").run();
+    db.prepare("UPDATE branches SET df_enabled = 1 WHERE name = 'AT HOME CLINIC'").run();
   }
 
   // Revenue-Share GP tables. Money = REAL (round2 at the boundaries, matching
@@ -1779,6 +1781,28 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_df_invoice_lines_branch_date
       ON df_invoice_lines(branch_id, line_date);
   `);
+  // One-time DF branch correction (owner 2026-09-01): the first release seeded
+  // df_enabled onto HYPOPLARAEMIA, which is a RESTAURANT — the clinic is AT HOME
+  // CLINIC. Move it once and wipe the DF rules/lines that landed on the wrong
+  // branch. Guarded by a marker so it never re-runs (a later manual toggle of
+  // any branch is respected). Runs BEFORE the rule-seed so AT HOME CLINIC gets
+  // its default HSC rule below.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS df_migrations (
+      key        TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  {
+    const key = "df_branch_move_hypo_to_athome_20260901";
+    if (!db.prepare("SELECT 1 FROM df_migrations WHERE key = ?").get(key)) {
+      db.prepare("UPDATE branches SET df_enabled = 1 WHERE name = 'AT HOME CLINIC'").run();
+      db.prepare("UPDATE branches SET df_enabled = 0 WHERE name = 'HYPOPLARAEMIA'").run();
+      db.prepare("DELETE FROM df_invoice_lines WHERE branch_id IN (SELECT id FROM branches WHERE name = 'HYPOPLARAEMIA')").run();
+      db.prepare("DELETE FROM df_fee_rules WHERE branch_id IN (SELECT id FROM branches WHERE name = 'HYPOPLARAEMIA')").run();
+      db.prepare("INSERT OR IGNORE INTO df_migrations (key) VALUES (?)").run(key);
+    }
+  }
   // Seed the default HSC consultation rule for each DF branch (clinic), once.
   {
     const dfBranches = db.prepare("SELECT id FROM branches WHERE df_enabled = 1").all() as Array<{ id: number }>;
