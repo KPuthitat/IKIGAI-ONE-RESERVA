@@ -15,6 +15,7 @@ import AdminModeToggle from "../components/AdminModeToggle";
 import TodaysBranchPill from "../TodaysBranchPill";
 import HookFab from "../components/HookFab";
 import RefreshButton from "../components/RefreshButton";
+import SidebarShell from "./SidebarShell";
 import ImpersonationBanner from "../components/ImpersonationBanner";
 import MaintenanceBanner from "../components/MaintenanceBanner";
 import { currentImpersonationContext } from "@/lib/impersonation";
@@ -477,18 +478,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="md:hidden mt-2">
           <ModuleSubnav sections={subSections} mode="chips" />
         </div>
-        <div className="mt-5 md:mt-4 md:flex md:gap-5 flex-1 min-w-0">
-          <div className="hidden md:block md:w-[236px] md:flex-shrink-0">
-            <div className="sticky top-4">
-              <ModuleSubnav sections={subSections} mode="list" />
-            </div>
-          </div>
-          {/* overflow-x-clip — page-level guard so nothing spills past the
-              viewport on mobile. Wide tables keep their own overflow-x-auto. */}
-          <main className="flex-1 min-w-0 overflow-x-clip pb-8">
-            <ActionBarProvider maxWidth="max-w-screen-2xl">{children}</ActionBarProvider>
-          </main>
-        </div>
+        {/* Collapsible desktop rail (owner 2026-09-01) — the toggle lives inside
+            the shell; overflow-x-clip guards the page from mobile spill. */}
+        <SidebarShell
+          sidebar={<ModuleSubnav sections={subSections} mode="list" />}
+          hideLabel={t(lang, "admin.sidebar.hide")}
+          showLabel={t(lang, "admin.sidebar.show")}
+        >
+          <ActionBarProvider maxWidth="max-w-screen-2xl">{children}</ActionBarProvider>
+        </SidebarShell>
       </div>
 
       <div className="hidden md:block mt-auto">
