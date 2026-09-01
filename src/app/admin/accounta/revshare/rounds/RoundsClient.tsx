@@ -310,7 +310,7 @@ export default function RoundsClient({
             <div className="text-sm font-bold text-slate-800">นำเข้ายอดขาย · {preview.label ?? "(ไม่พบวันที่)"} <span className="text-[11px] font-normal text-slate-400">{preview.filename}</span></div>
             <button type="button" onClick={() => setPreview(null)} className="text-xs text-slate-400 hover:text-slate-700">✕ ยกเลิก</button>
           </div>
-          {posMultiDay && <p className="text-[11px] text-amber-700">⚠ ไฟล์นี้ครอบหลายวัน ({preview.label}) — จะบันทึกเป็นรายการเดียว ถ้าต้องการรายวันให้ส่งออกจาก POS แบบ 1 วัน/ไฟล์</p>}
+          {posMultiDay && <p className="text-[11px] text-amber-700">ไฟล์นี้ครอบหลายวัน ({preview.label}) — จะบันทึกเป็นรายการเดียว ถ้าต้องการรายวันให้ส่งออกจาก POS แบบ 1 วัน/ไฟล์</p>}
           <div className="flex items-center justify-between gap-2 flex-wrap rounded-md bg-slate-50 px-3 py-2">
             <span className="text-[11px] text-slate-500">
               {catsLocked

@@ -290,7 +290,7 @@ export default function DoctorFeeClient({
       {/* Unassigned days */}
       {result.unassignedDays.length > 0 && (
         <div className="card border-amber-200">
-          <h2 className="font-semibold text-amber-800 mb-1 text-sm">⚠︎ วันที่มียอดแต่ไม่มีแพทย์อยู่เวร ({result.unassignedDays.length} วัน)</h2>
+          <h2 className="font-semibold text-amber-800 mb-1 text-sm">วันที่มียอดแต่ไม่มีแพทย์อยู่เวร ({result.unassignedDays.length} วัน)</h2>
           <p className="text-[11px] text-amber-700/80 mb-2">ยอดรวม ฿{fmtMoney(result.unassignedFee)} ยังไม่ถูกจ่ายให้ใคร — ถ้าควรจ่าย ให้จัดเวรแพทย์ในวันเหล่านี้แล้วคำนวณใหม่</p>
           <div className="flex flex-wrap gap-1.5">
             {result.unassignedDays.map((u) => (

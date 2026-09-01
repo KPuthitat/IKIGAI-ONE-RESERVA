@@ -809,7 +809,7 @@ export default function BookingForm({
             )}
             {!isPastTime && isNearKitchenClose && (
               <div className="mt-1.5 text-xs px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-900">
-                ⚠ {t("booking.kitchenCloseWarn")}
+                {t("booking.kitchenCloseWarn")}
               </div>
             )}
           </div>

@@ -388,7 +388,7 @@ export default function EmployeesClient({
                     <div className="text-xs text-slate-400">@{u.username}</div>
                     {incomplete && (
                       <div className="text-xs text-amber-700 mt-0.5">
-                        ⚠ {t("admin.persona.employees.profileIncomplete")}
+                        {t("admin.persona.employees.profileIncomplete")}
                       </div>
                     )}
                   </td>
@@ -443,7 +443,7 @@ export default function EmployeesClient({
                               className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold whitespace-nowrap"
                               title="เชื่อมต่อ LINE แล้ว แต่ยังไม่มีชื่อเล่น — น้องฮูกจะทักด้วยชื่อจริง"
                             >
-                              ⚠ ขาดชื่อเล่น
+                              ขาดชื่อเล่น
                             </span>
                           );
                         }

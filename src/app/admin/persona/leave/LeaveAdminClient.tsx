@@ -314,7 +314,7 @@ export default function LeaveAdminClient({
                         rather than approve blindly. */}
                     {r.rosterConflict && r.rosterConflict.affectedDates.length > 0 && (
                       <div className="text-xs mt-1.5 bg-amber-50 border border-amber-300 text-amber-800 px-2 py-1.5 rounded">
-                        ⚠ {t("admin.persona.leave.rosterConflict", {
+                        {t("admin.persona.leave.rosterConflict", {
                           n: r.rosterConflict.affectedDates.length,
                           others: r.rosterConflict.minStaffOnAffectedDay ?? 0
                         })}

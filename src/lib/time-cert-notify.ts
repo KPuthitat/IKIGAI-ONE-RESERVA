@@ -151,7 +151,7 @@ export async function notifyMissingPunchOffence(args: {
   const th = args.entryType === "out" ? "ออกงาน" : "เข้างาน";
   const dateTh = args.workDate ? ` (วันที่ ${args.workDate})` : "";
   const text = [
-    `⚠ เตือนด้วยวาจา — ${greet}ลืมลงเวลา${th}${dateTh} และแอดมินได้รับรองเวลาให้แล้วครับ`,
+    `เตือนด้วยวาจา — ${greet}ลืมลงเวลา${th}${dateTh} และแอดมินได้รับรองเวลาให้แล้วครับ`,
     ``,
     `นับรวมแล้วเป็น “ครั้งที่ ${args.count}” ของการลืมลงเวลา`,
     `รบกวนช่วยกันลงเวลาเข้า–ออกให้ครบทุกครั้งนะครับ`,

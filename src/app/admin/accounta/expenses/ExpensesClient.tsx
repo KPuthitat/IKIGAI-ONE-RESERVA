@@ -908,7 +908,7 @@ export default function ExpensesClient(props: {
 
             {preview.unresolvedBranch > 0 && (
               <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-                ⚠ {preview.unresolvedBranch} รายการระบุสาขาที่จับคู่ไม่ได้ — จะลงเป็นยังไม่ผูกสาขา
+                {preview.unresolvedBranch} รายการระบุสาขาที่จับคู่ไม่ได้ — จะลงเป็นยังไม่ผูกสาขา
               </p>
             )}
 
@@ -1139,7 +1139,7 @@ export default function ExpensesClient(props: {
                     <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
                       {e.vendor_name || "—"}
                       {e.capex_bucket && <span className="text-[10px] font-normal bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-1.5 py-px" title="ผูกกับ FEASIBILITY (เงินลงทุนตั้งต้น)">FEASIBILITY · {STARTUP_CATEGORY_LABEL[e.capex_bucket as keyof typeof STARTUP_CATEGORY_LABEL] ?? "ลงทุน"}</span>}
-                      {!!e.awaiting_doc && <span className="text-[10px] font-normal bg-amber-100 text-amber-800 border border-amber-300 rounded-full px-1.5 py-px" title="ยังไม่ได้รับใบเสร็จ/ใบกำกับภาษี">⏳ รอเอกสาร</span>}
+                      {!!e.awaiting_doc && <span className="text-[10px] font-normal bg-amber-100 text-amber-800 border border-amber-300 rounded-full px-1.5 py-px" title="ยังไม่ได้รับใบเสร็จ/ใบกำกับภาษี">รอเอกสาร</span>}
                       {!!e.is_fixed && <span className="text-[10px] font-normal bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-1.5 py-px" title="นับเป็นต้นทุนคงที่ในจุดคุ้มทุน">คงที่</span>}
                     </div>
                     {docTypeLabel(e.doc_type) && (

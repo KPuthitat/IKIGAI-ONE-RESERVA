@@ -101,7 +101,7 @@ export default function AdminEmployeeProfilePage({
       {notFilled && (
         <div className="card border-l-4 border-amber-400 bg-amber-50/50">
           <div className="font-bold text-amber-900">
-            ⚠ พนักงานคนนี้ยังไม่ได้กรอกข้อมูลส่วนตัว
+            พนักงานคนนี้ยังไม่ได้กรอกข้อมูลส่วนตัว
           </div>
           <p className="text-sm text-amber-800/90 mt-1 leading-relaxed">
             ชื่อในระบบตอนสร้างบัญชี: <span className="font-bold">{row.display_name}</span>

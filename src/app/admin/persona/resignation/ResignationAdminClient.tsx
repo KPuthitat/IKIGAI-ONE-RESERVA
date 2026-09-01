@@ -536,7 +536,7 @@ function PolicyEditor({
           </button>
 
           <div className="text-[11px] text-slate-500 pt-2 border-t border-slate-100">
-            ✦ ปรับแต่งข้อความ LINE ที่ส่งตอนเปิดสิทธิ์ลาออก ได้ที่หน้า{" "}
+            ปรับแต่งข้อความ LINE ที่ส่งตอนเปิดสิทธิ์ลาออก ได้ที่หน้า{" "}
             <Link href="/admin/persona/notifications"
               className="text-brand hover:underline font-medium">
               ปรับแต่งการ์ดแจ้งเตือน

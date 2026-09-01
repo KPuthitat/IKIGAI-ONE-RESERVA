@@ -16,7 +16,7 @@ import { useLang } from "@/lib/LangProvider";
 //
 //   • Real scarcity — per-slot remaining-seat count for the date the
 //     customer is currently looking at. When a slot is at/near
-//     capacity it shows "⚠ เหลือ 2 ที่" or "✗ เต็มแล้ว". When the
+//     capacity it shows "เหลือ 2 ที่" or "✗ เต็มแล้ว". When the
 //     slot is historically the most-booked we add a "รอบนิยม" cue
 //     (last 30 days, top 30% of slots). No fake countdown timers.
 //

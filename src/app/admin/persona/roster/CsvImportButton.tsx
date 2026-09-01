@@ -106,7 +106,7 @@ export default function CsvImportButton() {
           onClick={downloadSample}
           className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
         >
-          ⬇ {t("admin.persona.roster.csv.template")}
+          {t("admin.persona.roster.csv.template")}
         </button>
         <input
           ref={fileRef}

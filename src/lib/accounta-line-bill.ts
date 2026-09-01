@@ -152,7 +152,7 @@ export async function ingestLineBill(args: {
     const dup = findDuplicateBill({ branchId, invoiceNo, taxId: taxId.length >= 10 ? taxId : null, vendorName });
     if (dup) {
       await say([{ type: "text", text:
-        `⚠ บิลนี้อาจซ้ำ (ยังไม่บันทึกให้)\nเลขที่ ${invoiceNo}${dup.vendor_name ? ` · ${dup.vendor_name}` : ""} · ฿${dup.amount_total.toLocaleString("th-TH")}\nบันทึกไว้แล้วเมื่อ ${dup.bill_date}\nถ้าเป็นคนละบิลจริง แจ้งแอดมินให้บันทึกด้วยมือได้ครับ` }]);
+        `บิลนี้อาจซ้ำ (ยังไม่บันทึกให้)\nเลขที่ ${invoiceNo}${dup.vendor_name ? ` · ${dup.vendor_name}` : ""} · ฿${dup.amount_total.toLocaleString("th-TH")}\nบันทึกไว้แล้วเมื่อ ${dup.bill_date}\nถ้าเป็นคนละบิลจริง แจ้งแอดมินให้บันทึกด้วยมือได้ครับ` }]);
       return;
     }
   }
