@@ -63,7 +63,7 @@ export default function BranchPickerClient({
               onClick={() => pick(b.id)}
               disabled={busyId !== null}
               className={`card text-left transition group block relative ${
-                isActive ? "ring-2 ring-brand/30 border border-brand/40" : ""
+                isActive ? "border-brand/60 bg-brand/5" : ""
               } ${dimOthers ? "opacity-50" : "hover:shadow-2xl"}`}
             >
               <div className="flex items-center gap-2 mb-1">
