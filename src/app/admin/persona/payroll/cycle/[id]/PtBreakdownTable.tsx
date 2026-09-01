@@ -38,6 +38,7 @@ type BreakDay = {
   double: boolean;
   statusLabel: string | null;
   shift: { code: string; name: string | null } | null;
+  branch?: string | null;   // which branch this day was worked at (cross-branch)
 };
 type DayState = "loading" | "error" | BreakDay[];
 
@@ -52,12 +53,13 @@ function fmtDay(date: string): string {
 }
 
 export default function PtBreakdownTable({
-  rows, periodIdsByUser, branchCols, grossByUserBranch, multiBranch
+  rows, periodIdsByUser, branchCols, grossByUserBranch, branchByPeriod, multiBranch
 }: {
   rows: PtRow[];
   periodIdsByUser: Record<number, number[]>;
   branchCols: Array<{ id: number; name: string }>;
   grossByUserBranch: Record<number, Record<number, number>>;
+  branchByPeriod: Record<number, string>;
   multiBranch: boolean;
 }) {
   const { t } = useLang();
@@ -80,22 +82,16 @@ export default function PtBreakdownTable({
       for (const pid of pids) {
         const res = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${pid}/lines/${userId}/breakdown`));
         const j = await res.json().catch(() => ({}));
-        if (j?.ok && Array.isArray(j.days)) all.push(...(j.days as BreakDay[]));
-      }
-      // Merge by date (a person may have days across two branch-periods).
-      const byDate = new Map<string, BreakDay>();
-      for (const d of all) {
-        const e = byDate.get(d.date);
-        if (!e) byDate.set(d.date, { ...d, pairs: [...d.pairs] });
-        else {
-          e.pay += d.pay; e.otPay += d.otPay;
-          e.effectiveMinutes += d.effectiveMinutes; e.otMinutes += d.otMinutes;
-          e.pairs = [...e.pairs, ...d.pairs];
-          e.holiday = e.holiday || d.holiday; e.double = e.double || d.double;
+        if (j?.ok && Array.isArray(j.days)) {
+          // Tag each day with the branch of the period it came from, and keep
+          // cross-branch days SEPARATE (no merge) so a two-branch person's days
+          // are traceable per branch (owner 2026-09-01).
+          const bname = branchByPeriod[pid] ?? null;
+          for (const day of j.days as BreakDay[]) all.push({ ...day, branch: bname });
         }
       }
-      const merged = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
-      setDays((d) => ({ ...d, [userId]: merged }));
+      all.sort((a, b) => a.date.localeCompare(b.date) || (a.branch ?? "").localeCompare(b.branch ?? ""));
+      setDays((d) => ({ ...d, [userId]: all }));
     } catch {
       setDays((d) => ({ ...d, [userId]: "error" }));
     }
@@ -211,7 +207,7 @@ export default function PtBreakdownTable({
 // The one case worth an alert is the opposite: live days summing to MORE than
 // what's booked, which would mean the stored line is stale and underpays.
 function DayTable({ days, baseTotal, otTotal, multiBranch }: { days: BreakDay[]; baseTotal: number; otTotal: number; multiBranch: boolean }) {
-  const worked = days.filter((d) => !d.statusLabel);
+  const workedDates = new Set(days.filter((d) => !d.statusLabel).map((d) => d.date)).size;
   const regMinTotal = days.reduce((s, d) => s + d.effectiveMinutes, 0);
   const daySum = Math.round(days.reduce((s, d) => s + d.pay, 0) * 100) / 100;
   const lineTotal = Math.round((baseTotal + otTotal) * 100) / 100;
@@ -239,14 +235,17 @@ function DayTable({ days, baseTotal, otTotal, multiBranch }: { days: BreakDay[];
             const times = d.pairs.filter((p) => p.workIn || p.workOut)
               .map((p) => `${p.workIn ?? "—"}–${p.workOut ?? "—"}`).join(", ");
             return (
-              <tr key={d.date} className={`border-b border-slate-50 last:border-0 ${d.statusLabel ? "text-slate-400" : ""}`}>
+              <tr key={`${d.date}-${d.branch ?? ""}`} className={`border-b border-slate-50 last:border-0 ${d.statusLabel ? "text-slate-400" : ""}`}>
                 <td className="py-1.5 px-3 whitespace-nowrap text-slate-700">{fmtDay(d.date)}</td>
                 <td className="py-1.5 px-3">
                   {d.statusLabel
                     ? <span className="text-slate-400">{d.statusLabel}</span>
                     : (
-                      <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1.5 flex-wrap">
                         <span className="text-slate-600">{d.shift?.code ?? "—"}</span>
+                        {multiBranch && d.branch && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">{d.branch}</span>
+                        )}
                         {d.double && <span className="text-[10px] px-1 rounded bg-rose-100 text-rose-700">×2</span>}
                         {d.holiday && !d.double && <span className="text-[10px] px-1 rounded bg-amber-100 text-amber-700">×1.5</span>}
                       </span>
@@ -268,7 +267,7 @@ function DayTable({ days, baseTotal, otTotal, multiBranch }: { days: BreakDay[];
         </tbody>
         <tfoot>
           <tr className="border-t border-slate-200 font-medium bg-slate-50/60">
-            <td className="py-1.5 px-3 whitespace-nowrap" colSpan={3}>รวม {worked.length} วันทำงาน</td>
+            <td className="py-1.5 px-3 whitespace-nowrap" colSpan={3}>รวม {workedDates} วันทำงาน</td>
             <td className="w-full" aria-hidden></td>
             <td className={`${numTd} text-slate-600`}>{regMinTotal ? fmtMin(regMinTotal) : "—"}</td>
             <td className={numTd}>฿{fmtMoney(baseTotal)}</td>

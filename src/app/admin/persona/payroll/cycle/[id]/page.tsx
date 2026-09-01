@@ -81,6 +81,13 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
     name: s.branch_name ?? t(lang, "admin.persona.payroll.cycle.noBranch")
   }));
   const multiBranch = branchCols.length > 1;
+  // period id → branch name — lets the PT per-day breakdown tag each day with
+  // the branch it was worked at, so a two-branch person's days are traceable
+  // (owner 2026-09-01: "เข้าสองสาขา ควรเห็นแต่ละวันสาขาไหน ยอดเท่าไร").
+  const branchByPeriodObj: Record<number, string> = {};
+  for (const s of siblings) {
+    branchByPeriodObj[s.id] = s.branch_name ?? t(lang, "admin.persona.payroll.cycle.noBranch");
+  }
 
   // Merged per-employee rows across all sibling periods (1 row/person).
   const empRows = sibIds.length > 0 ? db.prepare(`
@@ -347,6 +354,7 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
           periodIdsByUser={periodIdsByUser}
           branchCols={branchCols}
           grossByUserBranch={grossByUserBranchObj}
+          branchByPeriod={branchByPeriodObj}
           multiBranch={multiBranch}
         />
       )}
