@@ -105,7 +105,7 @@ export function expiryAlertFlex(
   const expired = lots.filter((l) => l.bucket === "expired");
   const critical = lots.filter((l) => l.bucket === "critical");
   const altText =
-    `⚠ INVENTA · ของหมดอายุ ${expired.length} · ใกล้หมดอายุ ${critical.length} · ${branch.name}`;
+    `INVENTA · ของหมดอายุ ${expired.length} · ใกล้หมดอายุ ${critical.length} · ${branch.name}`;
 
   const section = (
     label: string, color: string, items: ExpiringLot[]
@@ -179,7 +179,7 @@ export function expiryAlertFlex(
             type: "text",
             text: expired.length > 0
               ? `ของหมดอายุแล้ว ${expired.length} ล็อต`
-              : `⚠ ของใกล้หมดอายุ ${critical.length} ล็อต`,
+              : `ของใกล้หมดอายุ ${critical.length} ล็อต`,
             size: "md", color: "#ffffff", weight: "bold", margin: "xs", wrap: true
           },
           { type: "text", text: branch.name, size: "xs", color: "#fda4af", margin: "xs" }
@@ -189,7 +189,7 @@ export function expiryAlertFlex(
         type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
         contents: [
           ...section("หมดอายุแล้ว", "#dc2626", expired),
-          ...section("⚠ ภายใน 30 วัน", "#d97706", critical),
+          ...section("ภายใน 30 วัน", "#d97706", critical),
           { type: "text", text: "กรุณาตรวจสอบและจำหน่ายตามขั้นตอน", size: "xxs", color: "#888888", margin: "md", wrap: true }
         ]
       },

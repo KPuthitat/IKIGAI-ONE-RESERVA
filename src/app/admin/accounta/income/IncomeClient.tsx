@@ -282,7 +282,7 @@ export default function IncomeClient(props: {
 
             {preview.unresolvedBranch > 0 && (
               <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-                ⚠ {preview.unresolvedBranch} รายการระบุสาขาที่จับคู่ไม่ได้ — จะลงเป็นยังไม่ผูกสาขา
+                {preview.unresolvedBranch} รายการระบุสาขาที่จับคู่ไม่ได้ — จะลงเป็นยังไม่ผูกสาขา
               </p>
             )}
 

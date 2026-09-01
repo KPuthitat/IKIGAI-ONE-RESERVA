@@ -573,12 +573,12 @@ export default function LeaveClient({
                   {/* Phase 1C v6 — เสาร์/อาทิตย์ + วันหยุดนักขัตฤกษ์ (special track) */}
                   {weekendDates.length > 0 && (
                     <li className="text-amber-700">
-                      ⚠ {t("staff.persona.leave.stretch.weekendWarning", { n: weekendDates.length })}
+                      {t("staff.persona.leave.stretch.weekendWarning", { n: weekendDates.length })}
                     </li>
                   )}
                   {onPublicHoliday.length > 0 && (
                     <li className="text-amber-700">
-                      ⚠ {t("staff.persona.leave.stretch.publicHolidayWarning", { n: onPublicHoliday.length })}
+                      {t("staff.persona.leave.stretch.publicHolidayWarning", { n: onPublicHoliday.length })}
                     </li>
                   )}
                   {/* Off-day: hard block ถ้าเลือกแค่ off-day, info ถ้ามีวันอื่นด้วย */}

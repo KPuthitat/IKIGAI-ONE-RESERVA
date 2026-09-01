@@ -780,7 +780,7 @@ export default function ApplyClient({
             )}
             {missing.has("pdpa_consent") && (
               <span className="block text-[10px] text-rose-500 font-bold mt-0.5">
-                {tr("⚠ ต้องติ๊กยินยอมก่อนส่ง", "⚠ You must consent before submitting")}
+                {tr("ต้องติ๊กยินยอมก่อนส่ง", "You must consent before submitting")}
               </span>
             )}
           </span>
@@ -1181,7 +1181,7 @@ export default function ApplyClient({
                   value={f.custom[q.id]}
                   onChange={(v) => upCustom(q.id, v)} />
                 {invalid && (
-                  <p className="text-[10px] text-rose-500 font-bold mt-0.5">{tr("⚠ จำเป็นต้องตอบข้อนี้", "⚠ This question is required")}</p>
+                  <p className="text-[10px] text-rose-500 font-bold mt-0.5">{tr("จำเป็นต้องตอบข้อนี้", "This question is required")}</p>
                 )}
               </div>
             );
@@ -1213,7 +1213,7 @@ export default function ApplyClient({
             )}
             {missing.has("truth_declaration_accepted") && (
               <span className="block text-[10px] text-rose-500 font-bold mt-0.5">
-                {tr("⚠ ต้องติ๊กยอมรับก่อนส่ง", "⚠ You must accept before submitting")}
+                {tr("ต้องติ๊กยอมรับก่อนส่ง", "You must accept before submitting")}
               </span>
             )}
           </span>
@@ -1291,7 +1291,7 @@ function Field({
       </div>
       {invalid && (
         <p className="text-[10px] text-rose-500 font-bold mt-0.5">
-          {trBy(lang, "⚠ จำเป็นต้องกรอกช่องนี้", "⚠ This field is required")}
+          {trBy(lang, "จำเป็นต้องกรอกช่องนี้", "This field is required")}
         </p>
       )}
       {hint && <p className="text-[10px] text-slate-400 mt-0.5">{hint}</p>}

@@ -229,7 +229,7 @@ function ChannelCard({
           </div>
           <span className="text-[11px] px-2 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">
             {channel.error === "no_token_in_db"
-              ? "⚠ " + t(lang, "admin.messaging.quota.noToken")
+              ? "" + t(lang, "admin.messaging.quota.noToken")
               : "✗ " + t(lang, "admin.messaging.quota.error")}
           </span>
         </div>

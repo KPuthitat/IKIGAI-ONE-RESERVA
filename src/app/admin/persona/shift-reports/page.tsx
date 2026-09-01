@@ -273,7 +273,7 @@ export default function AdminShiftReportsPage() {
           </div>
           <div>
             <div className="text-xs font-bold text-amber-700 mb-1">
-              ⚠ มาสาย ({late.length})
+              มาสาย ({late.length})
             </div>
             {late.length === 0 ? (
               <div className="text-xs text-slate-400">—</div>

@@ -553,7 +553,7 @@ export function accountaDueBillsFlex(today: string, bills: DueBillItem[]): LineF
     contents: [
       {
         type: "text", flex: 6, size: "sm", color: COLOR_TEXT_DARK, wrap: true,
-        text: `${b.vendorName ?? "— ไม่ระบุผู้จำหน่าย —"}${b.branchName ? ` · ${b.branchName}` : ""}${b.overdue ? " ⚠ เกินกำหนด" : ""}`
+        text: `${b.vendorName ?? "— ไม่ระบุผู้จำหน่าย —"}${b.branchName ? ` · ${b.branchName}` : ""}${b.overdue ? " เกินกำหนด" : ""}`
       },
       { type: "text", flex: 4, size: "sm", weight: "bold", align: "end", color: "#DC2626", text: `฿${baht(b.amount)}` }
     ]
@@ -1688,8 +1688,8 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
     : incompleteCount > 0
       ? {
           text: skippedCount > 0
-            ? `⚠ ${supervisorWarning} (ยังไม่ได้ทำ ${incompleteCount} ข้อ · ข้ามวันนี้ ${skippedCount} ข้อ)`
-            : `⚠ ${supervisorWarning}`,
+            ? `${supervisorWarning} (ยังไม่ได้ทำ ${incompleteCount} ข้อ · ข้ามวันนี้ ${skippedCount} ข้อ)`
+            : `${supervisorWarning}`,
           color: "#dc2626"
         }
       : {
@@ -1883,8 +1883,8 @@ function checklistFlexBlock(
     : incompleteCount > 0
       ? {
           text: skippedCount > 0
-            ? `⚠ ${supervisorWarning} (ยังไม่ได้ทำ ${incompleteCount} ข้อ · ข้ามวันนี้ ${skippedCount} ข้อ)`
-            : `⚠ ${supervisorWarning}`,
+            ? `${supervisorWarning} (ยังไม่ได้ทำ ${incompleteCount} ข้อ · ข้ามวันนี้ ${skippedCount} ข้อ)`
+            : `${supervisorWarning}`,
           color: "#dc2626"
         }
       : {
@@ -2799,7 +2799,7 @@ export function attendanceSummaryFlex(args: AttendanceSummaryArgs): LineFlexMess
           { type: "separator", margin: "md", color: COLOR_DIVIDER },
           {
             type: "text",
-            text: `⏳ ยังไม่มา (${absent.length} คน)`,
+            text: `ยังไม่มา (${absent.length} คน)`,
             size: "xs",
             color: "#b45309",
             weight: "bold",
@@ -3632,7 +3632,7 @@ export function disciplinaryWarningFlex(args: DisciplinaryFlexArgs): LineFlexMes
           ]
         },
         {
-          type: "text", text: "⚠ หนังสือตักเตือนทางวินัย",
+          type: "text", text: "หนังสือตักเตือนทางวินัย",
           color: "#ffffff", size: "lg", weight: "bold", margin: "md", wrap: true
         }
       ]
@@ -3676,7 +3676,7 @@ export function disciplinaryWarningFlex(args: DisciplinaryFlexArgs): LineFlexMes
   };
   return {
     type: "flex",
-    altText: `⚠ หนังสือเตือน · ${args.title} · ${args.recipientName}`,
+    altText: `หนังสือเตือน · ${args.title} · ${args.recipientName}`,
     contents: bubble
   };
 }

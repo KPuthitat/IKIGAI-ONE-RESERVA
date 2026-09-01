@@ -110,7 +110,7 @@ export default function CompanyServiceChargePage({
               rel="noopener noreferrer"
               className="text-xs px-3 py-1.5 rounded bg-brand text-white hover:bg-brand/90 whitespace-nowrap font-medium"
             >
-              ⬇ PDF สำหรับบัญชี
+              PDF สำหรับบัญชี
             </a>
           )}
           <Link

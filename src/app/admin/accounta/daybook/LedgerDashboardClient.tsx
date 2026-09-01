@@ -726,7 +726,7 @@ function DayDetail({
                             {e.capex_bucket && <span className="text-[9px] font-normal bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-1.5 py-px" title="ผูกกับ FEASIBILITY (เงินลงทุนตั้งต้น)">FEASIBILITY · {STARTUP_CATEGORY_LABEL[e.capex_bucket as keyof typeof STARTUP_CATEGORY_LABEL] ?? "ลงทุน"}</span>}
                             {overdue && <span className="text-[9px] font-normal bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-1.5 py-px">เลยกำหนด</span>}
                             {dueToday && <span className="text-[9px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">ครบกำหนดวันนี้</span>}
-                            {e.awaiting_doc && <span className="text-[9px] font-normal bg-amber-100 text-amber-800 border border-amber-300 rounded-full px-1.5 py-px" title="ยังไม่ได้รับใบเสร็จ/ใบกำกับภาษี">⏳ รอเอกสาร</span>}
+                            {e.awaiting_doc && <span className="text-[9px] font-normal bg-amber-100 text-amber-800 border border-amber-300 rounded-full px-1.5 py-px" title="ยังไม่ได้รับใบเสร็จ/ใบกำกับภาษี">รอเอกสาร</span>}
                           </div>
                           {tag && <div className="text-[10px] text-slate-400">{tag}{unpaid && e.due_date && !overdue && !dueToday ? ` · ครบกำหนด ${e.due_date}` : ""}</div>}
                           {payId === e.id && (
@@ -1972,7 +1972,7 @@ export default function LedgerDashboardClient({
                     <div className="text-[11px] text-slate-400 truncate">
                       {fmtDayLabel(e.bill_date)}{e.category ? ` · ${e.category}` : ""}{e.payment_status === "unpaid" ? " · ค้างชำระ" : ""}{e.capex_bucket ? " · " : ""}
                       {e.capex_bucket ? <span className="text-violet-600">FEASIBILITY</span> : null}
-                      {e.awaiting_doc ? <span className="text-amber-700"> · ⏳ รอเอกสาร</span> : null}
+                      {e.awaiting_doc ? <span className="text-amber-700"> · รอเอกสาร</span> : null}
                     </div>
                     <div className="mt-0.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                       <div className="h-full bg-rose-300" style={{ width: `${Math.min(100, pct)}%` }} />

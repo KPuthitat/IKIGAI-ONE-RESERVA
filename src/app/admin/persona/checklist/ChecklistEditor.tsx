@@ -611,7 +611,7 @@ function ChecklistRow({
           />
           {initialOptions.length < 2 && (
             <p className="text-[11px] text-amber-700 mt-1 font-medium">
-              ⚠ {t("admin.persona.checklist.kind.optionsIncomplete")}
+              {t("admin.persona.checklist.kind.optionsIncomplete")}
             </p>
           )}
         </div>

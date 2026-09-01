@@ -180,7 +180,7 @@ export default function CustomerDrillDown({
             </span>
             {profile.churn_risk_score >= 0.5 && (
               <span className="text-[10px] px-2 py-1 rounded-full font-bold bg-rose-100 text-rose-700">
-                ⚠ {(profile.churn_risk_score * 100).toFixed(0)}% churn risk
+                {(profile.churn_risk_score * 100).toFixed(0)}% churn risk
               </span>
             )}
           </div>

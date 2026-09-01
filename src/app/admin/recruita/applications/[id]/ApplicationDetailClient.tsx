@@ -559,13 +559,13 @@ export default function ApplicationDetailClient({
           </ul>
           {stage !== "accepted" && (
             <p className="text-xs text-rose-700 font-bold bg-rose-50 border border-rose-200 rounded px-2 py-1.5">
-              ⚠ ผู้สมัครต้องตอบรับข้อเสนองานก่อน — สถานะต้องเป็น &quot;ตอบรับข้อเสนอ&quot;
+              ผู้สมัครต้องตอบรับข้อเสนองานก่อน — สถานะต้องเป็น &quot;ตอบรับข้อเสนอ&quot;
               (เลื่อนไป &quot;เสนองาน&quot; แล้วให้ผู้สมัครกดตอบรับในการ์ด LINE)
             </p>
           )}
           {application.health_check_status !== "passed" && (
             <p className="text-xs text-rose-700 font-bold bg-rose-50 border border-rose-200 rounded px-2 py-1.5">
-              ⚠ ต้องบันทึกผลตรวจสุขภาพเป็น &quot;ผ่าน&quot; ก่อนจึงจะรับเข้าทำงานได้ (ดูส่วน &quot;ผลตรวจสุขภาพ&quot; ด้านบน)
+              ต้องบันทึกผลตรวจสุขภาพเป็น &quot;ผ่าน&quot; ก่อนจึงจะรับเข้าทำงานได้ (ดูส่วน &quot;ผลตรวจสุขภาพ&quot; ด้านบน)
             </p>
           )}
           <button type="button" onClick={() => setShowHire(true)}

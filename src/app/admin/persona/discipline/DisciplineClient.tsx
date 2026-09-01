@@ -127,7 +127,7 @@ export default function DisciplineClient({
       {creating && (
         <div className="card border-rose-300 bg-rose-50/30 space-y-3">
           <h2 className="font-bold text-rose-800">
-            ⚠ {t("admin.persona.discipline.issueTitle")}
+            {t("admin.persona.discipline.issueTitle")}
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -159,7 +159,7 @@ export default function DisciplineClient({
               {activeInfo && activeInfo.activeCount > 0 && (
                 <div className="mt-2 p-2 rounded bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-snug">
                   <div className="font-bold">
-                    ⚠ {t("admin.persona.discipline.escalateBanner", {
+                    {t("admin.persona.discipline.escalateBanner", {
                       n: activeInfo.activeCount,
                       highest: SEVERITY_LABEL[activeInfo.highest ?? "verbal"]
                     })}

@@ -224,7 +224,7 @@ export default function AdminRosterPage({
       {/* Empty-state hints when config is incomplete */}
       {shiftCodes.length === 0 && (
         <div className="card text-sm text-amber-700 bg-amber-50 border-amber-200">
-          ⚠ {t(lang, "admin.persona.roster.emptyShifts")} —
+          {t(lang, "admin.persona.roster.emptyShifts")} —
           <Link href="/admin/persona/roster/shifts" className="ml-1 underline font-bold">
             {t(lang, "admin.persona.roster.goSetupShifts")}
           </Link>
@@ -232,7 +232,7 @@ export default function AdminRosterPage({
       )}
       {positions.length === 0 && (
         <div className="card text-sm text-amber-700 bg-amber-50 border-amber-200">
-          ⚠ {t(lang, "admin.persona.roster.emptyPositions")} —
+          {t(lang, "admin.persona.roster.emptyPositions")} —
           <Link href="/admin/persona/roster/positions" className="ml-1 underline font-bold">
             {t(lang, "admin.persona.roster.goSetupPositions")}
           </Link>

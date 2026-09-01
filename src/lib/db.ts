@@ -7556,7 +7556,7 @@ export type AttendanceRow = {
 /** Build today's attendance roster for a branch. Returns one row per
  *  staff member assigned to the branch (via user_branches), sorted
  *  by display_name. Rows include the in/out timestamps when present
- *  so the caller can format "✓ มาแล้ว @08:32" vs "⏳ ยังไม่มา"
+ *  so the caller can format "✓ มาแล้ว @08:32" vs "ยังไม่มา"
  *  without another query.
  *
  *  Time entries are scoped to the given Bangkok-local date so a

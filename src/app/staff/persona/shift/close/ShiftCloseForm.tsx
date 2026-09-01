@@ -664,7 +664,7 @@ export default function ShiftCloseForm({
         const under = diff < -0.005;
         const status = over
           ? { tone: "bg-rose-50 border-rose-200 text-rose-700",
-              text: `⚠ เกินโควตา ฿${fmtThb(diff)} (สั่ง ฿${fmtThb(ordered)} / โควตา ฿${fmtThb(quota)})` }
+              text: `เกินโควตา ฿${fmtThb(diff)} (สั่ง ฿${fmtThb(ordered)} / โควตา ฿${fmtThb(quota)})` }
           : under
           ? { tone: "bg-amber-50 border-amber-200 text-amber-700",
               text: `ต่ำกว่าโควตา ฿${fmtThb(-diff)} — ยังสั่งได้อีก ฿${fmtThb(-diff)} (สั่ง ฿${fmtThb(ordered)} / โควตา ฿${fmtThb(quota)})` }

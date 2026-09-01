@@ -494,7 +494,7 @@ function DateGroup({
                 && b.status !== "cancelled"
                 && b.status !== "completed" && (
                 <div className="mt-1 text-[11px] px-2 py-0.5 rounded bg-rose-100 text-rose-700 font-bold inline-block">
-                  ⚠ {t("admin.bookings.tableMissing")}
+                  {t("admin.bookings.tableMissing")}
                 </div>
               )}
               <div className="mt-1 text-slate-600">

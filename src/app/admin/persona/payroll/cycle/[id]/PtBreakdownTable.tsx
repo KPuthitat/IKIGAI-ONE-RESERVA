@@ -290,7 +290,7 @@ function DayTable({ days, baseTotal, otTotal, multiBranch }: { days: BreakDay[];
               // stale and would underpay. This one is worth an alert.
               <tr className="border-t border-amber-200 bg-amber-50/60">
                 <td colSpan={8} className="py-1.5 px-3 text-[11px] text-amber-800 leading-relaxed">
-                  ⚠︎ รวมรายวันคำนวณสดได้ ฿{fmtMoney(daySum)} มากกว่ายอดที่บันทึก ฿{fmtMoney(lineTotal)} อยู่ ฿{fmtMoney(-diff)} — ยอดที่บันทึกอาจล้าสมัย ควรกดคำนวณรอบนี้ใหม่ก่อนจ่าย
+                  รวมรายวันคำนวณสดได้ ฿{fmtMoney(daySum)} มากกว่ายอดที่บันทึก ฿{fmtMoney(lineTotal)} อยู่ ฿{fmtMoney(-diff)} — ยอดที่บันทึกอาจล้าสมัย ควรกดคำนวณรอบนี้ใหม่ก่อนจ่าย
                 </td>
               </tr>
             )
