@@ -44,7 +44,7 @@ export default function AdminEmployeesPage({
   const employees = db.prepare(`
     SELECT u.id, u.username, u.display_name, u.role, u.status,
            u.title_prefix, u.nickname_th,
-           u.gender, u.employment_type, u.hire_date, u.weekly_off_days,
+           u.gender, u.dob, u.employment_type, u.hire_date, u.weekly_off_days,
            u.employee_code, u.national_id, u.bank_name, u.bank_account,
            u.tax_id, u.sso_id, u.hourly_rate, u.monthly_salary, u.pay_cycle,
            u.salary_tax_mode, u.group_insurance_start_month, u.ft_started_at, u.pt_started_at, u.df_started_at, u.line_user_id, u.shift_start_time,

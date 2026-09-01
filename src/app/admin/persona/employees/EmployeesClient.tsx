@@ -24,6 +24,7 @@ export type EmployeeRow = {
   title_prefix: string | null;
   nickname_th: string | null;
   gender: "male" | "female" | null;
+  dob?: string | null;          // วันเกิด YYYY-MM-DD → shown as อายุ
   employment_type: "pt" | "ft" | null;
   hire_date: string | null;
   weekly_off_days: string | null;     // CSV of digits, e.g. "1,2"
@@ -91,6 +92,29 @@ function apiErrText(j: unknown, fallback: string): string {
   }
   return o.error ?? fallback;
 }
+
+// อายุพนักงาน (ปี) จากวันเกิด · null = ไม่มีวันเกิด/ไม่สมเหตุสมผล.
+function ageYears(dob?: string | null): number | null {
+  if (!dob || !/^\d{4}-\d{2}-\d{2}/.test(dob)) return null;
+  const b = new Date(`${dob.slice(0, 10)}T00:00:00+07:00`);
+  const now = new Date();
+  let age = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+  return age >= 0 && age < 130 ? age : null;
+}
+// อายุงาน "X ปี Y เดือน" จากวันเริ่มงาน · null = ไม่มีวันเริ่ม/อนาคต.
+function tenureLabel(hire?: string | null): string | null {
+  if (!hire || !/^\d{4}-\d{2}-\d{2}/.test(hire)) return null;
+  const s = new Date(`${hire.slice(0, 10)}T00:00:00+07:00`);
+  const now = new Date();
+  let months = (now.getFullYear() - s.getFullYear()) * 12 + (now.getMonth() - s.getMonth());
+  if (now.getDate() < s.getDate()) months--;
+  if (months < 0) return null;
+  const y = Math.floor(months / 12), mo = months % 12;
+  return y > 0 ? `${y} ปี ${mo} เดือน` : `${mo} เดือน`;
+}
+
 export type RoleLite = { id: number; name: string; permissions: string[] };
 
 export default function EmployeesClient({
@@ -351,11 +375,12 @@ export default function EmployeesClient({
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs text-slate-500 border-b">
+            <tr className="text-left text-xs text-slate-500 border-b whitespace-nowrap">
               <th className="py-2 pr-3 w-24">{t("admin.persona.employees.col.code")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.user")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.role")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.gender")}</th>
+              <th className="py-2 pr-3">{t("admin.persona.employees.col.age")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.employment")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.hireDate")}</th>
               <th className="py-2 pr-3">{t("admin.persona.employees.col.payRate")}</th>
@@ -367,7 +392,7 @@ export default function EmployeesClient({
           <tbody>
             {visibleEmployees.length === 0 && (
               <tr>
-                <td colSpan={10} className="py-8 text-center text-sm text-slate-400">
+                <td colSpan={11} className="py-8 text-center text-sm text-slate-400">
                   {t("admin.persona.employees.noMatch")}
                 </td>
               </tr>
@@ -400,9 +425,15 @@ export default function EmployeesClient({
                     </span>
                   </td>
                   <td className="py-2 pr-3 text-slate-700">{formatGender(u.gender)}</td>
+                  <td className="py-2 pr-3 text-slate-700 whitespace-nowrap">
+                    {ageYears(u.dob) != null ? `${ageYears(u.dob)} ปี` : <span className="text-slate-300">—</span>}
+                  </td>
                   <td className="py-2 pr-3 text-slate-700">{formatEmployment(u.employment_type)}</td>
-                  <td className="py-2 pr-3 text-slate-700">
+                  <td className="py-2 pr-3 text-slate-700 whitespace-nowrap">
                     {u.hire_date ? formatDate(u.hire_date) : "—"}
+                    {tenureLabel(u.hire_date) && (
+                      <div className="text-[11px] text-slate-400">({tenureLabel(u.hire_date)})</div>
+                    )}
                   </td>
                   <td className="py-2 pr-3 text-slate-700">{formatPayRate(u)}</td>
                   <td className="py-2 pr-3">
@@ -702,6 +733,7 @@ function EditModal({
   const [dfEffectiveDate, setDfEffectiveDate] = useState<string>(employee.df_started_at ?? "");
   const [becomeDfReveal, setBecomeDfReveal] = useState<boolean>(false);
   const [hireDate, setHireDate] = useState<string>(employee.hire_date ?? "");
+  const [dob, setDob] = useState<string>(employee.dob ?? "");
   // Phase 1D — Payroll fields
   const [employeeCode, setEmployeeCode] = useState<string>(employee.employee_code ?? "");
   const [nationalId, setNationalId] = useState<string>(employee.national_id ?? "");
@@ -899,6 +931,7 @@ function EditModal({
         gender: gender || null,
         employment_type: employmentType || null,
         hire_date: hireDate || null,
+        dob: dob || null,
         employee_code: employeeCode.trim() || null,
         national_id: nationalId.trim() || null,
         tax_id: taxId.trim() || null,
@@ -1161,6 +1194,19 @@ function EditModal({
               <option value="pt">{t("admin.persona.employees.employment.pt")}</option>
             </select>
           </div>
+        </div>
+
+        <div>
+          <label className="label">{t("admin.persona.employees.field.dob")}</label>
+          <input
+            type="date" className="input"
+            value={dob}
+            style={{ textTransform: "uppercase" }}
+            onChange={(e) => setDob(e.target.value)}
+          />
+          {ageYears(dob) != null && (
+            <p className="text-xs text-slate-500 mt-1">อายุ {ageYears(dob)} ปี</p>
+          )}
         </div>
 
         <div>
