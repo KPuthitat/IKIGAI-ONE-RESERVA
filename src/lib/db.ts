@@ -3361,6 +3361,13 @@ function runMigrations(db: Database.Database): void {
   // month, and as FT (salary) before it — period-relative, so backfilled months
   // still compute correctly. NULL = not converting. hourly_rate holds the PT rate.
   if (!unames3.has("pt_started_at")) db.exec("ALTER TABLE users ADD COLUMN pt_started_at TEXT");
+  // Doctor Fee switch (owner 2026-08): the date a doctor stops earning ค่าเวร
+  // (shift/daily/hourly) and instead earns a Doctor Fee — a % of the clinic's
+  // HSC service revenue on rostered days (see lib/df-db.ts), posted into payroll
+  // as a labeled addition. From this date's period onward the pay engine gives
+  // the doctor ZERO base/OT/SVC (the DF is their pay); before it, unchanged.
+  // NULL = not on DF. Period-relative, like pt_started_at.
+  if (!unames3.has("df_started_at")) db.exec("ALTER TABLE users ADD COLUMN df_started_at TEXT");
   // Month-aware flip (replaces the old blanket flip above): move FT-weekly →
   // monthly once their transition month has passed. FT converted THIS month stay
   // weekly; legacy FT-weekly with no ft_started_at flip immediately (old rule).

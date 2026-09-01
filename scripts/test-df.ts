@@ -122,6 +122,45 @@ process.env.DATABASE_PATH = TMP;
   ok("mixed rates: IM rule fee = 200", near(res3.rules.find((r) => r.name === "ฉีดยา (IM)")?.fee ?? -1, 200));
   ok("mixed rates: d1 gets all 500", near(res3.doctors.find((x) => x.user_id === d1)?.totalFee ?? 0, 500));
 
+  // ── 7) ORCHESTRATOR: computePayrollPeriod auto-folds DF into the line ──
+  // A DF doctor (df_started_at set, FT with no salary) rostered at the clinic
+  // for a monthly period must get a payroll line with base=0 and the DF sitting
+  // in other_additions (= gross = net, no withholding).
+  const payroll = await import("../src/lib/payroll-compute");
+  // Make d1 a DF doctor from Aug: FT, no salary, df_started_at, clinical doctor.
+  db.prepare("UPDATE users SET employment_type='ft', monthly_salary=0, df_started_at='2026-08-01', clinical_role='doctor' WHERE id=?").run(d1);
+  db.prepare("INSERT OR IGNORE INTO user_branches (user_id, branch_id) VALUES (?, ?)").run(d1, bid);
+  // Clean, known invoice: HSC 1000 net on Aug 5 → 30% = 300.
+  db.prepare("DELETE FROM df_invoice_lines WHERE branch_id=?").run(bid);
+  db.prepare("DELETE FROM df_fee_rules WHERE branch_id=?").run(bid);
+  db.prepare(`INSERT INTO df_fee_rules (branch_id,name,item_tags,rate,active,sort_order) VALUES (?,'HSC','["HSC"]',0.30,1,0)`).run(bid);
+  df.importInvoiceLines(bid, [
+    { invoiceNo: "P1", lineDate: "2026-08-05", itemCode: "GEN001", tag: "HSC", description: "[HSC]", qty: 1, gross: 1000, discount: 0, net: 1000 }
+  ], "p.xlsx");
+  // Roster d1 on Aug 5 at the clinic.
+  db.prepare("DELETE FROM roster_assignments WHERE branch_id=?").run(bid);
+  db.prepare("INSERT INTO roster_assignments (branch_id,assignment_date,position_id,user_id,shift_code_id) VALUES (?,?,?,?,?)").run(bid, "2026-08-05", p1, d1, sc);
+  // A draft monthly payroll period for the clinic covering August.
+  const pid = Number(db.prepare(
+    "INSERT INTO payroll_periods (cycle,period_start,period_end,pay_date,status,branch_id,target,data_source) VALUES ('monthly','2026-08-01','2026-08-31','2026-09-05','draft',?,'ft','auto')"
+  ).run(bid).lastInsertRowid);
+  payroll.computePayrollPeriod(db, pid);
+  const dLine = db.prepare("SELECT base_pay, ot_pay, other_additions, gross_pay, sso_amount, tax_amount, net_pay FROM payroll_lines WHERE period_id=? AND user_id=?").get(pid, d1) as
+    { base_pay: number; ot_pay: number; other_additions: number; gross_pay: number; sso_amount: number; tax_amount: number; net_pay: number } | undefined;
+  ok("orchestrator: DF doctor got a payroll line", !!dLine);
+  if (dLine) {
+    ok("orchestrator: base_pay = 0 (no ค่าเวร)", near(dLine.base_pay, 0));
+    ok("orchestrator: other_additions = DF 300", near(dLine.other_additions, 300));
+    ok("orchestrator: gross = 300", near(dLine.gross_pay, 300));
+    ok("orchestrator: no WHT / no SSO", near(dLine.tax_amount, 0) && near(dLine.sso_amount, 0));
+    ok("orchestrator: net = 300 (จ่ายเต็ม)", near(dLine.net_pay, 300));
+  }
+  // recomputeLine (single user) keeps DF too.
+  payroll.recomputeLine(db, pid, d1);
+  const dLine2 = db.prepare("SELECT base_pay, other_additions, net_pay FROM payroll_lines WHERE period_id=? AND user_id=?").get(pid, d1) as
+    { base_pay: number; other_additions: number; net_pay: number };
+  ok("recomputeLine keeps DF (base 0, add 300, net 300)", near(dLine2.base_pay, 0) && near(dLine2.other_additions, 300) && near(dLine2.net_pay, 300));
+
   console.log(`\ndf test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);

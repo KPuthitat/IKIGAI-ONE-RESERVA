@@ -816,5 +816,59 @@ console.log("\nเปลี่ยนประจำ→พาร์ทไทม�
   eq("PT ปกติ (ลงเวลา) ไม่มีบัตร → 0", noHours.base_pay, 0);
 }
 
+// ── Doctor Fee (DF) — owner 2026-08 ──────────────────────────────
+// From df_started_at's month a doctor earns a Doctor Fee (passed in as
+// dfAmount) instead of ค่าเวร: zero base/OT, gross = net = DF, no WHT/SSO.
+{
+  const doc = (): EmployeePayrollSnapshot => ({ ...ptHourly(50), df_started_at: "2026-09-01" });
+  // Roster on Sep 3 (would normally earn hourly pay), but DF is active → 0 ค่าเวร.
+  const sched: ScheduledShift = { startTs: "2026-09-03T09:00:00+07:00", endTs: "2026-09-03T14:00:00+07:00" };
+  const roster = new Map<string, ScheduledShift[]>([["2026-09-03", [sched]]]);
+
+  // SEPTEMBER (DF active) with a fee of 14,160.
+  const sep = computeLineForEmployee({
+    employee: { ...doc(), track_attendance: 0 }, shifts: [], unpaired: 0, leaveDays: 0,
+    cycle: "monthly", periodStart: "2026-09-01", periodEnd: "2026-09-30",
+    settings: SETTINGS, holidaySet: new Set<string>(), scheduledByDate: roster, dfAmount: 14160, dfBranchPeriod: true
+  });
+  eq("DF: ค่าเวร (base) = 0", sep.base_pay, 0);
+  eq("DF: OT = 0", sep.ot_pay, 0);
+  eq("DF: other_additions = ค่าตอบแทน 14160", sep.other_additions, 14160);
+  eq("DF: gross = 14160", sep.gross_pay, 14160);
+  eq("DF: ไม่หัก ณ ที่จ่าย", sep.tax_amount, 0);
+  eq("DF: ไม่มีประกันสังคม", sep.sso_amount, 0);
+  eq("DF: net = 14160 (จ่ายเต็ม)", sep.net_pay, 14160);
+
+  // AUGUST (before df_started_at's month) → DF inactive, normal PT (roster hourly).
+  const augRoster = new Map<string, ScheduledShift[]>([
+    ["2026-08-05", [{ startTs: "2026-08-05T09:00:00+07:00", endTs: "2026-08-05T14:00:00+07:00" }]]
+  ]);
+  const aug = computeLineForEmployee({
+    employee: { ...doc(), track_attendance: 0 }, shifts: [], unpaired: 0, leaveDays: 0,
+    cycle: "monthly", periodStart: "2026-08-01", periodEnd: "2026-08-31",
+    settings: SETTINGS, holidaySet: new Set<string>(), scheduledByDate: augRoster, dfAmount: 14160, dfBranchPeriod: true
+  });
+  eq("DF: ก่อนเดือนเริ่ม ไม่คิด DF (ค่าเวรตามเดิม 5ชม×50=250)", aug.base_pay, 250);
+  eq("DF: ก่อนเดือนเริ่ม other_additions = 0", aug.other_additions, 0);
+
+  // A non-DF employee with a stray dfAmount passed → ignored entirely.
+  const nonDf = computeLineForEmployee({
+    employee: ptHourly(50), shifts: [], unpaired: 0, leaveDays: 0,
+    cycle: "monthly", periodStart: "2026-09-01", periodEnd: "2026-09-30",
+    settings: SETTINGS, holidaySet: new Set<string>(), scheduledByDate: roster, dfAmount: 9999, dfBranchPeriod: true
+  });
+  eq("DF: พนักงานไม่ใช่ DF → dfAmount ถูกเมิน (additions 0)", nonDf.other_additions, 0);
+
+  // At a NON-DF branch (dfBranchPeriod false), a DF doctor's shift still pays
+  // ค่าเวร normally — DF replaces CLINIC pay only, never other branches' shifts.
+  const otherBranch = computeLineForEmployee({
+    employee: { ...doc(), track_attendance: 0 }, shifts: [], unpaired: 0, leaveDays: 0,
+    cycle: "monthly", periodStart: "2026-09-01", periodEnd: "2026-09-30",
+    settings: SETTINGS, holidaySet: new Set<string>(), scheduledByDate: roster, dfAmount: 0, dfBranchPeriod: false
+  });
+  eq("DF: สาขาที่ไม่ใช่คลินิก → จ่ายค่าเวรตามปกติ (5ชม×50=250)", otherBranch.base_pay, 250);
+  eq("DF: สาขาที่ไม่ใช่คลินิก → ไม่มี DF (additions 0)", otherBranch.other_additions, 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
