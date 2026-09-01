@@ -59,15 +59,21 @@ function weeklyPayDatesInMonth(yearMonth: string): Array<{ start: string; end: s
   return periods;
 }
 
+// Group FT by the month the salary is PAID (owner 2026-09-01), so the FT round
+// and the PT rounds paid the same month sit on one page. FT pays on the 5th of
+// the month AFTER the work month, so the round PAID in `yearMonth` is the
+// PREVIOUS month's work (work = yearMonth − 1, pay = the 5th of yearMonth).
 function monthlyPeriodFor(yearMonth: string): { start: string; end: string; pay: string } {
   const [y, m] = yearMonth.split("-").map(Number);
-  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const end = `${yearMonth}-${String(lastDay).padStart(2, "0")}`;
-  // Pay date = 5th of the following month (per company policy)
-  const nextY = m === 12 ? y + 1 : y;
-  const nextM = m === 12 ? 1 : m + 1;
-  const pay = `${nextY}-${String(nextM).padStart(2, "0")}-05`;
-  return { start: `${yearMonth}-01`, end, pay };
+  const workY = m === 1 ? y - 1 : y;
+  const workM = m === 1 ? 12 : m - 1;
+  const workYm = `${workY}-${String(workM).padStart(2, "0")}`;
+  const lastDay = new Date(Date.UTC(workY, workM, 0)).getUTCDate();
+  return {
+    start: `${workYm}-01`,
+    end: `${workYm}-${String(lastDay).padStart(2, "0")}`,
+    pay: `${yearMonth}-05`
+  };
 }
 
 function todayMonth(): string {
