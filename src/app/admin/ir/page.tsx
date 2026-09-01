@@ -139,7 +139,7 @@ export default function IrDashboard() {
         <div className="card">
           <h2 className="font-semibold text-slate-700 mb-3">รุนแรงและยังไม่ปิด</h2>
           {tr.recentHigh.length === 0
-            ? <p className="text-sm text-slate-400">ไม่มีเคสรุนแรงค้างอยู่ 👍</p>
+            ? <p className="text-sm text-slate-400">ไม่มีเคสรุนแรงค้างอยู่</p>
             : (
               <ul className="space-y-2">
                 {tr.recentHigh.map((r) => {
