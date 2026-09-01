@@ -49,6 +49,11 @@ const Body = z.object({
   pt_effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   // ยกเลิกการเปลี่ยนเป็นพาร์ทไทม์ที่ตั้งไว้ → ล้าง pt_started_at (กลับเป็นประจำเต็มตัว).
   clear_pt_switch: z.boolean().optional(),
+  // วันที่เริ่มรับค่าตอบแทนแพทย์ (DF, owner 2026-08) — ใช้เป็น df_started_at. จากเดือน
+  // ของวันที่นี้ หมอไม่รับค่าเวร แต่รับ Doctor Fee ที่ลงเข้ารอบ payroll แทน.
+  df_effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // ยกเลิกการเปลี่ยนเป็น DF ที่ตั้งไว้ → ล้าง df_started_at (กลับไปคิดค่าเวรตามเดิม).
+  clear_df_switch: z.boolean().optional(),
   // LINE userId (33-char string starting with 'U'). Empty / null = unbind.
   line_user_id: z.string().max(64).nullable().optional(),
   // Expected shift start "HH:MM" — used by late-detection. Empty / null = unset
@@ -329,6 +334,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     } else if (parsed.data.pt_effective_date) {
       fields.push("pt_started_at = ?");
       vals.push(parsed.data.pt_effective_date);
+    }
+    // Doctor Fee (DF) switch date (owner 2026-08) — payroll-gated (money). From
+    // this date's month the pay engine gives zero ค่าเวร; the DF is posted into
+    // payroll from the Doctor Fee page. clear_df_switch cancels a pending switch.
+    if (parsed.data.clear_df_switch) {
+      fields.push("df_started_at = ?");
+      vals.push(null);
+    } else if (parsed.data.df_effective_date) {
+      fields.push("df_started_at = ?");
+      vals.push(parsed.data.df_effective_date);
     }
   }
   addField("line_user_id");

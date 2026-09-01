@@ -10,6 +10,7 @@ import {
 } from "@/lib/payroll-compute";
 import { sumRedeemedDrinksForUser } from "@/lib/partner-drink-orders";
 import { sumCrossCompanyChargesForUser } from "@/lib/mealpass-payroll";
+import { isDfBranch } from "@/lib/df-db";
 
 // PATCH /api/admin/persona/payroll/periods/[id]/lines/[userId]
 // Manual override for one employee in one period. Two modes:
@@ -157,7 +158,7 @@ export async function PATCH(
 
     const fresh = db.prepare(`
       SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-             hire_date, ft_started_at, ft_salary_paid_through, pt_started_at,
+             hire_date, ft_started_at, ft_salary_paid_through, pt_started_at, df_started_at,
              ${branchDailyRateSelect(period.branch_id)},
              ${branchOnlyHourlyRateSelect(period.branch_id)},
              (SELECT MAX(proposed_last_day) FROM resignation_requests
@@ -176,6 +177,7 @@ export async function PATCH(
       ft_started_at: string | null;
       ft_salary_paid_through: string | null;
       pt_started_at: string | null;
+      df_started_at: string | null;
       daily_rate: number | null;
       branch_hourly_rate: number | null;
       resign_last_day: string | null;
@@ -209,6 +211,7 @@ export async function PATCH(
       last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null,
       ft_started_at: fresh?.ft_started_at ?? null,
       pt_started_at: fresh?.pt_started_at ?? null,
+      df_started_at: fresh?.df_started_at ?? null,
       daily_rate: fresh?.daily_rate ?? null,
       branch_hourly_rate: fresh?.branch_hourly_rate ?? null,
       ft_salary_paid_through: fresh?.ft_salary_paid_through ?? null
@@ -230,7 +233,8 @@ export async function PATCH(
       settings,
       serviceCharge: d.service_charge ?? line.service_charge,
       otherAdditions: d.other_additions ?? line.other_additions,
-      otherDeductions: d.other_deductions ?? line.other_deductions
+      otherDeductions: d.other_deductions ?? line.other_deductions,
+      dfBranchPeriod: period.branch_id != null && isDfBranch(period.branch_id)
     });
 
     db.prepare(`

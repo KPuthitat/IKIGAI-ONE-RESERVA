@@ -42,6 +42,9 @@ export type EmployeeRow = {
   ft_started_at: string | null;
   // วันเริ่มเป็นพาร์ทไทม์ (FT→PT switch, owner 2026-08-31). NULL = ไม่เปลี่ยน.
   pt_started_at?: string | null;
+  // วันเริ่มรับค่าตอบแทนแพทย์ (DF, owner 2026-08). ตั้งแต่เดือนของวันนี้ หมอไม่รับ
+  // ค่าเวร แต่รับ Doctor Fee ที่ลงเข้ารอบ payroll แทน. NULL = ไม่ได้เป็น DF.
+  df_started_at?: string | null;
   // จ่ายเงินเดือนช่วงเปลี่ยนผ่านครบถึงวันที่ (owner 2026-08-18). NULL = คิดปกติ.
   ft_salary_paid_through?: string | null;
   // 0 = ผู้บริหาร/ไม่ลงเวลา → เงินเดือน fix ไม่มี OT (owner 2026-07-12).
@@ -694,6 +697,10 @@ function EditModal({
   // shows the control for an FT not yet scheduled to convert.
   const [ptEffectiveDate, setPtEffectiveDate] = useState<string>(employee.pt_started_at ?? "");
   const [becomePtReveal, setBecomePtReveal] = useState<boolean>(false);
+  // Doctor Fee (DF) switch — the date a doctor stops earning ค่าเวร and starts
+  // earning a Doctor Fee (posted into payroll). Mirrors the FT→PT control.
+  const [dfEffectiveDate, setDfEffectiveDate] = useState<string>(employee.df_started_at ?? "");
+  const [becomeDfReveal, setBecomeDfReveal] = useState<boolean>(false);
   const [hireDate, setHireDate] = useState<string>(employee.hire_date ?? "");
   // Phase 1D — Payroll fields
   const [employeeCode, setEmployeeCode] = useState<string>(employee.employee_code ?? "");
@@ -952,6 +959,16 @@ function EditModal({
           if (employee.pt_started_at) body.clear_pt_switch = true;
         } else if (/^\d{4}-\d{2}-\d{2}$/.test(ptEffectiveDate)) {
           body.pt_effective_date = ptEffectiveDate;
+        }
+      }
+      // Doctor Fee (DF) switch (owner 2026-08) — only when the DF control is
+      // shown (already on DF, or the reveal toggle). Clearing cancels a pending
+      // switch. Payroll-gated server-side.
+      if (employee.df_started_at || becomeDfReveal) {
+        if (dfEffectiveDate.trim() === "") {
+          if (employee.df_started_at) body.clear_df_switch = true;
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(dfEffectiveDate)) {
+          body.df_effective_date = dfEffectiveDate;
         }
       }
       // Account role (staff↔admin) — super_admin only, and never for a
@@ -1708,6 +1725,33 @@ function EditModal({
             <p className="text-[11px] text-slate-400">
               แพทย์ที่ปรึกษาเห็นเฉพาะผู้ป่วยที่ตนดูแล · ปลดล็อกด้วยเลขใบประกอบทุกครั้ง · ทุกการเข้าถึงถูกบันทึก log
             </p>
+          </div>
+        )}
+
+        {/* ค่าตอบแทนแพทย์ (DF) — owner 2026-08. For a doctor: switch from ค่าเวร
+            to Doctor Fee on a date. From that month the pay engine gives zero
+            ค่าเวร; the DF itself is posted into payroll from the Doctor Fee page. */}
+        {canViewPayroll && (clinicalRole === "doctor" || employee.clinical_role === "doctor") && (
+          <div className="border-t border-slate-200 pt-4">
+            <h4 className="text-sm font-semibold text-slate-700 mb-2">ค่าตอบแทนแพทย์ (Doctor Fee / DF)</h4>
+            {employee.df_started_at || becomeDfReveal ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                <label className="label !text-emerald-800">เปลี่ยนเป็น Doctor Fee — วันที่เริ่ม</label>
+                <input type="date" className="input" value={dfEffectiveDate}
+                  onChange={(e) => setDfEffectiveDate(e.target.value)} />
+                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                  ตั้งแต่<b>เดือน</b>ของวันที่นี้ หมอ<b>ไม่รับค่าเวร/รายวัน/รายชั่วโมง</b> แต่รับ <b>Doctor Fee</b> ที่คำนวณจาก
+                  ยอด HSC ตามวันเข้าเวร (ลงเข้ารอบ payroll จากหน้า “ค่าตอบแทนแพทย์”) · ก่อนหน้านั้นคิดตามเดิม
+                </p>
+                <button type="button" onClick={() => { setDfEffectiveDate(""); setBecomeDfReveal(false); }}
+                  className="mt-2 text-xs text-rose-600 hover:underline">↺ ยกเลิกการเปลี่ยนเป็น Doctor Fee</button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-end">
+                <button type="button" onClick={() => setBecomeDfReveal(true)}
+                  className="text-xs text-emerald-700 hover:underline">+ เปลี่ยนเป็น Doctor Fee (ระบุวันที่เริ่ม)</button>
+              </div>
+            )}
           </div>
         )}
 

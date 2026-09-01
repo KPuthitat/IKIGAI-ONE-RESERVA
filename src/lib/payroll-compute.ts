@@ -26,6 +26,7 @@
 import type Database from "better-sqlite3";
 import { sumRedeemedDrinksForUser } from "./partner-drink-orders";
 import { sumCrossCompanyChargesForUser } from "./mealpass-payroll";
+import { isDfBranch, computeDoctorFees } from "./df-db";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -106,6 +107,12 @@ export type EmployeePayrollSnapshot = {
    *  base for transition-month days on/before this date (OT + double-pay premium
    *  still pay). null = no already-paid days → normal salary/30 × days. */
   ft_salary_paid_through?: string | null;
+  /** วันเริ่มรับค่าตอบแทนแพทย์ (YYYY-MM-DD) — the Doctor Fee switch (owner 2026-08).
+   *  From this date's calendar month a doctor no longer earns ค่าเวร (base/OT/SVC
+   *  all zero); instead they earn a Doctor Fee — a % of the clinic's HSC revenue
+   *  on their rostered days, computed for THIS period's range and added as a
+   *  post-tax addition (no withholding for now). null = not on DF. */
+  df_started_at?: string | null;
 };
 
 /** Which cycle an FT employee is paid on FOR A GIVEN PERIOD (owner 2026-07-16).
@@ -995,8 +1002,17 @@ export function computeLineForEmployee(args: {
   // Phase B). Used to spot no-shows: a scheduled WORK day with no clock-in AND
   // not on this set = ขาดงานไม่ลา → หักเป็นลาไม่รับค่าจ้าง (daily FT groups only).
   leaveDates?: Set<string>;
+  // Doctor Fee for THIS period (บาท), pre-computed by the orchestrator from the
+  // clinic's HSC revenue × roster for this period's range. 0/undefined = none.
+  // Only applied when the employee is on DF (df_started_at active this period)
+  // AND this period's branch is the DF (clinic) branch — see dfBranchPeriod.
+  dfAmount?: number;
+  // True only when THIS period's branch runs Doctor Fee (df_enabled). Gates the
+  // ค่าเวร-zeroing so a DF doctor who picks up a shift at another (non-DF) branch
+  // is still paid normally there (owner: DF replaces CLINIC pay).
+  dfBranchPeriod?: boolean;
 }): ComputedLine {
-  const { employee: eIn, shifts: shiftsIn, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates } = args;
+  const { employee: eIn, shifts: shiftsIn, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates, dfAmount = 0, dfBranchPeriod = false } = args;
   // FT→PT switch (owner 2026-08-31): from pt_started_at's calendar month the
   // employee is treated as PART-TIME (hourly), before it as FULL-TIME (salary) —
   // period-relative so backfilled months still compute correctly. The stored
@@ -1239,13 +1255,23 @@ export function computeLineForEmployee(args: {
   basePay = round2(basePay - ulDeduction + ftDoubleBonus);
 
   // Total OT pay
-  const otPay = e.employment_type === "pt" ? ptOtPay : ftOtPay;
+  let otPay = e.employment_type === "pt" ? ptOtPay : ftOtPay;
 
   // Service charge — Phase C4 (filled later)
-  const serviceCharge = 0;
-  const otherAdditions = 0;
+  let serviceCharge = 0;
 
-  const grossPay = basePay + otPay + serviceCharge + otherAdditions;
+  // Doctor Fee (DF) — owner 2026-08. From df_started_at's calendar month the
+  // doctor stops earning ค่าเวร: zero base/OT/SVC and pay the Doctor Fee instead,
+  // carried in other_additions. dfAmount is this period's fee (computed by the
+  // orchestrator from the clinic HSC revenue × roster for the period range), so
+  // it works for a weekly OR a monthly period. Post-tax — no withholding for now.
+  const dfActive = dfBranchPeriod && eIn.df_started_at != null && periodStart.slice(0, 7) >= eIn.df_started_at.slice(0, 7);
+  if (dfActive) { basePay = 0; otPay = 0; serviceCharge = 0; }
+  const otherAdditions = dfActive ? round2(Math.max(0, dfAmount)) : 0;
+
+  // Tax base EXCLUDES the doctor fee (owner: no withholding on DF for now).
+  const taxableGross = basePay + otPay + serviceCharge;
+  const grossPay = taxableGross + otherAdditions;
 
   // Tax & SSO based on employee's salary_tax_mode
   // 'sso' = ในระบบ → SSO 5% (cap) only — PIT is not withheld monthly
@@ -1263,9 +1289,9 @@ export function computeLineForEmployee(args: {
       : (e.salary_tax_mode ?? "sso");
   let ssoAmount = 0;
   let taxAmount = 0;
-  if (grossPay > 0) {
+  if (taxableGross > 0) {
     if (taxMode === "wht") {
-      taxAmount = computeWht(grossPay, settings);
+      taxAmount = computeWht(taxableGross, settings);
     } else if (e.is_home_company !== 0) {
       ssoAmount = computeSso(basePay, cycle, settings); // SSO on base salary only
     }
@@ -1346,11 +1372,14 @@ export function computeLineFromMinutes(args: {
   serviceCharge?: number;
   otherAdditions?: number;
   otherDeductions?: number;
+  // True only when this period's branch runs Doctor Fee — gates the ค่าเวร-zeroing
+  // (mirrors computeLineForEmployee.dfBranchPeriod).
+  dfBranchPeriod?: boolean;
 }): ComputedLine {
   const {
     employee: eIn, regularMinutes, otMinutes, holidayMinutes, leaveDays,
     unpaidLeaveDays = 0, daysWorked, unpaired, cycle, periodStart, periodEnd, settings,
-    serviceCharge = 0, otherAdditions = 0, otherDeductions = 0
+    serviceCharge: serviceChargeIn = 0, otherAdditions = 0, otherDeductions = 0, dfBranchPeriod = false
   } = args;
   // FT→PT switch (owner 2026-08-31) — mirror computeLineForEmployee so a manually
   // entered/edited line for a post-switch period computes as PART-TIME too.
@@ -1358,6 +1387,11 @@ export function computeLineFromMinutes(args: {
     eIn.pt_started_at != null && periodStart.slice(0, 7) >= eIn.pt_started_at.slice(0, 7)
       ? "pt" : eIn.employment_type;
   const e: EmployeePayrollSnapshot = effTypeM === eIn.employment_type ? eIn : { ...eIn, employment_type: effTypeM };
+
+  // Doctor Fee (DF) — zero ค่าเวร (base/OT/SVC) once on DF at the DF branch; the
+  // fee rides in other_additions, post-tax (mirrors computeLineForEmployee).
+  const dfActiveM = dfBranchPeriod && eIn.df_started_at != null && periodStart.slice(0, 7) >= eIn.df_started_at.slice(0, 7);
+  const serviceCharge = dfActiveM ? 0 : serviceChargeIn;
 
   const hMode = helperMode(e);
   // Hourly helper (owner 2026-08-18): pay by the hour like a PT (OT + วันพิเศษ×1.5,
@@ -1446,6 +1480,12 @@ export function computeLineFromMinutes(args: {
     otPay = computeOtPay(otMinutes, ftHourlyEquivalent, settings, 1);
   }
 
+  // DF: zero the shift pay so a manual edit never re-pays ค่าเวร to a DF doctor
+  // (serviceCharge was already zeroed above; the fee rides in other_additions).
+  if (dfActiveM) { basePay = 0; otPay = 0; }
+  // DF is post-tax (no withholding for now) — exclude other_additions from the
+  // tax base for a DF doctor; for everyone else it stays in gross as before.
+  const taxableGross = dfActiveM ? (basePay + otPay + serviceCharge) : (basePay + otPay + serviceCharge + otherAdditions);
   const grossPay = basePay + otPay + serviceCharge + otherAdditions;
 
   // Tax mode BY GROUP (owner 2026-08-03): พาร์ทไทม์ + ประจำเดือนเปลี่ยนผ่าน + ประจำ
@@ -1460,9 +1500,9 @@ export function computeLineFromMinutes(args: {
       : (e.salary_tax_mode ?? "sso");
   let ssoAmount = 0;
   let taxAmount = 0;
-  if (grossPay > 0) {
+  if (taxableGross > 0) {
     if (taxMode === "wht") {
-      taxAmount = computeWht(grossPay, settings);
+      taxAmount = computeWht(taxableGross, settings);
     } else if (e.is_home_company !== 0) {
       ssoAmount = computeSso(basePay, cycle, settings); // SSO on base salary only
     }
@@ -1723,7 +1763,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   const staffSql = `
     SELECT id AS user_id, display_name, employment_type, employee_code,
            ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-           hire_date, ft_started_at, ft_salary_paid_through, pt_started_at,
+           hire_date, ft_started_at, ft_salary_paid_through, pt_started_at, df_started_at,
            ${branchDailyRateSelect(period.branch_id)},
            ${branchOnlyHourlyRateSelect(period.branch_id)},
            ${LAST_WORKING_DAY_SELECT},
@@ -1739,9 +1779,12 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
       -- past round (owner 2026-07-18: เข้างาน 1 ก.ค. หลุดเข้ารอบ มิ.ย.).
       AND (hire_date IS NULL OR hire_date <= @pend)
       AND ${staffWhere}
-      -- Hide a salary-less FT (unconfigured account) — but NEVER a day-rate helper,
-      -- whose pay comes from daily_rate, not monthly_salary (owner 2026-08-17).
-      AND NOT (employment_type = 'ft' AND COALESCE(monthly_salary, 0) = 0 AND NOT (${helperExists}))
+      -- Hide a salary-less FT (unconfigured account) — but NEVER a day-rate helper
+      -- (paid from daily_rate) NOR a Doctor-Fee doctor once their DF has started
+      -- (paid from DF, not salary; owner 2026-08). A DF doctor is still hidden in
+      -- periods BEFORE their df_started_at month (no phantom 0-baht historical line).
+      AND NOT (employment_type = 'ft' AND COALESCE(monthly_salary, 0) = 0 AND NOT (${helperExists})
+               AND (df_started_at IS NULL OR substr(df_started_at, 1, 7) > @pmonth))
       ${ftTransitionExclude}
       ${branchClause}
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
@@ -1906,6 +1949,19 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
       ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?)
     `);
 
+    // Doctor Fee (DF) — owner 2026-08. For a clinic period, pre-compute each
+    // doctor's fee for THIS period's date range (HSC revenue × roster share),
+    // so a doctor on DF is paid it instead of ค่าเวร. Empty for non-clinic
+    // branches. Keyed user_id → fee (บาท).
+    const dfByUser = new Map<number, number>();
+    const dfBranchPeriod = period.branch_id != null && isDfBranch(period.branch_id);
+    if (dfBranchPeriod) {
+      try {
+        const dfRes = computeDoctorFees(period.branch_id!, period.period_start, period.period_end);
+        for (const doc of dfRes.doctors) dfByUser.set(doc.user_id, doc.totalFee);
+      } catch { /* DF is best-effort; never block a payroll run */ }
+    }
+
     let computed = 0;
     let skipped = 0;
     for (const emp of staff) {
@@ -1957,7 +2013,9 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
       // hourly helper is skipped just like a PT (owner 2026-08-18), not kept as a
       // 0-baht salaried line.
       const isSalaried = (emp.monthly_salary ?? 0) > 0 && mode !== "hourly";
-      if (!isSalaried && !hasRoster && !hasEntries && !hasOverride && !hasLeave && !hasOt) {
+      // A DF doctor with a fee this period is a footprint too — keep their line.
+      const hasDf = (dfByUser.get(emp.user_id) ?? 0) > 0;
+      if (!isSalaried && !hasRoster && !hasEntries && !hasOverride && !hasLeave && !hasOt && !hasDf) {
         skipped++;
         continue;
       }
@@ -2000,7 +2058,9 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         approvedOtByDate: approvedOtByUser.get(emp.user_id),
         approvedEarlyByDate: approvedEarlyByUser.get(emp.user_id),
         fieldOverridesByDate: fieldOverridesByUser.get(emp.user_id),
-        leaveDates: leaveDatesByUser.get(emp.user_id)
+        leaveDates: leaveDatesByUser.get(emp.user_id),
+        dfAmount: dfByUser.get(emp.user_id) ?? 0,
+        dfBranchPeriod
       });
       // Flag the helper line but store the person's REAL employment_type (the PT
       // cast was only to borrow the hourly math), so every write path agrees and
@@ -2140,7 +2200,7 @@ export function recomputeLine(
 
   const fresh = db.prepare(`
     SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
-           hire_date, ft_started_at, ft_salary_paid_through, pt_started_at,
+           hire_date, ft_started_at, ft_salary_paid_through, pt_started_at, df_started_at,
            ${branchDailyRateSelect(period.branch_id)},
            ${branchOnlyHourlyRateSelect(period.branch_id)},
            ${LAST_WORKING_DAY_SELECT}
@@ -2150,7 +2210,7 @@ export function recomputeLine(
     monthly_salary: number | null; pay_cycle: "weekly" | "monthly" | null;
     salary_tax_mode: "sso" | "wht" | null; track_attendance: number | null;
     hire_date: string | null; ft_started_at: string | null; ft_salary_paid_through: string | null;
-    pt_started_at: string | null;
+    pt_started_at: string | null; df_started_at: string | null;
     daily_rate: number | null; branch_hourly_rate: number | null;
     resign_last_day: string | null; term_last_day: string | null;
   } | undefined;
@@ -2342,6 +2402,7 @@ export function recomputeLine(
     last_working_day: fresh ? earliestDate(fresh.resign_last_day, fresh.term_last_day) : null,
     ft_started_at: fresh?.ft_started_at ?? null,
     pt_started_at: fresh?.pt_started_at ?? null,
+    df_started_at: fresh?.df_started_at ?? null,
     daily_rate: fresh?.daily_rate ?? null,
     branch_hourly_rate: fresh?.branch_hourly_rate ?? null,
     ft_salary_paid_through: fresh?.ft_salary_paid_through ?? null
@@ -2411,26 +2472,41 @@ export function recomputeLine(
   // (OT + วันพิเศษ×1.5, WHT 3%, no SSO all fall out of PT semantics), then flag the
   // line. Normal lines use the employee snapshot unchanged.
   const rlEmp = rlMode === "hourly" ? asHourlyHelper(employee) : employee;
+  // Doctor Fee (DF) — owner 2026-08. Recompute this doctor's fee for the period
+  // range so a single-line recompute keeps DF instead of ค่าเวร.
+  const rlDfBranch = period.branch_id != null && isDfBranch(period.branch_id);
+  const dfActiveRL = rlDfBranch && employee.df_started_at != null && period.period_start.slice(0, 7) >= employee.df_started_at.slice(0, 7);
+  let dfPayRL = 0;
+  if (dfActiveRL) {
+    try {
+      const r = computeDoctorFees(period.branch_id!, period.period_start, period.period_end);
+      dfPayRL = r.doctors.find((d) => d.user_id === userId)?.totalFee ?? 0;
+    } catch { /* best-effort */ }
+  }
   const computed = computeLineForEmployee({
     employee: rlEmp, shifts, unpaired: auto.unpaired,
     leaveDays: existing.leave_days,
     cycle: period.cycle, periodStart: period.period_start, periodEnd: period.period_end, payDate: period.pay_date,
-    settings, holidaySet, doubleSet, scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates
+    settings, holidaySet, doubleSet, scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates,
+    dfAmount: dfPayRL, dfBranchPeriod: rlDfBranch
   });
   // No worked time and no existing line → don't create a phantom 0-baht hourly-helper
   // line (matches computePayrollPeriod's skip).
   if (rlMode === "hourly" && !lineExists && computed.regular_minutes === 0 && computed.ot_minutes === 0) return;
 
   // Preserve admin money extras; recompute gross/SSO/tax/net to include them.
-  const svc = existing.service_charge;
-  const add = existing.other_additions;
+  // For a DF doctor, ค่าเวร is zero and the fee rides in other_additions (post-tax,
+  // no withholding), replacing any admin-entered additions for that line.
+  const svc = dfActiveRL ? 0 : existing.service_charge;
+  const add = dfActiveRL ? round2(dfPayRL) : existing.other_additions;
   const ded = existing.other_deductions;
+  const taxBase = dfActiveRL ? (computed.base_pay + computed.ot_pay + svc) : (computed.base_pay + computed.ot_pay + svc + add);
   const gross = computed.base_pay + computed.ot_pay + svc + add;
   const taxMode = rlEmp.salary_tax_mode ?? "sso";
   let sso = 0;
   let tax = 0;
-  if (gross > 0) {
-    if (taxMode === "wht") tax = computeWht(gross, settings);
+  if (taxBase > 0) {
+    if (taxMode === "wht") tax = computeWht(taxBase, settings);
     // Cross-company helper (is_home_company=0) → no SSO here; home employer sends it.
     else if (rlEmp.is_home_company !== 0) sso = computeSso(computed.base_pay, period.cycle, settings); // SSO on base salary only
   }
@@ -2451,7 +2527,7 @@ export function recomputeLine(
       SET shift_minutes = ?, break_deducted_minutes = ?,
           regular_minutes = ?, ot_minutes = ?, holiday_minutes = ?,
           days_worked = ?, unpaired_clockins = ?,
-          base_pay = ?, ot_pay = ?, gross_pay = ?,
+          base_pay = ?, ot_pay = ?, service_charge = ?, other_additions = ?, gross_pay = ?,
           sso_amount = ?, tax_amount = ?, drink_deductions = ?, mealpass_deductions = ?, net_pay = ?,
           hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
           pay_cycle_snapshot = ?, salary_tax_mode_snapshot = ?,
@@ -2463,7 +2539,7 @@ export function recomputeLine(
       computed.shift_minutes, computed.break_deducted_minutes,
       computed.regular_minutes, computed.ot_minutes, computed.holiday_minutes,
       computed.days_worked, computed.unpaired_clockins,
-      round2(computed.base_pay), round2(computed.ot_pay), round2(gross),
+      round2(computed.base_pay), round2(computed.ot_pay), round2(svc), round2(add), round2(gross),
       round2(sso), round2(tax), round2(drinkDed), round2(mealpassDed), round2(net),
       rlEmp.hourly_rate, rlEmp.monthly_salary,
       rlEmp.pay_cycle, taxMode,

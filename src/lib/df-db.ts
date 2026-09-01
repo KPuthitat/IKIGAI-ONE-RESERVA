@@ -176,7 +176,7 @@ export type DfDoctor = { user_id: number; display_name: string; title_prefix: st
 export function eligibleDoctors(): DfDoctor[] {
   return getDb().prepare(
     `SELECT id AS user_id, display_name, title_prefix FROM users
-     WHERE (clinical_role = 'doctor' OR employment_type = 'df')
+     WHERE (clinical_role = 'doctor' OR df_started_at IS NOT NULL)
        AND status NOT IN ('disabled','resigned','terminated')
      ORDER BY display_name`
   ).all() as DfDoctor[];
@@ -192,7 +192,7 @@ function doctorsByDate(branchId: number, start: string, end: string): Map<string
        AND sc.kind = 'work'
        AND ra.user_id IN (
          SELECT id FROM users
-         WHERE (clinical_role = 'doctor' OR employment_type = 'df')
+         WHERE (clinical_role = 'doctor' OR df_started_at IS NOT NULL)
            AND status NOT IN ('disabled','resigned','terminated'))`
   ).all(branchId, start, end) as Array<{ d: string; uid: number }>;
   const m = new Map<string, number[]>();

@@ -47,7 +47,7 @@ export default function AdminEmployeesPage({
            u.gender, u.employment_type, u.hire_date, u.weekly_off_days,
            u.employee_code, u.national_id, u.bank_name, u.bank_account,
            u.tax_id, u.sso_id, u.hourly_rate, u.monthly_salary, u.pay_cycle,
-           u.salary_tax_mode, u.group_insurance_start_month, u.ft_started_at, u.pt_started_at, u.line_user_id, u.shift_start_time,
+           u.salary_tax_mode, u.group_insurance_start_month, u.ft_started_at, u.pt_started_at, u.df_started_at, u.line_user_id, u.shift_start_time,
            u.reports_to_user_id, u.escalation_hours, u.is_test_account,
            u.can_view_payroll, u.track_attendance, u.receives_service_charge,
            u.clinical_role, u.license_no, u.is_hr_analytics,
