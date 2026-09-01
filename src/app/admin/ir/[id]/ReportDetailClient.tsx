@@ -182,7 +182,7 @@ export default function ReportDetailClient({
 
           {err && <div className="text-sm text-rose-600">{err}</div>}
           <div className="flex items-center justify-between">
-            {savedAt ? <span className="text-xs text-emerald-600">บันทึกแล้ว ✓</span> : <span />}
+            {savedAt ? <span className="text-xs text-emerald-600">บันทึกแล้ว</span> : <span />}
             <button type="button" className="btn btn-primary" onClick={save} disabled={busy}>
               {busy ? "กำลังบันทึก…" : "บันทึกการทบทวน"}
             </button>
