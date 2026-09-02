@@ -5,6 +5,7 @@ import { logPersonaAction } from "@/lib/db";
 import {
   getExecMeeting, updateExecMeeting, deleteExecMeeting, setInvitees, type ExecMeetingStatus
 } from "@/lib/exec-meetings";
+import { notifyMeetingInvitees } from "@/lib/exec-meeting-notify";
 
 // ประชุมผู้บริหาร — one meeting (owner 2026-09-02).
 //   GET    → full detail (invitees + attendance + minutes status)
@@ -59,9 +60,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     branch_id,
     status: d.status as ExecMeetingStatus | undefined
   });
-  if (d.invitee_user_ids) setInvitees(id, d.invitee_user_ids);
+  let addedInvitees: number[] = [];
+  if (d.invitee_user_ids) {
+    const before = new Set((getExecMeeting(id)?.invitees ?? []).map((i) => i.user_id));
+    addedInvitees = d.invitee_user_ids.filter((uid) => !before.has(uid));
+    setInvitees(id, d.invitee_user_ids);
+  }
   if (!changed && !d.invitee_user_ids) return NextResponse.json({ error: "no_change" }, { status: 400 });
   logPersonaAction(gate.user.id, "exec_meeting.update", id);
+  // LINE นัดประชุมเฉพาะผู้ที่เพิ่งถูกเชิญเพิ่ม (owner 2026-09-02) — fire-and-forget.
+  if (addedInvitees.length > 0) void notifyMeetingInvitees(id, addedInvitees);
   return NextResponse.json({ ok: true });
 }
 
