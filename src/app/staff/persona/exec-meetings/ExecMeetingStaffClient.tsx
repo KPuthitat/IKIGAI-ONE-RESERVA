@@ -81,9 +81,9 @@ function MeetingCard({ m, onChanged }: { m: StaffMeetingView; onChanged: () => v
   return (
     <div className="card space-y-3">
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="font-semibold text-slate-800">{m.title}</div>
-          <div className="text-xs text-slate-500">{m.meeting_date}</div>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-slate-800 leading-snug">{m.title}</div>
+          <div className="text-xs text-slate-500 mt-0.5">{m.meeting_date}</div>
         </div>
         <StatusBadge status={m.status} joined={joined} ended={ended} />
       </div>
@@ -161,5 +161,5 @@ function StatusBadge({ status, joined, ended }: { status: string; joined: boolea
     : status === "active"
     ? ["เปิดให้เข้าร่วม", "bg-amber-100 text-amber-700"]
     : ["ยังไม่เปิด", "bg-slate-100 text-slate-500"];
-  return <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${style}`}>{label}</span>;
+  return <span className={`shrink-0 whitespace-nowrap text-[11px] px-2 py-1 rounded-full font-medium ${style}`}>{label}</span>;
 }
