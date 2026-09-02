@@ -9,7 +9,9 @@ export type StaffLite = {
   display_name: string;
   title_prefix: string | null;
   fee_exempt: boolean;
+  branchId: number;
 };
+export type BranchLite = { id: number; name: string };
 
 type MeetingRow = {
   id: number;
@@ -41,7 +43,7 @@ function bkkToday(): string {
   return bkk.toISOString().slice(0, 10);
 }
 
-export default function ExecMeetingsClient({ staff, meetings }: { staff: StaffLite[]; meetings: MeetingRow[] }) {
+export default function ExecMeetingsClient({ staff, branches, meetings }: { staff: StaffLite[]; branches: BranchLite[]; meetings: MeetingRow[] }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -134,14 +136,39 @@ export default function ExecMeetingsClient({ staff, meetings }: { staff: StaffLi
           {staff.length === 0 ? (
             <div className="text-xs text-slate-400">ไม่มีพนักงานในสาขานี้</div>
           ) : (
-            <div className="grid gap-1.5 sm:grid-cols-2 max-h-64 overflow-y-auto">
-              {staff.map((s) => (
-                <label key={s.id} className="flex items-center gap-2 text-sm text-slate-700 rounded px-2 py-1 hover:bg-slate-50">
-                  <input type="checkbox" checked={invited.has(s.id)} onChange={() => toggleInvite(s.id)} />
-                  <span>{s.title_prefix ? `${s.title_prefix} ` : ""}{s.display_name}</span>
-                  {s.fee_exempt && <span className="text-[10px] bg-violet-50 text-violet-600 border border-violet-200 rounded-full px-1.5">ยกเว้นเบี้ย</span>}
-                </label>
-              ))}
+            // One column per branch, side by side (owner 2026-09-02: ซ้าย นามะ ขวา
+            // อีเมีย) so the whole team is visible at once. Only branches that have
+            // staff are shown.
+            <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.max(1, branches.filter((b) => staff.some((s) => s.branchId === b.id)).length)}, minmax(0, 1fr))` }}>
+              {branches.filter((b) => staff.some((s) => s.branchId === b.id)).map((b) => {
+                const list = staff.filter((s) => s.branchId === b.id);
+                const allIn = list.every((s) => invited.has(s.id));
+                return (
+                  <div key={b.id} className="rounded-lg border border-[#EFE4D3] bg-white/60 p-2">
+                    <div className="flex items-center justify-between px-1 pb-1.5 mb-1 border-b border-[#EFE4D3]">
+                      <span className="text-sm font-semibold text-brand">{b.name}</span>
+                      <button type="button" className="text-[11px] text-slate-500 hover:text-brand"
+                        onClick={() => setInvited((prev) => {
+                          const next = new Set(prev);
+                          if (allIn) list.forEach((s) => next.delete(s.id));
+                          else list.forEach((s) => next.add(s.id));
+                          return next;
+                        })}>
+                        {allIn ? "ล้างสาขานี้" : "เลือกสาขานี้"}
+                      </button>
+                    </div>
+                    <div className="space-y-0.5">
+                      {list.map((s) => (
+                        <label key={s.id} className="flex items-center gap-2 text-sm text-slate-700 rounded px-2 py-1 hover:bg-slate-50 cursor-pointer">
+                          <input type="checkbox" checked={invited.has(s.id)} onChange={() => toggleInvite(s.id)} />
+                          <span>{s.title_prefix ? `${s.title_prefix} ` : ""}{s.display_name}</span>
+                          {s.fee_exempt && <span className="text-[10px] bg-violet-50 text-violet-600 border border-violet-200 rounded-full px-1.5">ยกเว้นเบี้ย</span>}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
