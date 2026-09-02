@@ -10,6 +10,7 @@ export type StaffLite = {
   title_prefix: string | null;
   fee_exempt: boolean;
   branchId: number;
+  department: string | null;
 };
 export type BranchLite = { id: number; name: string };
 
@@ -36,6 +37,20 @@ const STATUS_STYLE: Record<MeetingRow["status"], string> = {
   ended: "bg-amber-100 text-amber-700",
   closed: "bg-slate-200 text-slate-500"
 };
+
+const NO_DEPT = "ไม่ระบุแผนก";
+// Group a branch's staff by แผนก (department). Departments A→Z, "ไม่ระบุแผนก" last;
+// people keep their incoming (name) order.
+function groupByDept(list: StaffLite[]): Array<{ dept: string; people: StaffLite[] }> {
+  const map = new Map<string, StaffLite[]>();
+  for (const s of list) {
+    const d = s.department?.trim() || NO_DEPT;
+    (map.get(d) ?? map.set(d, []).get(d)!).push(s);
+  }
+  return [...map.entries()]
+    .sort((a, b) => (a[0] === NO_DEPT ? 1 : b[0] === NO_DEPT ? -1 : a[0].localeCompare(b[0], "th")))
+    .map(([dept, people]) => ({ dept, people }));
+}
 
 function bkkToday(): string {
   const now = new Date();
@@ -157,14 +172,35 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
                         {allIn ? "ล้างสาขานี้" : "เลือกสาขานี้"}
                       </button>
                     </div>
-                    <div className="space-y-0.5">
-                      {list.map((s) => (
-                        <label key={s.id} className="flex items-center gap-2 text-sm text-slate-700 rounded px-2 py-1 hover:bg-slate-50 cursor-pointer">
-                          <input type="checkbox" checked={invited.has(s.id)} onChange={() => toggleInvite(s.id)} />
-                          <span>{s.title_prefix ? `${s.title_prefix} ` : ""}{s.display_name}</span>
-                          {s.fee_exempt && <span className="text-[10px] bg-violet-50 text-violet-600 border border-violet-200 rounded-full px-1.5">ยกเว้นเบี้ย</span>}
-                        </label>
-                      ))}
+                    <div className="space-y-2">
+                      {groupByDept(list).map(({ dept, people }) => {
+                        const allDept = people.every((s) => invited.has(s.id));
+                        return (
+                          <div key={dept}>
+                            <div className="flex items-center justify-between px-1">
+                              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{dept}</span>
+                              <button type="button" className="text-[10px] text-slate-400 hover:text-brand"
+                                onClick={() => setInvited((prev) => {
+                                  const next = new Set(prev);
+                                  if (allDept) people.forEach((s) => next.delete(s.id));
+                                  else people.forEach((s) => next.add(s.id));
+                                  return next;
+                                })}>
+                                {allDept ? "ล้าง" : "เลือก"}
+                              </button>
+                            </div>
+                            <div className="space-y-0.5">
+                              {people.map((s) => (
+                                <label key={s.id} className="flex items-center gap-2 text-sm text-slate-700 rounded px-2 py-1 hover:bg-slate-50 cursor-pointer">
+                                  <input type="checkbox" checked={invited.has(s.id)} onChange={() => toggleInvite(s.id)} />
+                                  <span>{s.title_prefix ? `${s.title_prefix} ` : ""}{s.display_name}</span>
+                                  {s.fee_exempt && <span className="text-[10px] bg-violet-50 text-violet-600 border border-violet-200 rounded-full px-1.5">ยกเว้นเบี้ย</span>}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );
