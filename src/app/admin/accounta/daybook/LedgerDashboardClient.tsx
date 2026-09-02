@@ -82,6 +82,12 @@ type VendorOpt = {
 
 const WEEKDAY_TH = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 
+// Remittances to the authorities that payroll posts automatically (owner
+// 2026-09-02): they are booked on the pay date, but the actual นำส่ง (remit)
+// date is a different day. While still unpaid we flag them so the admin
+// remembers to set the real date via "จ่ายแล้ว" — the amount is already correct.
+const REMIT_CATEGORIES = new Set(["ประกันสังคม", "ภาษีหัก ณ ที่จ่าย"]);
+
 // Next occurrence of `weekday` (0=Sun..6=Sat) on or after `isoDate` (YYYY-MM-DD).
 // "จ่ายตามรอบบริษัท": a credit bill with no explicit due date defaults to the
 // company's weekly pay day. Same weekday as the bill date → that day.
@@ -727,6 +733,12 @@ function DayDetail({
                             {overdue && <span className="text-[9px] font-normal bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-1.5 py-px">เลยกำหนด</span>}
                             {dueToday && <span className="text-[9px] font-normal bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-px">ครบกำหนดวันนี้</span>}
                             {e.awaiting_doc && <span className="text-[9px] font-normal bg-amber-100 text-amber-800 border border-amber-300 rounded-full px-1.5 py-px" title="ยังไม่ได้รับใบเสร็จ/ใบกำกับภาษี">รอเอกสาร</span>}
+                            {unpaid && REMIT_CATEGORIES.has(e.category ?? "") && (
+                              <span className="text-[9px] font-semibold bg-slate-800 text-amber-200 border border-slate-700 rounded-full px-1.5 py-px"
+                                title="ยอดถูกต้องแล้ว แต่วันนำส่งจริงมักไม่ใช่วันจ่ายเงินเดือน — กด &quot;จ่ายแล้ว&quot; เพื่อระบุวันที่นำส่งจริงภายหลัง">
+                                รอกำหนดวันนำส่ง
+                              </span>
+                            )}
                           </div>
                           {tag && <div className="text-[10px] text-slate-400">{tag}{unpaid && e.due_date && !overdue && !dueToday ? ` · ครบกำหนด ${e.due_date}` : ""}</div>}
                           {payId === e.id && (
