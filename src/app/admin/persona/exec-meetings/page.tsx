@@ -46,10 +46,26 @@ export default function ExecMeetingsPage() {
       `).all(...branchIds, ...branchIds, ...branchIds) as Array<{ id: number; display_name: string; title_prefix: string | null; fee_exempt: number; branch_id: number | null }>)
     : [];
 
-  const staff: StaffLite[] = staffRows.map((s) => ({
-    id: s.id, display_name: s.display_name, title_prefix: s.title_prefix,
-    fee_exempt: s.fee_exempt === 1, branchId: s.branch_id ?? (branchIds[0] ?? 0)
-  }));
+  // Department (แผนก) = the person's org-chart placement at that branch, so the
+  // picker can group by แผนก inside each branch (owner 2026-09-02: ดูถนัดว่าดึงคน
+  // จากแผนกไหนมาบ้าง). Keyed `${userId}|${branchId}`.
+  const deptOf = new Map<string, string>();
+  if (branchIds.length > 0) {
+    for (const n of db.prepare(
+      `SELECT user_id, branch_id, department FROM org_chart_nodes WHERE branch_id IN (${branchIds.map(() => "?").join(",")})`
+    ).all(...branchIds) as Array<{ user_id: number; branch_id: number; department: string | null }>) {
+      if (n.department && n.department.trim()) deptOf.set(`${n.user_id}|${n.branch_id}`, n.department.trim());
+    }
+  }
+
+  const staff: StaffLite[] = staffRows.map((s) => {
+    const branchId = s.branch_id ?? (branchIds[0] ?? 0);
+    return {
+      id: s.id, display_name: s.display_name, title_prefix: s.title_prefix,
+      fee_exempt: s.fee_exempt === 1, branchId,
+      department: deptOf.get(`${s.id}|${branchId}`) ?? null
+    };
+  });
 
   const meetings = listExecMeetings();
 
