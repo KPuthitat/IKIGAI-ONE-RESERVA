@@ -17,6 +17,10 @@ const Body = z.object({
   // Create the period for EVERY branch in the admin's company at once
   // (owner 2026-07-27: สร้างรอบทุกสาขาทีเดียว), not just the active branch.
   all_branches: z.boolean().default(false),
+  // ประจำ รวมทั้งบริษัท (owner 2026-09-02): one branch-NULL FT period that computes
+  // each full-timer's salary once from all their cross-branch clock-ins; the
+  // ACCOUNTA cost is split per branch at posting by days worked.
+  company_wide: z.boolean().default(false),
   // For periods whose pay_date is still in the future, the admin must
   // supply their own 4-digit PIN (verified against users.pin_hash) plus
   // a reason. Both are saved to payroll_period_unlocks for audit.
@@ -77,6 +81,38 @@ export async function POST(req: Request) {
     }
     if (!bcrypt.compareSync(d.force_open_pin, me.pin_hash)) {
       return NextResponse.json({ error: "pin_invalid" }, { status: 401 });
+    }
+  }
+
+  // ── ประจำ รวมทั้งบริษัท ── one branch-NULL FT period that computes each
+  // full-timer's full salary once from ALL their cross-branch clock-ins (the
+  // compute treats a NULL-branch period as company-wide: every FT is included and
+  // primary, and no entry is filtered by branch). The ACCOUNTA cost is split per
+  // branch at posting by days worked (owner 2026-09-02).
+  if (d.company_wide) {
+    if (d.target !== "ft" || d.cycle !== "monthly") {
+      return NextResponse.json({ error: "company_wide_ft_monthly_only", message: "รอบรวมบริษัทใช้กับพนักงานประจำ (รายเดือน) เท่านั้น" }, { status: 400 });
+    }
+    const dup = db.prepare(
+      "SELECT id FROM payroll_periods WHERE cycle = ? AND period_start = ? AND period_end = ? AND branch_id IS NULL"
+    ).get(d.cycle, d.period_start, d.period_end) as { id: number } | undefined;
+    if (dup) return NextResponse.json({ error: "duplicate_period", period_id: dup.id }, { status: 409 });
+    const res = db.prepare(`
+      INSERT INTO payroll_periods
+        (cycle, target, data_source, period_start, period_end, pay_date, notes, created_by, branch_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    `).run(d.cycle, d.target, d.data_source, d.period_start, d.period_end, payDate, d.notes ?? null, user.id);
+    const pid = res.lastInsertRowid as number;
+    if (isFuture) {
+      db.prepare("INSERT INTO payroll_period_unlocks (period_id, unlocked_by, reason, action) VALUES (?, ?, ?, 'force_open')")
+        .run(pid, user.id, (d.force_open_reason ?? "").trim());
+    }
+    try {
+      computePayrollPeriod(db, pid);
+      db.prepare("UPDATE payroll_periods SET computed_by = ? WHERE id = ?").run(user.id, pid);
+      return NextResponse.json({ ok: true, company_wide: true, period_id: pid });
+    } catch (e) {
+      return NextResponse.json({ ok: true, company_wide: true, period_id: pid, warning: (e as Error).message });
     }
   }
 
