@@ -317,6 +317,27 @@ console.log("\nPT→ประจำ เดือนเปลี่ยนผ่�
   eq("legacy FT รอบ monthly → base 30000", legacy.base_pay, 30000);
 }
 
+// 11d. ประจำเต็มเดือน → ยึด salary_tax_mode รายคน (owner 2026-09-02): พนักงานประจำ
+//      "นอกระบบ" (salary_tax_mode='wht') ต้องหัก ณ ที่จ่าย ไม่ใช่บังคับเข้าประกันสังคม
+//      ทุกคน. ธนโชติ/สุภัสสร/หรรษวัตเคยได้ประกันสังคมผิดเพราะระบบเดิมบังคับ SSO เต็มเดือน.
+console.log("\nประจำเต็มเดือน: ยึดค่า salary_tax_mode รายคน (owner 2026-09-02):");
+{
+  const runFull = (emp: EmployeePayrollSnapshot) =>
+    computeLineFromMinutes({
+      employee: emp, regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
+      leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 22, unpaired: 0,
+      cycle: "monthly", periodStart: "2026-07-01", periodEnd: "2026-07-31", settings: SETTINGS
+    });
+  // นอกระบบ (wht) เต็มเดือน → หัก ณ ที่จ่าย 3% (30000×0.03=900), ไม่มีประกันสังคม
+  const outFull = runFull({ ...ftMonthly(30000), salary_tax_mode: "wht" });
+  eq("ประจำเต็มเดือน นอกระบบ → WHT 3% = 900", outFull.tax_amount, 900);
+  eq("ประจำเต็มเดือน นอกระบบ → ไม่มีประกันสังคม", outFull.sso_amount, 0);
+  // ในระบบ (sso) เต็มเดือน → ประกันสังคม (cap 750), ไม่หัก ณ ที่จ่าย
+  const inFull = runFull(ftMonthly(30000));
+  eq("ประจำเต็มเดือน ในระบบ → ประกันสังคม (cap 750)", inFull.sso_amount, 750);
+  eq("ประจำเต็มเดือน ในระบบ → ไม่หัก ณ ที่จ่าย", inFull.tax_amount, 0);
+}
+
 // 11c. เดือนเปลี่ยนผ่าน weekly: ทุกสัปดาห์จ่ายฐานรายวัน salary/30 × วันในสถานะ.
 //      รอบคร่อมเดือน — กฎ A (owner 2026-08-18): วันของเดือนถัดไปไม่จ่ายในรอบสัปดาห์
 //      (ยกไปรอบเดือนนั้น) → จ่ายเฉพาะวันของเดือนเปลี่ยนผ่าน.
