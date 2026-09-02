@@ -22,6 +22,7 @@ function inviteFlex(title: string, ymd: string): LineMessage {
     altText: `เชิญประชุม: ${title} (${dateLabelTh(ymd)})`,
     contents: {
       type: "bubble",
+      size: "giga",
       body: {
         type: "box", layout: "vertical", spacing: "sm",
         contents: [
