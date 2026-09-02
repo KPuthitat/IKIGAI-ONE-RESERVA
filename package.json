@@ -17,6 +17,7 @@
     "test:ir": "node --import tsx scripts/test-ir.ts",
     "test:df": "node --import tsx scripts/test-df.ts",
     "test:meetings": "node --import tsx scripts/test-exec-meetings.ts",
+    "test:branch-cost": "node --import tsx scripts/test-branch-cost.ts",
     "test:payroll": "node --import tsx scripts/test-payroll.ts",
     "test:clock": "node --import tsx scripts/test-clock-code.ts",
     "test:revshare": "node --import tsx scripts/test-revshare.ts",
