@@ -365,10 +365,15 @@ console.log("\nเดือนเปลี่ยนผ่าน weekly: จ่�
   const base5July = Math.round(daily * 5 * 100) / 100;
   const spill = runRound("2026-07-27", "2026-08-02", null);
   eq("กฎ A: รอบคร่อมเดือน → จ่ายเฉพาะวันเดือนเปลี่ยนผ่าน (ก.ค. 5 วัน)", spill.base_pay, base5July);
-  // วันคูณสอง: ฐานรายวัน 7 วัน + ส่วนเกินคูณสองอีก 1 วัน (8ชม.)
+  // วันคูณสอง: ฐานรายวัน 7 วัน (ฐานสะอาด) + ส่วนเกินคูณสองอีก 1 วัน (8ชม.) ไปช่อง
+  // เพิ่มอื่นๆ (owner 2026-09-02) — ไม่รวมในฐานเงินเดือน แต่ยังอยู่ในฐานภาษี.
   const dbl = runRound("2026-07-20", "2026-07-26", "2026-07-22");
-  eq("รอบมีวันคูณสอง → ฐานรายวัน + คูณสองส่วนเกิน", dbl.base_pay, Math.round((base7 + daily) * 100) / 100);
+  eq("รอบมีวันคูณสอง → ฐานรายวัน 7 วัน (ไม่รวมพรีเมียม)", dbl.base_pay, base7);
+  eq("รอบมีวันคูณสอง → พรีเมียมคูณสอง 1 วัน อยู่ในเพิ่มอื่นๆ", dbl.other_additions, Math.round(daily * 100) / 100);
+  eq("รอบมีวันคูณสอง → ยอดรวม = ฐาน + พรีเมียม", dbl.gross_pay, Math.round((base7 + daily) * 100) / 100);
+  // ภาษีคิดที่ยอดรวม (รวมพรีเมียม) — เปลี่ยนผ่าน weekly → WHT ไม่ใช่ SSO
   eq("เปลี่ยนผ่าน weekly → หัก WHT ไม่ใช่ SSO", dbl.sso_amount === 0 && dbl.tax_amount > 0 ? 1 : 0, 1);
+  eq("ภาษีคิดที่ยอดรวม (WHT 3% ของ ฐาน+พรีเมียม)", dbl.tax_amount, Math.round((base7 + daily) * 0.03 * 100) / 100);
 
   // กฎ B (owner 2026-08-18) — ft_salary_paid_through: เดือนเปลี่ยนผ่านจ่ายครบด้วยวิธีเก่า
   // แล้ว → รอบคร่อมเดือนถัดไปไม่คิดฐานของวัน ≤ วันนั้น (OT + คูณสองยังจ่าย). ตั้ง 31 ก.ค.
@@ -391,9 +396,35 @@ console.log("\nเดือนเปลี่ยนผ่าน weekly: จ่�
   // ไม่มีวันคูณสอง → ฐาน 0 ล้วน (ก.ค.จ่ายครบ, ส.ค.ยกไป)
   const ptSpill = runPT("2026-07-27", "2026-08-02", null);
   eq("กฎ B: จ่ายครบถึง 31 ก.ค. → ฐานรอบคร่อมเดือน = 0", ptSpill.base_pay, 0);
-  // มีวันคูณสอง 28 ก.ค. (≤ paid_through) → ฐานปกติ = 0 แต่พรีเมียมคูณสอง 1 วัน (8ชม.) ยังจ่าย
+  // มีวันคูณสอง 28 ก.ค. (≤ paid_through) → ฐานปกติ = 0 แต่พรีเมียมคูณสอง 1 วัน (8ชม.)
+  // ยังจ่าย โดยไปอยู่ช่องเพิ่มอื่นๆ (owner 2026-09-02).
   const ptDbl = runPT("2026-07-27", "2026-08-02", "2026-07-28");
-  eq("กฎ B: วันคูณสอง ≤ จ่ายครบ → ยังได้พรีเมียม 1 วัน (ฐาน=0)", ptDbl.base_pay, Math.round(daily * 100) / 100);
+  eq("กฎ B: วันคูณสอง ≤ จ่ายครบ → ฐาน = 0", ptDbl.base_pay, 0);
+  eq("กฎ B: พรีเมียมคูณสอง 1 วัน อยู่ในเพิ่มอื่นๆ", ptDbl.other_additions, Math.round(daily * 100) / 100);
+}
+
+// 11f. วันจ่ายสองเท่า สำหรับประจำเต็มเดือน (owner 2026-09-02): พรีเมียมไปช่องเพิ่ม
+//      อื่นๆ · ภาษีคิดที่ยอดรวม · ประกันสังคมคิดที่ฐานเงินเดือน (ไม่รวมพรีเมียม).
+console.log("\nวันจ่ายสองเท่า ประจำเต็มเดือน: พรีเมียม→เพิ่มอื่นๆ, SSO ที่ฐาน (owner 2026-09-02):");
+{
+  const dd = "2026-08-12";
+  const iso = (hhmm: string) => new Date(`${dd}T${hhmm}:00+07:00`).toISOString();
+  const sched: ScheduledShift = { startTs: iso("09:00"), endTs: iso("17:00"), breakStartTs: null, breakEndTs: null };
+  const shift = { startTs: iso("09:00"), endTs: iso("17:00"), durationMinutes: 480 };
+  // FT ในระบบ เต็มเดือน (salary 30000), ทำวันจ่ายสองเท่า 1 วัน (8ชม.).
+  const line = computeLineForEmployee({
+    employee: ftMonthly(30000), shifts: [shift], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+    cycle: "monthly", periodStart: "2026-08-01", periodEnd: "2026-08-31",
+    settings: SETTINGS, holidaySet: new Set<string>(), doubleSet: new Set<string>([dd]),
+    scheduledByDate: new Map<string, ScheduledShift[]>([[dd, [sched]]])
+  });
+  const prem = Math.round((30000 / 30) * 100) / 100; // 1 วัน (8ชม.) = 1000
+  eq("ฐานเงินเดือน = 30000 (ไม่รวมพรีเมียม)", line.base_pay, 30000);
+  eq("พรีเมียมคูณสอง อยู่ในเพิ่มอื่นๆ (1000)", line.other_additions, prem);
+  eq("ยอดรวม = 30000 + พรีเมียม", line.gross_pay, Math.round((30000 + prem) * 100) / 100);
+  // SSO คิดที่ฐานเงินเดือน 30000 เท่านั้น → 30000×5% = 1500 แต่ cap 750 (ไม่แตะพรีเมียม)
+  eq("ประกันสังคมคิดที่ฐานเงินเดือน (cap 750, ไม่รวมพรีเมียม)", line.sso_amount, 750);
+  eq("เต็มเดือน ในระบบ → ไม่หัก ณ ที่จ่าย", line.tax_amount, 0);
 }
 
 // 11e. เข้าใหม่เป็นประจำ เดือนแรก: รายวัน salary/30 × วันในสถานะ, จ่ายวันที่ 5, WHT (owner 2026-08-03)
@@ -489,10 +520,13 @@ console.log("\nวันจ่ายสองเท่า (owner 2026-07-21):");
   eq("PT วัน 2 เท่า → OT ×2", ptD.ot_pay, Math.round(ptN.ot_pay * 2 * 100) / 100);
   eq("PT วัน 2 เท่า → นาทีเท่าเดิม", ptD.ot_minutes, ptN.ot_minutes);
 
-  // FT เงินเดือน 30000: ฐานคงเดิม + 1 วันเทียบเท่า (125/ชม.×8 = 1000) = 31000; OT ×2.
+  // FT เงินเดือน 30000: ฐานคงเดิม 30000 · พรีเมียม 1 วันเทียบเท่า (125/ชม.×8 = 1000)
+  // ไปช่องเพิ่มอื่นๆ → ยอดรวม 31000 (owner 2026-09-02); OT ×2.
   const ftN = computeLineForEmployee({ ...base, employee: { ...ftMonthly(30000), track_attendance: 1 } });
   const ftD = computeLineForEmployee({ ...base, employee: { ...ftMonthly(30000), track_attendance: 1 }, doubleSet: dbl });
-  eq("FT วัน 2 เท่า → ฐาน +1 วันเทียบเท่า (30000→31000)", ftD.base_pay, 31000);
+  eq("FT วัน 2 เท่า → ฐานเงินเดือนคงเดิม 30000", ftD.base_pay, 30000);
+  eq("FT วัน 2 เท่า → พรีเมียม 1 วันเทียบเท่า ไปเพิ่มอื่นๆ (1000)", ftD.other_additions, 1000);
+  eq("FT วัน 2 เท่า → ยอดรวม 31000", ftD.gross_pay, 31000);
   eq("FT วัน 2 เท่า → OT ×2", ftD.ot_pay, Math.round(ftN.ot_pay * 2 * 100) / 100);
 
   // วันปกติ (ไม่อยู่ใน doubleSet) → ไม่เปลี่ยน.
