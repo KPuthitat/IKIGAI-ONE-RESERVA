@@ -95,6 +95,32 @@ process.env.DATABASE_PATH = TMP;
   const byBr = new Map(sal.map((s) => [s.branch_id, s.amount_total]));
   ok("ACCOUNTA: แบ่ง 50/50 ตามวันจริง (มี override)", near(byBr.get(A) ?? 0, byBr.get(B) ?? 0));
 
+  // ── finalize review-gate counts only VISIBLE lines (owner 2026-09-02) ──
+  // A per-branch FT round (branch B) where an FT whose home is A has a 0-gross
+  // line at B is hidden from the admin table. The finalize gate must not count
+  // that hidden row, or the round can never close ("ตรวจแล้ว 3/3" but blocked).
+  const uidB = Number(db.prepare(
+    "INSERT INTO users (username,password_hash,display_name,role,status,employment_type,monthly_salary) VALUES ('homeb','x','HOME B','staff','active','ft',20000)"
+  ).run().lastInsertRowid);
+  db.prepare("INSERT OR IGNORE INTO user_branches (user_id, branch_id, is_primary) VALUES (?, ?, 1)").run(uidB, B);
+  const pB = Number(db.prepare(
+    "INSERT INTO payroll_periods (cycle,period_start,period_end,pay_date,status,branch_id,target,data_source) VALUES ('monthly','2026-09-01','2026-09-30','2026-10-05','draft',?,'ft','auto')"
+  ).run(B).lastInsertRowid);
+  // uid: home A → 0-gross line at B (hidden). uidB: home B → real reviewed line.
+  db.prepare("INSERT INTO payroll_lines (period_id,user_id,display_name,employment_type,monthly_salary_snapshot,gross_pay,is_helper) VALUES (?,?,?,'ft',30000,0,0)").run(pB, uid, "AWAY A");
+  db.prepare("INSERT INTO payroll_lines (period_id,user_id,display_name,employment_type,monthly_salary_snapshot,gross_pay,is_helper,reviewed_at,reviewed_by) VALUES (?,?,?,'ft',20000,20000,0,CURRENT_TIMESTAMP,?)").run(pB, uidB, "HOME B", uidB);
+
+  const rawStat = db.prepare(
+    "SELECT COUNT(*) AS total, SUM(CASE WHEN reviewed_at IS NULL THEN 1 ELSE 0 END) AS unreviewed FROM payroll_lines WHERE period_id=?"
+  ).get(pB) as { total: number; unreviewed: number };
+  ok("bug repro: นับทุกบรรทัด → มี unreviewed ค้าง (บล็อกปิดรอบ)", rawStat.total === 2 && rawStat.unreviewed === 1);
+
+  const visStat = db.prepare(`
+    SELECT COUNT(*) AS total, SUM(CASE WHEN pl.reviewed_at IS NULL THEN 1 ELSE 0 END) AS unreviewed
+    FROM payroll_lines pl WHERE pl.period_id=@pid AND ${payroll.VISIBLE_PAYROLL_LINE_FILTER}
+  `).get({ pid: pB, pbranch: B }) as { total: number; unreviewed: number };
+  ok("fix: นับเฉพาะบรรทัดที่เห็น → 1 บรรทัด, ตรวจครบ", visStat.total === 1 && visStat.unreviewed === 0);
+
   console.log(`\nbranch-cost test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);

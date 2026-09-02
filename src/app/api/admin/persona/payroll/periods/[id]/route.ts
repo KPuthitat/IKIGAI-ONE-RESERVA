@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { computePayrollPeriod } from "@/lib/payroll-compute";
+import { computePayrollPeriod, VISIBLE_PAYROLL_LINE_FILTER } from "@/lib/payroll-compute";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postPayrollToAccounta, removePayrollFromAccounta } from "@/lib/accounta-db";
 
@@ -56,14 +56,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (period.status !== "draft") {
       return NextResponse.json({ error: "must_be_draft" }, { status: 400 });
     }
-    // Every line must be signed off "ตรวจแล้ว" before the round can close
-    // (owner 2026-09-02: ยังตรวจไม่ครบ ห้าม finalize — กันพลาด). Empty rounds
-    // (no lines) can't be finalized either — there is nothing to pay.
+    // Every VISIBLE line must be signed off "ตรวจแล้ว" before the round can
+    // close (owner 2026-09-02: ยังตรวจไม่ครบ ห้าม finalize — กันพลาด). Count only
+    // the lines the admin actually sees/ticks — the same filter as the payroll
+    // table — or hidden noise rows (e.g. an FT's 0-gross line at a non-home
+    // branch) block the close forever. Empty rounds can't be finalized either.
+    const pbranch = (db.prepare("SELECT branch_id FROM payroll_periods WHERE id = ?")
+      .get(id) as { branch_id: number | null }).branch_id;
     const reviewStat = db.prepare(`
       SELECT COUNT(*) AS total,
-             SUM(CASE WHEN reviewed_at IS NULL THEN 1 ELSE 0 END) AS unreviewed
-      FROM payroll_lines WHERE period_id = ?
-    `).get(id) as { total: number; unreviewed: number | null };
+             SUM(CASE WHEN pl.reviewed_at IS NULL THEN 1 ELSE 0 END) AS unreviewed
+      FROM payroll_lines pl
+      WHERE pl.period_id = @pid AND ${VISIBLE_PAYROLL_LINE_FILTER}
+    `).get({ pid: id, pbranch }) as { total: number; unreviewed: number | null };
     const unreviewed = reviewStat.unreviewed ?? 0;
     if (reviewStat.total === 0 || unreviewed > 0) {
       return NextResponse.json(
