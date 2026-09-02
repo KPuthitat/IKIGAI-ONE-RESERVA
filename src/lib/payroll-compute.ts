@@ -279,6 +279,7 @@ export function computeHelperLine(args: {
     ot_pay: 0,
     service_charge: 0,
     other_additions: 0,
+    meeting_fee: 0,   // a day-rate helper's meeting fee (if any) rides their own branch round
     gross_pay: gross,
     sso_amount: 0,
     tax_amount: round2(tax),
@@ -315,6 +316,8 @@ export type ComputedLine = {
   ot_pay: number;
   service_charge: number;
   other_additions: number;
+  /** เบี้ยประชุม (owner 2026-09-02) — taxable meeting allowance, its own line. */
+  meeting_fee: number;
   gross_pay: number;
   sso_amount: number;
   tax_amount: number;
@@ -1011,8 +1014,12 @@ export function computeLineForEmployee(args: {
   // ค่าเวร-zeroing so a DF doctor who picks up a shift at another (non-DF) branch
   // is still paid normally there (owner: DF replaces CLINIC pay).
   dfBranchPeriod?: boolean;
+  // เบี้ยประชุม for this period (owner 2026-09-02): summed exec-meeting fees whose
+  // meeting date falls in the period. Taxable, paid on top of everything as its
+  // own "เบี้ยประชุม" line — independent of DF (a DF doctor still earns it).
+  meetingFee?: number;
 }): ComputedLine {
-  const { employee: eIn, shifts: shiftsIn, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates, dfAmount = 0, dfBranchPeriod = false } = args;
+  const { employee: eIn, shifts: shiftsIn, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates, dfAmount = 0, dfBranchPeriod = false, meetingFee: meetingFeeIn = 0 } = args;
   // FT→PT switch (owner 2026-08-31): from pt_started_at's calendar month the
   // employee is treated as PART-TIME (hourly), before it as FULL-TIME (salary) —
   // period-relative so backfilled months still compute correctly. The stored
@@ -1278,10 +1285,16 @@ export function computeLineForEmployee(args: {
   const doublePayBonus = dfActive ? 0 : round2(Math.max(0, ftDoubleBonus));
   const dfAddition = dfActive ? round2(Math.max(0, dfAmount)) : 0;
   const otherAdditions = round2(dfAddition + doublePayBonus);
+  // เบี้ยประชุม — paid on top regardless of DF (after-hours meeting attendance),
+  // TAXABLE (owner 2026-09-02: คิดภาษีเหมือนค่าตอบแทนปกติ). Its own line, not in
+  // other_additions, so the payslip can label it "เบี้ยประชุม". Paid ONCE: only at
+  // the employee's primary-branch line (or a company-wide round where everyone is
+  // primary), so a cross-branch person in several branch periods isn't paid twice.
+  const meetingFee = e.is_primary_branch !== 0 ? round2(Math.max(0, meetingFeeIn)) : 0;
 
-  // Tax base = base + OT + service charge + the taxable double-pay premium
-  // (ภาษีคิดที่ยอดรวม). The doctor fee is the only post-tax addition — excluded.
-  const taxableGross = basePay + otPay + serviceCharge + doublePayBonus;
+  // Tax base = base + OT + service charge + the taxable double-pay premium +
+  // เบี้ยประชุม (ภาษีคิดที่ยอดรวม). The doctor fee is the only post-tax addition.
+  const taxableGross = basePay + otPay + serviceCharge + doublePayBonus + meetingFee;
   const grossPay = taxableGross + dfAddition;
 
   // Tax & SSO based on employee's salary_tax_mode
@@ -1341,6 +1354,7 @@ export function computeLineForEmployee(args: {
     ot_pay: round2(otPay),
     service_charge: round2(serviceCharge),
     other_additions: round2(otherAdditions),
+    meeting_fee: round2(meetingFee),
     gross_pay: round2(grossPay),
     sso_amount: round2(ssoAmount),
     tax_amount: round2(taxAmount),
@@ -1557,6 +1571,7 @@ export function computeLineFromMinutes(args: {
     ot_pay: round2(otPay),
     service_charge: round2(serviceCharge),
     other_additions: round2(otherAdditions),
+    meeting_fee: 0,   // manual mode: เบี้ยประชุม comes only from the auto engine
     gross_pay: round2(grossPay),
     sso_amount: round2(ssoAmount),
     tax_amount: round2(taxAmount),
@@ -1976,10 +1991,10 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
         holiday_minutes,
         days_worked, leave_days, unpaired_clockins,
-        base_pay, ot_pay, service_charge, other_additions, gross_pay,
+        base_pay, ot_pay, service_charge, other_additions, meeting_fee, gross_pay,
         sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay,
         is_helper
-      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?)
+      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?)
     `);
 
     // Doctor Fee (DF) — owner 2026-08. For a clinic period, pre-compute each
@@ -1994,6 +2009,23 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         for (const doc of dfRes.doctors) dfByUser.set(doc.user_id, doc.totalFee);
       } catch { /* DF is best-effort; never block a payroll run */ }
     }
+
+    // เบี้ยประชุม (owner 2026-09-02): sum each person's ended exec-meeting fees for
+    // meetings whose date falls in this period. A company-wide round (branch NULL)
+    // covers everyone; a branch round covers meetings for anyone in it. Keyed
+    // user_id → fee. Table absent on very old DBs → best-effort empty.
+    const meetingFeeByUser = new Map<number, number>();
+    try {
+      const rows = db.prepare(`
+        SELECT a.user_id AS user_id, SUM(a.fee_amount) AS fee
+        FROM exec_meeting_attendance a
+        JOIN exec_meetings m ON m.id = a.meeting_id
+        WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0
+          AND m.meeting_date >= ? AND m.meeting_date <= ?
+        GROUP BY a.user_id
+      `).all(period.period_start, period.period_end) as Array<{ user_id: number; fee: number }>;
+      for (const r of rows) meetingFeeByUser.set(r.user_id, round2(r.fee || 0));
+    } catch { /* exec-meeting tables may not exist yet — no เบี้ยประชุม */ }
 
     let computed = 0;
     let skipped = 0;
@@ -2022,7 +2054,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
           hLine.shift_minutes, hLine.break_deducted_minutes, hLine.regular_minutes, hLine.ot_minutes,
           hLine.holiday_minutes,
           hLine.days_worked, hLine.leave_days, hLine.unpaired_clockins,
-          hLine.base_pay, hLine.ot_pay, hLine.service_charge, hLine.other_additions, hLine.gross_pay,
+          hLine.base_pay, hLine.ot_pay, hLine.service_charge, hLine.other_additions, hLine.meeting_fee, hLine.gross_pay,
           hLine.sso_amount, hLine.tax_amount, hLine.other_deductions, round2(hDrink),
           round2(hMeal),
           round2(Math.max(0, hLine.net_pay - hDrink - hMeal)),
@@ -2096,7 +2128,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         fieldOverridesByDate: fieldOverridesByUser.get(emp.user_id),
         leaveDates: leaveDatesByUser.get(emp.user_id),
         dfAmount: dfByUser.get(emp.user_id) ?? 0,
-        dfBranchPeriod
+        dfBranchPeriod,
+        meetingFee: meetingFeeByUser.get(emp.user_id) ?? 0
       });
       // Flag the helper line but store the person's REAL employment_type (the PT
       // cast was only to borrow the hourly math), so every write path agrees and
@@ -2121,7 +2154,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         line.shift_minutes, line.break_deducted_minutes, line.regular_minutes, line.ot_minutes,
         line.holiday_minutes,
         line.days_worked, line.leave_days, line.unpaired_clockins,
-        line.base_pay, line.ot_pay, line.service_charge, line.other_additions, line.gross_pay,
+        line.base_pay, line.ot_pay, line.service_charge, line.other_additions, line.meeting_fee, line.gross_pay,
         line.sso_amount, line.tax_amount, line.other_deductions, round2(drinkDed),
         round2(mealpassDed),
         // Safety floor (owner 2026-08-11): welfare deductions must never push net
@@ -2536,8 +2569,30 @@ export function recomputeLine(
   const svc = dfActiveRL ? 0 : existing.service_charge;
   const add = dfActiveRL ? round2(dfPayRL) : existing.other_additions;
   const ded = existing.other_deductions;
-  const taxBase = dfActiveRL ? (computed.base_pay + computed.ot_pay + svc) : (computed.base_pay + computed.ot_pay + svc + add);
-  const gross = computed.base_pay + computed.ot_pay + svc + add;
+  // เบี้ยประชุม for this user in the period (owner 2026-09-02) — refreshed from
+  // exec-meeting attendance on every recompute; taxable, its own line. Paid ONCE:
+  // only in a company-wide round (branch NULL) or at the user's primary-branch
+  // period, so a cross-branch person isn't paid twice.
+  let meetingFeeRL = 0;
+  const rlPrimaryBranch = (db.prepare(
+    `SELECT COALESCE(
+        (SELECT branch_id FROM user_branches WHERE user_id = ? AND is_primary = 1 LIMIT 1),
+        (SELECT MIN(branch_id) FROM user_branches WHERE user_id = ?)
+     ) AS b`
+  ).get(userId, userId) as { b: number | null }).b;
+  const rlPaysMeetingFee = period.branch_id == null || period.branch_id === rlPrimaryBranch;
+  if (rlPaysMeetingFee) {
+    try {
+      meetingFeeRL = round2(((db.prepare(`
+        SELECT COALESCE(SUM(a.fee_amount), 0) AS fee
+        FROM exec_meeting_attendance a JOIN exec_meetings m ON m.id = a.meeting_id
+        WHERE a.user_id = ? AND a.ended_at IS NOT NULL AND a.fee_amount > 0
+          AND m.meeting_date >= ? AND m.meeting_date <= ?
+      `).get(userId, period.period_start, period.period_end) as { fee: number }).fee) || 0);
+    } catch { /* exec-meeting tables may not exist yet */ }
+  }
+  const taxBase = (dfActiveRL ? (computed.base_pay + computed.ot_pay + svc) : (computed.base_pay + computed.ot_pay + svc + add)) + meetingFeeRL;
+  const gross = computed.base_pay + computed.ot_pay + svc + add + meetingFeeRL;
   const taxMode = rlEmp.salary_tax_mode ?? "sso";
   let sso = 0;
   let tax = 0;
@@ -2563,7 +2618,7 @@ export function recomputeLine(
       SET shift_minutes = ?, break_deducted_minutes = ?,
           regular_minutes = ?, ot_minutes = ?, holiday_minutes = ?,
           days_worked = ?, unpaired_clockins = ?,
-          base_pay = ?, ot_pay = ?, service_charge = ?, other_additions = ?, gross_pay = ?,
+          base_pay = ?, ot_pay = ?, service_charge = ?, other_additions = ?, meeting_fee = ?, gross_pay = ?,
           sso_amount = ?, tax_amount = ?, drink_deductions = ?, mealpass_deductions = ?, net_pay = ?,
           hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
           pay_cycle_snapshot = ?, salary_tax_mode_snapshot = ?,
@@ -2575,7 +2630,7 @@ export function recomputeLine(
       computed.shift_minutes, computed.break_deducted_minutes,
       computed.regular_minutes, computed.ot_minutes, computed.holiday_minutes,
       computed.days_worked, computed.unpaired_clockins,
-      round2(computed.base_pay), round2(computed.ot_pay), round2(svc), round2(add), round2(gross),
+      round2(computed.base_pay), round2(computed.ot_pay), round2(svc), round2(add), round2(meetingFeeRL), round2(gross),
       round2(sso), round2(tax), round2(drinkDed), round2(mealpassDed), round2(net),
       rlEmp.hourly_rate, rlEmp.monthly_salary,
       rlEmp.pay_cycle, taxMode,
@@ -2595,17 +2650,17 @@ export function recomputeLine(
         salary_tax_mode_snapshot,
         shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
         holiday_minutes, days_worked, leave_days, unpaired_clockins,
-        base_pay, ot_pay, service_charge, other_additions, gross_pay,
+        base_pay, ot_pay, service_charge, other_additions, meeting_fee, gross_pay,
         sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay,
         is_helper
-      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?)
+      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?)
     `).run(
       periodId, userId, existing.employee_code, existing.display_name, employee.employment_type,
       rlEmp.pay_cycle, rlEmp.hourly_rate, rlEmp.monthly_salary,
       taxMode,
       computed.shift_minutes, computed.break_deducted_minutes, computed.regular_minutes, computed.ot_minutes,
       computed.holiday_minutes, computed.days_worked, existing.leave_days, computed.unpaired_clockins,
-      round2(computed.base_pay), round2(computed.ot_pay), round2(svc), round2(add), round2(gross),
+      round2(computed.base_pay), round2(computed.ot_pay), round2(svc), round2(add), round2(meetingFeeRL), round2(gross),
       round2(sso), round2(tax), round2(ded), round2(drinkDed), round2(mealpassDed), round2(net),
       rlHelperFlag
     );
