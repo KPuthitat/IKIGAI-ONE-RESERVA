@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { logPersonaAction } from "@/lib/db";
 import { createExecMeeting, listExecMeetings, type ExecMeetingStatus } from "@/lib/exec-meetings";
+import { notifyMeetingInvitees } from "@/lib/exec-meeting-notify";
 
 // ประชุมผู้บริหาร — admin management (owner 2026-09-02).
 //   GET  → list meetings (optionally by status)
@@ -61,5 +62,7 @@ export async function POST(req: Request) {
     created_by: user.id
   });
   logPersonaAction(user.id, "exec_meeting.create", id);
+  // LINE นัดประชุมถึงผู้ได้รับเชิญทันที (owner 2026-09-02) — fire-and-forget.
+  void notifyMeetingInvitees(id, d.invitee_user_ids);
   return NextResponse.json({ ok: true, id });
 }
