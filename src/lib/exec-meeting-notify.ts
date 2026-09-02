@@ -58,8 +58,7 @@ function inviteFlex(title: string, ymd: string): LineMessage {
         contents: [
           { type: "separator", color: "#e6ddce" },
           { type: "button", style: "primary", color: "#a06820", height: "md", margin: "md",
-            action: { type: "uri", label: "เข้าสู่ระบบ", uri: STAFF_MEETING_URL } },
-          { type: "text", text: "เข้าร่วม · บันทึกรายงาน · รับเบี้ยประชุม", size: "xxs", color: "#a8977f", align: "center" }
+            action: { type: "uri", label: "เข้าสู่ระบบ", uri: STAFF_MEETING_URL } }
         ]
       }
     }
