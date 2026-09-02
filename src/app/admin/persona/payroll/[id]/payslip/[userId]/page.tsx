@@ -49,6 +49,7 @@ type Line = {
   ot_pay: number;
   service_charge: number;
   other_additions: number;
+  meeting_fee: number;
   gross_pay: number;
   sso_amount: number;
   drink_deductions: number;
@@ -115,7 +116,7 @@ export default function PayslipPage({
            shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
            holiday_minutes,
            days_worked, leave_days, unpaid_leave_days, unpaired_clockins,
-           base_pay, ot_pay, service_charge, other_additions, gross_pay,
+           base_pay, ot_pay, service_charge, other_additions, meeting_fee, gross_pay,
            sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay
     FROM payroll_lines WHERE period_id = ? AND user_id = ?
   `).get(periodId, userId) as Line | undefined;
@@ -160,7 +161,7 @@ export default function PayslipPage({
   // in-round line.service_charge applies (WHT/GI already inside net_pay).
   const isPt = line.employment_type === "pt";
   const usesMonthlySvc = period.cycle === "monthly" && svcRow != null;
-  const wageComp = line.base_pay + line.ot_pay + line.other_additions;
+  const wageComp = line.base_pay + line.ot_pay + line.other_additions + line.meeting_fee;
   const svcGrossRound = usesMonthlySvc ? (svcRow?.netAllocation ?? 0) : line.service_charge;
   const svcWhtRound = usesMonthlySvc ? (svcRow?.whtAmount ?? 0) : 0;
   const svcGiRound = usesMonthlySvc ? (svcRow?.groupInsurance ?? 0) : 0;
@@ -316,6 +317,9 @@ export default function PayslipPage({
           )}
           {line.other_additions > 0 && (
             <Money label={t(lang, "admin.persona.payroll.col.otherAdd")} value={line.other_additions} />
+          )}
+          {line.meeting_fee > 0 && (
+            <Money label="เบี้ยประชุม" value={line.meeting_fee} />
           )}
           <Money
             label={t(lang, "admin.persona.payroll.payslip.grossLabel")}

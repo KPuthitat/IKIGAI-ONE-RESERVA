@@ -3922,6 +3922,13 @@ function runMigrations(db: Database.Database): void {
   if (!plNames.has("mealpass_deductions")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN mealpass_deductions REAL NOT NULL DEFAULT 0");
   }
+  // meeting_fee (owner 2026-09-02): เบี้ยประชุม — an after-hours executive-meeting
+  // allowance (200 บาท/ชม. per minute) paid via payroll as a distinct "เบี้ยประชุม"
+  // line in ค่าตอบแทน. TAXABLE (in the tax base), summed from exec_meeting_attendance
+  // for meetings whose date falls in the period; recomputed each build.
+  if (!plNames.has("meeting_fee")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN meeting_fee REAL NOT NULL DEFAULT 0");
+  }
   // "ตรวจแล้ว" review sign-off (owner 2026-08-03) — auto-cleared on any line change.
   if (!plNames.has("reviewed_at")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN reviewed_at TEXT");

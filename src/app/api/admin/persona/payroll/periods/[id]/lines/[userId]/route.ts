@@ -92,7 +92,7 @@ export async function PATCH(
            salary_tax_mode_snapshot,
            regular_minutes, ot_minutes, holiday_minutes,
            days_worked, leave_days, unpaid_leave_days, unpaired_clockins,
-           base_pay, ot_pay, service_charge, other_additions, other_deductions,
+           base_pay, ot_pay, service_charge, other_additions, other_deductions, meeting_fee,
            gross_pay, net_pay, sso_amount, tax_amount, is_helper
     FROM payroll_lines WHERE period_id = ? AND user_id = ?
   `).get(periodId, userId) as {
@@ -107,7 +107,7 @@ export async function PATCH(
     regular_minutes: number; ot_minutes: number; holiday_minutes: number;
     days_worked: number; leave_days: number; unpaid_leave_days: number; unpaired_clockins: number;
     base_pay: number; ot_pay: number; service_charge: number;
-    other_additions: number; other_deductions: number;
+    other_additions: number; other_deductions: number; meeting_fee: number;
     gross_pay: number; net_pay: number;
     sso_amount: number; tax_amount: number;
     is_helper: number;
@@ -242,7 +242,7 @@ export async function PATCH(
       SET regular_minutes = ?, ot_minutes = ?, holiday_minutes = ?,
           days_worked = ?, leave_days = ?, unpaid_leave_days = ?,
           base_pay = ?, ot_pay = ?, service_charge = ?,
-          other_additions = ?, other_deductions = ?,
+          other_additions = ?, other_deductions = ?, meeting_fee = ?,
           gross_pay = ?, sso_amount = ?, tax_amount = ?,
           drink_deductions = ?, mealpass_deductions = ?, net_pay = ?,
           salary_tax_mode_snapshot = ?,
@@ -257,12 +257,14 @@ export async function PATCH(
       computed.regular_minutes, computed.ot_minutes, computed.holiday_minutes,
       computed.days_worked, computed.leave_days, computed.unpaid_leave_days,
       computed.base_pay, computed.ot_pay, computed.service_charge,
-      computed.other_additions, computed.other_deductions,
-      computed.gross_pay, computed.sso_amount, computed.tax_amount,
+      computed.other_additions, computed.other_deductions, line.meeting_fee,
+      // เบี้ยประชุม is preserved through a manual override (owner 2026-09-02) — added
+      // into gross/net so an override never silently drops the meeting allowance.
+      computed.gross_pay + line.meeting_fee, computed.sso_amount, computed.tax_amount,
       drinkDed, mealpassDed,
       // Safety floor (owner 2026-08-11): welfare deductions never push net below 0,
       // matching the other write paths.
-      Math.round(Math.max(0, computed.net_pay - drinkDed - mealpassDed) * 100) / 100,
+      Math.round(Math.max(0, computed.net_pay + line.meeting_fee - drinkDed - mealpassDed) * 100) / 100,
       computed.salary_tax_mode_snapshot,
       computed.hourly_rate_snapshot, computed.monthly_salary_snapshot,
       computed.pay_cycle_snapshot,
@@ -317,7 +319,7 @@ export async function PATCH(
     db.prepare(`
       UPDATE payroll_lines
       SET base_pay = ?, ot_pay = ?, service_charge = ?,
-          other_additions = ?, other_deductions = ?,
+          other_additions = ?, other_deductions = ?, meeting_fee = ?,
           gross_pay = ?, sso_amount = ?, tax_amount = ?,
           drink_deductions = ?, mealpass_deductions = ?, net_pay = ?,
           salary_tax_mode_snapshot = ?,
@@ -326,13 +328,15 @@ export async function PATCH(
           updated_at = CURRENT_TIMESTAMP
       WHERE period_id = ? AND user_id = ?
     `).run(
-      basePay, otPay, svcCharge, otherAdd, otherDed,
-      Math.round(gross * 100) / 100,
+      basePay, otPay, svcCharge, otherAdd, otherDed, line.meeting_fee,
+      // เบี้ยประชุม preserved through a money-only override — kept in gross/net so
+      // the meeting allowance is never silently dropped (owner 2026-09-02).
+      Math.round((gross + line.meeting_fee) * 100) / 100,
       Math.round(ssoAmount * 100) / 100,
       Math.round(taxAmount * 100) / 100,
       Math.round(drinkDed * 100) / 100,
       Math.round(mealpassDed * 100) / 100,
-      Math.round(net * 100) / 100,
+      Math.round((net + line.meeting_fee) * 100) / 100,
       isHelperLine ? "wht" : taxMode,
       d.notes ?? null,
       periodId, userId
