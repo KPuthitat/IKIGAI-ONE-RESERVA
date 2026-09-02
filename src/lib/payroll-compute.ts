@@ -1277,15 +1277,20 @@ export function computeLineForEmployee(args: {
   // 'sso' = ในระบบ → SSO 5% (cap) only — PIT is not withheld monthly
   //                  (handled annually between employee & Revenue Dept)
   // 'wht' = นอกระบบ → WHT 3% flat on gross, no SSO
-  // Tax mode BY GROUP (owner 2026-08-03): พาร์ทไทม์ + ประจำเดือนเปลี่ยนผ่าน + ประจำ
-  // เดือนแรกที่เข้า → หัก ณ ที่จ่าย 3% (WHT); ประจำเต็มเดือน (รวมเดือนลาออก) → ประกัน
-  // สังคม (SSO). Category-driven — overrides the per-employee salary_tax_mode flag.
+  // Tax mode BY GROUP (owner 2026-08-03, refined 2026-09-02):
+  //   - พาร์ทไทม์ → หัก ณ ที่จ่าย 3% (WHT) เสมอ
+  //   - ประจำ เดือนเปลี่ยนผ่าน (weekly cycle) / เดือนแรกที่เพิ่งเข้า → WHT
+  //     (ยังไม่ทันขึ้นทะเบียนประกันสังคม)
+  //   - ประจำ เต็มเดือน → ยึด salary_tax_mode รายคน (owner 2026-09-02: บางคน
+  //     อยู่นอกระบบต้อง WHT — ไม่ใช่พนักงานประจำทุกคนเข้าประกันสังคม). ระบบเดิม
+  //     บังคับ SSO ทุกคน ทำให้คนนอกระบบถูกหักประกันสังคมผิด.
+  //   - อื่นๆ (df) → ยึด salary_tax_mode รายคน
   const ftStartForTax = e.ft_started_at ?? e.hire_date;
   const isFtFirstMonth = !!ftStartForTax && ftStartForTax >= periodStart && ftStartForTax <= periodEnd;
   const taxMode =
     e.employment_type === "pt" ? "wht"
     : e.employment_type === "ft"
-      ? ((ftCycle === "weekly" || isFtFirstMonth) ? "wht" : "sso")
+      ? ((ftCycle === "weekly" || isFtFirstMonth) ? "wht" : (e.salary_tax_mode ?? "sso"))
       : (e.salary_tax_mode ?? "sso");
   let ssoAmount = 0;
   let taxAmount = 0;
@@ -1488,15 +1493,20 @@ export function computeLineFromMinutes(args: {
   const taxableGross = dfActiveM ? (basePay + otPay + serviceCharge) : (basePay + otPay + serviceCharge + otherAdditions);
   const grossPay = basePay + otPay + serviceCharge + otherAdditions;
 
-  // Tax mode BY GROUP (owner 2026-08-03): พาร์ทไทม์ + ประจำเดือนเปลี่ยนผ่าน + ประจำ
-  // เดือนแรกที่เข้า → หัก ณ ที่จ่าย 3% (WHT); ประจำเต็มเดือน (รวมเดือนลาออก) → ประกัน
-  // สังคม (SSO). Category-driven — overrides the per-employee salary_tax_mode flag.
+  // Tax mode BY GROUP (owner 2026-08-03, refined 2026-09-02):
+  //   - พาร์ทไทม์ → หัก ณ ที่จ่าย 3% (WHT) เสมอ
+  //   - ประจำ เดือนเปลี่ยนผ่าน (weekly cycle) / เดือนแรกที่เพิ่งเข้า → WHT
+  //     (ยังไม่ทันขึ้นทะเบียนประกันสังคม)
+  //   - ประจำ เต็มเดือน → ยึด salary_tax_mode รายคน (owner 2026-09-02: บางคน
+  //     อยู่นอกระบบต้อง WHT — ไม่ใช่พนักงานประจำทุกคนเข้าประกันสังคม). ระบบเดิม
+  //     บังคับ SSO ทุกคน ทำให้คนนอกระบบถูกหักประกันสังคมผิด.
+  //   - อื่นๆ (df) → ยึด salary_tax_mode รายคน
   const ftStartForTax = e.ft_started_at ?? e.hire_date;
   const isFtFirstMonth = !!ftStartForTax && ftStartForTax >= periodStart && ftStartForTax <= periodEnd;
   const taxMode =
     e.employment_type === "pt" ? "wht"
     : e.employment_type === "ft"
-      ? ((ftCycle === "weekly" || isFtFirstMonth) ? "wht" : "sso")
+      ? ((ftCycle === "weekly" || isFtFirstMonth) ? "wht" : (e.salary_tax_mode ?? "sso"))
       : (e.salary_tax_mode ?? "sso");
   let ssoAmount = 0;
   let taxAmount = 0;
