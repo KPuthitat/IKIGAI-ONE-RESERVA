@@ -1563,6 +1563,7 @@ export function computeLineFromMinutes(args: {
 export function computePayrollPeriod(db: Database.Database, periodId: number): {
   computed: number;
   skipped: number;
+  locked: number;
 } {
   const period = db.prepare(`
     SELECT id, cycle, target, data_source, period_start, period_end, pay_date, status, branch_id
@@ -1941,9 +1942,20 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     }
   }
 
-  // Wipe existing lines and recompute
+  // Reviewed lines are FROZEN (owner 2026-09-02: "ติ๊กตรวจแล้ว เวลาออกจากหน้านี้
+  // ข้อมูลต้องไม่เปลี่ยน"). A line the admin has signed off ("ตรวจแล้ว") keeps its
+  // stored numbers and its review through a full recompute — it survives the wipe
+  // below and is skipped in the loop. To change a reviewed line, un-tick it first
+  // (or edit it directly — recomputeLine clears the review when numbers change).
+  const reviewedUserIds = new Set(
+    (db.prepare(
+      "SELECT user_id FROM payroll_lines WHERE period_id = ? AND reviewed_at IS NOT NULL"
+    ).all(periodId) as Array<{ user_id: number }>).map((r) => r.user_id)
+  );
+
+  // Wipe existing (non-reviewed) lines and recompute
   const tx = db.transaction(() => {
-    db.prepare("DELETE FROM payroll_lines WHERE period_id = ?").run(periodId);
+    db.prepare("DELETE FROM payroll_lines WHERE period_id = ? AND reviewed_at IS NULL").run(periodId);
 
     const insertLine = db.prepare(`
       INSERT INTO payroll_lines (
@@ -1974,7 +1986,10 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
 
     let computed = 0;
     let skipped = 0;
+    let locked = 0;
     for (const emp of staff) {
+      // Frozen: a reviewed line survived the wipe above — leave it untouched.
+      if (reviewedUserIds.has(emp.user_id)) { locked++; continue; }
       // Cross-company/branch day-rate HELPER (owner 2026-08-17): a person with a
       // daily_rate set for THIS branch is paid a flat fee per day they clocked in
       // here (WHT 3% by the paying company, no SSO), instead of their own
@@ -2118,7 +2133,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
       new Date().toISOString(), periodId
     );
 
-    return { computed, skipped };
+    return { computed, skipped, locked };
   });
 
   return tx();

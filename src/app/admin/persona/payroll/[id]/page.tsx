@@ -190,6 +190,9 @@ export default function PeriodDetailPage({
     JOIN users u ON pl.user_id = u.id
     WHERE pl.period_id = ?
       AND pl.overridden = 0
+      -- Reviewed lines are frozen (owner 2026-09-02): recompute won't touch
+      -- them, so a snapshot mismatch there is intentional, not "stale".
+      AND pl.reviewed_at IS NULL
       AND (
         COALESCE(pl.hourly_rate_snapshot, -1) != COALESCE(u.hourly_rate, -1)
         OR COALESCE(pl.monthly_salary_snapshot, -1) != COALESCE(u.monthly_salary, -1)

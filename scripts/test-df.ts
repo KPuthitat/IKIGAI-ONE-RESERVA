@@ -161,6 +161,26 @@ process.env.DATABASE_PATH = TMP;
     { base_pay: number; other_additions: number; net_pay: number };
   ok("recomputeLine keeps DF (base 0, add 300, net 300)", near(dLine2.base_pay, 0) && near(dLine2.other_additions, 300) && near(dLine2.net_pay, 300));
 
+  // ── 8) FREEZE: a reviewed line survives a full recompute untouched ──
+  // (owner 2026-09-02: "ติ๊กตรวจแล้ว เวลาออกจากหน้านี้ ข้อมูลต้องไม่เปลี่ยน").
+  // Sign the line off AND tamper its stored numbers; a full recompute must keep
+  // both the tampered figures and the review, and report it as locked.
+  db.prepare(
+    "UPDATE payroll_lines SET reviewed_at = CURRENT_TIMESTAMP, reviewed_by = 1, base_pay = 999, gross_pay = 999, net_pay = 999 WHERE period_id=? AND user_id=?"
+  ).run(pid, d1);
+  const frozenRes = payroll.computePayrollPeriod(db, pid);
+  const dLine3 = db.prepare("SELECT base_pay, gross_pay, net_pay, reviewed_at FROM payroll_lines WHERE period_id=? AND user_id=?").get(pid, d1) as
+    { base_pay: number; gross_pay: number; net_pay: number; reviewed_at: string | null };
+  ok("freeze: reviewed line keeps its stored numbers (999)", near(dLine3.base_pay, 999) && near(dLine3.gross_pay, 999) && near(dLine3.net_pay, 999));
+  ok("freeze: reviewed line stays reviewed after recompute", dLine3.reviewed_at != null);
+  ok("freeze: recompute reports locked >= 1", frozenRes.locked >= 1);
+  // Un-tick → the next recompute recomputes it back to the real DF figures.
+  db.prepare("UPDATE payroll_lines SET reviewed_at = NULL, reviewed_by = NULL WHERE period_id=? AND user_id=?").run(pid, d1);
+  payroll.computePayrollPeriod(db, pid);
+  const dLine4 = db.prepare("SELECT base_pay, other_additions, net_pay FROM payroll_lines WHERE period_id=? AND user_id=?").get(pid, d1) as
+    { base_pay: number; other_additions: number; net_pay: number };
+  ok("unlock: recompute restores real DF figures (base 0, add 300, net 300)", near(dLine4.base_pay, 0) && near(dLine4.other_additions, 300) && near(dLine4.net_pay, 300));
+
   console.log(`\ndf test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);
