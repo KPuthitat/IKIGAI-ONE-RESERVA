@@ -55,7 +55,7 @@ process.env.DATABASE_PATH = TMP;
   // ── end blocked until minutes complete ──
   const e0 = em.endMeeting(mid, uid);
   ok("gating: จบไม่ได้ถ้ารายงานไม่ครบ", "error" in e0 && e0.error === "minutes_incomplete");
-  em.saveMinutes(mid, uid, { agenda: "วาระ", details: "รายละเอียด", suggestions: "ข้อเสนอ", action_plan: "แผน" });
+  em.saveMinutes(mid, uid, { locked_answers: [], extra_items: [{ topic: "วาระ", details: "รายละเอียด", suggestions: "ข้อเสนอ", action_plan: "แผน" }] });
 
   // backdate join by 90 minutes so the timer yields a real duration
   db.prepare("UPDATE exec_meeting_attendance SET joined_at = datetime('now','-90 minutes') WHERE meeting_id=? AND user_id=?").run(mid, uid);
@@ -66,11 +66,50 @@ process.env.DATABASE_PATH = TMP;
 
   // ── exempt exec: attends but fee = 0 ──
   em.joinMeeting(mid, execU);
-  em.saveMinutes(mid, execU, { agenda: "ก", details: "ข", suggestions: "ค", action_plan: "ง" });
+  em.saveMinutes(mid, execU, { locked_answers: [], extra_items: [{ topic: "ก", details: "ข", suggestions: "ค", action_plan: "ง" }] });
   db.prepare("UPDATE exec_meeting_attendance SET joined_at = datetime('now','-60 minutes') WHERE meeting_id=? AND user_id=?").run(mid, execU);
   const e2 = em.endMeeting(mid, execU);
   ok("exempt: คิดเวลา 60 นาที", !("error" in e2) && e2.minutes === 60);
   ok("exempt: เบี้ยประชุม = 0 (ยกเว้น)", !("error" in e2) && e2.fee === 0);
+
+  // ── preset agenda (วาระตั้งล่วงหน้า) + multi-วาระ minutes ──
+  const uid3 = mkUser("staff3");
+  const mid2 = em.createExecMeeting({
+    title: "ประชุมมีวาระ", meeting_date: "2026-09-03", branch_id: null,
+    agenda_topics: ["  ยอดขาย  ", "ปัญหาหน้าร้าน", ""],   // blank dropped, others trimmed
+    invitee_user_ids: [uid3], created_by: uid3
+  });
+  em.updateExecMeeting(mid2, { status: "active" });
+  const detail = em.getExecMeeting(mid2);
+  ok("agenda: เก็บวาระล่วงหน้า (ตัดช่องว่าง/รายการว่าง)",
+    !!detail && detail.agenda_topics.length === 2 && detail.agenda_topics[0] === "ยอดขาย" && detail.agenda_topics[1] === "ปัญหาหน้าร้าน");
+
+  const v0 = em.getStaffMeetingView(mid2, uid3);
+  ok("agenda: staff เห็นวาระที่ล็อกไว้ 2 อัน", !!v0 && v0.locked_items.length === 2 && v0.extra_items.length === 0);
+
+  em.joinMeeting(mid2, uid3);
+  // Answer only the first locked วาระ → still incomplete (must answer all วาระ).
+  em.saveMinutes(mid2, uid3, {
+    locked_answers: [{ details: "ดี", suggestions: "เพิ่มโปร", action_plan: "ทำ" }, { details: "", suggestions: "", action_plan: "" }],
+    extra_items: []
+  });
+  ok("agenda: ยังไม่ครบถ้าตอบวาระที่ล็อกไม่ครบทุกอัน", em.getStaffMeetingView(mid2, uid3)!.minutes_complete === false);
+
+  // Client can't rename a locked topic — server re-attaches preset topic text.
+  em.saveMinutes(mid2, uid3, {
+    locked_answers: [
+      { details: "ดี", suggestions: "เพิ่มโปร", action_plan: "ทำ" },
+      { details: "คิวยาว", suggestions: "เพิ่มคน", action_plan: "จ้าง" }
+    ],
+    extra_items: [{ topic: "เรื่องอื่น", details: "x", suggestions: "y", action_plan: "z" }]
+  });
+  const v1 = em.getStaffMeetingView(mid2, uid3)!;
+  ok("agenda: ตอบครบทุกวาระ (ล็อก+เพิ่มเอง) → ครบ", v1.minutes_complete === true);
+  ok("agenda: หัวข้อล็อกยังเป็นของผู้จัด", v1.locked_items[0].topic === "ยอดขาย" && v1.locked_items[1].topic === "ปัญหาหน้าร้าน");
+  ok("agenda: วาระที่เพิ่มเองแยกไว้", v1.extra_items.length === 1 && v1.extra_items[0].topic === "เรื่องอื่น");
+  const detail2 = em.getExecMeeting(mid2)!;
+  const inv3 = detail2.invitees.find((i) => i.user_id === uid3)!;
+  ok("agenda: แอดมินเห็น 3 วาระของ staff", inv3.items.length === 3 && inv3.minutes_complete === true);
 
   // ── payroll integration: เบี้ยประชุม lands on the line, taxable, once ──
   const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
