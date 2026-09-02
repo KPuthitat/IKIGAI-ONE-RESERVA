@@ -138,6 +138,9 @@ export default function CompanyOverviewPage({
             <Link href={`/admin/accounta/company?month=${shiftMonth(month, 1)}`}
               className="rounded-lg px-2.5 py-1 text-sm bg-slate-100 text-slate-600 hover:bg-slate-200">เดือนถัดไป →</Link>
           )}
+          {/* PDF infographic for C-level (owner 2026-09-02) */}
+          <a href={`/api/admin/accounta/company/overview-pdf?month=${month}`} target="_blank" rel="noopener"
+            className="rounded-lg px-2.5 py-1 text-sm bg-brand text-white hover:opacity-90">ดาวน์โหลด PDF</a>
         </div>
       </div>
 
