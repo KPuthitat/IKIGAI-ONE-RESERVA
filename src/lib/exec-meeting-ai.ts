@@ -48,7 +48,12 @@ function extractJson(text: string): MeetingAiResult {
   const end = t.lastIndexOf("}");
   if (start >= 0 && end > start) t = t.slice(start, end + 1);
   let obj: unknown;
-  try { obj = JSON.parse(t); } catch { throw new MeetingAiError("parse", "อ่านผลสรุปจาก AI ไม่ได้"); }
+  try { obj = JSON.parse(t); }
+  catch {
+    // Log a preview so a real failure is diagnosable from pm2 (owner 2026-09-02).
+    console.warn("exec-meeting AI parse failed. len=", t.length, "head=", t.slice(0, 300), "tail=", t.slice(-300));
+    throw new MeetingAiError("parse", "อ่านผลสรุปจาก AI ไม่ได้ (ผลอาจยาวเกินหรือรูปแบบไม่ถูกต้อง) — ลองใหม่อีกครั้ง");
+  }
   const o = obj as Record<string, unknown>;
   const summary = typeof o.summary === "string" ? o.summary : "";
   const checklist = Array.isArray(o.checklist)
@@ -133,7 +138,9 @@ export async function summarizeMeeting(meetingId: number): Promise<MeetingAiResu
       method: "POST",
       headers: { "x-api-key": apiKey, "anthropic-version": ANTHROPIC_VERSION, "content-type": "application/json" },
       body: JSON.stringify({
-        model: resolvedModel(), max_tokens: 2000, system: SYSTEM,
+        // Big meetings (many วาระ × many people) produce a long summary; a small
+        // cap truncates the JSON mid-output and breaks parsing (owner 2026-09-02).
+        model: resolvedModel(), max_tokens: 8000, system: SYSTEM,
         messages: [{ role: "user", content: userMsg }]
       })
     });
