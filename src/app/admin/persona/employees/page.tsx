@@ -50,7 +50,7 @@ export default function AdminEmployeesPage({
            u.salary_tax_mode, u.group_insurance_start_month, u.ft_started_at, u.pt_started_at, u.df_started_at, u.line_user_id, u.shift_start_time,
            u.reports_to_user_id, u.escalation_hours, u.is_test_account,
            u.can_view_payroll, u.track_attendance, u.receives_service_charge,
-           u.clinical_role, u.license_no, u.is_hr_analytics,
+           u.clinical_role, u.license_no, u.is_hr_analytics, u.meeting_fee_exempt,
            CASE WHEN u.pin_hash IS NULL THEN 0 ELSE 1 END AS has_pin,
            CASE WHEN u.resignation_unlocked_at IS NULL THEN 0 ELSE 1 END AS resign_unlocked
     FROM users u
