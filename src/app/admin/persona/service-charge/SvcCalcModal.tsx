@@ -8,7 +8,7 @@ import { fmtMoney } from "@/lib/format";
 // ทำงานของคนนั้น ÷ นาทีทำงานรวมของทุกคน). นาทีนับตามกะ (มาก่อนเวลาเริ่มนับที่เวลากะ).
 type BreakdownItem = {
   date: string; dayAmount: number; staffPool: number;
-  userMinutes: number; totalMinutes: number; share: number;
+  userMinutes: number; totalMinutes: number; staffCount: number; share: number;
 };
 
 const fmtMin = (min: number) => Math.round(min).toLocaleString();
@@ -79,6 +79,7 @@ export default function SvcCalcModal({
                       <th className="py-1.5 px-2 text-right font-medium">ส่วนแบ่งพนักงาน</th>
                       <th className="py-1.5 px-2 text-right font-medium">จำนวนนาทีที่ทำงาน</th>
                       <th className="py-1.5 px-2 text-right font-medium">นาทีทำงานรวมทั้งทีม</th>
+                      <th className="py-1.5 px-2 text-right font-medium" title="จำนวนพนักงานที่หารกองกลางวันนี้">ตัวหาร (คน)</th>
                       <th className="py-1.5 pl-2 text-right font-medium">ส่วนแบ่ง</th>
                     </tr>
                   </thead>
@@ -90,13 +91,14 @@ export default function SvcCalcModal({
                         <td className="py-1.5 px-2 text-right">{fmtMoney(d.staffPool)}</td>
                         <td className="py-1.5 px-2 text-right">{fmtMin(d.userMinutes)}</td>
                         <td className="py-1.5 px-2 text-right text-slate-500">{fmtMin(d.totalMinutes)}</td>
+                        <td className="py-1.5 px-2 text-right text-slate-500">{d.staffCount}</td>
                         <td className="py-1.5 pl-2 text-right font-semibold text-emerald-700">{fmtMoney(d.share)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-slate-200 font-bold text-slate-800">
-                      <td className="py-1.5 pr-2" colSpan={5}>รวมส่วนแบ่ง (ก่อนหักสาย/ลาออก)</td>
+                      <td className="py-1.5 pr-2" colSpan={6}>รวมส่วนแบ่ง (ก่อนหักสาย/ลาออก)</td>
                       <td className="py-1.5 pl-2 text-right">฿{fmtMoney(grossAllocation)}</td>
                     </tr>
                   </tfoot>
@@ -106,7 +108,7 @@ export default function SvcCalcModal({
             {excludedDays.length > 0 && (
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                 <div className="text-[11px] font-bold text-amber-800 mb-1">
-                  วันที่ถูกตัดสิทธิ์ (เวลางานผิดปกติ — ไม่นับ SVC)
+                  วันที่ถูกตัดสิทธิ์ (เวลางานผิดปกติ — ไม่นับ เซอร์วิสชาร์จ)
                 </div>
                 <ul className="text-[11px] text-amber-700 space-y-0.5">
                   {excludedDays.map((d) => (
@@ -156,7 +158,7 @@ export default function SvcCalcModal({
                       </div>
                     ))}
                     {otherDeductionItems.reduce((s, x) => s + x.amount, 0) > otherDeductions + 0.001 && (
-                      <div className="text-[10px] text-amber-600 pl-3">* หักได้เท่าที่มี SVC (ส่วนเกินยกไป/ไม่หัก)</div>
+                      <div className="text-[10px] text-amber-600 pl-3">* หักได้เท่าที่มี เซอร์วิสชาร์จ (ส่วนเกินยกไป/ไม่หัก)</div>
                     )}
                   </>
                 )}
