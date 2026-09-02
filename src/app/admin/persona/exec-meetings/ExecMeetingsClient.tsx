@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
@@ -51,6 +51,7 @@ export default function ExecMeetingsClient({ staff, meetings }: { staff: StaffLi
   const [invited, setInvited] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   function toggleInvite(id: number) {
     setInvited((prev) => {
@@ -190,12 +191,148 @@ export default function ExecMeetingsClient({ staff, meetings }: { staff: StaffLi
                       {m.status === "active" && (
                         <button type="button" onClick={() => setStatus(m.id, "ended")} className="text-xs text-amber-600 hover:underline mr-3">ปิดประชุม</button>
                       )}
+                      <button type="button" onClick={() => setDetailId(m.id)} className="text-xs text-brand hover:underline mr-3">รายละเอียด/สรุป</button>
                       <button type="button" onClick={() => remove(m.id)} className="text-xs text-rose-500 hover:underline">ลบ</button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      {detailId != null && (
+        <MeetingDetailModal meetingId={detailId} onClose={() => setDetailId(null)} />
+      )}
+    </div>
+  );
+}
+
+type Invitee = {
+  user_id: number; display_name: string; title_prefix: string | null; fee_exempt: boolean;
+  joined_at: string | null; ended_at: string | null; minutes: number | null; fee_amount: number | null;
+  minutes_complete: boolean;
+};
+type Detail = {
+  id: number; title: string; meeting_date: string; status: string;
+  ai_summary: string | null; ai_checklist: string | null; ai_carryover: string | null; summarized_at: string | null;
+  invitees: Invitee[];
+};
+
+function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose: () => void }) {
+  const [d, setD] = useState<Detail | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function load() {
+    const res = await fetch(apiUrl(`/api/admin/persona/exec-meetings/${meetingId}`));
+    const j = await res.json().catch(() => ({}));
+    if (j?.meeting) setD(j.meeting as Detail);
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [meetingId]);
+
+  async function summarize() {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/exec-meetings/${meetingId}/summarize`), { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (!j?.ok) { setErr(j?.message ?? j?.error ?? "สรุปไม่สำเร็จ"); return; }
+      await load();
+    } catch { setErr("เชื่อมต่อไม่ได้"); }
+    finally { setBusy(false); }
+  }
+
+  const checklist: Array<{ item: string; owner?: string }> = (() => {
+    try { return d?.ai_checklist ? JSON.parse(d.ai_checklist) : []; } catch { return []; }
+  })();
+  const carryover: Array<{ item: string }> = (() => {
+    try { return d?.ai_carryover ? JSON.parse(d.ai_carryover) : []; } catch { return []; }
+  })();
+  const anyMinutes = (d?.invitees ?? []).some((i) => i.minutes_complete);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[85vh] overflow-y-auto p-4 sm:p-5"
+        onClick={(e) => e.stopPropagation()}>
+        {!d ? (
+          <div className="py-10 text-center text-sm text-slate-400">กำลังโหลด...</div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="font-bold text-slate-800">{d.title}</div>
+                <div className="text-xs text-slate-500">{d.meeting_date}</div>
+              </div>
+              <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+            </div>
+
+            {/* Attendance + minutes status */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-slate-500 border-b whitespace-nowrap">
+                    <th className="py-1.5 pr-2">ผู้ได้รับเชิญ</th>
+                    <th className="py-1.5 px-2">เข้าร่วม</th>
+                    <th className="py-1.5 px-2">รายงาน</th>
+                    <th className="py-1.5 px-2 text-right">นาที</th>
+                    <th className="py-1.5 pl-2 text-right">เบี้ยประชุม</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.invitees.map((i) => (
+                    <tr key={i.user_id} className="border-b last:border-0">
+                      <td className="py-1.5 pr-2 text-slate-700">
+                        {i.title_prefix ? `${i.title_prefix} ` : ""}{i.display_name}
+                        {i.fee_exempt && <span className="ml-1 text-[10px] text-violet-600">(ยกเว้นเบี้ย)</span>}
+                      </td>
+                      <td className="py-1.5 px-2">{i.ended_at ? "จบแล้ว" : i.joined_at ? "กำลังประชุม" : "—"}</td>
+                      <td className="py-1.5 px-2">{i.minutes_complete ? "ครบ" : i.joined_at ? "ยังไม่ครบ" : "—"}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums">{i.minutes ?? "—"}</td>
+                      <td className="py-1.5 pl-2 text-right tabular-nums">{i.fee_amount != null ? `฿${i.fee_amount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* AI summary */}
+            <div className="rounded-xl border border-slate-200 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-slate-700">สรุปด้วย AI</div>
+                <button type="button" onClick={summarize} disabled={busy || !anyMinutes}
+                  title={!anyMinutes ? "ยังไม่มีรายงานให้สรุป" : undefined}
+                  className="btn-secondary text-xs disabled:opacity-50">
+                  {busy ? "กำลังสรุป..." : d.summarized_at ? "สรุปใหม่" : "สรุปด้วย AI"}
+                </button>
+              </div>
+              {err && <div className="text-xs text-rose-600">{err}</div>}
+              {d.ai_summary ? (
+                <div className="space-y-3">
+                  <div className="text-sm text-slate-700 whitespace-pre-wrap">{d.ai_summary}</div>
+                  {checklist.length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold text-slate-600 mb-1">เช็คลิสต์ติดตามสัปดาห์หน้า</div>
+                      <ul className="text-sm text-slate-700 space-y-1">
+                        {checklist.map((c, i) => (
+                          <li key={i} className="flex gap-2"><span className="text-brand">☐</span><span>{c.item}{c.owner ? ` — ${c.owner}` : ""}</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {carryover.length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold text-amber-700 mb-1">ประเด็นคงค้าง (ยกไปคุยสัปดาห์หน้า)</div>
+                      <ul className="text-sm text-slate-700 space-y-1 list-disc pl-5">
+                        {carryover.map((c, i) => <li key={i}>{c.item}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400">ยังไม่ได้สรุป — กด &quot;สรุปด้วย AI&quot; เมื่อผู้เข้าร่วมส่งรายงานแล้ว</div>
+              )}
+            </div>
           </div>
         )}
       </div>
