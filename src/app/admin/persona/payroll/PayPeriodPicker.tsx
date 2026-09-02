@@ -103,6 +103,10 @@ export default function PayPeriodPicker({
   // สร้างทุกสาขาทีเดียว (owner 2026-07-27) — when on, create hits every branch
   // in the company and lands on the combined company-cycle page.
   const [allBranches, setAllBranches] = useState(false);
+  // ประจำ รวมทั้งบริษัท (owner 2026-09-02) — one company-wide FT round that pays
+  // each salary once from all cross-branch clock-ins; ACCOUNTA cost splits per
+  // branch by days. FT monthly only; mutually exclusive with allBranches.
+  const [companyWide, setCompanyWide] = useState(false);
 
   // Lookup map: key = "cycle|target|start|end"
   const existingByKey = useMemo(() => {
@@ -135,7 +139,8 @@ export default function PayPeriodPicker({
           period_start: p.start,
           period_end: p.end,
           pay_date: p.pay,
-          all_branches: allBranches,
+          all_branches: allBranches && !(companyWide && p.target === "ft" && p.cycle === "monthly"),
+          company_wide: companyWide && p.target === "ft" && p.cycle === "monthly",
           ...(forceOpenParams ? {
             force_open_pin: forceOpenParams.pin,
             force_open_reason: forceOpenParams.reason
@@ -198,6 +203,18 @@ export default function PayPeriodPicker({
         />
         <span className="font-medium text-slate-700">{t(lang, "admin.persona.payroll.hub.allBranches")}</span>
         <span className="text-xs text-slate-400">{t(lang, "admin.persona.payroll.hub.allBranchesHint")}</span>
+      </label>
+
+      {/* ประจำ รวมทั้งบริษัท — one FT round, salary once, ACCOUNTA cost split per branch */}
+      <label className="flex items-center gap-2 text-sm cursor-pointer select-none bg-white/70 border border-slate-200 rounded-lg px-3 py-2 w-fit">
+        <input
+          type="checkbox"
+          checked={companyWide}
+          onChange={(e) => { setCompanyWide(e.target.checked); if (e.target.checked) setAllBranches(false); }}
+          className="w-4 h-4 accent-brand"
+        />
+        <span className="font-medium text-slate-700">ประจำ รวมทั้งบริษัท</span>
+        <span className="text-xs text-slate-400">เงินเดือนประจำรอบเดียว (พนักงานข้ามสาขาไม่เพี้ยน) · ลงบัญชีต้นทุนแยกสาขาตามวันที่ทำจริง</span>
       </label>
 
       {errMsg && (

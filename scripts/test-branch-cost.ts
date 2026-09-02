@@ -67,6 +67,34 @@ process.env.DATABASE_PATH = TMP;
   const r = new Map(bc.allocateLaborCostByBranch(db, uid, "2026-09-02", "2026-09-30", 100).map((x) => [x.branchId, x.amount]));
   ok("no-override window sums to 100", near((r.get(A) ?? 0) + (r.get(B) ?? 0), 100));
 
+  // ── ACCOUNTA: a company-wide FT round splits the salary cost per branch ──
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const payroll = await import("../src/lib/payroll-compute");
+  const accounta = await import("../src/lib/accounta-db");
+  const co = Number(db.prepare("INSERT INTO companies (name_th) VALUES ('IKIGAI')").run().lastInsertRowid);
+  db.prepare("UPDATE branches SET company_id = ? WHERE id IN (?, ?)").run(co, A, B);
+  db.prepare("UPDATE users SET employment_type='ft', monthly_salary=30000, pay_cycle='monthly', salary_tax_mode='wht', hire_date='2026-01-01' WHERE id=?").run(uid);
+  db.prepare("INSERT OR IGNORE INTO user_branches (user_id, branch_id, is_primary) VALUES (?, ?, 1)").run(uid, A);
+  db.prepare("INSERT OR IGNORE INTO user_branches (user_id, branch_id) VALUES (?, ?)").run(uid, B);
+  // Company-wide FT period (branch NULL) — computes the full salary once.
+  const pid = Number(db.prepare(
+    "INSERT INTO payroll_periods (cycle,period_start,period_end,pay_date,status,branch_id,target,data_source) VALUES ('monthly','2026-09-01','2026-09-30','2026-10-05','draft',NULL,'ft','auto')"
+  ).run().lastInsertRowid);
+  payroll.computePayrollPeriod(db, pid);
+  const nline = db.prepare("SELECT base_pay, net_pay FROM payroll_lines WHERE period_id=? AND user_id=?").get(pid, uid) as { base_pay: number; net_pay: number } | undefined;
+  ok("company-wide: จ่ายเงินเดือนเต็ม 30000 ครั้งเดียว", !!nline && near(nline.base_pay, 30000));
+  accounta.postPayrollToAccounta(pid, uid);
+  const sal = db.prepare(
+    "SELECT branch_id, amount_total FROM accounta_expenses WHERE payroll_period_id=? AND category='เงินเดือน/ค่าจ้าง' ORDER BY branch_id"
+  ).all(pid) as Array<{ branch_id: number; amount_total: number }>;
+  ok("ACCOUNTA: ต้นทุนเงินเดือนแยกเป็น 2 สาขา", sal.length === 2);
+  ok("ACCOUNTA: ทุกสาขามี branch_id (ไม่มี NULL)", sal.every((s) => s.branch_id != null));
+  const salSum = round2(sal.reduce((s, r) => s + r.amount_total, 0));
+  ok("ACCOUNTA: รวมต้นทุนทุกสาขา = net จริง", !!nline && near(salSum, round2(nline.net_pay)));
+  // Override earlier moved 2026-09-01 A→B → weights 2.5/2.5 → 50/50 split.
+  const byBr = new Map(sal.map((s) => [s.branch_id, s.amount_total]));
+  ok("ACCOUNTA: แบ่ง 50/50 ตามวันจริง (มี override)", near(byBr.get(A) ?? 0, byBr.get(B) ?? 0));
+
   console.log(`\nbranch-cost test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);

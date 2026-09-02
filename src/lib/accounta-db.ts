@@ -12,6 +12,7 @@ import {
 import { owlAiCostBaht } from "./owl-ai-models";
 import { smeIncomeTax, type SmeIncomeTax } from "./income-tax";
 import { computeBranchSvcPayout, computePayoutDate } from "./service-charge";
+import { allocateLaborCostByBranch } from "./payroll-branch-cost";
 
 export type VendorRow = {
   id: number;
@@ -530,8 +531,23 @@ export function postPayrollToAccounta(periodId: number, userId: number): { salar
     companyId = companies.length === 1 ? companies[0].id : null;
   }
   const lines = db.prepare(
-    "SELECT display_name, employment_type, net_pay, tax_amount, sso_amount FROM payroll_lines WHERE period_id = ?"
-  ).all(periodId) as Array<{ display_name: string; employment_type: string | null; net_pay: number; tax_amount: number; sso_amount: number }>;
+    "SELECT user_id, display_name, employment_type, net_pay, tax_amount, sso_amount FROM payroll_lines WHERE period_id = ?"
+  ).all(periodId) as Array<{ user_id: number; display_name: string; employment_type: string | null; net_pay: number; tax_amount: number; sso_amount: number }>;
+
+  // ประจำ รวมทั้งบริษัท (owner 2026-09-02): a company-wide (branch NULL) FT round
+  // computes each salary once, but the labour COST is booked to each branch by
+  // the days the person actually clocked in there. Prepared per-branch company
+  // lookup + name so the split rows land on the right branch's books.
+  const companyOfBranch = new Map<number, number | null>();
+  const nameOfBranch = new Map<number, string>();
+  const branchLookup = (bid: number): { company: number | null; name: string } => {
+    if (!companyOfBranch.has(bid)) {
+      const r = db.prepare("SELECT company_id, name FROM branches WHERE id = ?").get(bid) as { company_id: number | null; name: string } | undefined;
+      companyOfBranch.set(bid, r?.company_id ?? null);
+      nameOfBranch.set(bid, r?.name ?? "");
+    }
+    return { company: companyOfBranch.get(bid) ?? null, name: nameOfBranch.get(bid) ?? "" };
+  };
 
   ensureExpenseCategory("เงินเดือน/ค่าจ้าง", "LB");
   ensureExpenseCategory("ภาษีหัก ณ ที่จ่าย", "WHT");
@@ -557,9 +573,26 @@ export function postPayrollToAccounta(periodId: number, userId: number): { salar
       totalSso += l.sso_amount || 0;
       const typeLabel = l.employment_type === "pt" ? "พนักงานพาร์ทไทม์ " : l.employment_type === "ft" ? "พนักงานประจำ " : "";
       if (net > 0) {
-        ins.run(branchId, companyId, payDate, `${typeLabel}${l.display_name}`,
-          "เงินเดือน/ค่าจ้าง", net, net, "paid", "transfer", payDate,
-          `เงินเดือน/ค่าจ้าง รอบ ${periodLabel}`, userId, periodId);
+        // Company-wide FT round (branch NULL) → split the labour cost across the
+        // branches the person actually worked at, by days (owner 2026-09-02). Each
+        // slice lands on that branch's books as its real operating cost.
+        const split = branchId == null
+          ? allocateLaborCostByBranch(db, l.user_id, period.period_start, period.period_end, net)
+          : [];
+        if (branchId == null && split.length > 0) {
+          for (const s of split) {
+            const bl = branchLookup(s.branchId);
+            ins.run(s.branchId, bl.company, payDate, `${typeLabel}${l.display_name}`,
+              "เงินเดือน/ค่าจ้าง", s.amount, s.amount, "paid", "transfer", payDate,
+              `เงินเดือน/ค่าจ้าง (${bl.name}) รอบ ${periodLabel}`, userId, periodId);
+          }
+        } else {
+          // Per-branch round, or a company-wide line with no clock-ins to attribute
+          // (e.g. a salaried no-show) → post whole at the period's branch (NULL = org).
+          ins.run(branchId, companyId, payDate, `${typeLabel}${l.display_name}`,
+            "เงินเดือน/ค่าจ้าง", net, net, "paid", "transfer", payDate,
+            `เงินเดือน/ค่าจ้าง รอบ ${periodLabel}`, userId, periodId);
+        }
         salaries += 1;
       }
       // Per-employee WHT (owner 2026-07-13): แยกภาษีหัก ณ ที่จ่ายรายคน "ในชื่อ
