@@ -1250,9 +1250,12 @@ export function computeLineForEmployee(args: {
   // ลาไม่รับค่าจ้าง (+ ขาดงานไม่ลา, Phase B) — reduce FT base by salary/30 per day.
   const totalUnpaidDays = unpaidLeaveDays + noShowDays;
   const ulDeduction = unpaidLeaveDeduction(e, totalUnpaidDays, basePay);
-  // FT double-pay bonus is on top of salary (ftDoubleBonus is 0 for PT — its 2×
-  // is already baked into ptBasePay via the multiplier).
-  basePay = round2(basePay - ulDeduction + ftDoubleBonus);
+  // FT วันจ่ายสองเท่า premium no longer inflates ฐานเงินเดือน (owner 2026-09-02:
+  // "จ่ายสองเท่า ส่วนที่เพิ่มขึ้นมาให้ไปใส่ช่องเพิ่มอื่นๆ"). It is carried in
+  // other_additions below and kept in the tax base, so ภาษีคิดที่ยอดรวม while
+  // ประกันสังคมคิดที่ฐานเงินเดือน. (ftDoubleBonus is 0 for PT — its 2× is baked
+  // into ptBasePay via the multiplier.)
+  basePay = round2(basePay - ulDeduction);
 
   // Total OT pay
   let otPay = e.employment_type === "pt" ? ptOtPay : ftOtPay;
@@ -1267,11 +1270,19 @@ export function computeLineForEmployee(args: {
   // it works for a weekly OR a monthly period. Post-tax — no withholding for now.
   const dfActive = dfBranchPeriod && eIn.df_started_at != null && periodStart.slice(0, 7) >= eIn.df_started_at.slice(0, 7);
   if (dfActive) { basePay = 0; otPay = 0; serviceCharge = 0; }
-  const otherAdditions = dfActive ? round2(Math.max(0, dfAmount)) : 0;
+  // other_additions holds two mutually-exclusive kinds of extra pay:
+  //   • วันจ่ายสองเท่า premium (owner 2026-09-02) — TAXABLE, so it stays in the
+  //     tax base; ประกันสังคม stays on base salary only. Non-DF FT only.
+  //   • Doctor Fee (DF) — POST-TAX (no withholding for now). DF zeroes base/OT/SVC,
+  //     so the double-pay premium is 0 for a DF doctor; the two never co-occur.
+  const doublePayBonus = dfActive ? 0 : round2(Math.max(0, ftDoubleBonus));
+  const dfAddition = dfActive ? round2(Math.max(0, dfAmount)) : 0;
+  const otherAdditions = round2(dfAddition + doublePayBonus);
 
-  // Tax base EXCLUDES the doctor fee (owner: no withholding on DF for now).
-  const taxableGross = basePay + otPay + serviceCharge;
-  const grossPay = taxableGross + otherAdditions;
+  // Tax base = base + OT + service charge + the taxable double-pay premium
+  // (ภาษีคิดที่ยอดรวม). The doctor fee is the only post-tax addition — excluded.
+  const taxableGross = basePay + otPay + serviceCharge + doublePayBonus;
+  const grossPay = taxableGross + dfAddition;
 
   // Tax & SSO based on employee's salary_tax_mode
   // 'sso' = ในระบบ → SSO 5% (cap) only — PIT is not withheld monthly
