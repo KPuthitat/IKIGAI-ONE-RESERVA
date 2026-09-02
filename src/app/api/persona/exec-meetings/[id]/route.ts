@@ -22,7 +22,8 @@ const ERR_MSG: Record<string, string> = {
 const AnswerZ = z.object({
   details: z.string().max(20000).optional(),
   suggestions: z.string().max(20000).optional(),
-  action_plan: z.string().max(20000).optional()
+  action_plan: z.string().max(20000).optional(),
+  owner_user_ids: z.array(z.number().int().positive()).max(50).optional()
 });
 const ExtraItemZ = AnswerZ.extend({ topic: z.string().max(300).optional() });
 
@@ -60,10 +61,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (d.action === "minutes") {
     const err = saveMinutes(id, user.id, {
       locked_answers: (d.locked_answers ?? []).map((a) => ({
-        details: a.details ?? "", suggestions: a.suggestions ?? "", action_plan: a.action_plan ?? ""
+        details: a.details ?? "", suggestions: a.suggestions ?? "", action_plan: a.action_plan ?? "", owner_user_ids: a.owner_user_ids ?? []
       })),
       extra_items: (d.extra_items ?? []).map((it) => ({
-        topic: it.topic ?? "", details: it.details ?? "", suggestions: it.suggestions ?? "", action_plan: it.action_plan ?? ""
+        topic: it.topic ?? "", details: it.details ?? "", suggestions: it.suggestions ?? "", action_plan: it.action_plan ?? "", owner_user_ids: it.owner_user_ids ?? []
       }))
     });
     if (err) return NextResponse.json({ error: err, message: ERR_MSG[err] ?? err }, { status: 400 });

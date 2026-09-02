@@ -22,10 +22,11 @@ export function meetingFeeForMinutes(minutes: number): number {
 
 export type ExecMeetingStatus = "scheduled" | "active" | "ended" | "closed";
 
-// One วาระ (agenda item) inside a person's minutes: a topic header plus the
-// three answer fields. A meeting can also carry preset topic headers (locked)
-// the admin sets in advance — every attendee must answer each of them.
-export type MinuteItem = { topic: string; details: string; suggestions: string; action_plan: string };
+// One วาระ (agenda item) inside a person's minutes: a topic header, the three
+// answer fields, and zero or more ผู้รับผิดชอบ (owner_user_ids, chosen from the
+// meeting's invitees — owner 2026-09-02). A meeting can also carry preset topic
+// headers (locked) the admin sets in advance — every attendee must answer each.
+export type MinuteItem = { topic: string; details: string; suggestions: string; action_plan: string; owner_user_ids: number[] };
 
 export type ExecMeetingRow = {
   id: number;
@@ -121,10 +122,18 @@ function parseItems(raw: string | null | undefined): MinuteItem[] {
         topic: String(o.topic ?? "").trim(),
         details: String(o.details ?? "").trim(),
         suggestions: String(o.suggestions ?? "").trim(),
-        action_plan: String(o.action_plan ?? "").trim()
+        action_plan: String(o.action_plan ?? "").trim(),
+        owner_user_ids: parseOwnerIds(o.owner_user_ids)
       };
     });
   } catch { return []; }
+}
+
+function parseOwnerIds(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<number>();
+  for (const x of raw) { const n = Number(x); if (Number.isInteger(n) && n > 0) seen.add(n); }
+  return [...seen];
 }
 
 export type MinutesRow = { items?: string | null; agenda?: string | null; details?: string | null; suggestions?: string | null; action_plan?: string | null };
@@ -139,7 +148,7 @@ export function itemsFromRow(row: MinutesRow | undefined): MinuteItem[] {
   const details = (row.details ?? "").trim();
   const suggestions = (row.suggestions ?? "").trim();
   const action_plan = (row.action_plan ?? "").trim();
-  if (agenda || details || suggestions || action_plan) return [{ topic: agenda, details, suggestions, action_plan }];
+  if (agenda || details || suggestions || action_plan) return [{ topic: agenda, details, suggestions, action_plan, owner_user_ids: [] }];
   return [];
 }
 
@@ -151,7 +160,7 @@ export function reconcileMinutes(topics: string[], saved: MinuteItem[]): { locke
   for (const it of saved) if (it.topic && !byTopic.has(it.topic)) byTopic.set(it.topic, it);
   const locked = topics.map((t) => {
     const m = byTopic.get(t);
-    return { topic: t, details: m?.details ?? "", suggestions: m?.suggestions ?? "", action_plan: m?.action_plan ?? "" };
+    return { topic: t, details: m?.details ?? "", suggestions: m?.suggestions ?? "", action_plan: m?.action_plan ?? "", owner_user_ids: m?.owner_user_ids ?? [] };
   });
   const topicSet = new Set(topics);
   const extra = saved.filter((it) => !topicSet.has(it.topic));
@@ -324,6 +333,18 @@ export function isCurrentlyClockedIn(userId: number): boolean {
   return rows.some((r) => (r.ins ?? 0) > (r.outs ?? 0));
 }
 
+export type MeetingPerson = { user_id: number; display_name: string; title_prefix: string | null };
+
+// Invitees of a meeting (id + name) — the pool ผู้รับผิดชอบ is picked from.
+export function getMeetingInvitees(meetingId: number): MeetingPerson[] {
+  return getDb().prepare(`
+    SELECT i.user_id, u.display_name, u.title_prefix
+    FROM exec_meeting_invitees i JOIN users u ON u.id = i.user_id
+    WHERE i.meeting_id = ?
+    ORDER BY u.display_name COLLATE NOCASE
+  `).all(meetingId) as MeetingPerson[];
+}
+
 export type StaffMeetingView = {
   id: number;
   title: string;
@@ -338,6 +359,7 @@ export type StaffMeetingView = {
   // three answer fields. Their own added วาระ have an editable topic too.
   locked_items: MinuteItem[];
   extra_items: MinuteItem[];
+  attendees: MeetingPerson[];   // ผู้รับผิดชอบ pool = the meeting's invitees
   minutes_complete: boolean;
 };
 
@@ -366,6 +388,7 @@ export function getStaffMeetingView(meetingId: number, userId: number): StaffMee
     fee_amount: att?.fee_amount ?? null,
     locked_items: locked,
     extra_items: extra,
+    attendees: getMeetingInvitees(meetingId),
     minutes_complete: minutesComplete(topics, saved)
   };
 }
@@ -396,7 +419,7 @@ export function joinMeeting(meetingId: number, userId: number): string | null {
 // preset topic text so a locked header can't be tampered with. The person's own
 // added วาระ carry an editable topic. Empty own-วาระ (blank topic) are dropped.
 export function saveMinutes(meetingId: number, userId: number, d: {
-  locked_answers: Array<{ details: string; suggestions: string; action_plan: string }>;
+  locked_answers: Array<{ details: string; suggestions: string; action_plan: string; owner_user_ids?: number[] }>;
   extra_items: MinuteItem[];
 }): string | null {
   const db = getDb();
@@ -409,18 +432,22 @@ export function saveMinutes(meetingId: number, userId: number, d: {
   const topics = parseAgendaTopics(
     (db.prepare("SELECT agenda_topics FROM exec_meetings WHERE id = ?").get(meetingId) as { agenda_topics: string | null } | undefined)?.agenda_topics
   );
+  // ผู้รับผิดชอบ must be an actual invitee of this meeting (owner 2026-09-02).
+  const inviteeSet = new Set(getMeetingInvitees(meetingId).map((p) => p.user_id));
+  const owners = (raw: unknown): number[] => parseOwnerIds(raw).filter((n) => inviteeSet.has(n));
   const lockedItems: MinuteItem[] = topics.map((topic, i) => {
     const a = d.locked_answers[i] ?? { details: "", suggestions: "", action_plan: "" };
-    return { topic, details: (a.details ?? "").trim(), suggestions: (a.suggestions ?? "").trim(), action_plan: (a.action_plan ?? "").trim() };
+    return { topic, details: (a.details ?? "").trim(), suggestions: (a.suggestions ?? "").trim(), action_plan: (a.action_plan ?? "").trim(), owner_user_ids: owners(a.owner_user_ids) };
   });
   const topicSet = new Set(topics);
   const extraItems: MinuteItem[] = (Array.isArray(d.extra_items) ? d.extra_items : [])
     .map((it) => ({
       topic: String(it.topic ?? "").trim(), details: String(it.details ?? "").trim(),
-      suggestions: String(it.suggestions ?? "").trim(), action_plan: String(it.action_plan ?? "").trim()
+      suggestions: String(it.suggestions ?? "").trim(), action_plan: String(it.action_plan ?? "").trim(),
+      owner_user_ids: owners(it.owner_user_ids)
     }))
     // drop empty own-วาระ, and any that collide with a locked topic (kept above)
-    .filter((it) => (it.topic || it.details || it.suggestions || it.action_plan) && !topicSet.has(it.topic));
+    .filter((it) => (it.topic || it.details || it.suggestions || it.action_plan || it.owner_user_ids.length) && !topicSet.has(it.topic));
 
   const items = JSON.stringify([...lockedItems, ...extraItems]);
   db.prepare(`

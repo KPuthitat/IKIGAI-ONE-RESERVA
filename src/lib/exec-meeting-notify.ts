@@ -6,7 +6,7 @@
 import { getDb } from "./db";
 import { getPlatformChannel, isChannelReady } from "./messaging-channels";
 import { sendLinePush, type LineMessage } from "./line";
-import { MEETING_FEE_PER_HOUR } from "./exec-meetings";
+import { MEETING_FEE_PER_HOUR, parseAgendaTopics } from "./exec-meetings";
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
 const STAFF_MEETING_URL = `${PUBLIC_BASE}/staff/persona/exec-meetings`;
@@ -27,7 +27,23 @@ const NBSP = "\u00A0";
 const feeLabel = `ชั่วโมงละ${NBSP}${MEETING_FEE_PER_HOUR}${NBSP}บาท`;
 const feeNote = `(คิดตาม${WJ}จำนวน${WJ}นาที)`;
 
-function inviteFlex(title: string, ymd: string): LineMessage {
+// วาระที่ตั้งไว้ล่วงหน้า — shown on the card so invitees can prepare (owner
+// 2026-09-02). Each topic is a numbered line; blank list renders nothing.
+function agendaBlock(topics: string[]): Record<string, unknown>[] {
+  if (topics.length === 0) return [];
+  return [
+    { type: "text", text: "วาระการประชุม", weight: "bold", size: "xs", color: "#a06820", margin: "lg" },
+    ...topics.map((t, i) => ({
+      type: "box", layout: "baseline", spacing: "sm", margin: "sm",
+      contents: [
+        { type: "text", text: `${i + 1}.`, size: "sm", color: "#a8977f", flex: 0 },
+        { type: "text", text: t, size: "sm", color: "#4a3f30", wrap: true }
+      ]
+    }))
+  ];
+}
+
+function inviteFlex(title: string, ymd: string, topics: string[]): LineMessage {
   return {
     type: "flex",
     altText: `เชิญประชุม: ${title} (${dateLabelTh(ymd)})`,
@@ -40,6 +56,7 @@ function inviteFlex(title: string, ymd: string): LineMessage {
           { type: "text", text: "เชิญเข้าร่วมประชุมผู้บริหาร", weight: "bold", size: "sm", color: "#a06820" },
           { type: "text", text: title, weight: "bold", size: "lg", wrap: true, color: "#281a0e" },
           { type: "text", text: `วันที่ ${dateLabelTh(ymd)}`, size: "sm", color: "#8a7761" },
+          ...agendaBlock(topics),
           { type: "separator", color: "#efe7d9", margin: "lg" },
           { type: "text", text: "กดเข้าสู่ระบบ แล้วกดเข้าร่วมประชุม", size: "sm", color: "#4a3f30", wrap: true, margin: "lg" },
           { type: "text", text: "บันทึกรายงานการประชุมส่งเข้าระบบทุกครั้ง", size: "sm", color: "#4a3f30", wrap: true, margin: "sm" },
@@ -73,10 +90,10 @@ export async function notifyMeetingInvitees(meetingId: number, userIds: number[]
   const token = platform.channel_token;
 
   const db = getDb();
-  const m = db.prepare("SELECT title, meeting_date FROM exec_meetings WHERE id = ?")
-    .get(meetingId) as { title: string; meeting_date: string } | undefined;
+  const m = db.prepare("SELECT title, meeting_date, agenda_topics FROM exec_meetings WHERE id = ?")
+    .get(meetingId) as { title: string; meeting_date: string; agenda_topics: string | null } | undefined;
   if (!m) return;
-  const flex = inviteFlex(m.title, m.meeting_date);
+  const flex = inviteFlex(m.title, m.meeting_date, parseAgendaTopics(m.agenda_topics));
 
   const rows = db.prepare(
     `SELECT line_user_id FROM users WHERE id IN (${ids.map(() => "?").join(",")})`

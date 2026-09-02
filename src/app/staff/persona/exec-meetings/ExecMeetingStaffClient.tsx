@@ -4,7 +4,8 @@ import { useLayoutEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
-type MinuteItem = { topic: string; details: string; suggestions: string; action_plan: string };
+type MeetingPerson = { user_id: number; display_name: string; title_prefix: string | null };
+type MinuteItem = { topic: string; details: string; suggestions: string; action_plan: string; owner_user_ids: number[] };
 type StaffMeetingView = {
   id: number;
   title: string;
@@ -17,6 +18,7 @@ type StaffMeetingView = {
   fee_amount: number | null;
   locked_items: MinuteItem[];   // preset วาระ — topic locked, fill the 3 answers
   extra_items: MinuteItem[];    // วาระ this person added — topic editable
+  attendees: MeetingPerson[];   // ผู้รับผิดชอบ pool = the meeting's invitees
   minutes_complete: boolean;
 };
 
@@ -31,7 +33,8 @@ function fmtMoney(n: number): string {
   return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-const blankItem = (): MinuteItem => ({ topic: "", details: "", suggestions: "", action_plan: "" });
+const blankItem = (): MinuteItem => ({ topic: "", details: "", suggestions: "", action_plan: "", owner_user_ids: [] });
+const personLabel = (p: MeetingPerson) => `${p.title_prefix ? `${p.title_prefix} ` : ""}${p.display_name}`;
 const answersFilled = (it: MinuteItem) => ANSWER_FIELDS.every((f) => it[f.key].trim().length > 0);
 const itemHasContent = (it: MinuteItem) => it.topic.trim() || it.details.trim() || it.suggestions.trim() || it.action_plan.trim();
 
@@ -73,8 +76,14 @@ function MeetingCard({ m, onChanged }: { m: StaffMeetingView; onChanged: () => v
 
   const setLockedField = (i: number, key: AnswerKey, v: string) =>
     setLocked((prev) => prev.map((it, idx) => (idx === i ? { ...it, [key]: v } : it)));
-  const setExtraField = (i: number, key: keyof MinuteItem, v: string) =>
+  const setExtraField = (i: number, key: "topic" | AnswerKey, v: string) =>
     setExtra((prev) => prev.map((it, idx) => (idx === i ? { ...it, [key]: v } : it)));
+  const toggleOwner = (list: "locked" | "extra", i: number, uid: number) => {
+    const upd = (arr: MinuteItem[]) => arr.map((it, idx) => idx === i
+      ? { ...it, owner_user_ids: it.owner_user_ids.includes(uid) ? it.owner_user_ids.filter((x) => x !== uid) : [...it.owner_user_ids, uid] }
+      : it);
+    if (list === "locked") setLocked(upd); else setExtra(upd);
+  };
   const addExtra = () => setExtra((prev) => [...prev, blankItem()]);
   const removeExtra = (i: number) => setExtra((prev) => prev.filter((_, idx) => idx !== i));
 
@@ -140,14 +149,16 @@ function MeetingCard({ m, onChanged }: { m: StaffMeetingView; onChanged: () => v
           </div>
 
           {locked.map((it, i) => (
-            <AgendaBlock key={`L${i}`} index={i + 1} topic={it.topic} locked item={it}
-              onAnswer={(key, v) => setLockedField(i, key, v)} />
+            <AgendaBlock key={`L${i}`} index={i + 1} topic={it.topic} locked item={it} attendees={m.attendees}
+              onAnswer={(key, v) => setLockedField(i, key, v)}
+              onToggleOwner={(uid) => toggleOwner("locked", i, uid)} />
           ))}
 
           {extra.map((it, i) => (
-            <AgendaBlock key={`E${i}`} index={locked.length + i + 1} topic={it.topic} item={it}
+            <AgendaBlock key={`E${i}`} index={locked.length + i + 1} topic={it.topic} item={it} attendees={m.attendees}
               onTopic={(v) => setExtraField(i, "topic", v)}
               onAnswer={(key, v) => setExtraField(i, key, v)}
+              onToggleOwner={(uid) => toggleOwner("extra", i, uid)}
               onRemove={() => removeExtra(i)} />
           ))}
 
@@ -174,11 +185,13 @@ function MeetingCard({ m, onChanged }: { m: StaffMeetingView; onChanged: () => v
   );
 }
 
-// One วาระ block: a หัวข้อ (locked header for preset วาระ, editable input for own)
-// plus the three answer fields. Own วาระ can be removed.
-function AgendaBlock({ index, topic, item, locked, onTopic, onAnswer, onRemove }: {
-  index: number; topic: string; item: MinuteItem; locked?: boolean;
-  onTopic?: (v: string) => void; onAnswer: (key: AnswerKey, v: string) => void; onRemove?: () => void;
+// One วาระ block: a หัวข้อ (locked header for preset วาระ, editable input for own),
+// the three answer fields, and ผู้รับผิดชอบ (pick 0..n from the meeting's people).
+// Own วาระ can be removed.
+function AgendaBlock({ index, topic, item, attendees, locked, onTopic, onAnswer, onToggleOwner, onRemove }: {
+  index: number; topic: string; item: MinuteItem; attendees: MeetingPerson[]; locked?: boolean;
+  onTopic?: (v: string) => void; onAnswer: (key: AnswerKey, v: string) => void;
+  onToggleOwner: (uid: number) => void; onRemove?: () => void;
 }) {
   return (
     <div className="rounded-xl border border-[#EFE4D3] bg-white/60 p-3 space-y-2">
@@ -205,6 +218,24 @@ function AgendaBlock({ index, topic, item, locked, onTopic, onAnswer, onRemove }
           <AutoTextarea value={item[f.key]} placeholder={f.placeholder} onChange={(v) => onAnswer(f.key, v)} />
         </div>
       ))}
+      {attendees.length > 0 && (
+        <div>
+          <label className="label">ผู้รับผิดชอบ <span className="text-slate-400 font-normal">(เลือกได้หลายคน)</span></label>
+          <div className="flex flex-wrap gap-1.5">
+            {attendees.map((p) => {
+              const on = item.owner_user_ids.includes(p.user_id);
+              return (
+                <button key={p.user_id} type="button" onClick={() => onToggleOwner(p.user_id)}
+                  className={`text-xs rounded-full px-2.5 py-1 border transition-colors ${on
+                    ? "bg-brand text-white border-brand"
+                    : "bg-white text-slate-600 border-[#e3d6c0] hover:bg-[#faf5ec]"}`}>
+                  {on ? "✓ " : ""}{personLabel(p)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

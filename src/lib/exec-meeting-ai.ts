@@ -9,7 +9,7 @@
 
 import { getDb, getSystemSettings } from "./db";
 import { DEFAULT_OWL_AI_MODEL, owlAiModel } from "./owl-ai-models";
-import { itemsFromRow, type MinutesRow } from "./exec-meetings";
+import { itemsFromRow, getMeetingInvitees, type MinutesRow } from "./exec-meetings";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -76,15 +76,19 @@ function collectMinutes(meetingId: number): { title: string; date: string; block
     WHERE mm.meeting_id = ?
     ORDER BY u.display_name COLLATE NOCASE
   `).all(meetingId) as Array<MinutesRow & { display_name: string }>;
+  // Name lookup for ผู้รับผิดชอบ (owner_user_ids reference meeting invitees).
+  const nameOf = new Map(getMeetingInvitees(meetingId).map((p) => [p.user_id, `${p.title_prefix ? `${p.title_prefix} ` : ""}${p.display_name}`]));
   // Each attendee's minutes are now a list of วาระ — render every one.
   const people = rows
     .map((r) => ({ name: r.display_name, items: itemsFromRow(r).filter((it) => it.topic || it.details || it.suggestions || it.action_plan) }))
     .filter((p) => p.items.length > 0);
   const block = people.map((p, i) => {
-    const items = p.items.map((it, j) => (
-      `  วาระที่ ${j + 1}: ${it.topic}\n` +
-      `  - รายละเอียด: ${it.details}\n  - ข้อเสนอแนะ: ${it.suggestions}\n  - แผนการจัดการ: ${it.action_plan}`
-    )).join("\n");
+    const items = p.items.map((it, j) => {
+      const owners = it.owner_user_ids.map((uid) => nameOf.get(uid) ?? `#${uid}`).join(", ");
+      return `  วาระที่ ${j + 1}: ${it.topic}\n` +
+        `  - รายละเอียด: ${it.details}\n  - ข้อเสนอแนะ: ${it.suggestions}\n  - แผนการจัดการ: ${it.action_plan}` +
+        (owners ? `\n  - ผู้รับผิดชอบ: ${owners}` : "");
+    }).join("\n");
     return `ผู้เข้าร่วมคนที่ ${i + 1}: ${p.name}\n${items}`;
   }).join("\n\n");
   return { title: m.title, date: m.meeting_date, block, count: people.length };
