@@ -2,8 +2,8 @@
 // 2026-08-18). One page for the whole company: branches pay out the same day, so
 // the owner wants a combined total with a per-branch split for anyone who worked
 // more than one branch ("ได้จากสาขาไหนเท่าไหร่"). A per-month "รวมกอง" toggle pools
-// every branch's SVC and splits it by hours across everyone who worked that day —
-// so a worker at a branch that entered no SVC (a new HYPO) still gets a share.
+// every branch's เซอร์วิสชาร์จ and splits it by hours across everyone who worked that day —
+// so a worker at a branch that entered no เซอร์วิสชาร์จ (a new HYPO) still gets a share.
 
 import { Fragment } from "react";
 import Link from "next/link";
@@ -150,7 +150,7 @@ export default function CompanyServiceChargePage({
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <SummaryCard
-          label="ยอด SVC รวมทุกสาขา"
+          label="ยอด เซอร์วิสชาร์จ รวมทุกสาขา"
           value={fmtMoney(summary.totalCollected)}
         />
         <SummaryCard
@@ -179,7 +179,7 @@ export default function CompanyServiceChargePage({
 
       {/* Per-branch collected */}
       <div className="card">
-        <div className="text-xs font-bold text-slate-600 mb-2">ยอด SVC ที่เก็บได้ · แยกตามสาขา</div>
+        <div className="text-xs font-bold text-slate-600 mb-2">ยอด เซอร์วิสชาร์จ ที่เก็บได้ · แยกตามสาขา</div>
         <div className="flex flex-wrap gap-2">
           {summary.branches.map((b) => (
             <div key={b.branchId} className="rounded-lg border border-slate-200 px-3 py-1.5">

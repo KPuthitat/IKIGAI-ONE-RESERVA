@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-// ปุ่มยกเว้นการตัดสิทธิ์ SVC (owner 2026-08-20). การตัดสิทธิ์ (สายเกิน 20% / ลาออก) เป็น
-// อัตโนมัติ แต่ผู้บริหารกด "ยกเว้นให้" รายคน/รายเดือนได้ → คนนั้นได้รับ SVC ตามปกติ.
+// ปุ่มยกเว้นการตัดสิทธิ์ เซอร์วิสชาร์จ (owner 2026-08-20). การตัดสิทธิ์ (สายเกิน 20% / ลาออก) เป็น
+// อัตโนมัติ แต่ผู้บริหารกด "ยกเว้นให้" รายคน/รายเดือนได้ → คนนั้นได้รับ เซอร์วิสชาร์จ ตามปกติ.
 // ใช้ได้ทั้งหน้ารายสาขาและหน้ารวมบริษัท (คีย์ด้วย user+เดือน เหมือนกัน).
 const reasonLabel = (r: "late_20pct" | "resignation" | null) =>
   r === "late_20pct" ? "สายเกิน 20%" : r === "resignation" ? "ลาออก" : "";
@@ -65,7 +65,7 @@ export default function SvcForfeitExemptButton({
     return (
       <button type="button" onClick={() => set(true)} disabled={busy}
         className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-medium whitespace-nowrap disabled:opacity-50"
-        title="จ่าย SVC ให้คนนี้เดือนนี้ แม้จะถูกตัดสิทธิ์อัตโนมัติ">
+        title="จ่าย เซอร์วิสชาร์จ ให้คนนี้เดือนนี้ แม้จะถูกตัดสิทธิ์อัตโนมัติ">
         {busy ? "…" : "ยกเว้นให้"}{err ? " (ลองใหม่)" : ""}
       </button>
     );

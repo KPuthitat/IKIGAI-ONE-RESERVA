@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtMoney } from "@/lib/format";
 
-// รายการหักอื่นๆ จาก SVC (owner 2026-08-20) — เช่น ค่าเครื่องดื่มที่ไม่ใช่คูปอง.
+// รายการหักอื่นๆ จาก เซอร์วิสชาร์จ (owner 2026-08-20) — เช่น ค่าเครื่องดื่มที่ไม่ใช่คูปอง.
 // แอดมิน (ดู payroll ได้) เพิ่ม/ลบ ต่อคนต่อเดือน · หักหลังค่าอาหาร ก่อนภาษี.
 type Item = { id: number; amount: number; reason: string | null };
 
@@ -71,7 +71,7 @@ export default function SvcDeductionEditor({
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[85vh] overflow-y-auto p-4 sm:p-5"
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-2 mb-1">
-              <h3 className="font-bold text-slate-800 text-sm">รายการหักอื่นๆ จาก SVC — {displayName}</h3>
+              <h3 className="font-bold text-slate-800 text-sm">รายการหักอื่นๆ จาก เซอร์วิสชาร์จ — {displayName}</h3>
               <button type="button" onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
             </div>
             <p className="text-[11px] text-slate-500 mb-3">เดือน {yearMonth} · หักหลังค่าอาหาร ก่อนภาษี ณ ที่จ่าย</p>

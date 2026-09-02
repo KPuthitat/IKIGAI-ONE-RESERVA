@@ -248,7 +248,7 @@ export type MonthlySvcRow = {
   // share = dayAmount × 60% × (userMinutes ÷ totalMinutes). ผลรวม share = grossAllocation.
   dailyBreakdown: Array<{
     date: string; dayAmount: number; staffPool: number;
-    userMinutes: number; totalMinutes: number; share: number;
+    userMinutes: number; totalMinutes: number; staffCount: number; share: number;
   }>;
   // วันที่ถูกตัดสิทธิ์เพราะเวลางานผิดปกติ/ไม่รับรองเวลา (owner 2026-07-21) —
   // แสดงในตารางวิธีคำนวณเพื่อความโปร่งใส. ว่างเสมอสำหรับเดือนก่อนกฎมีผล (มิ.ย.).
@@ -832,8 +832,9 @@ export function computeMonthlySvcSummary(
     // in) must not dilute everyone else's share (owner 2026-07-21: คนไม่ได้อยู่
     // สาขานี้กลายเป็นตัวหาร).
     let totalMins = 0;
+    let staffCount = 0;   // จำนวนพนักงานที่หารกองกลางวันนี้ (ตัวหาร)
     for (const [userId, mins] of userMins) {
-      if (acc.has(userId)) totalMins += mins;
+      if (acc.has(userId) && mins > 0) { totalMins += mins; staffCount += 1; }
     }
     if (totalMins <= 0) continue;
     const staffPool = amount * SVC_STAFF_SHARE_RATIO;
@@ -846,7 +847,7 @@ export function computeMonthlySvcSummary(
       a.grossAllocation += share;
       let bd = breakdownByUser.get(userId);
       if (!bd) { bd = []; breakdownByUser.set(userId, bd); }
-      bd.push({ date, dayAmount: amount, staffPool, userMinutes: mins, totalMinutes: totalMins, share });
+      bd.push({ date, dayAmount: amount, staffPool, userMinutes: mins, totalMinutes: totalMins, staffCount, share });
     }
   }
 
@@ -1114,7 +1115,7 @@ export type CompanySvcRow = {
   netPayout: number;
   dailyBreakdown: Array<{
     date: string; branchId: number; branchName: string;
-    dayAmount: number; staffPool: number; userMinutes: number; totalMinutes: number; share: number;
+    dayAmount: number; staffPool: number; userMinutes: number; totalMinutes: number; staffCount: number; share: number;
   }>;
   // Every day of the month for the "วิธีคำนวณ" view (owner 2026-08-20): days with a
   // share carry it; empty days carry 0 + a remark (ยังไม่เริ่มงาน / วันลา / วันหยุด /
@@ -1662,7 +1663,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
   // "วิธีคำนวณ" breakdown row).
   const addShare = (
     userId: number, branchId: number, share: number, minutes: number,
-    bd: { date: string; dayAmount: number; staffPool: number; userMinutes: number; totalMinutes: number }
+    bd: { date: string; dayAmount: number; staffPool: number; userMinutes: number; totalMinutes: number; staffCount: number }
   ) => {
     if (share <= 0) return;
     const a = ensureAcc(userId);
@@ -1673,7 +1674,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
     bb.grossAllocation += share;
     bb.daysWorked += 1;
     bb.minutesWorked += minutes;
-    a.breakdown.push({ date: bd.date, branchId, branchName: bn, dayAmount: bd.dayAmount, staffPool: bd.staffPool, userMinutes: minutes, totalMinutes: bd.totalMinutes, share });
+    a.breakdown.push({ date: bd.date, branchId, branchName: bn, dayAmount: bd.dayAmount, staffPool: bd.staffPool, userMinutes: minutes, totalMinutes: bd.totalMinutes, staffCount: bd.staffCount, share });
   };
 
   // Staff-pool ฿ that couldn't be paid to anyone (an amount recorded on a day no
@@ -1746,9 +1747,13 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
     const branchCalc = [...amountByBranch].map(([branchId, amount]) => {
       const placed = placedByBranch.get(branchId) ?? [];
       const placedMin = placed.reduce((s, u) => s + u.minutes, 0);
+      // จำนวนพนักงานที่หารกองนี้ (ตัวหาร): คนประจำสาขา + คนข้ามสาขา (orphan) ที่มา
+      // ร่วมหารด้วยเมื่อวันนั้นมีนาทีทำงานจริง.
+      const headcount = placedMin > 0 ? placed.length + (orphanMinTotal > 0 ? orphanUnits.length : 0) : 0;
       return {
         branchId, amount, placed, staffPoolB: amount * SVC_STAFF_SHARE_RATIO,
-        divisor: placedMin > 0 ? placedMin + orphanMinTotal : 0
+        divisor: placedMin > 0 ? placedMin + orphanMinTotal : 0,
+        headcount
       };
     });
 
@@ -1758,7 +1763,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
       for (const u of bc.placed) {
         const share = bc.staffPoolB * (u.minutes / bc.divisor);
         addShare(u.userId, bc.branchId, share, u.minutes,
-          { date, dayAmount: bc.amount, staffPool: bc.staffPoolB, totalMinutes: bc.divisor, userMinutes: u.minutes });
+          { date, dayAmount: bc.amount, staffPool: bc.staffPoolB, totalMinutes: bc.divisor, userMinutes: u.minutes, staffCount: bc.headcount });
       }
     }
 
@@ -1776,7 +1781,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
         a.breakdown.push({
           date, branchId: u.branchId,
           branchName: `${branchNameById.get(u.branchId) ?? ""} · จากกอง ${branchNameById.get(bc.branchId) ?? ""}`,
-          dayAmount: bc.amount, staffPool: bc.staffPoolB, userMinutes: u.minutes, totalMinutes: bc.divisor, share: s
+          dayAmount: bc.amount, staffPool: bc.staffPoolB, userMinutes: u.minutes, totalMinutes: bc.divisor, staffCount: bc.headcount, share: s
         });
       }
       if (total <= 0) continue;

@@ -9,7 +9,7 @@
 //   2. Monthly distribution — per-staff: minutes worked, gross
 //      allocation (60% pool ÷ hours weight), forfeiture reason if
 //      any, net payout. Totals row at the bottom reconciles back to
-//      the original SVC collected.
+//      the original เซอร์วิสชาร์จ collected.
 //
 // Read-only by default — admin clicks an edit button on a daily row
 // to mutate. Forfeitures are computed live; no separate "finalize"
@@ -109,7 +109,7 @@ export default function AdminServiceChargePage({
     : 0.03;
 
   // Build the 12-month picker (current + 11 previous) so admin can scrub closed
-  // periods — and reach pre-system months (< 2026-06) to hand-enter their SVC
+  // periods — and reach pre-system months (< 2026-06) to hand-enter their เซอร์วิสชาร์จ
   // (owner 2026-07-21).
   const monthOptions: string[] = [];
   for (let i = 0; i < 12; i++) {
@@ -182,7 +182,7 @@ export default function AdminServiceChargePage({
       {manual ? (
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
           <SummaryCard
-            label="ยอด SVC พนักงานรวม (กรอกเอง)"
+            label="ยอด เซอร์วิสชาร์จ พนักงานรวม (กรอกเอง)"
             value={fmtMoney(summary.staffPoolTotal)}
             sub="เดือนก่อนเริ่มใช้ระบบ · ยอดก่อนหักภาษี"
           />
@@ -491,7 +491,7 @@ export default function AdminServiceChargePage({
           <div>{t(lang, "admin.persona.svc.rule.late20")}</div>
           <div>{t(lang, "admin.persona.svc.rule.resignation")}</div>
           <div>{t(lang, "admin.persona.svc.rule.payout")}</div>
-          <div>· วันเวลาผิดปกติ (ลืมลงเวลาเข้า/ออก) ไม่นับ SVC — มีผลตั้งแต่ มิ.ย. 2026</div>
+          <div>· วันเวลาผิดปกติ (ลืมลงเวลาเข้า/ออก) ไม่นับ เซอร์วิสชาร์จ — มีผลตั้งแต่ มิ.ย. 2026</div>
           <div>· สูงสุด 8 ชม. (480 นาที) ต่อวัน · เกินได้เฉพาะมีโอทีอนุมัติ · ลงเวลาวันที่ไม่มีกะไม่นับ — มีผลตั้งแต่ ก.ค. 2026</div>
         </div>
       ) : (

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { fmtMoney } from "@/lib/format";
 
-// ปุ่ม "วิธีคำนวณ" + modal สำหรับหน้า SVC รวมทั้งบริษัท (owner 2026-08-18). ต่างจาก
+// ปุ่ม "วิธีคำนวณ" + modal สำหรับหน้า เซอร์วิสชาร์จ รวมทั้งบริษัท (owner 2026-08-18). ต่างจาก
 // หน้าสาขาตรงที่แจกแจง "ได้จากสาขาไหนเท่าไหร่" ก่อน แล้วตามด้วยรายวัน (มีคอลัมน์สาขา).
 type BranchShare = {
   branchId: number; branchName: string;
@@ -11,7 +11,7 @@ type BranchShare = {
 };
 type BreakdownItem = {
   date: string; branchId: number; branchName: string;
-  dayAmount: number; staffPool: number; userMinutes: number; totalMinutes: number; share: number;
+  dayAmount: number; staffPool: number; userMinutes: number; totalMinutes: number; staffCount: number; share: number;
 };
 
 const fmtMin = (min: number) => Math.round(min).toLocaleString();
@@ -109,11 +109,12 @@ export default function CompanySvcCalcModal({
                       <th className="py-1.5 pr-2 font-medium">วันที่</th>
                       <th className="py-1.5 px-2 font-medium">สาขา</th>
                       <th className="py-1.5 px-2 text-right font-medium">
-                        {shared ? "ยอดกองสาขา" : "SVC วันนี้"}
+                        {shared ? "ยอดกองสาขา" : "เซอร์วิสชาร์จวันนี้"}
                       </th>
                       <th className="py-1.5 px-2 text-right font-medium">ส่วนแบ่งพนักงาน</th>
                       <th className="py-1.5 px-2 text-right font-medium">นาทีที่ทำ</th>
                       <th className="py-1.5 px-2 text-right font-medium">นาทีรวมทั้งทีม</th>
+                      <th className="py-1.5 px-2 text-right font-medium" title="จำนวนพนักงานที่หารกองกลางวันนี้">ตัวหาร (คน)</th>
                       <th className="py-1.5 pl-2 text-right font-medium">ส่วนแบ่ง</th>
                     </tr>
                   </thead>
@@ -126,7 +127,7 @@ export default function CompanySvcCalcModal({
                             return [(
                               <tr key={ld.date} className="border-b border-slate-50 text-slate-400">
                                 <td className="py-1.5 pr-2 whitespace-nowrap">{ld.date}</td>
-                                <td className="py-1.5 px-2 italic" colSpan={5}>{ld.remark || "—"}</td>
+                                <td className="py-1.5 px-2 italic" colSpan={6}>{ld.remark || "—"}</td>
                                 <td className="py-1.5 pl-2 text-right">{fmtMoney(0)}</td>
                               </tr>
                             )];
@@ -139,6 +140,7 @@ export default function CompanySvcCalcModal({
                               <td className="py-1.5 px-2 text-right">{fmtMoney(d.staffPool)}</td>
                               <td className="py-1.5 px-2 text-right">{fmtMin(d.userMinutes)}</td>
                               <td className="py-1.5 px-2 text-right text-slate-500">{fmtMin(d.totalMinutes)}</td>
+                              <td className="py-1.5 px-2 text-right text-slate-500">{d.staffCount}</td>
                               <td className="py-1.5 pl-2 text-right font-semibold text-emerald-700">{fmtMoney(d.share)}</td>
                             </tr>
                           ));
@@ -151,13 +153,14 @@ export default function CompanySvcCalcModal({
                             <td className="py-1.5 px-2 text-right">{fmtMoney(d.staffPool)}</td>
                             <td className="py-1.5 px-2 text-right">{fmtMin(d.userMinutes)}</td>
                             <td className="py-1.5 px-2 text-right text-slate-500">{fmtMin(d.totalMinutes)}</td>
+                            <td className="py-1.5 px-2 text-right text-slate-500">{d.staffCount}</td>
                             <td className="py-1.5 pl-2 text-right font-semibold text-emerald-700">{fmtMoney(d.share)}</td>
                           </tr>
                         )))}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-slate-200 font-bold text-slate-800">
-                      <td className="py-1.5 pr-2" colSpan={6}>รวมส่วนแบ่ง (ก่อนหักสาย/ลาออก)</td>
+                      <td className="py-1.5 pr-2" colSpan={7}>รวมส่วนแบ่ง (ก่อนหักสาย/ลาออก)</td>
                       <td className="py-1.5 pl-2 text-right">฿{fmtMoney(grossAllocation)}</td>
                     </tr>
                   </tfoot>
@@ -190,7 +193,7 @@ export default function CompanySvcCalcModal({
                       </div>
                     ))}
                     {otherDeductionItems.reduce((s, x) => s + x.amount, 0) > otherDeductions + 0.001 && (
-                      <div className="text-[10px] text-amber-600 pl-3">* หักได้เท่าที่มี SVC (ส่วนเกินไม่หัก)</div>
+                      <div className="text-[10px] text-amber-600 pl-3">* หักได้เท่าที่มี เซอร์วิสชาร์จ (ส่วนเกินไม่หัก)</div>
                     )}
                   </>
                 )}

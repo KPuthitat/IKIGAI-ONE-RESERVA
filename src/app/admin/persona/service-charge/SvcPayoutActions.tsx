@@ -6,7 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { formatBkkDateTime } from "@/lib/time";
 
-// 3-step SVC payout, mirroring payroll (owner 2026-07-21):
+// 3-step เซอร์วิสชาร์จ payout, mirroring payroll (owner 2026-07-21):
 // draft → ปิดยอด(finalize) → ทำจ่าย(paid) → ลงบัญชี(posted). Posting to ACCOUNTA
 // happens only at step 3. PIN on finalize / post / unpost.
 type Status = "draft" | "finalized" | "paid" | "posted";
@@ -139,8 +139,8 @@ export default function SvcPayoutActions({
               {pinFor === "unpost" && "ยกเลิกลงบัญชี (ลบรายการบัญชี)"}
             </h3>
             <p className="text-[11px] text-slate-500 mb-2">
-              {pinFor === "finalize" && `ล็อกยอด SVC เดือน ${yearMonth}. ใส่ PIN เพื่อยืนยัน.`}
-              {pinFor === "post" && `บันทึกยอด SVC เดือน ${yearMonth} ลง ACCOUNTA (ค่าแรง + ภาษีหัก ณ ที่จ่าย). ใส่ PIN.`}
+              {pinFor === "finalize" && `ล็อกยอด เซอร์วิสชาร์จ เดือน ${yearMonth}. ใส่ PIN เพื่อยืนยัน.`}
+              {pinFor === "post" && `บันทึกยอด เซอร์วิสชาร์จ เดือน ${yearMonth} ลง ACCOUNTA (ค่าแรง + ภาษีหัก ณ ที่จ่าย). ใส่ PIN.`}
               {pinFor === "unpost" && `ลบรายการบัญชีของเดือน ${yearMonth} แล้วกลับเป็นยังไม่ลงบัญชี. ใส่ PIN.`}
             </p>
             <input type="password" inputMode="numeric" autoFocus value={pin}
