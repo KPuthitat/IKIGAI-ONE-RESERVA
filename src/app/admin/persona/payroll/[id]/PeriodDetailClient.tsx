@@ -219,10 +219,17 @@ export default function PeriodDetailClient({
           action === "finalize" ? "admin.persona.payroll.action.finalizeDone" :
           action === "unpost_accounta" ? "admin.persona.payroll.action.unpostAccounta" :
           "admin.persona.payroll.action.unfinalizeDone";
-        setMsg({ kind: "ok", text: t(lang, doneKey as any) });
+        // Recompute keeps reviewed lines frozen — tell the admin how many
+        // were skipped so a "nothing changed" result is never a surprise.
+        if (action === "recompute" && typeof j?.locked === "number" && j.locked > 0) {
+          setMsg({ kind: "ok", text: `${t(lang, doneKey as any)} · ล็อคไว้ ${j.locked} คน (ตรวจแล้ว)` });
+        } else {
+          setMsg({ kind: "ok", text: t(lang, doneKey as any) });
+        }
         startTransition(() => router.refresh());
       } else {
-        setMsg({ kind: "err", text: j?.error ?? t(lang, "common.error") });
+        // Prefer the server's human message (e.g. "ยังตรวจไม่ครบ เหลืออีก N คน").
+        setMsg({ kind: "err", text: j?.message ?? j?.error ?? t(lang, "common.error") });
       }
     } catch {
       setMsg({ kind: "err", text: t(lang, "common.error") });
@@ -253,6 +260,8 @@ export default function PeriodDetailClient({
   }
 
   const reviewedCount = lines.filter((l) => l.reviewed_at != null).length;
+  // Finalize is gated on a full review sign-off (owner 2026-09-02: กันพลาด).
+  const allReviewed = lines.length > 0 && reviewedCount === lines.length;
 
   async function addEmployee(targetUserId: number): Promise<void> {
     setBusy("add_emp");
@@ -439,9 +448,16 @@ export default function PeriodDetailClient({
           {isDraft && (
             <>
               <button type="button" onClick={() => setPinFinalizeOpen(true)}
-                disabled={busy !== null} className="btn-primary text-sm">
+                disabled={busy !== null || !allReviewed}
+                title={!allReviewed ? `ยังตรวจไม่ครบ (${reviewedCount}/${lines.length}) — ต้องติ๊ก "ตรวจแล้ว" ให้ครบก่อนปิดรอบ` : undefined}
+                className="btn-primary text-sm">
                 {busy === "finalize" ? "..." : "✓ " + t(lang, "admin.persona.payroll.action.finalize")}
               </button>
+              {!allReviewed && (
+                <span className="text-xs text-amber-600 self-center">
+                  ตรวจครบก่อนปิดรอบ ({reviewedCount}/{lines.length})
+                </span>
+              )}
               <button type="button" onClick={() => setConfirmDelete(true)}
                 disabled={busy !== null}
                 className="text-sm px-3 py-1.5 rounded-md text-rose-700 hover:bg-rose-50">
