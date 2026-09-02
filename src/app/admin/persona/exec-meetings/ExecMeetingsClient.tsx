@@ -180,10 +180,10 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
           {staff.length === 0 ? (
             <div className="text-xs text-slate-400">ไม่มีพนักงานในสาขานี้</div>
           ) : (
-            // One column per branch, side by side (owner 2026-09-02: ซ้าย นามะ ขวา
-            // อีเมีย) so the whole team is visible at once. Only branches that have
-            // staff are shown.
-            <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.max(1, branches.filter((b) => staff.some((s) => s.branchId === b.id)).length)}, minmax(0, 1fr))` }}>
+            // One column per branch, side by side on desktop (owner 2026-09-02:
+            // ซ้าย นามะ ขวา อีเมีย); stacked to one column on mobile so names aren't
+            // squeezed (owner 2026-09-02). Only branches that have staff are shown.
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
               {branches.filter((b) => staff.some((s) => s.branchId === b.id)).map((b) => {
                 const list = staff.filter((s) => s.branchId === b.id);
                 const allIn = list.every((s) => invited.has(s.id));
@@ -318,13 +318,31 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
   const [d, setD] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Editable preset วาระ — allowed until the meeting starts (owner 2026-09-02).
+  const [topics, setTopics] = useState<string[]>([]);
+  const [savingTopics, setSavingTopics] = useState(false);
+  const [topicsMsg, setTopicsMsg] = useState<string | null>(null);
 
   async function load() {
     const res = await fetch(apiUrl(`/api/admin/persona/exec-meetings/${meetingId}`));
     const j = await res.json().catch(() => ({}));
-    if (j?.meeting) setD(j.meeting as Detail);
+    if (j?.meeting) { setD(j.meeting as Detail); setTopics((j.meeting as Detail).agenda_topics ?? []); }
   }
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [meetingId]);
+
+  async function saveTopics() {
+    setSavingTopics(true); setTopicsMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/exec-meetings/${meetingId}`), {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agenda_topics: topics.map((t) => t.trim()).filter(Boolean) })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j?.ok) { setTopicsMsg("บันทึกวาระแล้ว"); await load(); }
+      else setTopicsMsg(j?.error === "no_change" ? "ไม่มีการเปลี่ยนแปลง" : (j?.message ?? j?.error ?? "บันทึกไม่สำเร็จ"));
+    } catch { setTopicsMsg("เชื่อมต่อไม่ได้"); }
+    finally { setSavingTopics(false); }
+  }
 
   async function summarize() {
     setBusy(true); setErr(null);
@@ -361,15 +379,45 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
               <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
             </div>
 
-            {/* Preset วาระ set for this meeting */}
-            {d.agenda_topics.length > 0 && (
+            {/* Preset วาระ — editable until the meeting starts, read-only after. */}
+            {d.status === "scheduled" ? (
+              <div className="rounded-xl border border-[#EFE4D3] bg-[#faf5ec] p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">วาระที่กำหนด (แก้ไข/เพิ่มได้จนกว่าจะเปิดประชุม)</span>
+                  <button type="button" className="text-xs text-brand hover:underline"
+                    onClick={() => setTopics((prev) => [...prev, ""])}>+ เพิ่มวาระ</button>
+                </div>
+                {topics.length === 0 ? (
+                  <div className="text-xs text-slate-400">ยังไม่ได้ตั้งวาระ — พนักงานจะเพิ่มวาระเองได้ตอนประชุม</div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {topics.map((t, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400 w-5 text-right tabular-nums">{i + 1}.</span>
+                        <input className="input flex-1" value={t} placeholder="เช่น สรุปยอดขายสัปดาห์นี้"
+                          onChange={(e) => setTopics((prev) => prev.map((x, idx) => (idx === i ? e.target.value : x)))} />
+                        <button type="button" onClick={() => setTopics((prev) => prev.filter((_, idx) => idx !== i))}
+                          className="text-rose-400 hover:text-rose-600 text-lg leading-none px-1">×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-3 pt-1">
+                  <button type="button" onClick={saveTopics} disabled={savingTopics}
+                    className="btn-secondary text-xs disabled:opacity-50">
+                    {savingTopics ? "..." : "บันทึกวาระ"}
+                  </button>
+                  {topicsMsg && <span className="text-xs text-slate-500">{topicsMsg}</span>}
+                </div>
+              </div>
+            ) : d.agenda_topics.length > 0 ? (
               <div className="rounded-xl border border-[#EFE4D3] bg-[#faf5ec] p-3">
                 <div className="text-xs font-semibold text-slate-600 mb-1">วาระที่กำหนด</div>
                 <ol className="text-sm text-slate-700 list-decimal pl-5 space-y-0.5">
                   {d.agenda_topics.map((t, i) => <li key={i}>{t}</li>)}
                 </ol>
               </div>
-            )}
+            ) : null}
 
             {/* Attendance + minutes status */}
             <div className="overflow-x-auto">
