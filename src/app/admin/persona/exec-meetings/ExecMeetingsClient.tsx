@@ -52,6 +52,13 @@ function groupByDept(list: StaffLite[]): Array<{ dept: string; people: StaffLite
     .map(([dept, people]) => ({ dept, people }));
 }
 
+// Look up an owner's display name from the meeting's invitee list.
+function ownerName(invitees: Array<{ user_id: number; display_name: string; title_prefix: string | null }>, uid: number): string {
+  const p = invitees.find((i) => i.user_id === uid);
+  if (!p) return `#${uid}`;
+  return `${p.title_prefix ? `${p.title_prefix} ` : ""}${p.display_name}`;
+}
+
 function bkkToday(): string {
   const now = new Date();
   const bkk = new Date(now.getTime() + (now.getTimezoneOffset() + 420) * 60000);
@@ -301,7 +308,7 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
   );
 }
 
-type MinuteItem = { topic: string; details: string; suggestions: string; action_plan: string };
+type MinuteItem = { topic: string; details: string; suggestions: string; action_plan: string; owner_user_ids: number[] };
 type Invitee = {
   user_id: number; display_name: string; title_prefix: string | null; fee_exempt: boolean;
   joined_at: string | null; ended_at: string | null; minutes: number | null; fee_amount: number | null;
@@ -465,6 +472,9 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
                           <div className="text-slate-700 whitespace-pre-wrap"><span className="text-slate-400">รายละเอียด:</span> {it.details}</div>
                           <div className="text-slate-700 whitespace-pre-wrap"><span className="text-slate-400">ข้อเสนอแนะ:</span> {it.suggestions}</div>
                           <div className="text-slate-700 whitespace-pre-wrap"><span className="text-slate-400">แผนการจัดการ:</span> {it.action_plan}</div>
+                          {it.owner_user_ids.length > 0 && (
+                            <div className="text-slate-700"><span className="text-slate-400">ผู้รับผิดชอบ:</span> {it.owner_user_ids.map((uid) => ownerName(d.invitees, uid)).join(", ")}</div>
+                          )}
                         </div>
                       ))}
                     </div>

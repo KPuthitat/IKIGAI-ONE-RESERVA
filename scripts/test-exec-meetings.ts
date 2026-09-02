@@ -55,7 +55,7 @@ process.env.DATABASE_PATH = TMP;
   // ── end blocked until minutes complete ──
   const e0 = em.endMeeting(mid, uid);
   ok("gating: จบไม่ได้ถ้ารายงานไม่ครบ", "error" in e0 && e0.error === "minutes_incomplete");
-  em.saveMinutes(mid, uid, { locked_answers: [], extra_items: [{ topic: "วาระ", details: "รายละเอียด", suggestions: "ข้อเสนอ", action_plan: "แผน" }] });
+  em.saveMinutes(mid, uid, { locked_answers: [], extra_items: [{ topic: "วาระ", details: "รายละเอียด", suggestions: "ข้อเสนอ", action_plan: "แผน", owner_user_ids: [] }] });
 
   // backdate join by 90 minutes so the timer yields a real duration
   db.prepare("UPDATE exec_meeting_attendance SET joined_at = datetime('now','-90 minutes') WHERE meeting_id=? AND user_id=?").run(mid, uid);
@@ -66,7 +66,7 @@ process.env.DATABASE_PATH = TMP;
 
   // ── exempt exec: attends but fee = 0 ──
   em.joinMeeting(mid, execU);
-  em.saveMinutes(mid, execU, { locked_answers: [], extra_items: [{ topic: "ก", details: "ข", suggestions: "ค", action_plan: "ง" }] });
+  em.saveMinutes(mid, execU, { locked_answers: [], extra_items: [{ topic: "ก", details: "ข", suggestions: "ค", action_plan: "ง", owner_user_ids: [] }] });
   db.prepare("UPDATE exec_meeting_attendance SET joined_at = datetime('now','-60 minutes') WHERE meeting_id=? AND user_id=?").run(mid, execU);
   const e2 = em.endMeeting(mid, execU);
   ok("exempt: คิดเวลา 60 นาที", !("error" in e2) && e2.minutes === 60);
@@ -101,7 +101,7 @@ process.env.DATABASE_PATH = TMP;
       { details: "ดี", suggestions: "เพิ่มโปร", action_plan: "ทำ" },
       { details: "คิวยาว", suggestions: "เพิ่มคน", action_plan: "จ้าง" }
     ],
-    extra_items: [{ topic: "เรื่องอื่น", details: "x", suggestions: "y", action_plan: "z" }]
+    extra_items: [{ topic: "เรื่องอื่น", details: "x", suggestions: "y", action_plan: "z", owner_user_ids: [] }]
   });
   const v1 = em.getStaffMeetingView(mid2, uid3)!;
   ok("agenda: ตอบครบทุกวาระ (ล็อก+เพิ่มเอง) → ครบ", v1.minutes_complete === true);
@@ -110,6 +110,20 @@ process.env.DATABASE_PATH = TMP;
   const detail2 = em.getExecMeeting(mid2)!;
   const inv3 = detail2.invitees.find((i) => i.user_id === uid3)!;
   ok("agenda: แอดมินเห็น 3 วาระของ staff", inv3.items.length === 3 && inv3.minutes_complete === true);
+
+  // ── ผู้รับผิดชอบต่อวาระ — เลือกจากผู้ได้รับเชิญ, กรองคนนอกทิ้ง (owner 2026-09-02) ──
+  em.setInvitees(mid2, [uid3, uid]);   // add uid as a second invitee
+  em.saveMinutes(mid2, uid3, {
+    locked_answers: [
+      { details: "ดี", suggestions: "เพิ่มโปร", action_plan: "ทำ", owner_user_ids: [uid, other] }, // other = คนนอก → ถูกกรอง
+      { details: "คิวยาว", suggestions: "เพิ่มคน", action_plan: "จ้าง", owner_user_ids: [] }
+    ],
+    extra_items: []
+  });
+  const v2 = em.getStaffMeetingView(mid2, uid3)!;
+  ok("owner: attendees pool = ผู้ได้รับเชิญ (2 คน)", v2.attendees.length === 2);
+  ok("owner: บันทึกผู้รับผิดชอบที่เป็นผู้ได้รับเชิญ", v2.locked_items[0].owner_user_ids.length === 1 && v2.locked_items[0].owner_user_ids[0] === uid);
+  ok("owner: กรองคนนอกที่ประชุมทิ้ง", !v2.locked_items[0].owner_user_ids.includes(other));
 
   // ── payroll integration: เบี้ยประชุม lands on the line, taxable, once ──
   const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
