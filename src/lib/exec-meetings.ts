@@ -214,3 +214,131 @@ export function deleteExecMeeting(id: number): boolean {
   // Cascades to invitees / attendance / minutes via FK ON DELETE CASCADE.
   return getDb().prepare("DELETE FROM exec_meetings WHERE id = ?").run(id).changes > 0;
 }
+
+// ── Staff-facing: join / minutes / end (owner 2026-09-02) ────────────────────
+
+// Is the user still on the WORK clock right now? A meeting is after-hours, so
+// they must have clocked out of work first. Per-branch pairing (like the clock
+// route): a branch with more 'in' than 'out' today = an open work shift.
+export function isCurrentlyClockedIn(userId: number): boolean {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT branch_id,
+           SUM(CASE WHEN type = 'in' THEN 1 ELSE 0 END) AS ins,
+           SUM(CASE WHEN type = 'out' THEN 1 ELSE 0 END) AS outs
+    FROM time_entries
+    WHERE user_id = ? AND date(ts, '+7 hours') = date('now', '+7 hours')
+    GROUP BY branch_id
+  `).all(userId) as Array<{ branch_id: number | null; ins: number; outs: number }>;
+  return rows.some((r) => (r.ins ?? 0) > (r.outs ?? 0));
+}
+
+export type StaffMeetingView = {
+  id: number;
+  title: string;
+  meeting_date: string;
+  status: ExecMeetingStatus;
+  invited: boolean;
+  joined_at: string | null;
+  ended_at: string | null;
+  minutes: number | null;
+  fee_amount: number | null;
+  minutes_form: { agenda: string; details: string; suggestions: string; action_plan: string };
+  minutes_complete: boolean;
+};
+
+export function getStaffMeetingView(meetingId: number, userId: number): StaffMeetingView | null {
+  const db = getDb();
+  const m = db.prepare(
+    "SELECT id, title, meeting_date, status FROM exec_meetings WHERE id = ?"
+  ).get(meetingId) as { id: number; title: string; meeting_date: string; status: ExecMeetingStatus } | undefined;
+  if (!m) return null;
+  const att = db.prepare(
+    "SELECT joined_at, ended_at, minutes, fee_amount FROM exec_meeting_attendance WHERE meeting_id = ? AND user_id = ?"
+  ).get(meetingId, userId) as { joined_at: string | null; ended_at: string | null; minutes: number | null; fee_amount: number | null } | undefined;
+  const mm = db.prepare(
+    "SELECT agenda, details, suggestions, action_plan FROM exec_meeting_minutes WHERE meeting_id = ? AND user_id = ?"
+  ).get(meetingId, userId) as { agenda: string; details: string; suggestions: string; action_plan: string } | undefined;
+  const form = {
+    agenda: mm?.agenda ?? "", details: mm?.details ?? "",
+    suggestions: mm?.suggestions ?? "", action_plan: mm?.action_plan ?? ""
+  };
+  return {
+    id: m.id, title: m.title, meeting_date: m.meeting_date, status: m.status,
+    invited: isInvited(meetingId, userId),
+    joined_at: att?.joined_at ?? null,
+    ended_at: att?.ended_at ?? null,
+    minutes: att?.minutes ?? null,
+    fee_amount: att?.fee_amount ?? null,
+    minutes_form: form,
+    minutes_complete: minutesComplete(form)
+  };
+}
+
+// Join a meeting = a meeting clock-in (NOT a work clock-in). Only an invitee may
+// join, only while the meeting is active, only once, and only after clocking out
+// of work. Returns an error code (or null on success).
+export function joinMeeting(meetingId: number, userId: number): string | null {
+  const db = getDb();
+  const m = db.prepare("SELECT status FROM exec_meetings WHERE id = ?")
+    .get(meetingId) as { status: ExecMeetingStatus } | undefined;
+  if (!m) return "not_found";
+  if (m.status !== "active") return "meeting_not_active";
+  if (!isInvited(meetingId, userId)) return "not_invited";
+  if (isCurrentlyClockedIn(userId)) return "still_clocked_in";
+  const existing = db.prepare(
+    "SELECT ended_at FROM exec_meeting_attendance WHERE meeting_id = ? AND user_id = ?"
+  ).get(meetingId, userId) as { ended_at: string | null } | undefined;
+  if (existing) return existing.ended_at ? "already_ended" : "already_joined";
+  db.prepare(
+    "INSERT INTO exec_meeting_attendance (meeting_id, user_id, joined_at) VALUES (?, ?, CURRENT_TIMESTAMP)"
+  ).run(meetingId, userId);
+  return null;
+}
+
+export function saveMinutes(meetingId: number, userId: number, d: {
+  agenda: string; details: string; suggestions: string; action_plan: string;
+}): string | null {
+  const db = getDb();
+  const att = db.prepare(
+    "SELECT ended_at FROM exec_meeting_attendance WHERE meeting_id = ? AND user_id = ?"
+  ).get(meetingId, userId) as { ended_at: string | null } | undefined;
+  if (!att) return "not_joined";
+  if (att.ended_at) return "already_ended";
+  db.prepare(`
+    INSERT INTO exec_meeting_minutes (meeting_id, user_id, agenda, details, suggestions, action_plan, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT (meeting_id, user_id) DO UPDATE SET
+      agenda = excluded.agenda, details = excluded.details,
+      suggestions = excluded.suggestions, action_plan = excluded.action_plan,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(meetingId, userId, d.agenda.trim(), d.details.trim(), d.suggestions.trim(), d.action_plan.trim());
+  return null;
+}
+
+// End a meeting = a meeting clock-out. Blocked unless the minutes are complete
+// (all four fields). Computes minutes attended + เบี้ยประชุม (0 if the person is
+// exempt). Returns { minutes, fee } or an error code.
+export function endMeeting(meetingId: number, userId: number): { error: string } | { minutes: number; fee: number } {
+  const db = getDb();
+  const att = db.prepare(
+    "SELECT joined_at, ended_at FROM exec_meeting_attendance WHERE meeting_id = ? AND user_id = ?"
+  ).get(meetingId, userId) as { joined_at: string; ended_at: string | null } | undefined;
+  if (!att) return { error: "not_joined" };
+  if (att.ended_at) return { error: "already_ended" };
+  const view = getStaffMeetingView(meetingId, userId);
+  if (!view?.minutes_complete) return { error: "minutes_incomplete" };
+
+  const exempt = (db.prepare("SELECT COALESCE(meeting_fee_exempt, 0) AS x FROM users WHERE id = ?")
+    .get(userId) as { x: number } | undefined)?.x === 1;
+  const endMs = Date.now();
+  const joinMs = new Date(att.joined_at.replace(" ", "T") + (att.joined_at.includes("Z") ? "" : "Z")).getTime();
+  const minutes = Math.max(0, Math.round((endMs - joinMs) / 60000));
+  const fee = exempt ? 0 : meetingFeeForMinutes(minutes);
+  db.prepare(`
+    UPDATE exec_meeting_attendance
+    SET ended_at = CURRENT_TIMESTAMP, minutes = ?, fee_amount = ?, fee_exempt = ?
+    WHERE meeting_id = ? AND user_id = ?
+  `).run(minutes, fee, exempt ? 1 : 0, meetingId, userId);
+  return { minutes, fee };
+}
