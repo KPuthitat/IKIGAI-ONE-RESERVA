@@ -27,6 +27,11 @@ function formatTitle(raw: string): string {
     .replace(/[·|/–—-]+/g, "|")
     // Anything outside printable ASCII (Thai, NBSP, symbols) -> gone.
     .replace(/[^\x20-\x7E]+/g, "")
+    // A Thai parenthetical like "(รวมสาขา)" loses its inner text in the
+    // strip above and would otherwise survive as an empty "()" segment
+    // (e.g. "ACCOUNTA - () - IKIGAI OS"). Drop bracket characters so no
+    // hollow "()" is left behind.
+    .replace(/[()[\]{}]/g, " ")
     .toUpperCase()
     .split("|")
     .map((s) => s.replace(/\s+/g, " ").trim())
