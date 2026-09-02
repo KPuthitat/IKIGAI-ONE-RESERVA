@@ -16,15 +16,20 @@ const ERR_MSG: Record<string, string> = {
   already_joined: "คุณเข้าร่วมประชุมนี้อยู่แล้ว",
   already_ended: "คุณสิ้นสุดการประชุมนี้ไปแล้ว",
   not_joined: "ยังไม่ได้กดเข้าร่วมประชุม",
-  minutes_incomplete: "กรอกรายงานการประชุมให้ครบทั้ง 4 ช่องก่อนสิ้นสุดการประชุม"
+  minutes_incomplete: "กรอกรายงานให้ครบทุกช่องของทุกวาระก่อนสิ้นสุดการประชุม"
 };
 
-const Body = z.object({
-  action: z.enum(["join", "minutes", "end"]),
-  agenda: z.string().max(5000).optional(),
+const AnswerZ = z.object({
   details: z.string().max(20000).optional(),
   suggestions: z.string().max(20000).optional(),
   action_plan: z.string().max(20000).optional()
+});
+const ExtraItemZ = AnswerZ.extend({ topic: z.string().max(300).optional() });
+
+const Body = z.object({
+  action: z.enum(["join", "minutes", "end"]),
+  locked_answers: z.array(AnswerZ).max(50).optional(),
+  extra_items: z.array(ExtraItemZ).max(50).optional()
 });
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
@@ -54,8 +59,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   if (d.action === "minutes") {
     const err = saveMinutes(id, user.id, {
-      agenda: d.agenda ?? "", details: d.details ?? "",
-      suggestions: d.suggestions ?? "", action_plan: d.action_plan ?? ""
+      locked_answers: (d.locked_answers ?? []).map((a) => ({
+        details: a.details ?? "", suggestions: a.suggestions ?? "", action_plan: a.action_plan ?? ""
+      })),
+      extra_items: (d.extra_items ?? []).map((it) => ({
+        topic: it.topic ?? "", details: it.details ?? "", suggestions: it.suggestions ?? "", action_plan: it.action_plan ?? ""
+      }))
     });
     if (err) return NextResponse.json({ error: err, message: ERR_MSG[err] ?? err }, { status: 400 });
     return NextResponse.json({ ok: true });

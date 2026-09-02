@@ -65,10 +65,15 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(bkkToday());
   const [companyWide, setCompanyWide] = useState(false);
+  const [topics, setTopics] = useState<string[]>([]);
   const [invited, setInvited] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
+
+  const setTopic = (i: number, v: string) => setTopics((prev) => prev.map((t, idx) => (idx === i ? v : t)));
+  const addTopic = () => setTopics((prev) => [...prev, ""]);
+  const removeTopic = (i: number) => setTopics((prev) => prev.filter((_, idx) => idx !== i));
 
   function toggleInvite(id: number) {
     setInvited((prev) => {
@@ -88,12 +93,13 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: title.trim(), meeting_date: date, company_wide: companyWide,
+          agenda_topics: topics.map((t) => t.trim()).filter(Boolean),
           invitee_user_ids: Array.from(invited)
         })
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
-        setTitle(""); setInvited(new Set()); setCompanyWide(false);
+        setTitle(""); setInvited(new Set()); setCompanyWide(false); setTopics([]);
         setMsg({ kind: "ok", text: "สร้างการประชุมแล้ว" });
         startTransition(() => router.refresh());
       } else {
@@ -137,6 +143,29 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
           <input type="checkbox" checked={companyWide} onChange={(e) => setCompanyWide(e.target.checked)} />
           ประชุมระดับบริษัท (ทุกสาขา)
         </label>
+
+        {/* Preset วาระ (owner 2026-09-02): topics set here are locked headers each
+            attendee must answer; they can still add their own วาระ on top. */}
+        <div>
+          <div className="label flex items-center justify-between">
+            <span>วาระการประชุม (ตั้งล่วงหน้า)</span>
+            <button type="button" className="text-xs text-brand hover:underline" onClick={addTopic}>+ เพิ่มวาระ</button>
+          </div>
+          {topics.length === 0 ? (
+            <div className="text-xs text-slate-400">ยังไม่ได้ตั้งวาระ — พนักงานจะเพิ่มวาระเองได้ตอนประชุม (หรือกด &ldquo;เพิ่มวาระ&rdquo; เพื่อกำหนดหัวข้อล่วงหน้า)</div>
+          ) : (
+            <div className="space-y-1.5">
+              {topics.map((t, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400 w-5 text-right tabular-nums">{i + 1}.</span>
+                  <input className="input flex-1" value={t} placeholder="เช่น สรุปยอดขายสัปดาห์นี้"
+                    onChange={(e) => setTopic(i, e.target.value)} />
+                  <button type="button" onClick={() => removeTopic(i)} className="text-rose-400 hover:text-rose-600 text-lg leading-none px-1">×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div>
           <div className="label flex items-center justify-between">
@@ -272,14 +301,16 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
   );
 }
 
+type MinuteItem = { topic: string; details: string; suggestions: string; action_plan: string };
 type Invitee = {
   user_id: number; display_name: string; title_prefix: string | null; fee_exempt: boolean;
   joined_at: string | null; ended_at: string | null; minutes: number | null; fee_amount: number | null;
-  minutes_complete: boolean;
+  minutes_complete: boolean; items: MinuteItem[];
 };
 type Detail = {
   id: number; title: string; meeting_date: string; status: string;
   ai_summary: string | null; ai_checklist: string | null; ai_carryover: string | null; summarized_at: string | null;
+  agenda_topics: string[];
   invitees: Invitee[];
 };
 
@@ -330,6 +361,16 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
               <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
             </div>
 
+            {/* Preset วาระ set for this meeting */}
+            {d.agenda_topics.length > 0 && (
+              <div className="rounded-xl border border-[#EFE4D3] bg-[#faf5ec] p-3">
+                <div className="text-xs font-semibold text-slate-600 mb-1">วาระที่กำหนด</div>
+                <ol className="text-sm text-slate-700 list-decimal pl-5 space-y-0.5">
+                  {d.agenda_topics.map((t, i) => <li key={i}>{t}</li>)}
+                </ol>
+              </div>
+            )}
+
             {/* Attendance + minutes status */}
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -358,6 +399,31 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
                 </tbody>
               </table>
             </div>
+
+            {/* Submitted minutes per person, grouped by วาระ */}
+            {d.invitees.some((i) => i.items.length > 0) && (
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-slate-700">รายงานการประชุม (รายคน)</div>
+                {d.invitees.filter((i) => i.items.length > 0).map((i) => (
+                  <details key={i.user_id} className="rounded-xl border border-slate-200 p-3">
+                    <summary className="cursor-pointer text-sm font-medium text-slate-700">
+                      {i.title_prefix ? `${i.title_prefix} ` : ""}{i.display_name}
+                      <span className="text-xs text-slate-400"> · {i.items.length} วาระ</span>
+                    </summary>
+                    <div className="mt-2 space-y-3">
+                      {i.items.map((it, j) => (
+                        <div key={j} className="text-sm">
+                          <div className="font-semibold text-brand">วาระที่ {j + 1}: {it.topic}</div>
+                          <div className="text-slate-700 whitespace-pre-wrap"><span className="text-slate-400">รายละเอียด:</span> {it.details}</div>
+                          <div className="text-slate-700 whitespace-pre-wrap"><span className="text-slate-400">ข้อเสนอแนะ:</span> {it.suggestions}</div>
+                          <div className="text-slate-700 whitespace-pre-wrap"><span className="text-slate-400">แผนการจัดการ:</span> {it.action_plan}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
 
             {/* AI summary */}
             <div className="rounded-xl border border-slate-200 p-3 space-y-2">

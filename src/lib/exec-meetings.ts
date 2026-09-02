@@ -22,6 +22,11 @@ export function meetingFeeForMinutes(minutes: number): number {
 
 export type ExecMeetingStatus = "scheduled" | "active" | "ended" | "closed";
 
+// One วาระ (agenda item) inside a person's minutes: a topic header plus the
+// three answer fields. A meeting can also carry preset topic headers (locked)
+// the admin sets in advance — every attendee must answer each of them.
+export type MinuteItem = { topic: string; details: string; suggestions: string; action_plan: string };
+
 export type ExecMeetingRow = {
   id: number;
   branch_id: number | null;
@@ -43,6 +48,7 @@ export type ExecMeetingDetail = ExecMeetingRow & {
   ai_summary: string | null;
   ai_checklist: string | null;
   ai_carryover: string | null;
+  agenda_topics: string[];      // preset วาระ headers the admin set in advance
   invitees: Array<{
     user_id: number;
     display_name: string;
@@ -52,7 +58,8 @@ export type ExecMeetingDetail = ExecMeetingRow & {
     ended_at: string | null;
     minutes: number | null;
     fee_amount: number | null;
-    minutes_complete: boolean;  // all four minute fields filled
+    minutes_complete: boolean;  // every วาระ (locked + own) fully answered
+    items: MinuteItem[];        // this person's submitted วาระ
   }>;
 };
 
@@ -94,9 +101,72 @@ export function isInvited(meetingId: number, userId: number): boolean {
   ).get(meetingId, userId);
 }
 
-function minutesComplete(m: { agenda: string; details: string; suggestions: string; action_plan: string } | undefined): boolean {
-  if (!m) return false;
-  return [m.agenda, m.details, m.suggestions, m.action_plan].every((s) => (s ?? "").trim().length > 0);
+export function parseAgendaTopics(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const a = JSON.parse(raw);
+    if (!Array.isArray(a)) return [];
+    return a.map((x) => String(x ?? "").trim()).filter((s) => s.length > 0);
+  } catch { return []; }
+}
+
+function parseItems(raw: string | null | undefined): MinuteItem[] {
+  if (!raw) return [];
+  try {
+    const a = JSON.parse(raw);
+    if (!Array.isArray(a)) return [];
+    return a.map((x) => {
+      const o = (x ?? {}) as Record<string, unknown>;
+      return {
+        topic: String(o.topic ?? "").trim(),
+        details: String(o.details ?? "").trim(),
+        suggestions: String(o.suggestions ?? "").trim(),
+        action_plan: String(o.action_plan ?? "").trim()
+      };
+    });
+  } catch { return []; }
+}
+
+export type MinutesRow = { items?: string | null; agenda?: string | null; details?: string | null; suggestions?: string | null; action_plan?: string | null };
+
+// A saved minutes row → list of items, falling back to the legacy single-agenda
+// columns when the JSON `items` column is empty (rows saved before multi-วาระ).
+export function itemsFromRow(row: MinutesRow | undefined): MinuteItem[] {
+  if (!row) return [];
+  const items = parseItems(row.items);
+  if (items.length > 0) return items;
+  const agenda = (row.agenda ?? "").trim();
+  const details = (row.details ?? "").trim();
+  const suggestions = (row.suggestions ?? "").trim();
+  const action_plan = (row.action_plan ?? "").trim();
+  if (agenda || details || suggestions || action_plan) return [{ topic: agenda, details, suggestions, action_plan }];
+  return [];
+}
+
+// Split a person's saved items against the meeting's preset (locked) topics:
+// each locked topic keeps its saved answers (matched by topic text), and the
+// rest are the person's own added วาระ.
+export function reconcileMinutes(topics: string[], saved: MinuteItem[]): { locked: MinuteItem[]; extra: MinuteItem[] } {
+  const byTopic = new Map<string, MinuteItem>();
+  for (const it of saved) if (it.topic && !byTopic.has(it.topic)) byTopic.set(it.topic, it);
+  const locked = topics.map((t) => {
+    const m = byTopic.get(t);
+    return { topic: t, details: m?.details ?? "", suggestions: m?.suggestions ?? "", action_plan: m?.action_plan ?? "" };
+  });
+  const topicSet = new Set(topics);
+  const extra = saved.filter((it) => !topicSet.has(it.topic));
+  return { locked, extra };
+}
+
+function itemComplete(it: MinuteItem): boolean {
+  return [it.topic, it.details, it.suggestions, it.action_plan].every((s) => (s ?? "").trim().length > 0);
+}
+
+// Complete = at least one วาระ, and every วาระ (locked + own) fully answered.
+function minutesComplete(topics: string[], saved: MinuteItem[]): boolean {
+  const { locked, extra } = reconcileMinutes(topics, saved);
+  const all = [...locked, ...extra];
+  return all.length > 0 && all.every(itemComplete);
 }
 
 export function getExecMeeting(id: number): ExecMeetingDetail | null {
@@ -106,14 +176,15 @@ export function getExecMeeting(id: number): ExecMeetingDetail | null {
   ).get(id) as ExecMeetingRow | undefined;
   if (!m) return null;
   const extra = db.prepare(
-    "SELECT ai_summary, ai_checklist, ai_carryover FROM exec_meetings WHERE id = ?"
-  ).get(id) as { ai_summary: string | null; ai_checklist: string | null; ai_carryover: string | null };
+    "SELECT ai_summary, ai_checklist, ai_carryover, agenda_topics FROM exec_meetings WHERE id = ?"
+  ).get(id) as { ai_summary: string | null; ai_checklist: string | null; ai_carryover: string | null; agenda_topics: string | null };
+  const topics = parseAgendaTopics(extra.agenda_topics);
 
   const invitees = db.prepare(`
     SELECT i.user_id, u.display_name, u.title_prefix,
            COALESCE(u.meeting_fee_exempt, 0) AS fee_exempt,
            a.joined_at, a.ended_at, a.minutes, a.fee_amount,
-           mm.agenda, mm.details, mm.suggestions, mm.action_plan
+           mm.items, mm.agenda, mm.details, mm.suggestions, mm.action_plan
     FROM exec_meeting_invitees i
     JOIN users u ON u.id = i.user_id
     LEFT JOIN exec_meeting_attendance a ON a.meeting_id = i.meeting_id AND a.user_id = i.user_id
@@ -123,28 +194,44 @@ export function getExecMeeting(id: number): ExecMeetingDetail | null {
   `).all(id) as Array<{
     user_id: number; display_name: string; title_prefix: string | null; fee_exempt: number;
     joined_at: string | null; ended_at: string | null; minutes: number | null; fee_amount: number | null;
-    agenda: string | null; details: string | null; suggestions: string | null; action_plan: string | null;
+    items: string | null; agenda: string | null; details: string | null; suggestions: string | null; action_plan: string | null;
   }>;
 
   return {
     ...m,
-    ...extra,
-    invitees: invitees.map((r) => ({
-      user_id: r.user_id,
-      display_name: r.display_name,
-      title_prefix: r.title_prefix,
-      fee_exempt: r.fee_exempt === 1,
-      joined_at: r.joined_at,
-      ended_at: r.ended_at,
-      minutes: r.minutes,
-      fee_amount: r.fee_amount,
-      minutes_complete: minutesComplete(
-        r.agenda != null
-          ? { agenda: r.agenda ?? "", details: r.details ?? "", suggestions: r.suggestions ?? "", action_plan: r.action_plan ?? "" }
-          : undefined
-      )
-    }))
+    ai_summary: extra.ai_summary,
+    ai_checklist: extra.ai_checklist,
+    ai_carryover: extra.ai_carryover,
+    agenda_topics: topics,
+    invitees: invitees.map((r) => {
+      const saved = itemsFromRow(r);
+      const { locked, extra: own } = reconcileMinutes(topics, saved);
+      return {
+        user_id: r.user_id,
+        display_name: r.display_name,
+        title_prefix: r.title_prefix,
+        fee_exempt: r.fee_exempt === 1,
+        joined_at: r.joined_at,
+        ended_at: r.ended_at,
+        minutes: r.minutes,
+        fee_amount: r.fee_amount,
+        minutes_complete: minutesComplete(topics, saved),
+        items: [...locked, ...own]
+      };
+    })
   };
+}
+
+// Normalise a preset-agenda list: trim, drop blanks, cap length/count.
+function normalizeTopics(topics: string[] | undefined): string[] {
+  if (!Array.isArray(topics)) return [];
+  const out: string[] = [];
+  for (const t of topics) {
+    const s = String(t ?? "").trim().slice(0, 300);
+    if (s) out.push(s);
+    if (out.length >= 50) break;
+  }
+  return out;
 }
 
 export function createExecMeeting(d: {
@@ -152,15 +239,17 @@ export function createExecMeeting(d: {
   meeting_date: string;
   branch_id: number | null;
   scheduled_at?: string | null;
+  agenda_topics?: string[];
   invitee_user_ids: number[];
   created_by: number;
 }): number {
   const db = getDb();
   const tx = db.transaction(() => {
     const info = db.prepare(
-      `INSERT INTO exec_meetings (branch_id, title, meeting_date, scheduled_at, status, created_by)
-       VALUES (?, ?, ?, ?, 'scheduled', ?)`
-    ).run(d.branch_id, d.title.trim(), d.meeting_date, d.scheduled_at ?? null, d.created_by);
+      `INSERT INTO exec_meetings (branch_id, title, meeting_date, scheduled_at, agenda_topics, status, created_by)
+       VALUES (?, ?, ?, ?, ?, 'scheduled', ?)`
+    ).run(d.branch_id, d.title.trim(), d.meeting_date, d.scheduled_at ?? null,
+      JSON.stringify(normalizeTopics(d.agenda_topics)), d.created_by);
     const meetingId = Number(info.lastInsertRowid);
     setInvitees(meetingId, d.invitee_user_ids);
     return meetingId;
@@ -196,6 +285,7 @@ export function updateExecMeeting(id: number, d: {
   title?: string;
   meeting_date?: string;
   branch_id?: number | null;
+  agenda_topics?: string[];
   status?: ExecMeetingStatus;
 }): boolean {
   const db = getDb();
@@ -204,6 +294,7 @@ export function updateExecMeeting(id: number, d: {
   if (d.title !== undefined) { sets.push("title = ?"); vals.push(d.title.trim()); }
   if (d.meeting_date !== undefined) { sets.push("meeting_date = ?"); vals.push(d.meeting_date); }
   if (d.branch_id !== undefined) { sets.push("branch_id = ?"); vals.push(d.branch_id); }
+  if (d.agenda_topics !== undefined) { sets.push("agenda_topics = ?"); vals.push(JSON.stringify(normalizeTopics(d.agenda_topics))); }
   if (d.status !== undefined) { sets.push("status = ?"); vals.push(d.status); }
   if (sets.length === 0) return false;
   vals.push(id);
@@ -243,26 +334,29 @@ export type StaffMeetingView = {
   ended_at: string | null;
   minutes: number | null;
   fee_amount: number | null;
-  minutes_form: { agenda: string; details: string; suggestions: string; action_plan: string };
+  // Preset วาระ set by the admin — the topic is locked, this person fills the
+  // three answer fields. Their own added วาระ have an editable topic too.
+  locked_items: MinuteItem[];
+  extra_items: MinuteItem[];
   minutes_complete: boolean;
 };
 
 export function getStaffMeetingView(meetingId: number, userId: number): StaffMeetingView | null {
   const db = getDb();
   const m = db.prepare(
-    "SELECT id, title, meeting_date, status FROM exec_meetings WHERE id = ?"
-  ).get(meetingId) as { id: number; title: string; meeting_date: string; status: ExecMeetingStatus } | undefined;
+    "SELECT id, title, meeting_date, status, agenda_topics FROM exec_meetings WHERE id = ?"
+  ).get(meetingId) as { id: number; title: string; meeting_date: string; status: ExecMeetingStatus; agenda_topics: string | null } | undefined;
   if (!m) return null;
   const att = db.prepare(
     "SELECT joined_at, ended_at, minutes, fee_amount FROM exec_meeting_attendance WHERE meeting_id = ? AND user_id = ?"
   ).get(meetingId, userId) as { joined_at: string | null; ended_at: string | null; minutes: number | null; fee_amount: number | null } | undefined;
   const mm = db.prepare(
-    "SELECT agenda, details, suggestions, action_plan FROM exec_meeting_minutes WHERE meeting_id = ? AND user_id = ?"
-  ).get(meetingId, userId) as { agenda: string; details: string; suggestions: string; action_plan: string } | undefined;
-  const form = {
-    agenda: mm?.agenda ?? "", details: mm?.details ?? "",
-    suggestions: mm?.suggestions ?? "", action_plan: mm?.action_plan ?? ""
-  };
+    "SELECT items, agenda, details, suggestions, action_plan FROM exec_meeting_minutes WHERE meeting_id = ? AND user_id = ?"
+  ).get(meetingId, userId) as MinutesRow | undefined;
+
+  const topics = parseAgendaTopics(m.agenda_topics);
+  const saved = itemsFromRow(mm);
+  const { locked, extra } = reconcileMinutes(topics, saved);
   return {
     id: m.id, title: m.title, meeting_date: m.meeting_date, status: m.status,
     invited: isInvited(meetingId, userId),
@@ -270,8 +364,9 @@ export function getStaffMeetingView(meetingId: number, userId: number): StaffMee
     ended_at: att?.ended_at ?? null,
     minutes: att?.minutes ?? null,
     fee_amount: att?.fee_amount ?? null,
-    minutes_form: form,
-    minutes_complete: minutesComplete(form)
+    locked_items: locked,
+    extra_items: extra,
+    minutes_complete: minutesComplete(topics, saved)
   };
 }
 
@@ -296,8 +391,13 @@ export function joinMeeting(meetingId: number, userId: number): string | null {
   return null;
 }
 
+// Save a person's minutes as a list of วาระ. The locked topics are owned by the
+// meeting (client sends answers only, in order) — the server re-attaches the
+// preset topic text so a locked header can't be tampered with. The person's own
+// added วาระ carry an editable topic. Empty own-วาระ (blank topic) are dropped.
 export function saveMinutes(meetingId: number, userId: number, d: {
-  agenda: string; details: string; suggestions: string; action_plan: string;
+  locked_answers: Array<{ details: string; suggestions: string; action_plan: string }>;
+  extra_items: MinuteItem[];
 }): string | null {
   const db = getDb();
   const att = db.prepare(
@@ -305,14 +405,30 @@ export function saveMinutes(meetingId: number, userId: number, d: {
   ).get(meetingId, userId) as { ended_at: string | null } | undefined;
   if (!att) return "not_joined";
   if (att.ended_at) return "already_ended";
+
+  const topics = parseAgendaTopics(
+    (db.prepare("SELECT agenda_topics FROM exec_meetings WHERE id = ?").get(meetingId) as { agenda_topics: string | null } | undefined)?.agenda_topics
+  );
+  const lockedItems: MinuteItem[] = topics.map((topic, i) => {
+    const a = d.locked_answers[i] ?? { details: "", suggestions: "", action_plan: "" };
+    return { topic, details: (a.details ?? "").trim(), suggestions: (a.suggestions ?? "").trim(), action_plan: (a.action_plan ?? "").trim() };
+  });
+  const topicSet = new Set(topics);
+  const extraItems: MinuteItem[] = (Array.isArray(d.extra_items) ? d.extra_items : [])
+    .map((it) => ({
+      topic: String(it.topic ?? "").trim(), details: String(it.details ?? "").trim(),
+      suggestions: String(it.suggestions ?? "").trim(), action_plan: String(it.action_plan ?? "").trim()
+    }))
+    // drop empty own-วาระ, and any that collide with a locked topic (kept above)
+    .filter((it) => (it.topic || it.details || it.suggestions || it.action_plan) && !topicSet.has(it.topic));
+
+  const items = JSON.stringify([...lockedItems, ...extraItems]);
   db.prepare(`
-    INSERT INTO exec_meeting_minutes (meeting_id, user_id, agenda, details, suggestions, action_plan, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO exec_meeting_minutes (meeting_id, user_id, items, updated_at)
+    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT (meeting_id, user_id) DO UPDATE SET
-      agenda = excluded.agenda, details = excluded.details,
-      suggestions = excluded.suggestions, action_plan = excluded.action_plan,
-      updated_at = CURRENT_TIMESTAMP
-  `).run(meetingId, userId, d.agenda.trim(), d.details.trim(), d.suggestions.trim(), d.action_plan.trim());
+      items = excluded.items, updated_at = CURRENT_TIMESTAMP
+  `).run(meetingId, userId, items);
   return null;
 }
 

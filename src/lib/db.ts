@@ -7522,6 +7522,21 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
+  // วาระประชุมแบบหลายหัวข้อ (owner 2026-09-02): a meeting can carry an ordered
+  // list of preset วาระ (agenda topics) the admin fills in advance — locked
+  // headers each attendee must answer — and each attendee's minutes become a
+  // list of {topic, details, suggestions, action_plan} items (preset answers +
+  // their own added วาระ). Stored as JSON TEXT; the legacy single-agenda columns
+  // stay for back-compat and are read as one item when `items` is null.
+  const emCols = db.prepare("PRAGMA table_info(exec_meetings)").all() as Array<{ name: string }>;
+  if (!emCols.some((c) => c.name === "agenda_topics")) {
+    db.exec("ALTER TABLE exec_meetings ADD COLUMN agenda_topics TEXT");  // JSON string[]
+  }
+  const emmCols = db.prepare("PRAGMA table_info(exec_meeting_minutes)").all() as Array<{ name: string }>;
+  if (!emmCols.some((c) => c.name === "items")) {
+    db.exec("ALTER TABLE exec_meeting_minutes ADD COLUMN items TEXT");   // JSON MinuteItem[]
+  }
+
   // ── รายงานผู้จัดการ → เตรียมประชุมประจำสัปดาห์ (owner 2026-08-04) ──────
   // ผู้จัดการสาขา (role=admin) ส่งรายงานปิดกะ + สถานการณ์ประจำวัน + เรื่องที่อยาก
   // ยกเข้าประชุมประจำสัปดาห์. ทุกวันพุธ AI ช่วยสรุปรายงานทั้งสัปดาห์ (เก็บใน

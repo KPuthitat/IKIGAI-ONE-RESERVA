@@ -16,6 +16,7 @@ const Body = z.object({
   meeting_date: z.string().regex(HDATE),
   company_wide: z.boolean().optional(),
   scheduled_at: z.string().max(40).nullable().optional(),
+  agenda_topics: z.array(z.string().max(300)).max(50).optional(),
   invitee_user_ids: z.array(z.number().int().positive()).max(200).default([])
 });
 
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
     meeting_date: d.meeting_date,
     branch_id: branchId,
     scheduled_at: d.scheduled_at ?? null,
+    agenda_topics: d.agenda_topics,
     invitee_user_ids: d.invitee_user_ids,
     created_by: user.id
   });
