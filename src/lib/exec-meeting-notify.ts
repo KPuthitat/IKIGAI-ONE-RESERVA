@@ -6,6 +6,7 @@
 import { getDb } from "./db";
 import { getPlatformChannel, isChannelReady } from "./messaging-channels";
 import { sendLinePush, type LineMessage } from "./line";
+import { MEETING_FEE_PER_HOUR } from "./exec-meetings";
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
 const STAFF_MEETING_URL = `${PUBLIC_BASE}/staff/persona/exec-meetings`;
@@ -29,14 +30,17 @@ function inviteFlex(title: string, ymd: string): LineMessage {
           { type: "text", text: "เชิญเข้าร่วมประชุมผู้บริหาร", weight: "bold", size: "sm", color: "#a06820" },
           { type: "text", text: title, weight: "bold", size: "lg", wrap: true, color: "#281a0e" },
           { type: "text", text: `วันที่ ${dateLabelTh(ymd)}`, size: "sm", color: "#8a7761" },
-          { type: "text", text: "กดปุ่มด้านล่างเพื่อเปิดหน้าประชุม แล้วกดเข้าร่วม และบันทึกรายงานการประชุม", size: "xs", color: "#8a7761", wrap: true, margin: "md" }
+          { type: "text", text: "กดปุ่มด้านล่างเพื่อเข้าสู่ระบบ แล้วกดเข้าร่วมการประชุม และบันทึกรายงานการประชุมส่งเข้าระบบทุกครั้ง", size: "xs", color: "#8a7761", wrap: true, margin: "md" },
+          { type: "text", text: `เพื่อให้ระบบคำนวณเบี้ยประชุมให้ ชั่วโมงละ ${MEETING_FEE_PER_HOUR} บาท (คิดตามจำนวนนาที)`, size: "xs", color: "#8a7761", wrap: true, margin: "sm" }
         ]
       },
       footer: {
-        type: "box", layout: "vertical",
+        type: "box", layout: "vertical", spacing: "sm", paddingAll: "lg", paddingTop: "md",
         contents: [
-          { type: "button", style: "primary", color: "#a06820", height: "sm",
-            action: { type: "uri", label: "เปิดหน้าประชุม", uri: STAFF_MEETING_URL } }
+          { type: "separator", color: "#e6ddce" },
+          { type: "button", style: "primary", color: "#a06820", height: "md", margin: "md",
+            action: { type: "uri", label: "เข้าสู่ระบบ", uri: STAFF_MEETING_URL } },
+          { type: "text", text: "เข้าร่วม · บันทึกรายงาน · รับเบี้ยประชุม", size: "xxs", color: "#a8977f", align: "center" }
         ]
       }
     }
