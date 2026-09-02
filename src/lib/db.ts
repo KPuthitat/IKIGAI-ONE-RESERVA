@@ -4833,6 +4833,9 @@ function runMigrations(db: Database.Database): void {
   userCol("clinical_role", "TEXT");                 // 'doctor' | 'nurse' | NULL
   userCol("license_no", "TEXT");                    // professional license (unlock gate)
   userCol("is_hr_analytics", "INTEGER NOT NULL DEFAULT 0");
+  // ประชุมผู้บริหาร (owner 2026-09-02): a per-person permanent exemption from
+  // เบี้ยประชุม — an exec who attends but is not paid the meeting allowance.
+  userCol("meeting_fee_exempt", "INTEGER NOT NULL DEFAULT 0");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS mounjaro_enrollments (
@@ -7444,6 +7447,72 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_meeting_items_meeting ON meeting_action_items(meeting_id, sort_order);
     CREATE INDEX IF NOT EXISTS idx_meeting_items_assignee ON meeting_action_items(assignee_user_id, status);
+  `);
+
+  // ── ประชุมผู้บริหาร + เบี้ยประชุม (owner 2026-09-02) ──────────────────────
+  // A distinct module from การประชุม (manager reports) above: an admin schedules
+  // an after-hours executive meeting and invites specific staff. Only invitees
+  // can join. On join the person presses "เข้าร่วมประชุม" (a meeting clock-in,
+  // NOT a work clock-in — kept out of time_entries so it never counts as work);
+  // pressing "สิ้นสุดการประชุม" stops the timer. They cannot end until their
+  // minutes (วาระ/รายละเอียด/ข้อเสนอแนะ/แผนการจัดการ) are complete. เบี้ยประชุม =
+  // 200 บาท/ชม. pro-rated per minute (like PT), taxable, folded into ค่าตอบแทน;
+  // a per-person meeting_fee_exempt (on users) drops the fee for execs. After
+  // everyone submits, AI summarises + builds a follow-up checklist + carryover.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS exec_meetings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,  -- NULL = ระดับบริษัท
+      title TEXT NOT NULL,
+      meeting_date TEXT NOT NULL,           -- YYYY-MM-DD (BKK)
+      scheduled_at TEXT,                    -- optional ISO start hint
+      status TEXT NOT NULL DEFAULT 'scheduled'
+        CHECK (status IN ('scheduled','active','ended','closed')),
+      ai_summary TEXT,                      -- AI meeting summary (markdown)
+      ai_checklist TEXT,                    -- AI follow-up checklist (JSON)
+      ai_carryover TEXT,                    -- outstanding items for next week (JSON)
+      summarized_at TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_exec_meetings_date ON exec_meetings(meeting_date);
+    CREATE INDEX IF NOT EXISTS idx_exec_meetings_status ON exec_meetings(status, meeting_date);
+
+    -- Who is invited (only these may join).
+    CREATE TABLE IF NOT EXISTS exec_meeting_invitees (
+      meeting_id INTEGER NOT NULL REFERENCES exec_meetings(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      PRIMARY KEY (meeting_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_exec_meeting_invitees_user ON exec_meeting_invitees(user_id);
+
+    -- Attendance timer per person (join → end). minutes/fee filled on end.
+    CREATE TABLE IF NOT EXISTS exec_meeting_attendance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      meeting_id INTEGER NOT NULL REFERENCES exec_meetings(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      ended_at TEXT,
+      minutes INTEGER,                      -- rounded to whole minutes on end
+      fee_amount REAL,                      -- 200/hr × minutes/60, 2dp (0 if exempt)
+      fee_exempt INTEGER NOT NULL DEFAULT 0,-- snapshot of users.meeting_fee_exempt at end
+      UNIQUE (meeting_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_exec_meeting_att_meeting ON exec_meeting_attendance(meeting_id);
+    CREATE INDEX IF NOT EXISTS idx_exec_meeting_att_user ON exec_meeting_attendance(user_id, ended_at);
+
+    -- Required minutes per attendee — all four fields must be filled to end.
+    CREATE TABLE IF NOT EXISTS exec_meeting_minutes (
+      meeting_id INTEGER NOT NULL REFERENCES exec_meetings(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      agenda TEXT NOT NULL DEFAULT '',       -- วาระ
+      details TEXT NOT NULL DEFAULT '',       -- รายละเอียด
+      suggestions TEXT NOT NULL DEFAULT '',   -- ข้อเสนอแนะ
+      action_plan TEXT NOT NULL DEFAULT '',   -- แผนการจัดการ
+      submitted_at TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (meeting_id, user_id)
+    );
   `);
 
   // ── รายงานผู้จัดการ → เตรียมประชุมประจำสัปดาห์ (owner 2026-08-04) ──────

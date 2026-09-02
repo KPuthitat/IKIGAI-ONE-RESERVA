@@ -78,6 +78,8 @@ export type EmployeeRow = {
   clinical_role?: "doctor" | "nurse" | null;
   license_no?: string | null;
   is_hr_analytics?: number;
+  // 1 = ยกเว้นเบี้ยประชุม (ผู้บริหารเข้าประชุมแต่ไม่รับเบี้ย, owner 2026-09-02).
+  meeting_fee_exempt?: number;
 };
 
 export type BranchLite = { id: number; name: string };
@@ -788,6 +790,7 @@ function EditModal({
   );
   const [licenseNo, setLicenseNo] = useState(employee.license_no ?? "");
   const [hrAnalytics, setHrAnalytics] = useState<boolean>(employee.is_hr_analytics === 1);
+  const [meetingExempt, setMeetingExempt] = useState<boolean>(employee.meeting_fee_exempt === 1);
   // RBAC (2026-06-04) — module-access roles assigned to this employee
   // (super_admin only). Replaces the full set on save via role_ids.
   const [roleSel, setRoleSel] = useState<Set<number>>(new Set(assignedRoleIds));
@@ -958,7 +961,9 @@ function EditModal({
         escalation_hours: null,
         is_test_account: isTestAccount ? 1 : 0,
         // ไม่รับส่วนแบ่งเซอร์วิสชาร์จ (แยกจาก track_attendance) — 1 = รับ (ดีฟอลต์), 0 = ตัดออก.
-        receives_service_charge: noSvc ? 0 : 1
+        receives_service_charge: noSvc ? 0 : 1,
+        // ยกเว้นเบี้ยประชุม — 1 = ผู้บริหารเข้าประชุมแต่ไม่รับเบี้ย (owner 2026-09-02).
+        meeting_fee_exempt: meetingExempt ? 1 : 0
       };
       // PT→FT effective date. On a fresh conversion always send it. For someone
       // ALREADY FT, only send when the date field is actually SHOWN (a known
@@ -1537,7 +1542,18 @@ function EditModal({
                 <span className="text-sm text-slate-700">
                   ไม่รับส่วนแบ่งเซอร์วิสชาร์จ
                   <span className="block text-xs text-slate-500">
-                    ไม่นับรวมในการแบ่งกองกลาง SVC ของสาขา (ค่าเริ่มต้น = รับส่วนแบ่ง)
+                    ไม่นับรวมในการแบ่งกองกลางเซอร์วิสชาร์จของสาขา (ค่าเริ่มต้น = รับส่วนแบ่ง)
+                  </span>
+                </span>
+              </label>
+              {/* ยกเว้นเบี้ยประชุม — ผู้บริหารเข้าประชุมได้แต่ไม่รับเบี้ย (owner 2026-09-02). */}
+              <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:bg-slate-50">
+                <input type="checkbox" className="mt-0.5" checked={meetingExempt}
+                  onChange={(e) => setMeetingExempt(e.target.checked)} />
+                <span className="text-sm text-slate-700">
+                  ยกเว้นเบี้ยประชุม
+                  <span className="block text-xs text-slate-500">
+                    เข้าร่วมประชุมผู้บริหารได้แต่ไม่คิดเบี้ยประชุมให้ (สำหรับผู้บริหาร)
                   </span>
                 </span>
               </label>

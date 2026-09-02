@@ -68,6 +68,8 @@ const Body = z.object({
   // 2026-07-21 — service-charge eligibility, decoupled from track_attendance.
   // 1 = receives SVC (default), 0 = excluded from the branch pool.
   receives_service_charge: z.number().int().min(0).max(1).optional(),
+  // 2026-09-02 — ยกเว้นเบี้ยประชุม: 1 = exec attends meetings but is not paid.
+  meeting_fee_exempt: z.number().int().min(0).max(1).optional(),
   // 2026-05-30 — PDPA payroll-access grant. Only super_admin may set
   // this; the server gate strips it for everyone else (below).
   can_view_payroll:   z.number().int().min(0).max(1).optional(),
@@ -360,6 +362,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("is_test_account");
   // Service-charge eligibility — 0/1 boolean. 0 = excluded from the branch pool.
   addField("receives_service_charge");
+  // ยกเว้นเบี้ยประชุม — 0/1 boolean (owner 2026-09-02).
+  addField("meeting_fee_exempt");
   // PDPA payroll-access grant — only present in parsed.data when
   // operator is super_admin (stripped above for everyone else).
   addField("can_view_payroll");
