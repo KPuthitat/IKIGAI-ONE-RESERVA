@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useLayoutEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
@@ -106,8 +106,8 @@ function MeetingCard({ m, onChanged }: { m: StaffMeetingView; onChanged: () => v
           {FIELDS.map((f) => (
             <div key={f.key}>
               <label className="label">{f.label}{form[f.key].trim() ? "" : <span className="text-rose-400"> *</span>}</label>
-              <textarea className="input min-h-[64px]" value={form[f.key]} placeholder={f.placeholder}
-                onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))} />
+              <AutoTextarea value={form[f.key]} placeholder={f.placeholder}
+                onChange={(v) => setForm((prev) => ({ ...prev, [f.key]: v }))} />
             </div>
           ))}
           <div className="flex items-center gap-3">
@@ -125,6 +125,31 @@ function MeetingCard({ m, onChanged }: { m: StaffMeetingView; onChanged: () => v
 
       {msg && <div className={`text-xs ${msg.kind === "ok" ? "text-emerald-600" : "text-rose-600"}`}>{msg.text}</div>}
     </div>
+  );
+}
+
+// เวลาโน้ตประชุมมักยาว (owner 2026-09-02) — ช่องขยายสูงตามข้อความที่พิมพ์เอง
+// ไม่ต้อง scroll ในกล่องเล็กๆ. Grows to fit content on type และตอนโหลดค่าที่บันทึกไว้.
+function AutoTextarea({ value, placeholder, onChange }: {
+  value: string; placeholder: string; onChange: (v: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      className="input min-h-[64px]"
+      style={{ overflow: "hidden", resize: "none" }}
+      rows={2}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
   );
 }
 
