@@ -28,6 +28,29 @@ import { sumRedeemedDrinksForUser } from "./partner-drink-orders";
 import { sumCrossCompanyChargesForUser } from "./mealpass-payroll";
 import { isDfBranch, computeDoctorFees } from "./df-db";
 
+// Which payroll_lines are shown to the admin (and therefore reviewable). Two
+// kinds of noise are hidden: an FT with no salary set, and an FT's all-zero
+// line at a branch that ISN'T their home branch (company-wide FT salary pays at
+// the home branch, so a non-home 0-gross line is pure noise — e.g. HYPO's round
+// when the salary was earned/booked at NAMA). A helper line (is_helper=1) is
+// never hidden — it carries a real day-rate fee at that branch.
+//
+// The finalize review-gate MUST use this SAME filter, or it counts hidden rows
+// the admin can never tick and blocks the close forever (owner 2026-09-02). Uses
+// the `pl` table alias and named params @pid (period) + @pbranch (period branch,
+// NULL for company-wide). Callers select `FROM payroll_lines pl`.
+export const VISIBLE_PAYROLL_LINE_FILTER = `
+  NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0 AND COALESCE(pl.is_helper, 0) = 0)
+  AND NOT (
+    pl.employment_type = 'ft' AND COALESCE(pl.gross_pay, 0) = 0 AND COALESCE(pl.is_helper, 0) = 0
+    AND @pbranch IS NOT NULL
+    AND @pbranch != COALESCE(
+      (SELECT branch_id FROM user_branches WHERE user_id = pl.user_id AND is_primary = 1 LIMIT 1),
+      (SELECT MIN(branch_id) FROM user_branches WHERE user_id = pl.user_id)
+    )
+  )
+`;
+
 // ── Types ───────────────────────────────────────────────────────────
 
 export type PayrollSettings = {

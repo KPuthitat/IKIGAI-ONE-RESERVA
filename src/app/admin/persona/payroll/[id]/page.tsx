@@ -5,6 +5,7 @@ import { requirePayrollAccess, getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
+import { VISIBLE_PAYROLL_LINE_FILTER } from "@/lib/payroll-compute";
 import PeriodDetailClient, { type PeriodDetail, type PayrollLineRow } from "./PeriodDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -55,24 +56,9 @@ export default function PeriodDetailPage({
     FROM payroll_lines pl
     LEFT JOIN users u ON u.id = pl.user_id
     WHERE pl.period_id = @pid
-      -- Hide FT rows with no salary set (owner 2026-07-12: e.g. accounts that
-      -- haven't been configured shouldn't clutter the payroll table). A
-      -- cross-company helper (is_helper=1) is FT with no salary snapshot but is
-      -- paid a day rate — never hide it (owner 2026-08-17).
-      AND NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0 AND COALESCE(pl.is_helper, 0) = 0)
-      -- Hide an FT's all-zero line at a branch that ISN'T their home branch
-      -- (owner 2026-07-27: ธนโชติ ผู้บริหารโผล่สองสาขา). FT salary pays only at
-      -- the home branch, so a non-home line with no OT/service charge (gross 0)
-      -- is pure noise. Kept when it carries real money earned at that branch.
-      -- Helper lines are exempt (they carry a real day-rate fee at that branch).
-      AND NOT (
-        pl.employment_type = 'ft' AND COALESCE(pl.gross_pay, 0) = 0 AND COALESCE(pl.is_helper, 0) = 0
-        AND @pbranch IS NOT NULL
-        AND @pbranch != COALESCE(
-          (SELECT branch_id FROM user_branches WHERE user_id = pl.user_id AND is_primary = 1 LIMIT 1),
-          (SELECT MIN(branch_id) FROM user_branches WHERE user_id = pl.user_id)
-        )
-      )
+      -- Hidden noise (FT with no salary; FT all-zero line at a non-home branch).
+      -- Shared with the finalize review-gate so they can't drift (owner 2026-09-02).
+      AND ${VISIBLE_PAYROLL_LINE_FILTER}
     ORDER BY CASE WHEN pl.employment_type = 'ft' THEN 0 WHEN pl.employment_type = 'pt' THEN 1 ELSE 2 END,
              pl.display_name
   `).all({ pid: id, pbranch: periodBranchId }) as PayrollLineRow[];
