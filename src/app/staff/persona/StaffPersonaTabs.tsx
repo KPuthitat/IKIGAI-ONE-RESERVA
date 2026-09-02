@@ -11,7 +11,8 @@ export default function StaffPersonaTabs({
   const pathname = usePathname();
   const isLeave = pathname?.startsWith("/staff/persona/leave");
   const isResignation = pathname?.startsWith("/staff/persona/resignation");
-  const isClock = !isLeave && !isResignation;
+  const isMeeting = pathname?.startsWith("/staff/persona/exec-meetings");
+  const isClock = !isLeave && !isResignation && !isMeeting;
 
   const cls = (active: boolean) =>
     `flex-1 text-center py-2 rounded-lg text-sm font-medium transition ${
@@ -22,6 +23,7 @@ export default function StaffPersonaTabs({
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-1.5 flex gap-1">
       <Link href="/staff/persona" className={cls(isClock)}>{labels.clock}</Link>
       <Link href="/staff/persona/leave" className={cls(isLeave)}>{labels.leave}</Link>
+      <Link href="/staff/persona/exec-meetings" className={cls(isMeeting)}>ประชุม</Link>
       <Link href="/staff/persona/resignation" className={cls(isResignation)}>{labels.resignation}</Link>
     </div>
   );
