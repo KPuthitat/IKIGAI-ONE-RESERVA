@@ -17,6 +17,16 @@ function dateLabelTh(ymd: string): string {
   return `${m[3]}/${m[2]}/${Number(m[1]) + 543}`;
 }
 
+// Thai has no spaces, so LINE wraps long runs at word boundaries — which reads
+// raggedy and can split a phrase like "(คิดตามจำนวนนาที)" mid-way. WORD JOINER
+// (U+2060, zero-width) glues a phrase so it never splits; NBSP keeps visible
+// spaces (e.g. in "200 บาท") from becoming break points. Copy is kept short and
+// split into separate lines so each wraps cleanly on its own.
+const WJ = "\u2060";
+const NBSP = "\u00A0";
+const feeLabel = `ชั่วโมงละ${NBSP}${MEETING_FEE_PER_HOUR}${NBSP}บาท`;
+const feeNote = `(คิดตาม${WJ}จำนวน${WJ}นาที)`;
+
 function inviteFlex(title: string, ymd: string): LineMessage {
   return {
     type: "flex",
@@ -30,8 +40,17 @@ function inviteFlex(title: string, ymd: string): LineMessage {
           { type: "text", text: "เชิญเข้าร่วมประชุมผู้บริหาร", weight: "bold", size: "sm", color: "#a06820" },
           { type: "text", text: title, weight: "bold", size: "lg", wrap: true, color: "#281a0e" },
           { type: "text", text: `วันที่ ${dateLabelTh(ymd)}`, size: "sm", color: "#8a7761" },
-          { type: "text", text: "กดปุ่มด้านล่างเพื่อเข้าสู่ระบบ แล้วกดเข้าร่วมการประชุม และบันทึกรายงานการประชุมส่งเข้าระบบทุกครั้ง", size: "xs", color: "#8a7761", wrap: true, margin: "md" },
-          { type: "text", text: `เพื่อให้ระบบคำนวณเบี้ยประชุมให้ ชั่วโมงละ ${MEETING_FEE_PER_HOUR} บาท (คิดตามจำนวนนาที)`, size: "xs", color: "#8a7761", wrap: true, margin: "sm" }
+          { type: "separator", color: "#efe7d9", margin: "lg" },
+          { type: "text", text: "กดเข้าสู่ระบบ แล้วกดเข้าร่วมประชุม", size: "sm", color: "#4a3f30", wrap: true, margin: "lg" },
+          { type: "text", text: "บันทึกรายงานการประชุมส่งเข้าระบบทุกครั้ง", size: "sm", color: "#4a3f30", wrap: true, margin: "sm" },
+          {
+            type: "box", layout: "baseline", margin: "lg", spacing: "sm",
+            contents: [
+              { type: "text", text: "เบี้ยประชุม", size: "xs", color: "#8a7761", flex: 0 },
+              { type: "text", text: feeLabel, size: "md", weight: "bold", color: "#a06820", align: "end" }
+            ]
+          },
+          { type: "text", text: feeNote, size: "xxs", color: "#a8977f", align: "end" }
         ]
       },
       footer: {
