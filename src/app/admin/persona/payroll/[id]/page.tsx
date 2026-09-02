@@ -174,6 +174,16 @@ export default function PeriodDetailPage({
   // Stale-snapshot check — count lines whose snapshot disagrees with the
   // user's CURRENT salary_tax_mode / rates (ignoring overridden lines, since
   // admin manually picked those values).
+  //
+  // salary_tax_mode is NOT a direct copy of u.salary_tax_mode — the engine
+  // stores the DERIVED taxMode (payroll-compute.ts): for pt/ft it is category-
+  // driven (pt → wht; ft weekly/first-month → wht; ft full month → sso) and
+  // intentionally overrides the per-employee flag. Comparing that derived value
+  // to the raw u.salary_tax_mode column always mismatches for those employees,
+  // so the banner used to flag them forever and a recompute (which re-writes the
+  // same derived value) never cleared it (owner 2026-09-02). Only df/other types
+  // store the raw flag (taxMode = salary_tax_mode ?? 'sso'), so we compare tax
+  // mode ONLY for them, with the same 'sso' default the engine applies.
   const staleCount = (db.prepare(`
     SELECT COUNT(*) AS n
     FROM payroll_lines pl
@@ -181,10 +191,13 @@ export default function PeriodDetailPage({
     WHERE pl.period_id = ?
       AND pl.overridden = 0
       AND (
-        COALESCE(pl.salary_tax_mode_snapshot, '') != COALESCE(u.salary_tax_mode, '')
-        OR COALESCE(pl.hourly_rate_snapshot, -1) != COALESCE(u.hourly_rate, -1)
+        COALESCE(pl.hourly_rate_snapshot, -1) != COALESCE(u.hourly_rate, -1)
         OR COALESCE(pl.monthly_salary_snapshot, -1) != COALESCE(u.monthly_salary, -1)
         OR COALESCE(pl.pay_cycle_snapshot, '') != COALESCE(u.pay_cycle, '')
+        OR (
+          u.employment_type NOT IN ('pt', 'ft')
+          AND COALESCE(pl.salary_tax_mode_snapshot, 'sso') != COALESCE(u.salary_tax_mode, 'sso')
+        )
       )
   `).get(id) as { n: number }).n;
 
