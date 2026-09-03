@@ -4,7 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postSvcToAccounta, removeSvcFromAccounta } from "@/lib/accounta-db";
-import { isManualSvcMonth } from "@/lib/service-charge";
+import { isManualSvcMonth, isSharedSvcMonth } from "@/lib/service-charge";
 
 // PATCH /api/admin/persona/service-charge/payout — 3-step flow mirroring payroll
 // (owner 2026-07-21): draft → finalize → paid → posted.
@@ -57,6 +57,17 @@ export async function PATCH(req: Request) {
   const d = parsed.data;
   const db = getDb();
   const now = new Date().toISOString();
+
+  // เดือนที่เปิด "รวมกอง (รวมทั้งบริษัท)" ให้จัดการปิดยอด/จ่าย/ลงบัญชีที่หน้ารวม
+  // ที่เดียว — กันทำรายการซ้ำรายสาขา (owner 2026-09-03).
+  const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
+    .get(branchId) as { company_id: number | null } | undefined)?.company_id ?? null;
+  if (companyId && isSharedSvcMonth(companyId, d.yearMonth)) {
+    return NextResponse.json({
+      error: "managed_company_wide",
+      message: "เดือนนี้รวมกองทั้งบริษัท — ปิดยอด/จ่าย/ลงบัญชีที่หน้ารวมทั้งบริษัท"
+    }, { status: 400 });
+  }
 
   // ── Step 1: finalize / unfinalize ──────────────────────────────────────
   if (d.action === "finalize") {

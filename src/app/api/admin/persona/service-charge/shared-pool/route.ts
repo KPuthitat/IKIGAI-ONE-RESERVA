@@ -51,6 +51,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "no_company" }, { status: 400 });
   }
 
+  // Don't let the pooling mode flip once the month's payout has started for any
+  // branch — that would strand a finalized/paid/posted batch under the wrong mode
+  // (owner 2026-09-03). Reset (unfinalize/unpost) first.
+  const started = getDb().prepare(`
+    SELECT b.name FROM svc_payout_batches s JOIN branches b ON b.id = s.branch_id
+    WHERE b.company_id = ? AND s.year_month = ? AND s.status <> 'draft' LIMIT 1
+  `).get(companyId, parsed.data.year_month) as { name: string } | undefined;
+  if (started) {
+    return NextResponse.json({
+      error: "payout_started",
+      message: "เดือนนี้เริ่มปิดยอด/จ่ายไปแล้ว — ต้องยกเลิกให้กลับเป็นร่างก่อนจึงจะสลับโหมดรวมกองได้"
+    }, { status: 400 });
+  }
+
   setSharedSvcMonth({
     companyId,
     yearMonth: parsed.data.year_month,
