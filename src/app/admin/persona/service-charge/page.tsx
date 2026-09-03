@@ -269,16 +269,27 @@ export default function AdminServiceChargePage({
         </div>
       )}
 
-      {/* Payout / ACCOUNTA posting (owner 2026-07-21) */}
+      {/* Payout / ACCOUNTA posting (owner 2026-07-21). In "รวมกอง (รวมทั้งบริษัท)"
+          mode the month is closed/paid/posted from the company page — hide the
+          per-branch buttons so it can't be done twice (owner 2026-09-03). */}
       {canManagePayout && summary.rows.length > 0 && (
-        <SvcPayoutActions
-          yearMonth={month}
-          status={payoutStatus}
-          totalNet={payoutBatch?.total_net ?? 0}
-          totalWht={payoutBatch?.total_wht ?? 0}
-          postedAt={payoutBatch?.posted_at ?? null}
-          netPayoutPreview={payoutPreviewNet}
-        />
+        combinedMode ? (
+          <div className="card text-sm text-slate-600">
+            เดือนนี้เปิด <b>รวมกอง (รวมทั้งบริษัท)</b> — ปิดยอด / ทำจ่าย / ลงบัญชี ทำที่{" "}
+            <Link href={`/admin/persona/service-charge/company?month=${month}`} className="text-brand font-medium hover:underline">
+              หน้ารวมทั้งบริษัท
+            </Link>{" "}ที่เดียว
+          </div>
+        ) : (
+          <SvcPayoutActions
+            yearMonth={month}
+            status={payoutStatus}
+            totalNet={payoutBatch?.total_net ?? 0}
+            totalWht={payoutBatch?.total_wht ?? 0}
+            postedAt={payoutBatch?.posted_at ?? null}
+            netPayoutPreview={payoutPreviewNet}
+          />
+        )
       )}
 
       {/* Daily ledger + admin edit — only for live (system) months. Pre-system

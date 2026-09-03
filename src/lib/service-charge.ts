@@ -2251,3 +2251,78 @@ function hhmmToMin(hhmm: string): number | null {
   if (h < 0 || h > 23 || mi < 0 || mi > 59) return null;
   return h * 60 + mi;
 }
+
+// ── Company-wide payout (รวมทั้งบริษัท) — orchestration helpers ──────────────
+// In shared-pool ("รวมกอง") mode the finalize→pay→post flow is driven from the
+// company page and fans out to each branch's svc_payout_batches row (there is no
+// single company batch — mirrors company-wide FT payroll). These helpers give
+// the page/route the participating branches, per-branch completeness and an
+// aggregate status.
+
+export type SvcBatchStatus = "draft" | "finalized" | "paid" | "posted";
+
+/** Branches of the company that collected service charge in the month — the set
+ *  a company-wide payout acts on. Computed months: branches with ≥1 daily row;
+ *  manual months: branches with a hand-entered allocation. */
+export function svcParticipatingBranches(companyId: number, yearMonth: string): Array<{ id: number; name: string }> {
+  const db = getDb();
+  if (isManualSvcMonth(yearMonth)) {
+    return db.prepare(`
+      SELECT b.id, b.name FROM branches b
+      WHERE b.company_id = ?
+        AND EXISTS (SELECT 1 FROM svc_manual_allocations m WHERE m.branch_id = b.id AND m.year_month = ?)
+      ORDER BY b.display_order, b.name
+    `).all(companyId, yearMonth) as Array<{ id: number; name: string }>;
+  }
+  return db.prepare(`
+    SELECT b.id, b.name FROM branches b
+    WHERE b.company_id = ?
+      AND EXISTS (SELECT 1 FROM daily_service_charge d WHERE d.branch_id = b.id AND d.date >= ? AND d.date <= ?)
+    ORDER BY b.display_order, b.name
+  `).all(companyId, `${yearMonth}-01`, `${yearMonth}-31`) as Array<{ id: number; name: string }>;
+}
+
+/** How many calendar days of the month a branch has entered (computed months).
+ *  complete = every day filled (วันหยุด/ปิดร้าน ต้องลง 0). Manual months have no
+ *  daily ledger → always complete. */
+export function svcMonthFill(branchId: number, yearMonth: string): { filled: number; days: number; complete: boolean } {
+  if (isManualSvcMonth(yearMonth)) return { filled: 0, days: 0, complete: true };
+  const [yyyy, mm] = yearMonth.split("-").map(Number);
+  const days = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate();
+  const filled = (getDb().prepare(
+    "SELECT COUNT(DISTINCT date) AS c FROM daily_service_charge WHERE branch_id = ? AND date >= ? AND date <= ?"
+  ).get(branchId, `${yearMonth}-01`, `${yearMonth}-31`) as { c: number }).c;
+  return { filled, days, complete: filled >= days };
+}
+
+/** The svc_payout_batches row for a (branch, month), if any. */
+export function getSvcBatch(branchId: number, yearMonth: string): { id: number; status: SvcBatchStatus; posted_at: string | null } | undefined {
+  return getDb().prepare(
+    "SELECT id, status, posted_at FROM svc_payout_batches WHERE branch_id = ? AND year_month = ?"
+  ).get(branchId, yearMonth) as { id: number; status: SvcBatchStatus; posted_at: string | null } | undefined;
+}
+
+const SVC_STAGE: Record<SvcBatchStatus, number> = { draft: 0, finalized: 1, paid: 2, posted: 3 };
+
+export type CompanySvcPayoutState = {
+  branches: Array<{ id: number; name: string; status: SvcBatchStatus; fill: { filled: number; days: number; complete: boolean } }>;
+  status: SvcBatchStatus;                 // aggregate = least-advanced branch
+  allComplete: boolean;                   // every participating branch's month is filled
+  incomplete: Array<{ id: number; name: string; filled: number; days: number }>;
+};
+
+/** Aggregate payout state for a company-wide month: each participating branch's
+ *  batch status + completeness, the least-advanced status (so the page enables
+ *  the right next step), and which branches aren't complete. */
+export function companySvcPayoutState(companyId: number, yearMonth: string): CompanySvcPayoutState {
+  const branches = svcParticipatingBranches(companyId, yearMonth).map((b) => ({
+    id: b.id, name: b.name,
+    status: (getSvcBatch(b.id, yearMonth)?.status ?? "draft") as SvcBatchStatus,
+    fill: svcMonthFill(b.id, yearMonth)
+  }));
+  const status: SvcBatchStatus = branches.length === 0
+    ? "draft"
+    : branches.reduce<SvcBatchStatus>((min, b) => (SVC_STAGE[b.status] < SVC_STAGE[min] ? b.status : min), "posted");
+  const incomplete = branches.filter((b) => !b.fill.complete).map((b) => ({ id: b.id, name: b.name, filled: b.fill.filled, days: b.fill.days }));
+  return { branches, status, allComplete: incomplete.length === 0, incomplete };
+}

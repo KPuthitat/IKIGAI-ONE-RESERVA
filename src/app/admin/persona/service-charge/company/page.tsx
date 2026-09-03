@@ -15,12 +15,14 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import {
   computeCompanySvcSummary,
+  companySvcPayoutState,
   isSharedSvcMonth,
   isManualSvcMonth,
   SVC_STAFF_SHARE_RATIO,
   SVC_COMPANY_SHARE_RATIO
 } from "@/lib/service-charge";
 import SharedPoolToggle from "./SharedPoolToggle";
+import CompanySvcPayoutActions from "./CompanySvcPayoutActions";
 import CompanySvcCalcModal from "./CompanySvcCalcModal";
 import SvcForfeitExemptButton from "../SvcForfeitExemptButton";
 import SvcDeductionEditor from "../SvcDeductionEditor";
@@ -68,6 +70,19 @@ export default function CompanyServiceChargePage({
   const shared = isSharedSvcMonth(branchRow.company_id, month);
   const manual = isManualSvcMonth(month);
   const canManagePayout = userCanViewPayroll(user);
+
+  // Company-wide payout (close/pay/post to ACCOUNTA, split per branch) — only in
+  // shared "รวมกอง" mode (owner 2026-09-03). In that mode the per-branch page hides
+  // its own payout buttons, so the month is settled here once.
+  const payoutState = shared && !manual && canManagePayout
+    ? companySvcPayoutState(branchRow.company_id, month) : null;
+  const postedTotals = payoutState && payoutState.status === "posted"
+    ? (db.prepare(`
+        SELECT COALESCE(SUM(total_net), 0) AS net, COALESCE(SUM(total_wht), 0) AS wht, MIN(posted_at) AS posted_at
+        FROM svc_payout_batches s JOIN branches b ON b.id = s.branch_id
+        WHERE b.company_id = ? AND s.year_month = ?
+      `).get(branchRow.company_id, month) as { net: number; wht: number; posted_at: string | null })
+    : null;
 
   // 12-month picker
   const monthOptions: string[] = [];
@@ -145,6 +160,19 @@ export default function CompanyServiceChargePage({
       {/* รวมกอง toggle — computed months only (manual months have no hours to split) */}
       {!manual && (
         <SharedPoolToggle yearMonth={month} shared={shared} canEdit={canManagePayout} />
+      )}
+
+      {/* Company-wide close → pay → post to ACCOUNTA (split per branch) */}
+      {payoutState && (
+        <CompanySvcPayoutActions
+          yearMonth={month}
+          status={payoutState.status}
+          netPayoutPreview={summary.totalNetPayout}
+          totalNet={postedTotals?.net ?? summary.totalNetPayout}
+          totalWht={postedTotals?.wht ?? summary.totalWht}
+          postedAt={postedTotals?.posted_at ?? null}
+          incomplete={payoutState.incomplete}
+        />
       )}
 
       {/* Summary cards */}
