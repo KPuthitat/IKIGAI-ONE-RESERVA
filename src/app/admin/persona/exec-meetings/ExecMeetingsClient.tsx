@@ -317,6 +317,7 @@ type Invitee = {
 type Detail = {
   id: number; title: string; meeting_date: string; status: string;
   ai_summary: string | null; ai_checklist: string | null; ai_carryover: string | null; summarized_at: string | null;
+  ai_in_tokens: number | null; ai_out_tokens: number | null; ai_cost_baht: number | null; ai_model: string | null;
   agenda_topics: string[];
   invitees: Invitee[];
 };
@@ -383,7 +384,11 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
                 <div className="font-bold text-slate-800">{d.title}</div>
                 <div className="text-xs text-slate-500">{d.meeting_date}</div>
               </div>
-              <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+              <div className="flex items-center gap-3">
+                <a href={apiUrl(`/api/admin/persona/exec-meetings/${meetingId}/pdf`)} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-brand hover:underline whitespace-nowrap">ดาวน์โหลด PDF</a>
+                <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+              </div>
             </div>
 
             {/* Preset วาระ — editable until the meeting starts, read-only after. */}
@@ -513,6 +518,13 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
                       <ul className="text-sm text-slate-700 space-y-1 list-disc pl-5">
                         {carryover.map((c, i) => <li key={i}>{c.item}</li>)}
                       </ul>
+                    </div>
+                  )}
+                  {d.ai_cost_baht != null && (
+                    <div className="text-[11px] text-slate-400 border-t border-slate-100 pt-2">
+                      ใช้ AI · {(d.ai_in_tokens ?? 0).toLocaleString("th-TH")} + {(d.ai_out_tokens ?? 0).toLocaleString("th-TH")} tokens
+                      {" · "}ประมาณ ฿{d.ai_cost_baht.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {d.ai_model ? ` · ${d.ai_model}` : ""}
                     </div>
                   )}
                 </div>

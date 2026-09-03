@@ -8,7 +8,7 @@
 // and summarises it.
 
 import { getDb, getSystemSettings } from "./db";
-import { DEFAULT_OWL_AI_MODEL, owlAiModel } from "./owl-ai-models";
+import { DEFAULT_OWL_AI_MODEL, owlAiModel, owlAiCostBaht } from "./owl-ai-models";
 import { itemsFromRow, getMeetingInvitees, type MinutesRow } from "./exec-meetings";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
@@ -23,6 +23,7 @@ export type MeetingAiResult = {
   summary: string;                       // markdown สรุปการประชุม
   checklist: Array<{ item: string; owner?: string }>;  // ติดตามสัปดาห์หน้า
   carryover: Array<{ item: string }>;    // ประเด็นคงค้าง
+  usage?: { in_tokens: number; out_tokens: number; cost_baht: number; model: string };
 };
 
 // A delimiter-based reply format — NOT JSON. The summary is long markdown with
@@ -36,9 +37,13 @@ const SYSTEM = [
   "งานของคุณ: รวบรวมและสรุปให้กระชับ ใช้ภาษาไทย ไม่แต่งข้อมูลเพิ่มเอง อ้างเฉพาะสิ่งที่มีในรายงาน.",
   "ตอบตามรูปแบบนี้เท่านั้น ห้ามมีข้อความอื่นก่อนหรือหลัง และห้ามหุ้มด้วย ``` :",
   "===SUMMARY===",
-  "(สรุปแบบ markdown มีหัวข้อ: ภาพรวม, มติ/สิ่งที่ตกลง, เรื่องที่ดำเนินการไปแล้ว (เทียบประเด็นคงค้างเดิม), ข้อเสนอแนะเด่น)",
+  "(สรุปแบบ markdown ให้ละเอียด อ่านแล้วเข้าใจการประชุมครบโดยไม่ต้องดูรายงานดิบ ใช้หัวข้อ ### และ bullet. โครงที่ต้องมี:",
+  "### ภาพรวม  — บริบทและประเด็นหลักของการประชุม 2-4 บรรทัด.",
+  "### สรุปรายวาระ  — ทุกวาระ หัวข้อละหนึ่งย่อหน้า: สาระสำคัญที่คุย, มติ/ข้อตกลง, และถ้ามีผู้รับผิดชอบ/กำหนดเวลาให้ระบุ.",
+  "### เรื่องที่ทำไปแล้ว  — เทียบกับประเด็นคงค้างเดิม (ถ้ามี).",
+  "### ข้อเสนอแนะและความเสี่ยง  — ข้อเสนอเด่น และสิ่งที่ต้องระวัง/ติดตาม.)",
   "===CHECKLIST===",
-  "(สิ่งที่ต้องติดตามสัปดาห์หน้า บรรทัดละ 1 รายการ ขึ้นต้นด้วย - รูปแบบ: เรื่องที่ต้องทำ :: ผู้รับผิดชอบ  ถ้าไม่มีผู้รับผิดชอบใส่ - )",
+  "(สิ่งที่ต้องติดตามสัปดาห์หน้า ให้ครบทุกงานที่มีในรายงาน บรรทัดละ 1 รายการ ขึ้นต้นด้วย - รูปแบบ: เรื่องที่ต้องทำ :: ผู้รับผิดชอบ  ถ้าไม่มีผู้รับผิดชอบใส่ - )",
   "===CARRYOVER===",
   "(ประเด็นคงค้างที่ยกไปคุยต่อสัปดาห์หน้า บรรทัดละ 1 รายการ ขึ้นต้นด้วย - ถ้าไม่มีให้เว้นว่าง)"
 ].join("\n");
@@ -162,15 +167,24 @@ export async function summarizeMeeting(meetingId: number): Promise<MeetingAiResu
     if (status === 429) throw new MeetingAiError("rate_limit", "เรียกใช้ถี่เกินไป รอสักครู่");
     throw new MeetingAiError("api_error", `บริการ AI ขัดข้อง (${status})`);
   }
-  const json = await res.json().catch(() => null) as { content?: Array<{ type: string; text?: string }> } | null;
+  const json = await res.json().catch(() => null) as {
+    content?: Array<{ type: string; text?: string }>;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  } | null;
   const text = (json?.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("\n");
   if (!text.trim()) throw new MeetingAiError("empty", "AI ไม่ได้ส่งผลสรุปกลับมา");
 
   const result = parseMeetingAi(text);
+  const model = resolvedModel();
+  const inTok = json?.usage?.input_tokens ?? 0;
+  const outTok = json?.usage?.output_tokens ?? 0;
+  result.usage = { in_tokens: inTok, out_tokens: outTok, cost_baht: owlAiCostBaht(model, inTok, outTok), model };
   getDb().prepare(`
     UPDATE exec_meetings
-    SET ai_summary = ?, ai_checklist = ?, ai_carryover = ?, summarized_at = CURRENT_TIMESTAMP
+    SET ai_summary = ?, ai_checklist = ?, ai_carryover = ?, summarized_at = CURRENT_TIMESTAMP,
+        ai_in_tokens = ?, ai_out_tokens = ?, ai_cost_baht = ?, ai_model = ?
     WHERE id = ?
-  `).run(result.summary, JSON.stringify(result.checklist), JSON.stringify(result.carryover), meetingId);
+  `).run(result.summary, JSON.stringify(result.checklist), JSON.stringify(result.carryover),
+    inTok, outTok, result.usage.cost_baht, model, meetingId);
   return result;
 }
