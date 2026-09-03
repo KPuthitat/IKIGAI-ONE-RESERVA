@@ -104,6 +104,13 @@ process.env.DATABASE_PATH = TMP;
   ok("override: byBranch สเกลเป็น 523 (บัญชีแยกสาขายังถูก)", near(row.byBranch[0].grossAllocation, 523));
   ok("override: totalNetPayout อัปเดตตามยอดจริง", near(out.totalNetPayout, 507.31));
 
+  // ── accrual-month tax mode (ฐิติรัตน์: เข้า SSO ส.ค., ยอดนี้ ก.ค. → WHT) ──
+  ok("SSO ส.ค. + ยอด ก.ค. → WHT", sc.svcEffectiveTaxMode("sso", "2026-08", "2026-07") === "wht");
+  ok("SSO ส.ค. + ยอด ส.ค. → SSO", sc.svcEffectiveTaxMode("sso", "2026-08", "2026-08") === "sso");
+  ok("SSO ส.ค. + ยอด ก.ย. → SSO", sc.svcEffectiveTaxMode("sso", "2026-08", "2026-09") === "sso");
+  ok("ไม่มีเส้นแบ่ง → ตามโหมดปัจจุบัน (SSO)", sc.svcEffectiveTaxMode("sso", null, "2026-07") === "sso");
+  ok("WHT อยู่แล้ว → WHT เสมอ", sc.svcEffectiveTaxMode("wht", "2026-08", "2026-09") === "wht");
+
   console.log(`\nsvc company-payout test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);

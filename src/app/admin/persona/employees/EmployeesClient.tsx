@@ -54,6 +54,8 @@ export type EmployeeRow = {
   receives_service_charge?: number;
   // YYYY-MM ที่เริ่มหักประกันกลุ่มจาก SVC (owner 2026-08-02). null = ยังไม่หัก.
   group_insurance_start_month?: string | null;
+  // YYYY-MM ที่เข้าประกันสังคม (owner 2026-09-03). SVC ก่อนเดือนนี้ยังหัก ณ ที่จ่าย.
+  sso_start_month?: string | null;
   line_user_id: string | null;
   shift_start_time: string | null;
   has_pin: number;
@@ -755,6 +757,7 @@ function EditModal({
   // Group-insurance enrolment month (owner 2026-08-02). "" = not enrolled → no
   // ฿350/mo SVC deduction. <input type="month"> value is YYYY-MM.
   const [giStartMonth, setGiStartMonth] = useState<string>(employee.group_insurance_start_month ?? "");
+  const [ssoStartMonth, setSsoStartMonth] = useState<string>(employee.sso_start_month ?? "");
   const [lineUserId, setLineUserId] = useState<string>(employee.line_user_id ?? "");
   // shift_start_time + escalation_hours per-user fields removed
   // 2026-05 (UI deleted in this commit). API still accepts them,
@@ -948,6 +951,8 @@ function EditModal({
         salary_tax_mode: taxMode,
         // ประกันกลุ่ม: เดือนเริ่มหัก (YYYY-MM) — "" = ยังไม่หัก (ส่ง "" ให้ API เคลียร์เป็น NULL).
         group_insurance_start_month: giStartMonth,
+        // เดือนเข้าประกันสังคม (YYYY-MM) — "" = ไม่มีเส้นแบ่ง.
+        sso_start_month: ssoStartMonth,
         // ผู้บริหาร/ไม่ลงเวลา — ตั้งได้ทุกประเภทงาน (owner 2026-08-20: PT นอกสถานที่ก็ปิดได้).
         // API รับเป็น boolean: true = ลงเวลาปกติ, false = ไม่ลงเวลา → ปิดแจ้งเตือนเข้ากะ + ไม่ขึ้นสรุป HR.
         track_attendance: !noClock,
@@ -1639,6 +1644,36 @@ function EditModal({
                     : t("admin.persona.employees.groupInsurance.hintUnset")}
                 </p>
               </div>
+
+              {/* เดือนเข้าประกันสังคม (owner 2026-09-03) — เฉพาะคน SSO. SVC ของเดือน
+                  ก่อนหน้านี้ยังหัก ณ ที่จ่าย 3% (ตอนนั้นยังไม่เข้า SSO). */}
+              {taxMode === "sso" && (
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">เดือนเข้าประกันสังคม</label>
+                  <select
+                    value={ssoStartMonth}
+                    onChange={(e) => setSsoStartMonth(e.target.value)}
+                    className="input max-w-[220px]"
+                  >
+                    <option value="">— ไม่มีเส้นแบ่ง (ทุกเดือนเป็น SSO) —</option>
+                    {(() => {
+                      const TH_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+                        "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+                      const opts: Array<{ v: string; label: string }> = [];
+                      const now = new Date(Date.now() + 7 * 3600 * 1000);
+                      for (let off = 3; off >= -6; off--) {
+                        const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + off, 1));
+                        opts.push({ v: d.toISOString().slice(0, 7), label: `${TH_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}` });
+                      }
+                      if (ssoStartMonth && !opts.some((o) => o.v === ssoStartMonth)) opts.unshift({ v: ssoStartMonth, label: ssoStartMonth });
+                      return opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>);
+                    })()}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1">
+                    เซอร์วิสชาร์จของเดือน<b>ก่อน</b>เดือนนี้จะหัก ณ ที่จ่าย 3% (ตอนนั้นยังไม่เข้าประกันสังคม)
+                  </p>
+                </div>
+              )}
             </div>
             )}
 

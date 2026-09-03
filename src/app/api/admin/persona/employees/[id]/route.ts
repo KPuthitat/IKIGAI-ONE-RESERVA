@@ -34,6 +34,9 @@ const Body = z.object({
   // Group-insurance enrolment month "YYYY-MM" (owner 2026-08-02). "" / null =
   // not enrolled → no ฿350/mo SVC deduction until set. Payroll-gated (money).
   group_insurance_start_month: z.string().regex(/^\d{4}-\d{2}$/).or(z.literal("")).nullable().optional(),
+  // เดือนเข้าประกันสังคม "YYYY-MM" (owner 2026-09-03). SVC ของเดือนก่อนหน้านี้ยังหัก
+  // ณ ที่จ่าย 3% แม้ปัจจุบันจะเป็น sso. ""/null = ไม่มีเส้นแบ่ง. Payroll-gated (tax).
+  sso_start_month: z.string().regex(/^\d{4}-\d{2}$/).or(z.literal("")).nullable().optional(),
   // วันที่มีผลของการเปลี่ยน PT→FT (owner 2026-07-13) — ใช้เป็น ft_started_at
   ft_effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   // จ่ายเงินเดือนช่วงเปลี่ยนผ่านครบแล้วถึงวันที่ (owner 2026-08-18) — YYYY-MM-DD; ""/null
@@ -163,6 +166,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     delete parsed.data.pay_cycle;
     delete parsed.data.salary_tax_mode;
     delete parsed.data.group_insurance_start_month;
+    delete parsed.data.sso_start_month;
     delete parsed.data.ft_salary_paid_through;
   }
   // Only super_admin can grant / revoke payroll-access on another
@@ -299,6 +303,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if ("group_insurance_start_month" in data) {
     fields.push("group_insurance_start_month = ?");
     const v = data.group_insurance_start_month;
+    vals.push(v === "" || v === undefined ? null : v);
+  }
+  if ("sso_start_month" in data) {
+    fields.push("sso_start_month = ?");
+    const v = data.sso_start_month;
     vals.push(v === "" || v === undefined ? null : v);
   }
   // Stamp the PT→FT effective date (owner-entered) so the pay engine keeps them
