@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { listManagerReports, getTodayReportForAuthor } from "@/lib/manager-reports";
+import { listManagerReports } from "@/lib/manager-reports";
 import ManagerReportsClient from "./ManagerReportsClient";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,6 @@ export default function ManagerReportsPage() {
   const from = new Date(Date.now() + 7 * 3600_000 - 13 * 86400_000).toISOString().slice(0, 10);
 
   const reports = listManagerReports(db, { branchId, from, to: todayBkk });
-  const todayReport = getTodayReportForAuthor(db, user.id, branchId, todayBkk);
 
   return (
     <div className="space-y-4">
@@ -39,7 +38,6 @@ export default function ManagerReportsPage() {
       </div>
       <ManagerReportsClient
         reports={reports}
-        todayReport={todayReport ?? null}
         currentUserId={user.id}
         today={todayBkk}
         canCompanyWide={user.role === "super_admin"}

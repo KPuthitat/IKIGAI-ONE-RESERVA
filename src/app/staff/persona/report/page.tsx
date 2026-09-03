@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { todayBkk } from "@/lib/time";
-import { listManagerReports, getTodayReportForAuthor } from "@/lib/manager-reports";
+import { listManagerReports } from "@/lib/manager-reports";
 import StaffReportClient from "./StaffReportClient";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,6 @@ export default function StaffReportPage() {
   const myReports = branchId == null ? [] : listManagerReports(db, {
     branchId, authorUserId: user.id, from, to: today
   });
-  const todayReport = branchId == null ? undefined : getTodayReportForAuthor(db, user.id, branchId, today);
 
   return (
     <div className="space-y-4">
@@ -39,7 +38,7 @@ export default function StaffReportPage() {
       ) : (
         <StaffReportClient
           myReports={myReports}
-          todayReport={todayReport ?? null}
+          currentUserId={user.id}
           today={today}
         />
       )}

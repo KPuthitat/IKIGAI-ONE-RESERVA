@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
-import { upsertManagerReport } from "@/lib/manager-reports";
+import { createManagerReport } from "@/lib/manager-reports";
 
 // รายงานปิดกะ/สถานการณ์/เข้าประชุม — ฝั่งพนักงาน (owner 2026-08-04).
 // "คนที่ปิดกะเป็นคนส่ง": พนักงานคนไหนก็ได้ที่อยู่สาขานั้น (เหมือน shift_close) ส่ง
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "empty_report" }, { status: 400 });
   }
 
-  const id = upsertManagerReport(getDb(), {
+  const id = createManagerReport(getDb(), {
     branchId: user.activeBranchId, reportDate: report_date, authorUserId: user.id,
     shiftSummary: shift, situation: situ, meetingTopics: topics
   });

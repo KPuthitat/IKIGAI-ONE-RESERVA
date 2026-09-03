@@ -11,26 +11,30 @@ const ERR_TH: Record<string, string> = {
   future_date: "เลือกวันในอนาคตไม่ได้",
   backdate_too_old: "ย้อนหลังได้ไม่เกิน 7 วัน",
   invalid_body: "ข้อมูลไม่ถูกต้อง",
+  not_author: "แก้ได้เฉพาะรายงานที่ตัวเองเพิ่ม",
+  no_pin: "ยังไม่ได้ตั้ง PIN",
+  wrong_pin: "PIN ไม่ถูกต้อง",
   forbidden: "ไม่มีสิทธิ์"
 };
 
 export default function StaffReportClient({
-  myReports, todayReport, today
+  myReports, currentUserId, today
 }: {
   myReports: ManagerReportRow[];
-  todayReport: ManagerReportRow | null;
+  currentUserId: number;
   today: string;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
   const [date, setDate] = useState(today);
-  const [shift, setShift] = useState(todayReport?.shift_summary ?? "");
-  const [situation, setSituation] = useState(todayReport?.situation ?? "");
-  const [topics, setTopics] = useState(todayReport?.meeting_topics ?? "");
+  const [shift, setShift] = useState("");
+  const [situation, setSituation] = useState("");
+  const [topics, setTopics] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const ready = /^\d{4}-\d{2}-\d{2}$/.test(date) &&
     (shift.trim() !== "" || situation.trim() !== "" || topics.trim() !== "");
@@ -51,6 +55,8 @@ export default function StaffReportClient({
       const j = await res.json().catch(() => ({}));
       if (!res.ok) { setErr(ERR_TH[j.error] ?? j.error ?? "บันทึกไม่สำเร็จ"); return; }
       setSaved(true);
+      // เคลียร์กล่องข้อความ เพื่อส่งเรื่องใหม่ได้เลย (owner 2026-09-03).
+      setShift(""); setSituation(""); setTopics("");
       startTransition(() => router.refresh());
     } catch {
       setErr("เกิดข้อผิดพลาด");
@@ -70,12 +76,8 @@ export default function StaffReportClient({
     <div className="space-y-5">
       <div className="card space-y-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-bold text-slate-800">ส่งรายงานวันนี้</span>
-          {todayReport && (
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-              ส่งของวันนี้แล้ว — บันทึกซ้ำจะทับของเดิม
-            </span>
-          )}
+          <span className="font-bold text-slate-800">ส่งรายงาน</span>
+          <span className="text-[11px] text-slate-400">เพิ่มได้หลายเรื่อง · ส่งแล้วกล่องจะว่างให้ส่งเรื่องใหม่</span>
           <span className="flex-1" />
           <label className="text-xs text-slate-500 flex items-center gap-1">
             วันที่
@@ -115,16 +117,83 @@ export default function StaffReportClient({
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                   {r.branch_name ?? "—"}
                 </span>
+                {r.updated_at && <span className="text-[10px] text-slate-400">(แก้ไขแล้ว)</span>}
                 <span className="flex-1" />
-                <button type="button" onClick={() => del(r.id)}
-                  className="text-[11px] text-rose-500 hover:text-rose-700">ลบ</button>
+                {r.author_user_id === currentUserId && editingId !== r.id && (
+                  <>
+                    <button type="button" onClick={() => setEditingId(r.id)}
+                      className="text-[11px] text-brand hover:underline mr-2">แก้ไข</button>
+                    <button type="button" onClick={() => del(r.id)}
+                      className="text-[11px] text-rose-500 hover:text-rose-700">ลบ</button>
+                  </>
+                )}
               </div>
-              {r.shift_summary && <ReportLine label="ปิดกะ" text={r.shift_summary} />}
-              {r.situation && <ReportLine label="สถานการณ์" text={r.situation} />}
-              {r.meeting_topics && <ReportLine label="เข้าประชุม" text={r.meeting_topics} accent />}
+              {editingId === r.id ? (
+                <EditReport row={r} endpoint={`/api/persona/manager-report/${r.id}`}
+                  onDone={() => { setEditingId(null); startTransition(() => router.refresh()); }}
+                  onCancel={() => setEditingId(null)} />
+              ) : (
+                <>
+                  {r.shift_summary && <ReportLine label="ปิดกะ" text={r.shift_summary} />}
+                  {r.situation && <ReportLine label="สถานการณ์" text={r.situation} />}
+                  {r.meeting_topics && <ReportLine label="เข้าประชุม" text={r.meeting_topics} accent />}
+                </>
+              )}
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// แก้ไขรายงานของตัวเอง — ยืนยันด้วย PIN (owner 2026-09-03).
+function EditReport({ row, endpoint, onDone, onCancel }: {
+  row: ManagerReportRow; endpoint: string; onDone: () => void; onCancel: () => void;
+}) {
+  const [shift, setShift] = useState(row.shift_summary);
+  const [situation, setSituation] = useState(row.situation);
+  const [topics, setTopics] = useState(row.meeting_topics);
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const ready = /^\d{4}$/.test(pin) &&
+    (shift.trim() !== "" || situation.trim() !== "" || topics.trim() !== "");
+
+  async function save() {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl(endpoint), {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin, shift_summary: shift.trim(), situation: situation.trim(), meeting_topics: topics.trim() })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setErr(ERR_TH[j.error] ?? j.message ?? j.error ?? "แก้ไขไม่สำเร็จ"); return; }
+      onDone();
+    } catch { setErr("เกิดข้อผิดพลาด"); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg bg-[#faf6ef] border border-[#EFE4D3] p-3">
+      <Field label="สรุปปิดกะ / ยอดขาย" value={shift} onChange={setShift} />
+      <Field label="สถานการณ์ / ปัญหา / เหตุการณ์วันนี้" value={situation} onChange={setSituation} />
+      <Field label="เรื่องที่อยากเสนอเข้าประชุมประจำสัปดาห์" value={topics} onChange={setTopics} />
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-xs text-slate-600 flex items-center gap-1.5">
+          PIN
+          <input type="password" inputMode="numeric" maxLength={4} value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            placeholder="••••" className="border border-slate-300 rounded px-2 py-1 text-sm w-20 tracking-widest" />
+        </label>
+        <span className="flex-1" />
+        {err && <span className="text-xs text-rose-600">{err}</span>}
+        <button type="button" onClick={onCancel} className="text-xs px-3 py-1.5 rounded-full border border-slate-300 text-slate-600">ยกเลิก</button>
+        <button type="button" disabled={!ready || busy} onClick={save}
+          className="text-xs px-4 py-1.5 rounded-full bg-brand text-white font-bold hover:opacity-90 disabled:opacity-40">
+          {busy ? "กำลังบันทึก…" : "บันทึกการแก้ไข"}
+        </button>
       </div>
     </div>
   );
