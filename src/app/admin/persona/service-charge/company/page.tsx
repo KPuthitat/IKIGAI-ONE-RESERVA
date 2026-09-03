@@ -23,6 +23,7 @@ import {
 } from "@/lib/service-charge";
 import SharedPoolToggle from "./SharedPoolToggle";
 import CompanySvcPayoutActions from "./CompanySvcPayoutActions";
+import SvcGrossOverrideEditor from "./SvcGrossOverrideEditor";
 import CompanySvcCalcModal from "./CompanySvcCalcModal";
 import SvcForfeitExemptButton from "../SvcForfeitExemptButton";
 import SvcDeductionEditor from "../SvcDeductionEditor";
@@ -76,6 +77,8 @@ export default function CompanyServiceChargePage({
   // its own payout buttons, so the month is settled here once.
   const payoutState = shared && !manual && canManagePayout
     ? companySvcPayoutState(branchRow.company_id, month) : null;
+  // Manual gross override is editable only while the company month is still draft.
+  const canEditGross = !!payoutState && payoutState.status === "draft";
   const postedTotals = payoutState && payoutState.status === "posted"
     ? (db.prepare(`
         SELECT COALESCE(SUM(total_net), 0) AS net, COALESCE(SUM(total_wht), 0) AS wht, MIN(posted_at) AS posted_at
@@ -299,7 +302,11 @@ export default function CompanyServiceChargePage({
                           <td className="py-2 pr-3 text-right text-slate-500">
                             {r.lateMinutes > 0 ? `${latePct}%` : "—"}
                           </td>
-                          <td className="py-2 pr-3 text-right">{fmtMoney(r.grossAllocation)}</td>
+                          <td className="py-2 pr-3">
+                            <SvcGrossOverrideEditor userId={r.userId} yearMonth={month}
+                              gross={r.grossAllocation} original={r.grossOriginal ?? null}
+                              overridden={!!r.grossOverridden} canEdit={canEditGross} />
+                          </td>
                           <td className={`py-2 pr-3 text-right font-bold ${
                             r.forfeited ? "text-rose-500 line-through" : "text-emerald-700"
                           }`}>
