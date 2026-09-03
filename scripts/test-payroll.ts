@@ -4,7 +4,7 @@
 // Guarantees: salary/30 per unpaid day, FT only, default 0 = no change,
 // and the deduction never drives base pay negative.
 
-import { computeLineFromMinutes, computeLineForEmployee, computeSso, computeHelperLine, countClockInDays, helperMode, applyPtGrace, keepEntryForBranch, overridesToShiftMap, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
+import { computeLineFromMinutes, computeLineForEmployee, computeSso, computeHelperLine, countClockInDays, helperMode, applyPtGrace, keepEntryForBranch, overridesToShiftMap, effectiveTaxModeForMonth, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
 
 const SETTINGS: PayrollSettings = {
   ot_mode: "flat", ot_flat_per_15min: 0,
@@ -336,6 +336,41 @@ console.log("\nประจำเต็มเดือน: ยึดค่า sa
   const inFull = runFull(ftMonthly(30000));
   eq("ประจำเต็มเดือน ในระบบ → ประกันสังคม (cap 750)", inFull.sso_amount, 750);
   eq("ประจำเต็มเดือน ในระบบ → ไม่หัก ณ ที่จ่าย", inFull.tax_amount, 0);
+}
+
+// 11e. โหมดภาษีตามเดือนคงค้าง (owner 2026-09-03): พนักงานประจำ salary_tax_mode='sso'
+//      ที่เพิ่งเข้าประกันสังคมเดือนหนึ่ง — เดือนคงค้าง (accrual) ก่อนหน้านั้นต้องหัก
+//      ณ ที่จ่าย 3% (ยังไม่ได้ขึ้นทะเบียน). เช่น ฐิติรัตน์: SSO เริ่ม ส.ค. → เงินเดือน
+//      ก.ค. = WHT, ส.ค. เป็นต้นไป = SSO. เงินเดือน + เซอร์วิสชาร์จ ต้องตัดสินตรงกัน.
+console.log("\nโหมดภาษีตามเดือนคงค้าง SSO/WHT (owner 2026-09-03):");
+{
+  // ฟังก์ชันบริสุทธิ์ — ต้องเป็นฝาแฝดของ svcEffectiveTaxMode
+  okv("sso + เริ่ม ส.ค. + คงค้าง ก.ค. → WHT", effectiveTaxModeForMonth("sso", "2026-08", "2026-07"), "wht");
+  okv("sso + เริ่ม ส.ค. + คงค้าง ส.ค. → SSO", effectiveTaxModeForMonth("sso", "2026-08", "2026-08"), "sso");
+  okv("sso + เริ่ม ส.ค. + คงค้าง ก.ย. → SSO", effectiveTaxModeForMonth("sso", "2026-08", "2026-09"), "sso");
+  okv("sso + ไม่ตั้งเดือนเริ่ม → SSO ทุกเดือน", effectiveTaxModeForMonth("sso", null, "2026-01"), "sso");
+  okv("wht + ตั้งเดือนเริ่ม → ยัง WHT (เกตยกจาก sso เท่านั้น)", effectiveTaxModeForMonth("wht", "2026-08", "2026-07"), "wht");
+
+  const runMonth = (emp: EmployeePayrollSnapshot, pStart: string, pEnd: string) =>
+    computeLineFromMinutes({
+      employee: emp, regularMinutes: 0, otMinutes: 0, holidayMinutes: 0,
+      leaveDays: 0, unpaidLeaveDays: 0, daysWorked: 22, unpaired: 0,
+      cycle: "monthly", periodStart: pStart, periodEnd: pEnd, settings: SETTINGS
+    });
+  const gated = (): EmployeePayrollSnapshot => ({ ...ftMonthly(30000), sso_start_month: "2026-08" });
+  // ก.ค. (คงค้างก่อนเข้าระบบ) → WHT 3% = 900, ไม่มีประกันสังคม
+  const jul = runMonth(gated(), "2026-07-01", "2026-07-31");
+  eq("เงินเดือน ก.ค. (ก่อนเข้า SSO) → WHT 3% = 900", jul.tax_amount, 900);
+  eq("เงินเดือน ก.ค. (ก่อนเข้า SSO) → ไม่มีประกันสังคม", jul.sso_amount, 0);
+  okv("เงินเดือน ก.ค. → ป้ายโหมดภาษี = wht", jul.salary_tax_mode_snapshot, "wht");
+  // ส.ค. (เข้าระบบแล้ว) → ประกันสังคม cap 750, ไม่หัก ณ ที่จ่าย
+  const aug = runMonth(gated(), "2026-08-01", "2026-08-31");
+  eq("เงินเดือน ส.ค. (เข้า SSO แล้ว) → ประกันสังคม cap 750", aug.sso_amount, 750);
+  eq("เงินเดือน ส.ค. (เข้า SSO แล้ว) → ไม่หัก ณ ที่จ่าย", aug.tax_amount, 0);
+  okv("เงินเดือน ส.ค. → ป้ายโหมดภาษี = sso", aug.salary_tax_mode_snapshot, "sso");
+  // ไม่ตั้งเดือนเริ่ม → SSO ทุกเดือน (legacy ไม่เปลี่ยน)
+  const legacy = runMonth(ftMonthly(30000), "2026-07-01", "2026-07-31");
+  eq("เงินเดือน ก.ค. ไม่ตั้งเดือนเริ่ม → ประกันสังคม (ไม่เปลี่ยน)", legacy.sso_amount, 750);
 }
 
 // 11c. เดือนเปลี่ยนผ่าน weekly: ทุกสัปดาห์จ่ายฐานรายวัน salary/30 × วันในสถานะ.

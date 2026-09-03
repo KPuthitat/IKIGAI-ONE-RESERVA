@@ -75,6 +75,14 @@ export type EmployeePayrollSnapshot = {
   monthly_salary: number | null;
   pay_cycle: "weekly" | "monthly" | null;
   salary_tax_mode: "sso" | "wht" | null;
+  /** เดือนเข้าประกันสังคม (YYYY-MM) — owner 2026-09-03. When salary_tax_mode='sso'
+   *  but the employee only registered for ประกันสังคม starting this month, any
+   *  ACCRUAL month BEFORE it must withhold 3% (WHT) instead of SSO — they weren't
+   *  in the system yet (e.g. ฐิติรัตน์: SSO เริ่ม ส.ค. → เงินเดือน/เซอร์วิสชาร์จ ก.ค.
+   *  = WHT). null = no gate → salary_tax_mode applies to every month (legacy). The
+   *  service-charge engine reads the same users.sso_start_month via
+   *  svcEffectiveTaxMode; see effectiveTaxModeForMonth below (kept in sync). */
+  sso_start_month?: string | null;
   /** 0 = salaried exec/admin who doesn't clock in → flat salary, no OT, no SVC
    *  (owner 2026-07-12). 1 = normal, attendance-tracked. */
   track_attendance: number;
@@ -153,6 +161,21 @@ export function ftEffectiveCycle(
   const startMonth = ftStartedAt.slice(0, 7);
   if (startMonth < periodMonth) return "monthly";  // past the transition month
   return "weekly";                                 // transition month (===) or not-yet-FT (>)
+}
+
+/** Effective SSO/WHT for a given ACCRUAL month (owner 2026-09-03). Twin of
+ *  service-charge.ts `svcEffectiveTaxMode` — kept byte-for-byte in sync so
+ *  เงินเดือน and เซอร์วิสชาร์จ decide the same way. If the person is on 'sso' but
+ *  their ประกันสังคม only started in `ssoStartMonth`, months BEFORE that are
+ *  withheld 3% (WHT) — they weren't registered yet. 'wht' is unchanged. */
+export function effectiveTaxModeForMonth(
+  salaryTaxMode: string | null,
+  ssoStartMonth: string | null,
+  yearMonth: string // "YYYY-MM" accrual month
+): "sso" | "wht" {
+  const mode: "sso" | "wht" = salaryTaxMode === "wht" ? "wht" : "sso";
+  if (mode === "sso" && ssoStartMonth && yearMonth < ssoStartMonth) return "wht";
+  return mode;
 }
 
 // SQL fragment (correlated subqueries on `users.id`) that yields the two
@@ -1334,11 +1357,15 @@ export function computeLineForEmployee(args: {
   //   - อื่นๆ (df) → ยึด salary_tax_mode รายคน
   const ftStartForTax = e.ft_started_at ?? e.hire_date;
   const isFtFirstMonth = !!ftStartForTax && ftStartForTax >= periodStart && ftStartForTax <= periodEnd;
+  // Accrual-month SSO/WHT gate (owner 2026-09-03): a full-month 'sso' employee
+  // whose ประกันสังคม only started later is withheld 3% for accrual months before
+  // it (they weren't registered yet). Same rule the service-charge engine applies.
+  const settledTaxMode = effectiveTaxModeForMonth(e.salary_tax_mode, e.sso_start_month ?? null, periodStart.slice(0, 7));
   const taxMode =
     e.employment_type === "pt" ? "wht"
     : e.employment_type === "ft"
-      ? ((ftCycle === "weekly" || isFtFirstMonth) ? "wht" : (e.salary_tax_mode ?? "sso"))
-      : (e.salary_tax_mode ?? "sso");
+      ? ((ftCycle === "weekly" || isFtFirstMonth) ? "wht" : settledTaxMode)
+      : settledTaxMode;
   let ssoAmount = 0;
   let taxAmount = 0;
   if (taxableGross > 0) {
@@ -1551,11 +1578,14 @@ export function computeLineFromMinutes(args: {
   //   - อื่นๆ (df) → ยึด salary_tax_mode รายคน
   const ftStartForTax = e.ft_started_at ?? e.hire_date;
   const isFtFirstMonth = !!ftStartForTax && ftStartForTax >= periodStart && ftStartForTax <= periodEnd;
+  // Accrual-month SSO/WHT gate (owner 2026-09-03): mirror of computeLineForEmployee
+  // — 'sso' before ประกันสังคม registration month → WHT (same as service charge).
+  const settledTaxMode = effectiveTaxModeForMonth(e.salary_tax_mode, e.sso_start_month ?? null, periodStart.slice(0, 7));
   const taxMode =
     e.employment_type === "pt" ? "wht"
     : e.employment_type === "ft"
-      ? ((ftCycle === "weekly" || isFtFirstMonth) ? "wht" : (e.salary_tax_mode ?? "sso"))
-      : (e.salary_tax_mode ?? "sso");
+      ? ((ftCycle === "weekly" || isFtFirstMonth) ? "wht" : settledTaxMode)
+      : settledTaxMode;
   let ssoAmount = 0;
   let taxAmount = 0;
   if (taxableGross > 0) {
@@ -1822,7 +1852,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     : "";
   const staffSql = `
     SELECT id AS user_id, display_name, employment_type, employee_code,
-           ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
+           ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, sso_start_month, track_attendance,
            hire_date, ft_started_at, ft_salary_paid_through, pt_started_at, df_started_at,
            ${branchDailyRateSelect(period.branch_id)},
            ${branchOnlyHourlyRateSelect(period.branch_id)},
@@ -2291,7 +2321,7 @@ export function recomputeLine(
   }
 
   const fresh = db.prepare(`
-    SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
+    SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, sso_start_month, track_attendance,
            hire_date, ft_started_at, ft_salary_paid_through, pt_started_at, df_started_at,
            ${branchDailyRateSelect(period.branch_id)},
            ${branchOnlyHourlyRateSelect(period.branch_id)},
@@ -2300,7 +2330,7 @@ export function recomputeLine(
   `).get(userId) as {
     employment_type: "pt" | "ft" | null; hourly_rate: number | null;
     monthly_salary: number | null; pay_cycle: "weekly" | "monthly" | null;
-    salary_tax_mode: "sso" | "wht" | null; track_attendance: number | null;
+    salary_tax_mode: "sso" | "wht" | null; sso_start_month: string | null; track_attendance: number | null;
     hire_date: string | null; ft_started_at: string | null; ft_salary_paid_through: string | null;
     pt_started_at: string | null; df_started_at: string | null;
     daily_rate: number | null; branch_hourly_rate: number | null;
@@ -2487,6 +2517,7 @@ export function recomputeLine(
     monthly_salary: fresh?.monthly_salary ?? existing.monthly_salary_snapshot,
     pay_cycle: fresh?.pay_cycle ?? existing.pay_cycle_snapshot,
     salary_tax_mode: fresh?.salary_tax_mode ?? existing.salary_tax_mode_snapshot,
+    sso_start_month: fresh?.sso_start_month ?? null,
     track_attendance: fresh?.track_attendance ?? 1,
     is_primary_branch: isPrimaryBranch,
     is_home_company: isHomeCompany,
@@ -2616,7 +2647,10 @@ export function recomputeLine(
   }
   const taxBase = (dfActiveRL ? (computed.base_pay + computed.ot_pay + svc) : (computed.base_pay + computed.ot_pay + svc + add)) + meetingFeeRL;
   const gross = computed.base_pay + computed.ot_pay + svc + add + meetingFeeRL;
-  const taxMode = rlEmp.salary_tax_mode ?? "sso";
+  // Accrual-month SSO/WHT gate (owner 2026-09-03): same rule as the full compute —
+  // 'sso' before the ประกันสังคม registration month → WHT. asHourlyHelper forces
+  // 'wht' so hourly helpers are unaffected.
+  const taxMode = effectiveTaxModeForMonth(rlEmp.salary_tax_mode, employee.sso_start_month ?? null, period.period_start.slice(0, 7));
   let sso = 0;
   let tax = 0;
   if (taxBase > 0) {
