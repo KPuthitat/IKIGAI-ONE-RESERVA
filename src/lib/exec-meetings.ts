@@ -53,6 +53,8 @@ export type ExecMeetingDetail = ExecMeetingRow & {
   ai_out_tokens: number | null;
   ai_cost_baht: number | null;
   ai_model: string | null;
+  ai_status: string | null;     // 'running' | 'done' | 'error' | null
+  ai_error: string | null;
   agenda_topics: string[];      // preset วาระ headers the admin set in advance
   invitees: Array<{
     user_id: number;
@@ -189,8 +191,8 @@ export function getExecMeeting(id: number): ExecMeetingDetail | null {
   ).get(id) as ExecMeetingRow | undefined;
   if (!m) return null;
   const extra = db.prepare(
-    "SELECT ai_summary, ai_checklist, ai_carryover, ai_in_tokens, ai_out_tokens, ai_cost_baht, ai_model, agenda_topics FROM exec_meetings WHERE id = ?"
-  ).get(id) as { ai_summary: string | null; ai_checklist: string | null; ai_carryover: string | null; ai_in_tokens: number | null; ai_out_tokens: number | null; ai_cost_baht: number | null; ai_model: string | null; agenda_topics: string | null };
+    "SELECT ai_summary, ai_checklist, ai_carryover, ai_in_tokens, ai_out_tokens, ai_cost_baht, ai_model, ai_status, ai_error, agenda_topics FROM exec_meetings WHERE id = ?"
+  ).get(id) as { ai_summary: string | null; ai_checklist: string | null; ai_carryover: string | null; ai_in_tokens: number | null; ai_out_tokens: number | null; ai_cost_baht: number | null; ai_model: string | null; ai_status: string | null; ai_error: string | null; agenda_topics: string | null };
   const topics = parseAgendaTopics(extra.agenda_topics);
 
   const invitees = db.prepare(`
@@ -219,6 +221,8 @@ export function getExecMeeting(id: number): ExecMeetingDetail | null {
     ai_out_tokens: extra.ai_out_tokens,
     ai_cost_baht: extra.ai_cost_baht,
     ai_model: extra.ai_model,
+    ai_status: extra.ai_status,
+    ai_error: extra.ai_error,
     agenda_topics: topics,
     invitees: invitees.map((r) => {
       const saved = itemsFromRow(r);

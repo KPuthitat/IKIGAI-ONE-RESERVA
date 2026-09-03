@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
@@ -318,6 +318,7 @@ type Detail = {
   id: number; title: string; meeting_date: string; status: string;
   ai_summary: string | null; ai_checklist: string | null; ai_carryover: string | null; summarized_at: string | null;
   ai_in_tokens: number | null; ai_out_tokens: number | null; ai_cost_baht: number | null; ai_model: string | null;
+  ai_status: string | null; ai_error: string | null;
   agenda_topics: string[];
   invitees: Invitee[];
 };
@@ -331,12 +332,40 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
   const [savingTopics, setSavingTopics] = useState(false);
   const [topicsMsg, setTopicsMsg] = useState<string | null>(null);
 
-  async function load() {
+  const polling = useRef(false);
+
+  async function fetchDetail(): Promise<Detail | null> {
     const res = await fetch(apiUrl(`/api/admin/persona/exec-meetings/${meetingId}`));
     const j = await res.json().catch(() => ({}));
-    if (j?.meeting) { setD(j.meeting as Detail); setTopics((j.meeting as Detail).agenda_topics ?? []); }
+    return (j?.meeting as Detail) ?? null;
   }
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [meetingId]);
+  async function load(): Promise<Detail | null> {
+    const m = await fetchDetail();
+    if (m) { setD(m); setTopics(m.agenda_topics ?? []); }
+    return m;
+  }
+  // The summary runs in the background — poll the meeting until it finishes.
+  async function pollUntilDone() {
+    if (polling.current) return;
+    polling.current = true; setBusy(true); setErr(null);
+    try {
+      for (let i = 0; i < 120; i++) {          // up to ~6 นาที
+        await new Promise((r) => setTimeout(r, 3000));
+        const m = await fetchDetail();
+        if (!m) continue;
+        if (m.ai_status !== "running") {
+          setD(m); setTopics(m.agenda_topics ?? []);
+          if (m.ai_status === "error") setErr(m.ai_error ?? "สรุปไม่สำเร็จ");
+          return;
+        }
+      }
+      setErr("สรุปใช้เวลานานผิดปกติ ลองใหม่อีกครั้ง");
+    } finally { polling.current = false; setBusy(false); }
+  }
+  useEffect(() => {
+    (async () => { const m = await load(); if (m?.ai_status === "running") pollUntilDone(); })();
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [meetingId]);
 
   async function saveTopics() {
     setSavingTopics(true); setTopicsMsg(null);
@@ -357,10 +386,9 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
     try {
       const res = await fetch(apiUrl(`/api/admin/persona/exec-meetings/${meetingId}/summarize`), { method: "POST" });
       const j = await res.json().catch(() => ({}));
-      if (!j?.ok) { setErr(j?.message ?? j?.error ?? "สรุปไม่สำเร็จ"); return; }
-      await load();
-    } catch { setErr("เชื่อมต่อไม่ได้"); }
-    finally { setBusy(false); }
+      if (!j?.ok) { setErr(j?.message ?? j?.error ?? "เริ่มสรุปไม่สำเร็จ"); setBusy(false); return; }
+      await pollUntilDone();   // background job — poll until done/error
+    } catch { setErr("เชื่อมต่อไม่ได้"); setBusy(false); }
   }
 
   const checklist: Array<{ item: string; owner?: string }> = (() => {
@@ -499,6 +527,7 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
                 </button>
               </div>
               {err && <div className="text-xs text-rose-600">{err}</div>}
+              {busy && <div className="text-xs text-slate-400">กำลังสรุป... อาจใช้เวลาสักครู่ (ทำเบื้องหลัง — สรุปละเอียดใช้เวลานานหน่อย)</div>}
               {d.ai_summary ? (
                 <div className="space-y-3">
                   <div className="text-sm text-slate-700 whitespace-pre-wrap">{d.ai_summary}</div>
