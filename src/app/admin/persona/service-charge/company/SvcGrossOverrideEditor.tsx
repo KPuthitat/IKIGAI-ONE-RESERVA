@@ -41,12 +41,7 @@ export default function SvcGrossOverrideEditor({
 
   return (
     <div className="text-right leading-tight">
-      <div className="flex items-center justify-end gap-1.5">
-        <span className="font-medium tabular-nums">{fmtMoney(gross)}</span>
-        {overridden && (
-          <span className="text-[9px] px-1.5 py-px rounded-full bg-amber-50 border border-amber-200 text-amber-700 whitespace-nowrap">กรอกเอง</span>
-        )}
-      </div>
+      <div className="font-medium tabular-nums">{fmtMoney(gross)}</div>
       {overridden && original != null && (
         <div className="text-[10px] text-slate-400 whitespace-nowrap">เดิม {fmtMoney(original)}</div>
       )}
