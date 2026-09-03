@@ -129,6 +129,22 @@ function previousCarryover(meetingId: number, meetingDate: string): string {
   } catch { return ""; }
 }
 
+// Fast pre-flight checks — run synchronously so the caller can reject a bad
+// request immediately (before kicking off the slow background summary).
+export function precheckSummary(meetingId: number): void {
+  if (!getSystemSettings().owl_ai_enabled) throw new MeetingAiError("disabled", "AI ปิดอยู่ — เปิดได้ที่ตั้งค่าระบบ");
+  if (!process.env.ANTHROPIC_API_KEY) throw new MeetingAiError("no_key", "ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY บนเซิร์ฟเวอร์");
+  const mins = collectMinutes(meetingId);
+  if (!mins) throw new MeetingAiError("not_found", "ไม่พบการประชุม");
+  if (mins.count === 0) throw new MeetingAiError("no_minutes", "ยังไม่มีรายงานการประชุมให้สรุป");
+}
+
+// Mark the background summary's state so the polling UI can react.
+export function setSummaryStatus(meetingId: number, status: "running" | "done" | "error", error?: string): void {
+  getDb().prepare("UPDATE exec_meetings SET ai_status = ?, ai_error = ? WHERE id = ?")
+    .run(status, error ?? null, meetingId);
+}
+
 export async function summarizeMeeting(meetingId: number): Promise<MeetingAiResult> {
   const s = getSystemSettings();
   if (!s.owl_ai_enabled) throw new MeetingAiError("disabled", "AI ปิดอยู่ — เปิดได้ที่ตั้งค่าระบบ");
@@ -182,7 +198,8 @@ export async function summarizeMeeting(meetingId: number): Promise<MeetingAiResu
   getDb().prepare(`
     UPDATE exec_meetings
     SET ai_summary = ?, ai_checklist = ?, ai_carryover = ?, summarized_at = CURRENT_TIMESTAMP,
-        ai_in_tokens = ?, ai_out_tokens = ?, ai_cost_baht = ?, ai_model = ?
+        ai_in_tokens = ?, ai_out_tokens = ?, ai_cost_baht = ?, ai_model = ?,
+        ai_status = 'done', ai_error = NULL
     WHERE id = ?
   `).run(result.summary, JSON.stringify(result.checklist), JSON.stringify(result.carryover),
     inTok, outTok, result.usage.cost_baht, model, meetingId);

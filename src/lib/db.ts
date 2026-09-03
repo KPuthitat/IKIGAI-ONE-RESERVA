@@ -7538,9 +7538,12 @@ function runMigrations(db: Database.Database): void {
   }
   // AI summary usage (owner 2026-09-02): tokens + estimated baht cost + which
   // model produced the latest summary, so the admin sees how much credit it used.
+  // ai_status/ai_error drive the background summariser (a detailed summary can
+  // outlast the reverse-proxy timeout, so it runs async and the UI polls).
   for (const [col, ddl] of [
     ["ai_in_tokens", "INTEGER"], ["ai_out_tokens", "INTEGER"],
-    ["ai_cost_baht", "REAL"], ["ai_model", "TEXT"]
+    ["ai_cost_baht", "REAL"], ["ai_model", "TEXT"],
+    ["ai_status", "TEXT"], ["ai_error", "TEXT"]
   ] as const) {
     if (!emCols.some((c) => c.name === col)) db.exec(`ALTER TABLE exec_meetings ADD COLUMN ${col} ${ddl}`);
   }
