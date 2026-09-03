@@ -94,18 +94,19 @@ export default function CompanyServiceChargePage({
     monthOptions.push(d.toISOString().slice(0, 7));
   }
 
-  // Group FT first, then PT, then others; sso before wht within a group.
-  const typeRank = (ty: string | null) => (ty === "ft" ? 0 : ty === "pt" ? 1 : 2);
-  const taxRank = (m: string) => (m === "wht" ? 1 : 0);
-  const distGroups = (["ft", "pt", "other"] as const)
-    .map((key) => ({
-      key,
-      label: key === "ft" ? "พนักงานประจำ" : key === "pt" ? "พนักงานพาร์ทไทม์" : "อื่นๆ",
-      rows: summary.rows
-        .filter((r) => (key === "other" ? typeRank(r.employmentType) === 2 : r.employmentType === key))
-        .slice()
-        .sort((a, b) => taxRank(a.taxMode) - taxRank(b.taxMode))
-    }))
+  // Group by ประเภทพนักงาน × โหมดภาษี (owner 2026-09-03: แยกให้เห็นสัดส่วน —
+  // พนักงานประจำ ในระบบ/นอกระบบ, พาร์ทไทม์). Each is a labelled section so the
+  // SSO-vs-WHT split (who has 3% withheld from SVC) is obvious. PT is uniformly
+  // หัก ณ ที่จ่าย. Empty sections are dropped.
+  const isOther = (ty: string | null) => ty !== "ft" && ty !== "pt";
+  const distGroups = [
+    { key: "ft-sso", label: "พนักงานประจำ · ประกันสังคม (ในระบบ)", pick: (r: (typeof summary.rows)[number]) => r.employmentType === "ft" && r.taxMode !== "wht" },
+    { key: "ft-wht", label: "พนักงานประจำ · หัก ณ ที่จ่าย (นอกระบบ)", pick: (r: (typeof summary.rows)[number]) => r.employmentType === "ft" && r.taxMode === "wht" },
+    { key: "pt", label: "พาร์ทไทม์ · หัก ณ ที่จ่าย", pick: (r: (typeof summary.rows)[number]) => r.employmentType === "pt" },
+    { key: "other-sso", label: "อื่นๆ · ประกันสังคม", pick: (r: (typeof summary.rows)[number]) => isOther(r.employmentType) && r.taxMode !== "wht" },
+    { key: "other-wht", label: "อื่นๆ · หัก ณ ที่จ่าย", pick: (r: (typeof summary.rows)[number]) => isOther(r.employmentType) && r.taxMode === "wht" }
+  ]
+    .map((g) => ({ key: g.key, label: g.label, rows: summary.rows.filter(g.pick) }))
     .filter((g) => g.rows.length > 0);
 
   return (

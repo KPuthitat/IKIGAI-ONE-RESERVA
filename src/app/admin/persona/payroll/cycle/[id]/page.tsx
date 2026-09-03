@@ -166,7 +166,7 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
     rep.target === "ft" ? t(lang, "admin.persona.payroll.hub.cat.ftWeekly") :
     t(lang, "admin.persona.payroll.hub.targetAll");
 
-  const empTable = (title: string, accent: string, rows: EmpRow[]) => {
+  const empTable = (title: string, subtitle: string, accent: string, rows: EmpRow[]) => {
     if (rows.length === 0) return null;
     const sub = rows.reduce(
       (a, r) => ({
@@ -178,9 +178,10 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
     );
     return (
       <div className="card overflow-x-auto">
-        <h2 className="font-semibold text-slate-700 mb-3">
+        <h2 className="font-semibold text-slate-700 mb-0.5">
           <span className={accent}>{title}</span> · {rows.length} {t(lang, "admin.persona.payroll.col.staff")}
         </h2>
+        {subtitle && <p className="text-xs text-slate-400 mb-3">{subtitle}</p>}
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
@@ -204,14 +205,7 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
               return (
                 <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
                   <td className="py-2 pr-3">
-                    <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
-                      <span>{nameWithPrefix(r.title_prefix, r.display_name)}</span>
-                      {r.salary_tax_mode_snapshot === "wht" && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
-                          {t(lang, "admin.persona.employees.taxMode.whtTag")}
-                        </span>
-                      )}
-                    </div>
+                    <div className="font-medium text-slate-800">{nameWithPrefix(r.title_prefix, r.display_name)}</div>
                   </td>
                   {multiBranch && branchCols.map((b) => {
                     const v = perB.get(b.id) ?? 0;
@@ -347,7 +341,10 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
           {t(lang, "admin.persona.payroll.cycle.splitNote")}
         </p>
       )}
-      {empTable(t(lang, "admin.persona.employees.employment.ft"), "text-emerald-700", ftRows)}
+      {/* Split ประจำ/อื่นๆ by tax mode so ประกันสังคม (ในระบบ) และ หัก ณ ที่จ่าย
+          (นอกระบบ) เป็นตารางแยก (owner 2026-09-03). PT is uniformly หัก ณ ที่จ่าย. */}
+      {empTable("พนักงานประจำ", "ประกันสังคม (ในระบบ)", "text-emerald-700", ftRows.filter((r) => r.salary_tax_mode_snapshot !== "wht"))}
+      {empTable("พนักงานประจำ", "หัก ณ ที่จ่าย 3% (นอกระบบ)", "text-amber-700", ftRows.filter((r) => r.salary_tax_mode_snapshot === "wht"))}
       {ptRows.length > 0 && (
         <PtBreakdownTable
           rows={ptRows}
@@ -358,7 +355,8 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
           multiBranch={multiBranch}
         />
       )}
-      {empTable(t(lang, "admin.persona.payroll.cycle.other"), "text-slate-600", otherRows)}
+      {empTable(t(lang, "admin.persona.payroll.cycle.other"), "ประกันสังคม (ในระบบ)", "text-slate-600", otherRows.filter((r) => r.salary_tax_mode_snapshot !== "wht"))}
+      {empTable(t(lang, "admin.persona.payroll.cycle.other"), "หัก ณ ที่จ่าย 3% (นอกระบบ)", "text-slate-600", otherRows.filter((r) => r.salary_tax_mode_snapshot === "wht"))}
     </div>
   );
 }
