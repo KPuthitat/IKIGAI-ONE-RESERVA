@@ -558,6 +558,16 @@ export default function ApplyClient({
     }
     if (!f.pdpa_consent) miss.add("pdpa_consent");
     if (!f.truth_declaration_accepted) miss.add("truth_declaration_accepted");
+    // Required document attachments (owner 2026-09-03) — every enabled upload
+    // slot must have a file, or the application can't be sent. Disable a doc in
+    // the form template to make it optional.
+    const docFiles: Array<[string, File | null]> = [
+      ["doc_photo", photo], ["doc_resume", resume], ["doc_id_copy", idCopy]
+    ];
+    for (const [key, file] of docFiles) {
+      const enabled = fieldCfg[key]?.enabled ?? true;
+      if (enabled && !file) miss.add(key);
+    }
     // Required custom questions
     for (const q of customQuestions) {
       if (!q.required) continue;
@@ -1154,17 +1164,23 @@ export default function ApplyClient({
             )}
           </p>
         </div>
+        {/* Attachments are MANDATORY when shown (owner 2026-09-03: ส่งมั่วตัดสิทธิ์ —
+            ไม่แนบครบ ส่งไม่ได้). Enabled = required; disable a doc in the form
+            template to make it optional. */}
         {(fieldCfg["doc_photo"]?.enabled ?? true) && (
-          <FileField label={docLabel("doc_photo", tr("รูปถ่าย", "Photo"))} file={photo} onChange={setPhoto}
-            accept="image/*" />
+          <FileField label={docLabel("doc_photo", tr("รูปถ่าย", "Photo"))}
+            file={photo} onChange={(v) => { setPhoto(v); clearMissing("doc_photo"); }}
+            accept="image/*" required invalid={missing.has("doc_photo")} />
         )}
         {(fieldCfg["doc_resume"]?.enabled ?? true) && (
-          <FileField label={docLabel("doc_resume", "Resume / CV")} file={resume} onChange={setResume}
-            accept=".pdf,image/*" />
+          <FileField label={docLabel("doc_resume", "Resume / CV")}
+            file={resume} onChange={(v) => { setResume(v); clearMissing("doc_resume"); }}
+            accept=".pdf,image/*" required invalid={missing.has("doc_resume")} />
         )}
         {(fieldCfg["doc_id_copy"]?.enabled ?? true) && (
-          <FileField label={docLabel("doc_id_copy", tr("สำเนาบัตรประชาชน", "ID card copy"))} file={idCopy} onChange={setIdCopy}
-            accept=".pdf,image/*" />
+          <FileField label={docLabel("doc_id_copy", tr("สำเนาบัตรประชาชน", "ID card copy"))}
+            file={idCopy} onChange={(v) => { setIdCopy(v); clearMissing("doc_id_copy"); }}
+            accept=".pdf,image/*" required invalid={missing.has("doc_id_copy")} />
         )}
       </Section>
 
@@ -1447,19 +1463,25 @@ function ceYearError(raw: string, lang: FormLang = "th"): string | null {
 }
 
 function FileField({
-  label, file, onChange, accept
+  label, file, onChange, accept, required = false, invalid = false
 }: {
   label: string;
   file: File | null;
   onChange: (f: File | null) => void;
   accept: string;
+  required?: boolean;
+  invalid?: boolean;
 }) {
   const { lang } = useLang();
   return (
-    <div className="mb-2">
-      <label className="label">{label}</label>
+    <div className="mb-2" {...(invalid ? { "data-invalid": "true" } : {})}>
+      <label className="label">
+        {label}{required && <span className="text-rose-500 ml-1">*</span>}
+      </label>
       <div className="flex items-center gap-2">
-        <label className="flex-1 cursor-pointer border-2 border-dashed border-slate-200 rounded-lg px-3 py-3 text-sm text-slate-500 hover:bg-slate-50">
+        <label className={`flex-1 cursor-pointer border-2 border-dashed rounded-lg px-3 py-3 text-sm hover:bg-slate-50 ${
+          invalid ? "border-rose-400 bg-rose-50/40 text-rose-600" : "border-slate-200 text-slate-500"
+        }`}>
           {file ? (
             <span className="text-emerald-700">✓ {file.name} ({(file.size / 1024).toFixed(0)} KB)</span>
           ) : (
@@ -1473,6 +1495,9 @@ function FileField({
             className="text-xs text-rose-600 px-2">{trBy(lang, "ลบ", "Remove")}</button>
         )}
       </div>
+      {invalid && (
+        <p className="text-[11px] text-rose-600 mt-0.5">{trBy(lang, "กรุณาแนบไฟล์นี้ก่อนส่ง", "Please attach this file before submitting")}</p>
+      )}
     </div>
   );
 }
