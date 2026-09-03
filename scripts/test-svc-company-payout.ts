@@ -8,6 +8,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import type { CompanySvcSummary } from "../src/lib/service-charge";
 
 const TMP = path.join(process.cwd(), "data", "test-svc-company-payout.db");
 function cleanup() {
@@ -76,6 +77,32 @@ process.env.DATABASE_PATH = TMP;
 
   setStatus(B, "posted");
   ok("both posted → posted", sc.companySvcPayoutState(co, ym).status === "posted");
+
+  // ── manual gross override (owner's สุริยะ case: WHT 3%) ──
+  const near = (a: number, b: number, eps = 0.01) => Math.abs(a - b) < eps;
+  const sur = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status) VALUES ('sur','x','สุริยะ','staff','active')").run().lastInsertRowid);
+  sc.setSvcGrossOverride({ companyId: co, yearMonth: ym, userId: sur, gross: 523, note: "โอนเกิน", setBy: uid });
+  const summary: CompanySvcSummary = {
+    companyId: co, yearMonth: ym, shared: true,
+    branches: [{ branchId: A, branchName: "NAMA", totalCollected: 0 }],
+    totalCollected: 0, staffPoolTotal: 0, companyPoolTotal: 0, totalWht: 0, totalGroupInsurance: 0,
+    totalNetPayout: 0, payoutDate: "2026-10-20",
+    rows: [{
+      userId: sur, displayName: "สุริยะ", employmentType: "ft",
+      byBranch: [{ branchId: A, branchName: "NAMA", grossAllocation: 507.31, daysWorked: 5, minutesWorked: 2400 }],
+      grossAllocation: 507.31, lateMinutes: 0, scheduledMinutes: 0, lateRatio: 0, forfeited: false, forfeitReason: null,
+      exempted: false, exemptReason: null, foodClawback: 0, otherDeductions: 0, otherDeductionItems: [],
+      netAllocation: 507.31, taxMode: "wht", whtAmount: 15.22, groupInsurance: 0, netPayout: 492.09, dailyBreakdown: []
+    }]
+  };
+  const out = sc.applyGrossOverrides(co, ym, summary);
+  const row = out.rows[0];
+  ok("override: gross = 523 (ยอดก่อนโอนกรอกเอง)", near(row.grossAllocation, 523) && row.grossOverridden === true);
+  ok("override: เก็บยอดเดิม 507.31 ไว้แสดง", near(row.grossOriginal ?? 0, 507.31));
+  ok("override: WHT 3% = 15.69", near(row.whtAmount, 15.69));
+  ok("override: net = 523 − 3% = 507.31", near(row.netPayout, 507.31));
+  ok("override: byBranch สเกลเป็น 523 (บัญชีแยกสาขายังถูก)", near(row.byBranch[0].grossAllocation, 523));
+  ok("override: totalNetPayout อัปเดตตามยอดจริง", near(out.totalNetPayout, 507.31));
 
   console.log(`\nsvc company-payout test: ${passed} passed, ${failed} failed`);
   cleanup();

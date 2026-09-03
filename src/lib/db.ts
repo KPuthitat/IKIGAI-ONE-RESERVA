@@ -2695,6 +2695,23 @@ function runMigrations(db: Database.Database): void {
       PRIMARY KEY(company_id, year_month)
     );
   `);
+  // svc_gross_overrides (owner 2026-09-03) — a hand-entered GROSS ("ยอดก่อนโอน")
+  // for one person in a company-wide month, overriding the pooled-split base when
+  // the real transfer didn't match (ลืมบวก/ลืมหัก). The system re-derives WHT/net
+  // from this gross per the person's tax mode, and scales their per-branch shares
+  // so ACCOUNTA stays split correctly. Editable only while the month is draft.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS svc_gross_overrides (
+      company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      gross_amount REAL NOT NULL,
+      note TEXT,
+      set_by_user_id INTEGER REFERENCES users(id),
+      set_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(company_id, year_month, user_id)
+    );
+  `);
   // svc_forfeit_exemptions (owner 2026-08-20) — SVC forfeiture (late >20% or a
   // forfeit-flagged resignation) is automatic, but an executive can WAIVE it for
   // one person for one month ("ยกเว้นให้"). A row here = that (user, month)'s SVC is

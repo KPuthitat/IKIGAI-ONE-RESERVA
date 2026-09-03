@@ -1113,6 +1113,11 @@ export type CompanySvcRow = {
   whtAmount: number;
   groupInsurance: number;
   netPayout: number;
+  // Hand-entered gross override (owner 2026-09-03): when set, grossAllocation is
+  // the manual value and grossOriginal keeps the computed base for display.
+  grossOverridden?: boolean;
+  grossOriginal?: number;
+  overrideNote?: string | null;
   dailyBreakdown: Array<{
     date: string; branchId: number; branchName: string;
     dayAmount: number; staffPool: number; userMinutes: number; totalMinutes: number; staffCount: number; share: number;
@@ -1877,7 +1882,7 @@ function branchOrder(branches: Array<{ id: number }>, branchId: number): number 
  *  mode reuses the tested computeMonthlySvcSummary per branch. */
 export function computeCompanySvcSummary(companyId: number, yearMonth: string): CompanySvcSummary {
   if (isSharedSvcMonth(companyId, yearMonth) && !isManualSvcMonth(yearMonth)) {
-    return computeCompanySvcSummaryShared(companyId, yearMonth);
+    return applyGrossOverrides(companyId, yearMonth, computeCompanySvcSummaryShared(companyId, yearMonth));
   }
   const db = getDb();
   const branches = db.prepare(
@@ -1984,7 +1989,7 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
     branchId: branch.id, branchName: branch.name, totalCollected: summary.totalCollected
   }));
   const totalCollected = branchTotals.reduce((s, b) => s + b.totalCollected, 0);
-  return {
+  return applyGrossOverrides(companyId, yearMonth, {
     companyId, yearMonth, shared: false,
     branches: branchTotals,
     totalCollected,
@@ -2000,7 +2005,7 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
     totalNetPayout: round2(rows.reduce((s, r) => s + r.netPayout, 0)),
     rows,
     payoutDate: computePayoutDate(yearMonth)
-  };
+  });
 }
 
 export type BranchSvcPayoutRow = {
@@ -2325,4 +2330,98 @@ export function companySvcPayoutState(companyId: number, yearMonth: string): Com
     : branches.reduce<SvcBatchStatus>((min, b) => (SVC_STAGE[b.status] < SVC_STAGE[min] ? b.status : min), "posted");
   const incomplete = branches.filter((b) => !b.fill.complete).map((b) => ({ id: b.id, name: b.name, filled: b.fill.filled, days: b.fill.days }));
   return { branches, status, allComplete: incomplete.length === 0, incomplete };
+}
+
+// ── Manual GROSS override per person (owner 2026-09-03) ──────────────────────
+// A hand-entered "ยอดก่อนโอน" for one person in a company-wide month, used when
+// the real transfer didn't match the pooled split (ลืมบวก/ลืมหัก). The system
+// re-derives WHT/net from it and scales that person's per-branch shares so the
+// ACCOUNTA split stays correct.
+
+export function listSvcGrossOverrides(companyId: number, yearMonth: string): Map<number, { gross: number; note: string | null }> {
+  const rows = getDb().prepare(
+    "SELECT user_id, gross_amount, note FROM svc_gross_overrides WHERE company_id = ? AND year_month = ?"
+  ).all(companyId, yearMonth) as Array<{ user_id: number; gross_amount: number; note: string | null }>;
+  const m = new Map<number, { gross: number; note: string | null }>();
+  for (const r of rows) m.set(r.user_id, { gross: r.gross_amount, note: r.note });
+  return m;
+}
+
+export function setSvcGrossOverride(args: { companyId: number; yearMonth: string; userId: number; gross: number; note: string | null; setBy: number }): void {
+  getDb().prepare(`
+    INSERT INTO svc_gross_overrides (company_id, year_month, user_id, gross_amount, note, set_by_user_id, set_at)
+    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(company_id, year_month, user_id) DO UPDATE SET
+      gross_amount = excluded.gross_amount, note = excluded.note, set_by_user_id = excluded.set_by_user_id, set_at = CURRENT_TIMESTAMP
+  `).run(args.companyId, args.yearMonth, args.userId, Math.round(args.gross * 100) / 100, args.note, args.setBy);
+}
+
+export function clearSvcGrossOverride(companyId: number, yearMonth: string, userId: number): void {
+  getDb().prepare("DELETE FROM svc_gross_overrides WHERE company_id = ? AND year_month = ? AND user_id = ?")
+    .run(companyId, yearMonth, userId);
+}
+
+function svcPrimaryBranchInCompany(userId: number, companyId: number): number | null {
+  return (getDb().prepare(`
+    SELECT ub.branch_id FROM user_branches ub JOIN branches b ON b.id = ub.branch_id
+    WHERE ub.user_id = ? AND b.company_id = ?
+    ORDER BY ub.is_primary DESC, ub.branch_id LIMIT 1
+  `).get(userId, companyId) as { branch_id: number } | undefined)?.branch_id ?? null;
+}
+
+/** Post-process a company summary: replace each overridden person's gross with
+ *  their manual value, scale their per-branch shares to it, and re-derive
+ *  WHT/net (food/other/group-insurance stay as computed). Pure — no writes. */
+export function applyGrossOverrides(companyId: number, yearMonth: string, summary: CompanySvcSummary): CompanySvcSummary {
+  const overrides = listSvcGrossOverrides(companyId, yearMonth);
+  if (overrides.size === 0) return summary;
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const whtRate = (getDb().prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")
+    .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03;
+  const branchName = new Map(summary.branches.map((b) => [b.branchId, b.branchName]));
+
+  const rows = summary.rows.map((r) => {
+    const ov = overrides.get(r.userId);
+    if (!ov) return r;
+    const newGross = round2(ov.gross);
+    const oldGross = r.grossAllocation;
+
+    // Scale the per-branch shares to the new gross, keeping proportions and
+    // reconciling the last share so Σ byBranch === newGross exactly.
+    let byBranch: CompanySvcBranchShare[];
+    if (oldGross > 0 && r.byBranch.length > 0) {
+      const factor = newGross / oldGross;
+      let running = 0;
+      byBranch = r.byBranch.map((bb, i) => {
+        const scaled = i === r.byBranch.length - 1 ? round2(newGross - running) : round2(bb.grossAllocation * factor);
+        running = round2(running + scaled);
+        return { ...bb, grossAllocation: scaled };
+      });
+    } else {
+      // No computed base — attribute the whole override to the person's home
+      // branch so the ACCOUNTA split still has somewhere to land.
+      const bid = svcPrimaryBranchInCompany(r.userId, companyId) ?? summary.branches[0]?.branchId ?? 0;
+      byBranch = [{ branchId: bid, branchName: branchName.get(bid) ?? "", grossAllocation: newGross, daysWorked: 0, minutesWorked: 0 }];
+    }
+
+    // Re-derive net + WHT from the new gross (keep food clawback / other
+    // deductions / group insurance as already computed).
+    const afterFood = round2(newGross - r.foodClawback);
+    const afterOther = round2(Math.max(0, afterFood - r.otherDeductions));
+    const netAllocation = r.forfeited ? 0 : afterOther;
+    const whtAmount = r.taxMode === "wht" ? round2(Math.max(0, round2(netAllocation - r.groupInsurance)) * whtRate) : 0;
+    const netPayout = round2(netAllocation - r.groupInsurance - whtAmount);
+
+    return {
+      ...r, byBranch,
+      grossAllocation: newGross, grossOriginal: oldGross, grossOverridden: true, overrideNote: ov.note,
+      netAllocation, whtAmount, netPayout
+    };
+  });
+
+  // Update the payout-facing totals (the pool figures stay — an override may not
+  // reconcile to the pool, which is the whole point).
+  const totalWht = round2(rows.reduce((s, r) => s + r.whtAmount, 0));
+  const totalNetPayout = round2(rows.reduce((s, r) => s + r.netPayout, 0));
+  return { ...summary, rows, totalWht, totalNetPayout };
 }
