@@ -125,6 +125,28 @@ process.env.DATABASE_PATH = TMP;
   ok("owner: บันทึกผู้รับผิดชอบที่เป็นผู้ได้รับเชิญ", v2.locked_items[0].owner_user_ids.length === 1 && v2.locked_items[0].owner_user_ids[0] === uid);
   ok("owner: กรองคนนอกที่ประชุมทิ้ง", !v2.locked_items[0].owner_user_ids.includes(other));
 
+  // ── AI summary parser: section format survives markdown newlines (owner 2026-09-02) ──
+  const ai = await import("../src/lib/exec-meeting-ai");
+  const sample = [
+    "===SUMMARY===",
+    "## ภาพรวม",
+    "ประชุมเรื่องยอดขาย มีหลายบรรทัด",
+    "- ประเด็น ก",
+    "- ประเด็น ข",
+    "===CHECKLIST===",
+    "- ทำโปรโมชั่น :: สมชาย",
+    "- แก้คิวหน้าร้าน :: -",
+    "===CARRYOVER===",
+    "- เรื่องค้างจากสัปดาห์ก่อน"
+  ].join("\n");
+  const parsed = ai.parseMeetingAi(sample);
+  ok("ai-parse: summary เก็บ markdown หลายบรรทัด", parsed.summary.includes("ภาพรวม") && parsed.summary.includes("ประเด็น ข"));
+  ok("ai-parse: checklist แยก item/ผู้รับผิดชอบ", parsed.checklist.length === 2 && parsed.checklist[0].owner === "สมชาย" && parsed.checklist[1].owner === undefined);
+  ok("ai-parse: carryover อ่านได้", parsed.carryover.length === 1 && parsed.carryover[0].item.includes("ค้าง"));
+  let threw = false;
+  try { ai.parseMeetingAi("ขยะที่อ่านไม่ออก"); } catch { threw = true; }
+  ok("ai-parse: ข้อความมั่วๆ → โยน error", threw);
+
   // ── payroll integration: เบี้ยประชุม lands on the line, taxable, once ──
   const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
   const payroll = await import("../src/lib/payroll-compute");

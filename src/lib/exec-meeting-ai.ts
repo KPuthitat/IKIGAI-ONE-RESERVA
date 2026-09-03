@@ -25,46 +25,53 @@ export type MeetingAiResult = {
   carryover: Array<{ item: string }>;    // ประเด็นคงค้าง
 };
 
+// A delimiter-based reply format — NOT JSON. The summary is long markdown with
+// many newlines; embedding it in JSON made the model emit invalid JSON (literal
+// newlines inside a string value) and parsing failed every time (owner
+// 2026-09-02). Sections are robust to newlines, escaping, and truncation.
 const SYSTEM = [
   "คุณคือผู้ช่วยสรุปการประชุมผู้บริหารของธุรกิจคลินิก+ร้านอาหารในไทย.",
-  "รับรายงานการประชุมจากผู้เข้าร่วมแต่ละคน (วาระ/รายละเอียด/ข้อเสนอแนะ/แผนการจัดการ)",
+  "รับรายงานการประชุมจากผู้เข้าร่วมแต่ละคน (วาระ/รายละเอียด/ข้อเสนอแนะ/แผนการจัดการ/ผู้รับผิดชอบ)",
   "และประเด็นคงค้างจากสัปดาห์ก่อน (ถ้ามี).",
   "งานของคุณ: รวบรวมและสรุปให้กระชับ ใช้ภาษาไทย ไม่แต่งข้อมูลเพิ่มเอง อ้างเฉพาะสิ่งที่มีในรายงาน.",
-  "ตอบเป็น JSON เท่านั้น (ไม่มีข้อความอื่นหุ้ม) รูปแบบ:",
-  '{"summary": "<สรุปการประชุมแบบ markdown>", "checklist": [{"item":"<สิ่งที่ต้องติดตามสัปดาห์หน้า>","owner":"<ผู้รับผิดชอบถ้าระบุ>"}], "carryover": [{"item":"<ประเด็นที่ยังไม่เสร็จ ยกไปคุยสัปดาห์หน้า>"}]}',
-  "ใน summary ให้มีหัวข้อ: ภาพรวม, มติ/สิ่งที่ตกลง, เรื่องที่ดำเนินการไปแล้ว (เทียบประเด็นคงค้างเดิม), และข้อเสนอแนะเด่น."
-].join(" ");
+  "ตอบตามรูปแบบนี้เท่านั้น ห้ามมีข้อความอื่นก่อนหรือหลัง และห้ามหุ้มด้วย ``` :",
+  "===SUMMARY===",
+  "(สรุปแบบ markdown มีหัวข้อ: ภาพรวม, มติ/สิ่งที่ตกลง, เรื่องที่ดำเนินการไปแล้ว (เทียบประเด็นคงค้างเดิม), ข้อเสนอแนะเด่น)",
+  "===CHECKLIST===",
+  "(สิ่งที่ต้องติดตามสัปดาห์หน้า บรรทัดละ 1 รายการ ขึ้นต้นด้วย - รูปแบบ: เรื่องที่ต้องทำ :: ผู้รับผิดชอบ  ถ้าไม่มีผู้รับผิดชอบใส่ - )",
+  "===CARRYOVER===",
+  "(ประเด็นคงค้างที่ยกไปคุยต่อสัปดาห์หน้า บรรทัดละ 1 รายการ ขึ้นต้นด้วย - ถ้าไม่มีให้เว้นว่าง)"
+].join("\n");
 
 function resolvedModel(): string {
   return owlAiModel(getSystemSettings().owl_ai_model ?? DEFAULT_OWL_AI_MODEL).id;
 }
 
-function extractJson(text: string): MeetingAiResult {
-  // Be forgiving: the model may wrap JSON in prose or a ```json fence.
-  let t = text.trim();
-  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence) t = fence[1].trim();
-  const start = t.indexOf("{");
-  const end = t.lastIndexOf("}");
-  if (start >= 0 && end > start) t = t.slice(start, end + 1);
-  let obj: unknown;
-  try { obj = JSON.parse(t); }
-  catch {
-    // Log a preview so a real failure is diagnosable from pm2 (owner 2026-09-02).
-    console.warn("exec-meeting AI parse failed. len=", t.length, "head=", t.slice(0, 300), "tail=", t.slice(-300));
-    throw new MeetingAiError("parse", "อ่านผลสรุปจาก AI ไม่ได้ (ผลอาจยาวเกินหรือรูปแบบไม่ถูกต้อง) — ลองใหม่อีกครั้ง");
+// Pull one ===NAME=== section's body (up to the next section marker or the end).
+function sectionBody(text: string, name: string): string {
+  const re = new RegExp(`===\\s*${name}\\s*===([\\s\\S]*?)(?:\\n===\\s*(?:SUMMARY|CHECKLIST|CARRYOVER)\\s*===|$)`, "i");
+  const m = re.exec(text);
+  return m ? m[1].trim() : "";
+}
+
+function bulletLines(body: string): string[] {
+  return body.split(/\r?\n/).map((l) => l.replace(/^\s*[-*•]\s*/, "").trim()).filter((l) => l.length > 0);
+}
+
+export function parseMeetingAi(text: string): MeetingAiResult {
+  const summary = sectionBody(text, "SUMMARY");
+  const checklist = bulletLines(sectionBody(text, "CHECKLIST")).map((line) => {
+    const [item, owner] = line.split("::").map((x) => x.trim());
+    return { item: (item ?? line).trim(), owner: owner && owner !== "-" ? owner : undefined };
+  }).filter((c) => c.item.length > 0);
+  const carryover = bulletLines(sectionBody(text, "CARRYOVER"))
+    .map((item) => ({ item })).filter((c) => c.item.length > 0);
+
+  if (!summary && checklist.length === 0 && carryover.length === 0) {
+    // Nothing recognisable came back — log a preview for pm2 diagnosis.
+    console.warn("exec-meeting AI: no sections parsed. len=", text.length, "head=", text.slice(0, 400));
+    throw new MeetingAiError("parse", "อ่านผลสรุปจาก AI ไม่ได้ — ลองใหม่อีกครั้ง");
   }
-  const o = obj as Record<string, unknown>;
-  const summary = typeof o.summary === "string" ? o.summary : "";
-  const checklist = Array.isArray(o.checklist)
-    ? o.checklist.map((c) => {
-        const cc = c as Record<string, unknown>;
-        return { item: String(cc.item ?? "").trim(), owner: cc.owner ? String(cc.owner).trim() : undefined };
-      }).filter((c) => c.item.length > 0)
-    : [];
-  const carryover = Array.isArray(o.carryover)
-    ? o.carryover.map((c) => ({ item: String((c as Record<string, unknown>).item ?? "").trim() })).filter((c) => c.item.length > 0)
-    : [];
   return { summary, checklist, carryover };
 }
 
@@ -83,9 +90,11 @@ function collectMinutes(meetingId: number): { title: string; date: string; block
   `).all(meetingId) as Array<MinutesRow & { display_name: string }>;
   // Name lookup for ผู้รับผิดชอบ (owner_user_ids reference meeting invitees).
   const nameOf = new Map(getMeetingInvitees(meetingId).map((p) => [p.user_id, `${p.title_prefix ? `${p.title_prefix} ` : ""}${p.display_name}`]));
-  // Each attendee's minutes are now a list of วาระ — render every one.
+  // Only วาระ that carry actual content — a preset topic left unanswered has
+  // nothing to summarise, and feeding dozens of blanks bloats the request and
+  // muddies the summary (owner 2026-09-02).
   const people = rows
-    .map((r) => ({ name: r.display_name, items: itemsFromRow(r).filter((it) => it.topic || it.details || it.suggestions || it.action_plan) }))
+    .map((r) => ({ name: r.display_name, items: itemsFromRow(r).filter((it) => it.details || it.suggestions || it.action_plan) }))
     .filter((p) => p.items.length > 0);
   const block = people.map((p, i) => {
     const items = p.items.map((it, j) => {
@@ -157,7 +166,7 @@ export async function summarizeMeeting(meetingId: number): Promise<MeetingAiResu
   const text = (json?.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("\n");
   if (!text.trim()) throw new MeetingAiError("empty", "AI ไม่ได้ส่งผลสรุปกลับมา");
 
-  const result = extractJson(text);
+  const result = parseMeetingAi(text);
   getDb().prepare(`
     UPDATE exec_meetings
     SET ai_summary = ?, ai_checklist = ?, ai_carryover = ?, summarized_at = CURRENT_TIMESTAMP
