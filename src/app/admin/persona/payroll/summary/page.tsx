@@ -135,37 +135,10 @@ export default function PayrollMonthlySummaryPage({
              pl.display_name
   `).all(from, to) as EmpRow[];
 
-  // Per-branch split (owner 2026-07-27: บัญชีต้องแยกสาขา — ศุภาพิชญ์เข้า 2 สาขา
-  // ได้สาขาละ 2,000 ต้องเห็นแยก NAMA/HYPO). Payroll is computed + posted per
-  // branch (each branch's period holds that branch's hours→pay and posts to
-  // its own daybook); this view only MERGES the display into one row/person
-  // with a per-branch breakdown. It does NOT change the split — it surfaces it.
-  const branchCols = db.prepare(`
-    SELECT DISTINCT b.id, b.name
-    FROM payroll_periods pp
-    JOIN branches b ON b.id = pp.branch_id
-    WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
-    ORDER BY b.id
-  `).all(from, to) as Array<{ id: number; name: string }>;
-
-  // user_id → branch_id → { net, gross } for the month.
-  const perBranchRows = db.prepare(`
-    SELECT pl.user_id, pp.branch_id AS branch_id,
-           SUM(pl.net_pay)   AS net,
-           SUM(pl.gross_pay) AS gross
-    FROM payroll_lines pl
-    JOIN payroll_periods pp ON pl.period_id = pp.id
-    WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
-    GROUP BY pl.user_id, pp.branch_id
-  `).all(from, to) as Array<{ user_id: number; branch_id: number; net: number; gross: number }>;
-  // Per-branch column shows GROSS (ยอดก่อนหัก ณ ที่จ่าย) — owner 2026-08-01:
-  // the books record the pre-withholding pay per branch, then SSO/WHT are shown
-  // as separate deduction columns. (Was net before.)
-  const grossByUserBranch = new Map<number, Map<number, number>>();
-  for (const r of perBranchRows) {
-    if (!grossByUserBranch.has(r.user_id)) grossByUserBranch.set(r.user_id, new Map());
-    grossByUserBranch.get(r.user_id)!.set(r.branch_id, r.gross ?? 0);
-  }
+  // Per-branch GROSS columns were removed (owner 2026-09-03: "ยุบให้เรียบ") — the
+  // company sectioning + the สังกัด column already carry the branch split at
+  // overview altitude; the granular NAMA-vs-HYPO-per-person amounts live on the
+  // per-branch payroll pages, not this month-total overview.
 
   // สังกัด (home branch) per user — is_primary=1, else lowest branch_id.
   const homeRows = db.prepare(`
@@ -187,37 +160,54 @@ export default function PayrollMonthlySummaryPage({
   // ── Group by COMPANY (owner 2026-08-01) ──────────────────────────────
   // The books are separate per company (e.g. NAMA+HYPO = one company, AT HOME =
   // another), so the summary must not mix them. Each branch belongs to a
-  // company; we render a section per company with only that company's branch
-  // columns and its own subtotals, and aggregate each person's pay PER COMPANY
-  // (not one cross-company total) so each company's section ties out to its own
-  // books.
-  const companyBranches = db.prepare(`
-    SELECT b.id AS branch_id, b.name AS branch_name, b.company_id AS company_id,
-           c.name_th AS company_name
+  // company; we render a section per company and aggregate each person's pay PER
+  // COMPANY so each company's section ties out to its own books.
+  //
+  // The set of branches to include is the UNION of (payroll periods paying this
+  // month) ∪ (service-charge activity in svcMonth) — owner 2026-09-03: anyone who
+  // received money from a company that had transactions must appear, or the tax
+  // docs (ใบหัก ณ ที่จ่าย) miss people (e.g. ศาลาชิลล์ staff who only get service
+  // charge, or a company with no payroll round paying this month but SVC to pay).
+  const svcMonth = shiftMonth(month, -1);
+  type BranchRow = { branch_id: number; branch_name: string; company_id: number | null; company_name: string | null };
+  const payrollBranches = db.prepare(`
+    SELECT b.id AS branch_id, b.name AS branch_name, b.company_id AS company_id, c.name_th AS company_name
     FROM payroll_periods pp
     JOIN branches b ON b.id = pp.branch_id
     LEFT JOIN companies c ON c.id = b.company_id
     WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
     GROUP BY b.id
-    ORDER BY (b.company_id IS NULL), b.company_id, b.id
-  `).all(from, to) as Array<{ branch_id: number; branch_name: string; company_id: number | null; company_name: string | null }>;
+  `).all(from, to) as BranchRow[];
+  const svcBranches = db.prepare(`
+    SELECT b.id AS branch_id, b.name AS branch_name, b.company_id AS company_id, c.name_th AS company_name
+    FROM branches b
+    LEFT JOIN companies c ON c.id = b.company_id
+    WHERE b.id IN (SELECT DISTINCT branch_id FROM daily_service_charge WHERE substr(date, 1, 7) = ?)
+  `).all(svcMonth) as BranchRow[];
+  const companyBranches: BranchRow[] = [];
+  const seenBranch = new Set<number>();
+  for (const b of [...payrollBranches, ...svcBranches]) {
+    if (seenBranch.has(b.branch_id)) continue;
+    seenBranch.add(b.branch_id);
+    companyBranches.push(b);
+  }
+  companyBranches.sort((a, b) =>
+    (a.company_id == null ? 1 : 0) - (b.company_id == null ? 1 : 0)
+    || (a.company_id ?? 0) - (b.company_id ?? 0)
+    || a.branch_id - b.branch_id);
 
-  type CompanyGroup = { key: number | null; name: string; cols: Array<{ id: number; name: string }> };
+  type CompanyGroup = { key: number | null; name: string };
   const companyGroups: CompanyGroup[] = [];
   const companyByKey = new Map<number | null, CompanyGroup>();
   for (const cb of companyBranches) {
-    let g = companyByKey.get(cb.company_id);
-    if (!g) {
-      g = { key: cb.company_id, name: cb.company_name ?? "ไม่ระบุบริษัท", cols: [] };
-      companyByKey.set(cb.company_id, g);
-      companyGroups.push(g);
-    }
-    g.cols.push({ id: cb.branch_id, name: cb.branch_name });
+    if (companyByKey.has(cb.company_id)) continue;
+    const g = { key: cb.company_id, name: cb.company_name ?? "ไม่ระบุบริษัท" };
+    companyByKey.set(cb.company_id, g);
+    companyGroups.push(g);
   }
 
-  // Per (user, company) aggregate — company-scoped totals (branch-stamped
-  // periods only; legacy NULL-branch periods are pre-migration and excluded,
-  // same as the per-branch columns above).
+  // Per (user, company) payroll aggregate — company-scoped totals (branch-stamped
+  // periods only; legacy NULL-branch periods are pre-migration and excluded).
   type EmpCompanyRow = EmpRow & { company_id: number | null };
   const empCompanyRows = db.prepare(`
     SELECT pl.user_id, pl.display_name, u.title_prefix, b.company_id AS company_id,
@@ -234,70 +224,81 @@ export default function PayrollMonthlySummaryPage({
     LEFT JOIN users u ON u.id = pl.user_id
     WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
     GROUP BY pl.user_id, b.company_id
-    ORDER BY (MAX(pl.employment_type) = 'ft') DESC,
-             (MAX(pl.employment_type) = 'pt') DESC,
-             pl.display_name
   `).all(from, to) as EmpCompanyRow[];
-  const rowsByCompany = new Map<number | null, EmpCompanyRow[]>();
-  for (const r of empCompanyRows) {
-    if (!rowsByCompany.has(r.company_id)) rowsByCompany.set(r.company_id, []);
-    rowsByCompany.get(r.company_id)!.push(r);
-  }
 
-  // Service charge (owner 2026-08-01/08-02). SVC is a SEPARATE monthly system —
-  // and the money landing in THIS month's pocket is the PREVIOUS month's SVC
-  // (paid ~the 20th), exactly like the payslip. So we pull SVC for prevMonth, not
-  // `month` (owner 2026-08-02: เซอร์วิสชาร์จที่ได้เดือน ก.ค. = ของเดือน มิ.ย.). We
-  // keep the GROSS (before its own WHT + group insurance) plus the WHT and
-  // group-insurance parts, so the summary can show SVC as income and its WHT/
-  // ประกันกลุ่ม as deductions — matching the FT/PT statement layout.
-  const svcMonth = shiftMonth(month, -1);
-  type SvcAgg = { gross: number; wht: number; gi: number; net: number };
+  // Service charge (owner 2026-08-01/08-02) — a SEPARATE monthly system. Money
+  // landing in THIS month's pocket is the PREVIOUS month's SVC (paid ~the 20th),
+  // exactly like the payslip, so we pull SVC for svcMonth. Sourced from the SAME
+  // engine as the real payout (computeCompanySvcSummary: รวมกอง shared-pool +
+  // manual gross overrides), so it ties out to the ใบหัก ณ ที่จ่าย exactly. We
+  // keep name + type + tax mode alongside the money so a person who received ONLY
+  // service charge (no payroll line) can still be listed.
+  type SvcAgg = { gross: number; wht: number; gi: number; net: number;
+    displayName: string; employmentType: string | null; taxMode: "sso" | "wht" };
   const svcByUserCompany = new Map<string, SvcAgg>();
-  const addSvc = (k: string, row: { netAllocation: number; whtAmount: number; groupInsurance: number; netPayout: number }) => {
+  const addSvc = (companyKey: number | null, row: {
+    userId: number; displayName: string; employmentType: string | null; taxMode: "sso" | "wht";
+    netAllocation: number; whtAmount: number; groupInsurance: number; netPayout: number;
+  }) => {
     if (!row.netAllocation && !row.netPayout) return;
-    const cur = svcByUserCompany.get(k) ?? { gross: 0, wht: 0, gi: 0, net: 0 };
+    const k = `${row.userId}|${String(companyKey)}`;
+    const cur = svcByUserCompany.get(k)
+      ?? { gross: 0, wht: 0, gi: 0, net: 0, displayName: row.displayName, employmentType: row.employmentType, taxMode: row.taxMode };
     cur.gross += row.netAllocation;
     cur.wht += row.whtAmount;
     cur.gi += row.groupInsurance;
     cur.net += row.netPayout;
     svcByUserCompany.set(k, cur);
   };
-  // Source SVC from the SAME engine as the real payout (owner 2026-09-03): the
-  // company-level summary routes รวมกอง (shared-pool) months to the company-wide
-  // split AND applies manual gross overrides — the two things per-branch summing
-  // got wrong, so the summary showed SVC that was never actually paid (e.g.
-  // ฐิติรัตน์ 1,556.91 vs the real 1,416.70). This month total feeds the ใบหัก ณ
-  // ที่จ่าย, so it must tie out to the pocket exactly. One computeCompanySvcSummary
-  // per company; legacy branches with no company_id fall back to per-branch.
   const seenCompany = new Set<number>();
   for (const cb of companyBranches) {
     if (cb.company_id == null || seenCompany.has(cb.company_id)) continue;
     seenCompany.add(cb.company_id);
-    let svc;
-    try { svc = computeCompanySvcSummary(cb.company_id, svcMonth); }
-    catch { continue; }
-    for (const row of svc.rows) addSvc(`${row.userId}|${String(cb.company_id)}`, row);
+    try { for (const row of computeCompanySvcSummary(cb.company_id, svcMonth).rows) addSvc(cb.company_id, row); }
+    catch { /* svc may be absent for a company */ }
   }
   for (const cb of companyBranches) {
     if (cb.company_id != null) continue; // pre-migration NULL-company branch
-    let svc;
-    try { svc = computeMonthlySvcSummary(cb.branch_id, svcMonth); }
-    catch { continue; }
-    for (const row of svc.rows) addSvc(`${row.userId}|${String(cb.company_id)}`, row);
+    try { for (const row of computeMonthlySvcSummary(cb.branch_id, svcMonth).rows) addSvc(cb.company_id, row); }
+    catch { /* no svc for this branch */ }
   }
   const svcFor = (userId: number, companyKey: number | null): SvcAgg =>
-    svcByUserCompany.get(`${userId}|${String(companyKey)}`) ?? { gross: 0, wht: 0, gi: 0, net: 0 };
+    svcByUserCompany.get(`${userId}|${String(companyKey)}`)
+    ?? { gross: 0, wht: 0, gi: 0, net: 0, displayName: "", employmentType: null, taxMode: "sso" };
+
+  // Person rows per company = payroll people ∪ SVC-only people. A person who got
+  // ONLY service charge (no payroll round this month) is synthesised with zero
+  // wage figures so the SVC column + its WHT still land on the sheet.
+  const rowsByCompany = new Map<number | null, EmpCompanyRow[]>();
+  const payrollKeys = new Set<string>();
+  for (const r of empCompanyRows) {
+    payrollKeys.add(`${r.user_id}|${String(r.company_id)}`);
+    if (!rowsByCompany.has(r.company_id)) rowsByCompany.set(r.company_id, []);
+    rowsByCompany.get(r.company_id)!.push(r);
+  }
+  for (const [k, s] of svcByUserCompany) {
+    if (payrollKeys.has(k)) continue; // already has a payroll row for this company
+    const [uidStr, compStr] = k.split("|");
+    const userId = Number(uidStr);
+    const companyId = compStr === "null" ? null : Number(compStr);
+    const synth: EmpCompanyRow = {
+      user_id: userId, display_name: s.displayName, title_prefix: null, company_id: companyId,
+      employment_type: (s.employmentType === "ft" || s.employmentType === "pt") ? s.employmentType : null,
+      salary_tax_mode_snapshot: s.taxMode,
+      total_gross: 0, total_sso: 0, total_tax: 0, total_net: 0, period_count: 0
+    };
+    if (!rowsByCompany.has(companyId)) rowsByCompany.set(companyId, []);
+    rowsByCompany.get(companyId)!.push(synth);
+  }
+  // Stable display order within each company: FT, then PT, then others, by name.
+  const rank = (t: string | null) => (t === "ft" ? 0 : t === "pt" ? 1 : 2);
+  for (const list of rowsByCompany.values()) {
+    list.sort((a, b) => rank(a.employment_type) - rank(b.employment_type) || a.display_name.localeCompare(b.display_name, "th"));
+  }
   const grandSvc = [...svcByUserCompany.values()].reduce(
     (a, s) => ({ gross: a.gross + s.gross, wht: a.wht + s.wht, gi: a.gi + s.gi, net: a.net + s.net }),
     { gross: 0, wht: 0, gi: 0, net: 0 }
   );
-
-  // Split the merged rows into the two tables the owner wants kept separate.
-  const ftRows = empRows.filter((r) => r.employment_type === "ft");
-  const ptRows = empRows.filter((r) => r.employment_type === "pt");
-  const otherRows = empRows.filter((r) => r.employment_type !== "ft" && r.employment_type !== "pt");
-  const multiBranch = branchCols.length > 1;
 
   // Aggregate totals
   const totals = empRows.reduce(
@@ -318,25 +319,31 @@ export default function PayrollMonthlySummaryPage({
   // One merged table per employment type (owner 2026-07-27: แยกตาราง FT/PT +
   // รวม NAMA+HYPO เป็นแถวเดียว/คน). สังกัด = home branch; the per-branch net
   // columns are the where-they-worked split (บัญชีลงแยกสาขาตามนี้).
-  const empTable = (title: string, accent: string, rows: EmpCompanyRow[], cols: Array<{ id: number; name: string }>, companyKey: number | null) => {
+  const money = (v: number, cls = "") =>
+    v ? <span className={cls}>{fmtMoney(v)}</span> : <span className="text-slate-300">—</span>;
+  // Per-row figures in the owner's statement order (2026-08-02): ค่าตอบแทน (สะสม
+  // ทุกรอบจ่ายในเดือน) → SVC → รวมรายรับ → หัก (ปกส./ภาษี/ประกันกลุ่ม) → รวมรับจริง.
+  // SVC WHT folds into the tax column; take = income − all deductions.
+  const figuresFor = (r: EmpCompanyRow, companyKey: number | null) => {
+    const comp = r.total_gross ?? 0;
+    const svc = svcFor(r.user_id, companyKey);
+    const income = comp + svc.gross;
+    const sso = r.total_sso ?? 0;
+    const tax = (r.total_tax ?? 0) + svc.wht;
+    const gi = svc.gi;
+    const ded = sso + tax + gi;
+    return { comp, svcGross: svc.gross, income, sso, tax, gi, ded, take: income - ded };
+  };
+  // One table per (employment type × tax mode). Read-only overview — every figure
+  // is the month's accumulation across pay rounds, sourced from the per-branch
+  // payroll runs (owner 2026-09-03: แยกสัดส่วน ปกส./หัก ณ ที่จ่าย เป็นคนละตาราง; ยุบ
+  // คอลัมน์รายสาขา + ตารางรอบจ่ายให้เรียบ). Columns collapse to: สังกัด · ค่าตอบแทน ·
+  // SVC · รวมรายรับ · หัก · สุทธิ.
+  const empTable = (title: string, subtitle: string, accent: string, rows: EmpCompanyRow[], companyKey: number | null) => {
     if (rows.length === 0) return null;
-    const showBranchCols = cols.length > 1;
-    // Per-row figures in the owner's statement order (2026-08-02): ค่าตอบแทน →
-    // SVC → รวมรายรับ → หัก (ปกส./ภาษี/ประกันกลุ่ม) → รวมรับจริง. SVC WHT folds into
-    // the tax column; take = income − all deductions (= wage net + SVC net).
-    const figures = (r: EmpCompanyRow) => {
-      const comp = r.total_gross ?? 0;
-      const svc = svcFor(r.user_id, companyKey);
-      const income = comp + svc.gross;
-      const sso = r.total_sso ?? 0;
-      const tax = (r.total_tax ?? 0) + svc.wht;
-      const gi = svc.gi;
-      const ded = sso + tax + gi;
-      return { comp, svcGross: svc.gross, income, sso, tax, gi, ded, take: income - ded };
-    };
     const sub = rows.reduce(
       (a, r) => {
-        const f = figures(r);
+        const f = figuresFor(r, companyKey);
         return {
           comp: a.comp + f.comp, svcGross: a.svcGross + f.svcGross, income: a.income + f.income,
           sso: a.sso + f.sso, tax: a.tax + f.tax, gi: a.gi + f.gi, ded: a.ded + f.ded, take: a.take + f.take
@@ -344,21 +351,17 @@ export default function PayrollMonthlySummaryPage({
       },
       { comp: 0, svcGross: 0, income: 0, sso: 0, tax: 0, gi: 0, ded: 0, take: 0 }
     );
-    const money = (v: number, cls = "") =>
-      v ? <span className={cls}>{fmtMoney(v)}</span> : <span className="text-slate-300">—</span>;
     return (
       <div className="card overflow-x-auto">
-        <h2 className="font-semibold text-slate-700 mb-3">
+        <h3 className="font-semibold text-slate-700 mb-0.5">
           <span className={accent}>{title}</span> · {rows.length} {t(lang, "admin.persona.payroll.col.staff")}
-        </h2>
+        </h3>
+        <p className="text-xs text-slate-400 mb-3">{subtitle}</p>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
               <th className="py-2 pr-3">{t(lang, "admin.persona.payroll.col.staff")}</th>
               <th className="py-2 pr-3">สังกัด</th>
-              {showBranchCols && cols.map((b) => (
-                <th key={b.id} className="py-2 pr-3 text-right whitespace-nowrap">{b.name}</th>
-              ))}
               <th className="py-2 pr-3 text-right whitespace-nowrap">ค่าตอบแทน</th>
               <th className="py-2 pr-3 text-right whitespace-nowrap">เซอร์วิสชาร์จ</th>
               <th className="py-2 pr-3 text-right whitespace-nowrap">รวมรายรับ</th>
@@ -370,19 +373,11 @@ export default function PayrollMonthlySummaryPage({
           </thead>
           <tbody>
             {rows.map((r) => {
-              const perB = grossByUserBranch.get(r.user_id) ?? new Map<number, number>();
-              const f = figures(r);
+              const f = figuresFor(r, companyKey);
               return (
                 <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
                   <td className="py-2 pr-3">
-                    <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
-                      <span>{nameWithPrefix(r.title_prefix, r.display_name)}</span>
-                      {r.salary_tax_mode_snapshot === "wht" && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
-                          {t(lang, "admin.persona.employees.taxMode.whtTag")}
-                        </span>
-                      )}
-                    </div>
+                    <div className="font-medium text-slate-800">{nameWithPrefix(r.title_prefix, r.display_name)}</div>
                     <Link
                       href={`/admin/persona/payroll/monthly-payslip/${r.user_id}?m=${month}`}
                       className="text-[11px] text-brand hover:underline"
@@ -391,14 +386,6 @@ export default function PayrollMonthlySummaryPage({
                     </Link>
                   </td>
                   <td className="py-2 pr-3 text-xs text-slate-500 whitespace-nowrap">{homeByUser.get(r.user_id) ?? "—"}</td>
-                  {showBranchCols && cols.map((b) => {
-                    const v = perB.get(b.id) ?? 0;
-                    return (
-                      <td key={b.id} className="py-2 pr-3 text-right tabular-nums">
-                        {money(v)}
-                      </td>
-                    );
-                  })}
                   <td className="py-2 pr-3 text-right tabular-nums">{money(f.comp)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-violet-700">{money(f.svcGross)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums font-medium text-slate-800">{money(f.income)}</td>
@@ -412,7 +399,7 @@ export default function PayrollMonthlySummaryPage({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-slate-300 font-medium">
-              <td className="py-2 pr-3" colSpan={showBranchCols ? 2 + cols.length : 2}>
+              <td className="py-2 pr-3" colSpan={2}>
                 {t(lang, "admin.persona.payroll.detail.total")}
               </td>
               <td className="py-2 pr-3 text-right tabular-nums">{fmtMoney(sub.comp)}</td>
@@ -466,7 +453,7 @@ export default function PayrollMonthlySummaryPage({
       </div>
 
       {/* Export for downstream documents (ภ.ง.ด.1 / SSO / bank) — owner 2026-07-04 */}
-      {empRows.length > 0 && (
+      {(empRows.length > 0 || svcByUserCompany.size > 0) && (
         <div className="flex justify-end">
           <a
             href={`/api/admin/persona/payroll/summary/csv?m=${month}`}
@@ -478,7 +465,7 @@ export default function PayrollMonthlySummaryPage({
         </div>
       )}
 
-      {periods.length === 0 ? (
+      {periods.length === 0 && companyGroups.length === 0 ? (
         <div className="card text-sm text-slate-500 py-8 text-center">
           {t(lang, "admin.persona.payroll.summary.empty")}
         </div>
@@ -525,53 +512,70 @@ export default function PayrollMonthlySummaryPage({
             </div>
           </div>
 
-          {/* Per-employee breakdown — split FT / PT, one row per person,
-              per-branch net columns show the split that lands in each branch's
-              books (owner 2026-07-27). */}
-          {multiBranch && (
-            <p className="text-xs text-slate-400">
-              แยกตามบริษัท (บัญชีแยกกัน) · คอลัมน์รายสาขา = ค่าตอบแทนก่อนหัก (gross) ที่ลงบัญชีแต่ละสาขา · ค่าตอบแทน + เซอร์วิสชาร์จ = รวมรายรับ → หัก ปกส./ภาษี/ประกันกลุ่ม → รวมรับจริง · เซอร์วิสชาร์จเป็นของเดือน{monthLabel(svcMonth, lang)}
-            </p>
-          )}
+          {/* Per-employee breakdown — read-only overview. Split per บริษัท, then
+              per ประเภทพนักงาน × โหมดภาษี (owner 2026-09-03). Every figure is the
+              month's accumulation across pay rounds. */}
+          <p className="text-xs text-slate-400">
+            แยกตามบริษัท (บัญชีแยกกัน) → แยกพนักงานประจำ/พาร์ทไทม์ → แยกประกันสังคม/หัก ณ ที่จ่าย · ทุกยอดคือ<b>ยอดสะสมทั้งเดือน</b>จากทุกรอบจ่าย (ดูอย่างเดียว แก้ที่หน้าค่าตอบแทนรายสาขา) · ค่าตอบแทน + เซอร์วิสชาร์จ = รวมรายรับ → หัก ปกส./ภาษี/ประกันกลุ่ม → รวมรับจริง · เซอร์วิสชาร์จเป็นของเดือน{monthLabel(svcMonth, lang)}
+          </p>
           {/* One section per company — the books are separate, so NAMA+HYPO and
               AT HOME never share a table (owner 2026-08-01). */}
           {companyGroups.map((g) => {
             const crows = rowsByCompany.get(g.key) ?? [];
             if (crows.length === 0) return null;
+            // Split each employment type by tax mode so ประกันสังคม and
+            // หัก ณ ที่จ่าย are separate tables (owner 2026-09-03: แยกสัดส่วน).
+            // 'sso' or null → SSO group; 'wht' → WHT group. PT is uniformly WHT.
+            const isWht = (r: EmpCompanyRow) => r.salary_tax_mode_snapshot === "wht";
             const cft = crows.filter((r) => r.employment_type === "ft");
             const cpt = crows.filter((r) => r.employment_type === "pt");
             const coth = crows.filter((r) => r.employment_type !== "ft" && r.employment_type !== "pt");
+            const ftSso = cft.filter((r) => !isWht(r));
+            const ftWht = cft.filter((r) => isWht(r));
+            const othSso = coth.filter((r) => !isWht(r));
+            const othWht = coth.filter((r) => isWht(r));
             // Company subtotal in the statement order: รวมรายรับ (ค่าตอบแทน + SVC) −
-            // รายการหัก (ปกส. + ภาษี + SVC WHT + ประกันกลุ่ม) = รวมรับจริง.
+            // รายการหัก (ปกส. + ภาษี + SVC WHT + ประกันกลุ่ม) = รวมรับจริง. WHT + SSO
+            // shown split so the accounting proportion is visible at a glance.
             const cAgg = crows.reduce((s, r) => {
               const sv = svcFor(r.user_id, g.key);
               return {
                 income: s.income + (r.total_gross ?? 0) + sv.gross,
-                ded: s.ded + (r.total_sso ?? 0) + (r.total_tax ?? 0) + sv.wht + sv.gi
+                wht: s.wht + (r.total_tax ?? 0) + sv.wht,
+                sso: s.sso + (r.total_sso ?? 0),
+                gi: s.gi + sv.gi
               };
-            }, { income: 0, ded: 0 });
+            }, { income: 0, wht: 0, sso: 0, gi: 0 });
+            const cDed = cAgg.wht + cAgg.sso + cAgg.gi;
             return (
               <div key={String(g.key)} className="space-y-3">
-                <div className="flex items-baseline justify-between gap-3 flex-wrap border-l-4 border-brand pl-3 pt-2">
+                <div className="border-l-4 border-brand pl-3 pt-2">
                   <h2 className="text-lg font-bold text-slate-800">{g.name}</h2>
-                  <div className="text-xs text-slate-500">
-                    รวมรายรับ <b className="text-slate-800">{fmtMoney(cAgg.income)}</b>
-                    {" − "}รายการหัก <b className="text-rose-600">{fmtMoney(cAgg.ded)}</b>
-                    {" = "}รวมรับจริง <b className="text-emerald-700">{fmtMoney(cAgg.income - cAgg.ded)}</b>
+                  <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                    <span>รวมรายรับ <b className="text-slate-800">{fmtMoney(cAgg.income)}</b></span>
+                    <span>หัก ณ ที่จ่าย <b className="text-amber-700">{fmtMoney(cAgg.wht)}</b></span>
+                    <span>ประกันสังคม <b className="text-sky-700">{fmtMoney(cAgg.sso)}</b></span>
+                    {cAgg.gi > 0 && <span>ประกันกลุ่ม <b className="text-rose-600">{fmtMoney(cAgg.gi)}</b></span>}
+                    <span>รวมรับจริง <b className="text-emerald-700">{fmtMoney(cAgg.income - cDed)}</b></span>
                   </div>
                 </div>
-                {empTable(t(lang, "admin.persona.employees.employment.ft"), "text-emerald-700", cft, g.cols, g.key)}
-                {empTable(t(lang, "admin.persona.employees.employment.pt"), "text-violet-700", cpt, g.cols, g.key)}
-                {empTable("อื่นๆ", "text-slate-600", coth, g.cols, g.key)}
+                {empTable("พนักงานประจำ", "ประกันสังคม (ในระบบ)", "text-emerald-700", ftSso, g.key)}
+                {empTable("พนักงานประจำ", "หัก ณ ที่จ่าย 3% (นอกระบบ)", "text-amber-700", ftWht, g.key)}
+                {empTable("พาร์ทไทม์", "หัก ณ ที่จ่าย 3%", "text-violet-700", cpt, g.key)}
+                {empTable("อื่นๆ", "ประกันสังคม (ในระบบ)", "text-slate-600", othSso, g.key)}
+                {empTable("อื่นๆ", "หัก ณ ที่จ่าย 3%", "text-slate-600", othWht, g.key)}
               </div>
             );
           })}
 
-          {/* Per-period list */}
-          <div className="card overflow-x-auto">
-            <h2 className="font-semibold text-slate-700 mb-3">
+          {/* Per-period list — collapsed by default (owner 2026-09-03: ยุบให้เรียบ).
+              It's the audit trail of which rounds paid this month, not the headline. */}
+          <details className="card">
+            <summary className="font-semibold text-slate-700 cursor-pointer select-none">
               {t(lang, "admin.persona.payroll.summary.perPeriodTitle")}
-            </h2>
+              <span className="text-xs font-normal text-slate-400"> · {periods.length} รอบ (กดเพื่อดู)</span>
+            </summary>
+            <div className="overflow-x-auto mt-3">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
@@ -632,7 +636,8 @@ export default function PayrollMonthlySummaryPage({
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </details>
         </>
       )}
     </div>
