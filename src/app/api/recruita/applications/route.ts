@@ -10,6 +10,7 @@ import {
   type CustomAnswers
 } from "@/lib/recruita";
 import { notifyExecGroupNewApplication, notifyStageChange } from "@/lib/recruita-notify";
+import { getFormTemplate } from "@/lib/recruita-form-template";
 
 // POST /api/recruita/applications — public submit endpoint. No
 // auth required; PDPA consent fields gate the actual write. Body
@@ -189,6 +190,20 @@ export async function POST(req: Request) {
   ).get(d.position_id);
   if (!position) {
     return NextResponse.json({ error: "position_not_open" }, { status: 400 });
+  }
+
+  // Required document attachments (owner 2026-09-03) — mirror the client: every
+  // ENABLED upload slot must carry a file, so a careless submit without the
+  // requested photos is rejected server-side too (ส่งมั่วตัดสิทธิ์). Disable a doc
+  // in the form template to make it optional.
+  const docEnabled = new Map<string, boolean>();
+  for (const sec of getFormTemplate().sections) for (const fld of sec.fields) docEnabled.set(fld.key, fld.enabled);
+  for (const [cfgKey, formKey] of [["doc_photo", "photo"], ["doc_resume", "resume"], ["doc_id_copy", "id_copy"]] as const) {
+    if (!(docEnabled.get(cfgKey) ?? true)) continue;
+    const fv = formData.get(formKey);
+    if (!(fv instanceof File) || fv.size === 0) {
+      return NextResponse.json({ error: "missing_documents", message: "กรุณาแนบเอกสารให้ครบก่อนส่งใบสมัคร" }, { status: 400 });
+    }
   }
 
   // ── Dedupe candidate ──────────────────────────────────────
