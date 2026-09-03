@@ -141,6 +141,19 @@ export function isManualSvcMonth(yearMonth: string): boolean {
   return yearMonth < SVC_SYSTEM_START_MONTH;
 }
 
+/** The tax mode that applies to a person's SVC for a given ACCRUAL month (owner
+ *  2026-09-03). Someone now on ประกันสังคม ('sso') but who entered it only from
+ *  sso_start_month is still หัก ณ ที่จ่าย ('wht') for SVC earned in earlier months
+ *  — the payout month can be later, but the accrual month decides. NULL start =
+ *  the current mode applies to every month. */
+export function svcEffectiveTaxMode(
+  salaryTaxMode: string | null, ssoStartMonth: string | null, yearMonth: string
+): "sso" | "wht" {
+  const mode: "sso" | "wht" = salaryTaxMode === "wht" ? "wht" : "sso";
+  if (mode === "sso" && ssoStartMonth && yearMonth < ssoStartMonth) return "wht";
+  return mode;
+}
+
 /** Read the hand-entered GROSS SVC amount per user for a manual month.
  *  Keyed by user_id; absent users default to 0 at the call site. */
 export function listManualAllocations(
@@ -571,7 +584,9 @@ type StaffMeta = {
   shiftStartTime: string | null;
   weeklyOffDays: string | null;
   trackAttendance: number;   // 0 = ผู้บริหารไม่ลงเวลา → นับ SVC จากตารางเวรแทน
-  taxMode: string | null;    // 'sso' (รับเต็ม) | 'wht' (หัก ณ ที่จ่าย 3%)
+  taxMode: string | null;    // 'sso' (รับเต็ม) | 'wht' (หัก ณ ที่จ่าย 3%) — remapped
+                             // to the ACCRUAL-month-effective mode after loading.
+  ssoStartMonth: string | null; // YYYY-MM entered SSO; SVC before it stays WHT
   titlePrefix: string | null;
   employeeCode: string | null;
   hireDate: string | null;   // kept for other eligibility rules
@@ -646,6 +661,7 @@ export function computeMonthlySvcSummary(
            u.weekly_off_days AS weeklyOffDays,
            COALESCE(u.track_attendance, 1) AS trackAttendance,
            u.salary_tax_mode AS taxMode,
+           u.sso_start_month AS ssoStartMonth,
            u.title_prefix AS titlePrefix,
            u.employee_code AS employeeCode,
            u.hire_date AS hireDate,
@@ -675,6 +691,7 @@ export function computeMonthlySvcSummary(
            u.weekly_off_days AS weeklyOffDays,
            COALESCE(u.track_attendance, 1) AS trackAttendance,
            u.salary_tax_mode AS taxMode,
+           u.sso_start_month AS ssoStartMonth,
            u.title_prefix AS titlePrefix,
            u.employee_code AS employeeCode,
            u.hire_date AS hireDate,
@@ -695,6 +712,9 @@ export function computeMonthlySvcSummary(
     visitorIds.add(v.userId);
     staff.push(v);
   }
+  // Tax mode by ACCRUAL month: someone now on SSO but who joined later is still
+  // WHT for SVC earned before they entered SSO (owner 2026-09-03).
+  for (const s of staff) s.taxMode = svcEffectiveTaxMode(s.taxMode, s.ssoStartMonth, yearMonth);
 
   if (staff.length === 0) {
     return emptySummary(branchId, yearMonth, totalCollected, daysInMonth, dailyRows.length);
@@ -1290,6 +1310,7 @@ function computeBranchSvcContext(branchId: number, yearMonth: string): BranchSvc
            u.weekly_off_days AS weeklyOffDays,
            COALESCE(u.track_attendance, 1) AS trackAttendance,
            u.salary_tax_mode AS taxMode,
+           u.sso_start_month AS ssoStartMonth,
            u.title_prefix AS titlePrefix,
            u.employee_code AS employeeCode,
            u.hire_date AS hireDate,
@@ -1314,6 +1335,7 @@ function computeBranchSvcContext(branchId: number, yearMonth: string): BranchSvc
            u.weekly_off_days AS weeklyOffDays,
            COALESCE(u.track_attendance, 1) AS trackAttendance,
            u.salary_tax_mode AS taxMode,
+           u.sso_start_month AS ssoStartMonth,
            u.title_prefix AS titlePrefix,
            u.employee_code AS employeeCode,
            u.hire_date AS hireDate,
@@ -1334,6 +1356,8 @@ function computeBranchSvcContext(branchId: number, yearMonth: string): BranchSvc
     visitorIds.add(v.userId);
     staff.push(v);
   }
+  // Accrual-month tax mode (owner 2026-09-03) — see computeMonthlySvcSummary.
+  for (const s of staff) s.taxMode = svcEffectiveTaxMode(s.taxMode, s.ssoStartMonth, yearMonth);
 
   // 3. Time entries + roster windows + OT + break settings.
   const entries = db.prepare(`
@@ -2158,6 +2182,7 @@ function computeManualSvcSummary(branchId: number, yearMonth: string): MonthlySv
            u.weekly_off_days AS weeklyOffDays,
            COALESCE(u.track_attendance, 1) AS trackAttendance,
            u.salary_tax_mode AS taxMode,
+           u.sso_start_month AS ssoStartMonth,
            u.title_prefix AS titlePrefix,
            u.employee_code AS employeeCode,
            u.hire_date AS hireDate,
@@ -2174,6 +2199,8 @@ function computeManualSvcSummary(branchId: number, yearMonth: string): MonthlySv
       )
     ORDER BY (u.employee_code IS NULL), u.employee_code COLLATE NOCASE ASC
   `).all(branchId, end, branchId, yearMonth) as StaffMeta[];
+  // Accrual-month tax mode (owner 2026-09-03) — see computeMonthlySvcSummary.
+  for (const s of staff) s.taxMode = svcEffectiveTaxMode(s.taxMode, s.ssoStartMonth, yearMonth);
 
   const gross = listManualAllocations(branchId, yearMonth);
   const whtRate = (db.prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")

@@ -3427,6 +3427,13 @@ function runMigrations(db: Database.Database): void {
   if (!unames3.has("salary_tax_mode")) {
     db.exec("ALTER TABLE users ADD COLUMN salary_tax_mode TEXT NOT NULL DEFAULT 'sso'");
   }
+  // sso_start_month (owner 2026-09-03) — the YYYY-MM a person entered ประกันสังคม.
+  // Service charge accrued in months BEFORE this is still หัก ณ ที่จ่าย 3% even if
+  // the person is now 'sso' (e.g. ฐิติรัตน์ entered SSO in ส.ค. but the 20 ส.ค.
+  // payout is ก.ค.'s SVC → WHT). NULL = no boundary (current mode applies to all).
+  if (!unames3.has("sso_start_month")) {
+    db.exec("ALTER TABLE users ADD COLUMN sso_start_month TEXT");
+  }
   // 2026-05-30 — PDPA: gate payroll/salary visibility per-admin.
   //   0 = admin cannot see payroll pages or salary columns
   //   1 = super_admin has granted this admin payroll access
