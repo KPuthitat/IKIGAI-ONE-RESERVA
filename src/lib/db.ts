@@ -7536,6 +7536,14 @@ function runMigrations(db: Database.Database): void {
   if (!emmCols.some((c) => c.name === "items")) {
     db.exec("ALTER TABLE exec_meeting_minutes ADD COLUMN items TEXT");   // JSON MinuteItem[]
   }
+  // AI summary usage (owner 2026-09-02): tokens + estimated baht cost + which
+  // model produced the latest summary, so the admin sees how much credit it used.
+  for (const [col, ddl] of [
+    ["ai_in_tokens", "INTEGER"], ["ai_out_tokens", "INTEGER"],
+    ["ai_cost_baht", "REAL"], ["ai_model", "TEXT"]
+  ] as const) {
+    if (!emCols.some((c) => c.name === col)) db.exec(`ALTER TABLE exec_meetings ADD COLUMN ${col} ${ddl}`);
+  }
 
   // ── รายงานผู้จัดการ → เตรียมประชุมประจำสัปดาห์ (owner 2026-08-04) ──────
   // ผู้จัดการสาขา (role=admin) ส่งรายงานปิดกะ + สถานการณ์ประจำวัน + เรื่องที่อยาก
