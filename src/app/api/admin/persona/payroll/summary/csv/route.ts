@@ -78,33 +78,77 @@ export async function GET(req: Request) {
   // pool + gross-override aware) so the certificate ties out to the pocket. Summed
   // per USER across companies for this flat per-employee sheet.
   const svcMonth = shiftMonth(m, -1);
-  type SvcAgg = { gross: number; wht: number; gi: number; net: number };
+  type SvcAgg = { gross: number; wht: number; gi: number; net: number;
+    displayName: string; employmentType: string | null; taxMode: "sso" | "wht" };
   const svcByUser = new Map<number, SvcAgg>();
-  const addSvc = (userId: number, r: { netAllocation: number; whtAmount: number; groupInsurance: number; netPayout: number }) => {
+  const addSvc = (r: { userId: number; displayName: string; employmentType: string | null; taxMode: "sso" | "wht";
+    netAllocation: number; whtAmount: number; groupInsurance: number; netPayout: number }) => {
     if (!r.netAllocation && !r.netPayout) return;
-    const cur = svcByUser.get(userId) ?? { gross: 0, wht: 0, gi: 0, net: 0 };
+    const cur = svcByUser.get(r.userId)
+      ?? { gross: 0, wht: 0, gi: 0, net: 0, displayName: r.displayName, employmentType: r.employmentType, taxMode: r.taxMode };
     cur.gross += r.netAllocation; cur.wht += r.whtAmount; cur.gi += r.groupInsurance; cur.net += r.netPayout;
-    svcByUser.set(userId, cur);
+    svcByUser.set(r.userId, cur);
   };
+  // Branches = payroll periods paying this month ∪ SVC activity in svcMonth, so a
+  // person/company with only service charge (e.g. ศาลาชิลล์) isn't dropped from the
+  // tax sheet (owner 2026-09-03).
   const companyBranches = db.prepare(`
-    SELECT DISTINCT b.id AS branch_id, b.company_id AS company_id
-    FROM payroll_periods pp
-    JOIN branches b ON b.id = pp.branch_id
-    WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
-  `).all(from, to) as Array<{ branch_id: number; company_id: number | null }>;
+    SELECT DISTINCT branch_id, company_id FROM (
+      SELECT b.id AS branch_id, b.company_id AS company_id
+      FROM payroll_periods pp JOIN branches b ON b.id = pp.branch_id
+      WHERE pp.pay_date >= @from AND pp.pay_date <= @to AND pp.branch_id IS NOT NULL
+      UNION
+      SELECT b.id AS branch_id, b.company_id AS company_id
+      FROM branches b
+      WHERE b.id IN (SELECT DISTINCT branch_id FROM daily_service_charge WHERE substr(date, 1, 7) = @svc)
+    )
+  `).all({ from, to, svc: svcMonth }) as Array<{ branch_id: number; company_id: number | null }>;
   const seenCompany = new Set<number>();
   for (const cb of companyBranches) {
     if (cb.company_id == null || seenCompany.has(cb.company_id)) continue;
     seenCompany.add(cb.company_id);
-    try { for (const r of computeCompanySvcSummary(cb.company_id, svcMonth).rows) addSvc(r.userId, r); }
+    try { for (const r of computeCompanySvcSummary(cb.company_id, svcMonth).rows) addSvc(r); }
     catch { /* svc data may be absent for a company */ }
   }
   for (const cb of companyBranches) {
     if (cb.company_id != null) continue; // pre-migration NULL-company branch
-    try { for (const r of computeMonthlySvcSummary(cb.branch_id, svcMonth).rows) addSvc(r.userId, r); }
+    try { for (const r of computeMonthlySvcSummary(cb.branch_id, svcMonth).rows) addSvc(r); }
     catch { /* no svc for this branch */ }
   }
-  const svcFor = (userId: number): SvcAgg => svcByUser.get(userId) ?? { gross: 0, wht: 0, gi: 0, net: 0 };
+  const svcFor = (userId: number): SvcAgg =>
+    svcByUser.get(userId) ?? { gross: 0, wht: 0, gi: 0, net: 0, displayName: "", employmentType: null, taxMode: "sso" };
+
+  // SVC-only people (received service charge but no payroll round this month) —
+  // synthesise a zero-wage Row so the sheet + the ใบหัก ณ ที่จ่าย include them.
+  const payrollUserIds = new Set(rows.map((r) => r.user_id));
+  const svcOnlyIds = [...svcByUser.keys()].filter((id) => !payrollUserIds.has(id));
+  if (svcOnlyIds.length > 0) {
+    const ph = svcOnlyIds.map(() => "?").join(",");
+    const extra = db.prepare(`
+      SELECT id AS user_id, display_name, title_prefix, employee_code, national_id,
+             employment_type, salary_tax_mode
+      FROM users WHERE id IN (${ph})
+    `).all(...svcOnlyIds) as Array<{
+      user_id: number; display_name: string; title_prefix: string | null;
+      employee_code: string | null; national_id: string | null;
+      employment_type: "pt" | "ft" | null; salary_tax_mode: "sso" | "wht" | null;
+    }>;
+    const byId = new Map(extra.map((e) => [e.user_id, e]));
+    for (const id of svcOnlyIds) {
+      const s = svcByUser.get(id)!;
+      const u = byId.get(id);
+      rows.push({
+        user_id: id,
+        display_name: u?.display_name ?? s.displayName,
+        title_prefix: u?.title_prefix ?? null,
+        employee_code: u?.employee_code ?? null,
+        national_id: u?.national_id ?? null,
+        employment_type: u?.employment_type ?? ((s.employmentType === "ft" || s.employmentType === "pt") ? s.employmentType : null),
+        salary_tax_mode_snapshot: u?.salary_tax_mode ?? s.taxMode,
+        total_gross: 0, total_sso: 0, total_tax: 0, total_net: 0, period_count: 0
+      });
+    }
+  }
 
   const headers = [
     "ชื่อ-นามสกุล", "รหัสพนักงาน", "เลขบัตรประชาชน", "ประเภทจ้าง", "รูปแบบภาษี",
