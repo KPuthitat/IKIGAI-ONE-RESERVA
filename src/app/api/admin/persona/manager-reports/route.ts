@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
-import { listManagerReports, upsertManagerReport } from "@/lib/manager-reports";
+import { listManagerReports, createManagerReport } from "@/lib/manager-reports";
 
 // รายงานผู้จัดการ (owner 2026-08-04).
 //   POST — ส่ง/แก้รายงานของวัน (upsert รายคน/สาขา/วัน)
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
   }
 
   const db = getDb();
-  const id = upsertManagerReport(db, {
+  const id = createManagerReport(db, {
     branchId, reportDate: report_date, authorUserId: user.id,
     shiftSummary: shift, situation: situ, meetingTopics: topics
   });

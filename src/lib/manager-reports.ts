@@ -56,9 +56,9 @@ export function getManagerReport(db: Database.Database, id: number): ManagerRepo
   return db.prepare(`${SELECT} WHERE r.id = ?`).get(id) as ManagerReportRow | undefined;
 }
 
-/** create หรือ update: ถ้าผู้เขียนคนนี้มีรายงานของ (สาขา, วันที่) เดียวกันอยู่แล้ว
- *  จะทับของเดิม (upsert) — กัน 1 คน/สาขา/วัน มีรายงานซ้ำ. คืน id. */
-export function upsertManagerReport(db: Database.Database, d: {
+/** เพิ่มรายงานใหม่เสมอ (ไม่ทับของเดิม) — 1 คนส่งได้หลายเรื่องต่อวัน (owner
+ *  2026-09-03). คืน id. */
+export function createManagerReport(db: Database.Database, d: {
   branchId: number | null;
   reportDate: string;
   authorUserId: number;
@@ -66,21 +66,6 @@ export function upsertManagerReport(db: Database.Database, d: {
   situation: string;
   meetingTopics: string;
 }): number {
-  const existing = db.prepare(
-    `SELECT id FROM manager_reports
-     WHERE author_user_id = ? AND report_date = ?
-       AND ((branch_id IS NULL AND ? IS NULL) OR branch_id = ?)`
-  ).get(d.authorUserId, d.reportDate, d.branchId, d.branchId) as { id: number } | undefined;
-
-  if (existing) {
-    db.prepare(
-      `UPDATE manager_reports
-       SET shift_summary = ?, situation = ?, meeting_topics = ?,
-           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-       WHERE id = ?`
-    ).run(d.shiftSummary, d.situation, d.meetingTopics, existing.id);
-    return existing.id;
-  }
   const res = db.prepare(
     `INSERT INTO manager_reports
        (branch_id, report_date, author_user_id, shift_summary, situation, meeting_topics)
@@ -89,16 +74,18 @@ export function upsertManagerReport(db: Database.Database, d: {
   return Number(res.lastInsertRowid);
 }
 
-export function deleteManagerReport(db: Database.Database, id: number): void {
-  db.prepare("DELETE FROM manager_reports WHERE id = ?").run(id);
+/** แก้ไขเนื้อหารายงานตาม id (ผู้เรียกตรวจสิทธิ์/PIN มาก่อนแล้ว). */
+export function updateManagerReport(db: Database.Database, id: number, d: {
+  shiftSummary: string; situation: string; meetingTopics: string;
+}): void {
+  db.prepare(
+    `UPDATE manager_reports
+     SET shift_summary = ?, situation = ?, meeting_topics = ?,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+     WHERE id = ?`
+  ).run(d.shiftSummary, d.situation, d.meetingTopics, id);
 }
 
-/** รายงานของผู้เขียนคนนี้สำหรับ (สาขา, วันที่) — ใช้ prefill ฟอร์มวันนี้. */
-export function getTodayReportForAuthor(
-  db: Database.Database, authorUserId: number, branchId: number | null, reportDate: string
-): ManagerReportRow | undefined {
-  return db.prepare(
-    `${SELECT} WHERE r.author_user_id = ? AND r.report_date = ?
-       AND ((r.branch_id IS NULL AND ? IS NULL) OR r.branch_id = ?)`
-  ).get(authorUserId, reportDate, branchId, branchId) as ManagerReportRow | undefined;
+export function deleteManagerReport(db: Database.Database, id: number): void {
+  db.prepare("DELETE FROM manager_reports WHERE id = ?").run(id);
 }
