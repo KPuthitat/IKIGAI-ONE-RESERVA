@@ -7,7 +7,7 @@ import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
-import { computeMonthlySvcSummary } from "@/lib/service-charge";
+import { computeMonthlySvcSummary, computeCompanySvcSummary } from "@/lib/service-charge";
 import { Icon } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
@@ -254,20 +254,37 @@ export default function PayrollMonthlySummaryPage({
   const svcMonth = shiftMonth(month, -1);
   type SvcAgg = { gross: number; wht: number; gi: number; net: number };
   const svcByUserCompany = new Map<string, SvcAgg>();
+  const addSvc = (k: string, row: { netAllocation: number; whtAmount: number; groupInsurance: number; netPayout: number }) => {
+    if (!row.netAllocation && !row.netPayout) return;
+    const cur = svcByUserCompany.get(k) ?? { gross: 0, wht: 0, gi: 0, net: 0 };
+    cur.gross += row.netAllocation;
+    cur.wht += row.whtAmount;
+    cur.gi += row.groupInsurance;
+    cur.net += row.netPayout;
+    svcByUserCompany.set(k, cur);
+  };
+  // Source SVC from the SAME engine as the real payout (owner 2026-09-03): the
+  // company-level summary routes รวมกอง (shared-pool) months to the company-wide
+  // split AND applies manual gross overrides — the two things per-branch summing
+  // got wrong, so the summary showed SVC that was never actually paid (e.g.
+  // ฐิติรัตน์ 1,556.91 vs the real 1,416.70). This month total feeds the ใบหัก ณ
+  // ที่จ่าย, so it must tie out to the pocket exactly. One computeCompanySvcSummary
+  // per company; legacy branches with no company_id fall back to per-branch.
+  const seenCompany = new Set<number>();
   for (const cb of companyBranches) {
+    if (cb.company_id == null || seenCompany.has(cb.company_id)) continue;
+    seenCompany.add(cb.company_id);
+    let svc;
+    try { svc = computeCompanySvcSummary(cb.company_id, svcMonth); }
+    catch { continue; }
+    for (const row of svc.rows) addSvc(`${row.userId}|${String(cb.company_id)}`, row);
+  }
+  for (const cb of companyBranches) {
+    if (cb.company_id != null) continue; // pre-migration NULL-company branch
     let svc;
     try { svc = computeMonthlySvcSummary(cb.branch_id, svcMonth); }
     catch { continue; }
-    for (const row of svc.rows) {
-      if (!row.netAllocation && !row.netPayout) continue;
-      const k = `${row.userId}|${String(cb.company_id)}`;
-      const cur = svcByUserCompany.get(k) ?? { gross: 0, wht: 0, gi: 0, net: 0 };
-      cur.gross += row.netAllocation;
-      cur.wht += row.whtAmount;
-      cur.gi += row.groupInsurance;
-      cur.net += row.netPayout;
-      svcByUserCompany.set(k, cur);
-    }
+    for (const row of svc.rows) addSvc(`${row.userId}|${String(cb.company_id)}`, row);
   }
   const svcFor = (userId: number, companyKey: number | null): SvcAgg =>
     svcByUserCompany.get(`${userId}|${String(companyKey)}`) ?? { gross: 0, wht: 0, gi: 0, net: 0 };
