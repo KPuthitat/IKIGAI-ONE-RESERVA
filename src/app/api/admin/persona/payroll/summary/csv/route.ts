@@ -2,14 +2,18 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { rowsToCsv, type CsvCell } from "@/lib/csv";
 import { nameWithPrefix } from "@/lib/name";
+import { computeMonthlySvcSummary, computeCompanySvcSummary } from "@/lib/service-charge";
 
 // GET /api/admin/persona/payroll/summary/csv?m=YYYY-MM
 // Per-employee monthly payroll summary as CSV — one row per employee with the
-// totals across every pay round whose pay_date falls in the month. For making
-// downstream documents (ภ.ง.ด.1 / SSO / bank records). Includes รหัส + เลขบัตร +
-// gross / SSO / WHT / net so the sheet feeds those forms directly.
+// totals across every pay round whose pay_date falls in the month, PLUS the
+// service charge that hit their pocket that month (owner 2026-09-03: the sheet
+// feeds the ใบหัก ณ ที่จ่าย, which MUST include SVC income + its 3% WHT). For
+// making downstream documents (ภ.ง.ด.1 / SSO / bank). Includes รหัส + เลขบัตร +
+// ค่าตอบแทน / เซอร์วิสชาร์จ / เงินได้รวม / ปกส. / ภาษี / ประกันกลุ่ม / สุทธิ.
 
 type Row = {
+  user_id: number;
   display_name: string;
   title_prefix: string | null;
   employee_code: string | null;
@@ -29,6 +33,12 @@ function monthRange(ym: string): { from: string; to: string } {
   return { from: `${ym}-01`, to: `${ym}-${String(lastDay).padStart(2, "0")}` };
 }
 
+function shiftMonth(ym: string, delta: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const total = y * 12 + (m - 1) + delta;
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
+}
+
 export async function GET(req: Request) {
   const user = getSessionUser();
   if (!user) return new Response("unauthenticated", { status: 401 });
@@ -37,9 +47,11 @@ export async function GET(req: Request) {
   const m = new URL(req.url).searchParams.get("m") ?? "";
   if (!/^\d{4}-\d{2}$/.test(m)) return new Response("invalid_month", { status: 400 });
   const { from, to } = monthRange(m);
+  const db = getDb();
 
-  const rows = getDb().prepare(`
-    SELECT pl.display_name,
+  const rows = db.prepare(`
+    SELECT pl.user_id,
+           pl.display_name,
            u.title_prefix,
            MAX(pl.employee_code) AS employee_code,
            u.national_id,
@@ -60,32 +72,94 @@ export async function GET(req: Request) {
              pl.display_name
   `).all(from, to) as Row[];
 
+  // Service charge landing in THIS month = the PREVIOUS month's accrual, paid ~the
+  // 20th (owner 2026-08-02) — same rule as the summary page and the payslip. Source
+  // it from the SAME engine as the real payout (computeCompanySvcSummary: shared-
+  // pool + gross-override aware) so the certificate ties out to the pocket. Summed
+  // per USER across companies for this flat per-employee sheet.
+  const svcMonth = shiftMonth(m, -1);
+  type SvcAgg = { gross: number; wht: number; gi: number; net: number };
+  const svcByUser = new Map<number, SvcAgg>();
+  const addSvc = (userId: number, r: { netAllocation: number; whtAmount: number; groupInsurance: number; netPayout: number }) => {
+    if (!r.netAllocation && !r.netPayout) return;
+    const cur = svcByUser.get(userId) ?? { gross: 0, wht: 0, gi: 0, net: 0 };
+    cur.gross += r.netAllocation; cur.wht += r.whtAmount; cur.gi += r.groupInsurance; cur.net += r.netPayout;
+    svcByUser.set(userId, cur);
+  };
+  const companyBranches = db.prepare(`
+    SELECT DISTINCT b.id AS branch_id, b.company_id AS company_id
+    FROM payroll_periods pp
+    JOIN branches b ON b.id = pp.branch_id
+    WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
+  `).all(from, to) as Array<{ branch_id: number; company_id: number | null }>;
+  const seenCompany = new Set<number>();
+  for (const cb of companyBranches) {
+    if (cb.company_id == null || seenCompany.has(cb.company_id)) continue;
+    seenCompany.add(cb.company_id);
+    try { for (const r of computeCompanySvcSummary(cb.company_id, svcMonth).rows) addSvc(r.userId, r); }
+    catch { /* svc data may be absent for a company */ }
+  }
+  for (const cb of companyBranches) {
+    if (cb.company_id != null) continue; // pre-migration NULL-company branch
+    try { for (const r of computeMonthlySvcSummary(cb.branch_id, svcMonth).rows) addSvc(r.userId, r); }
+    catch { /* no svc for this branch */ }
+  }
+  const svcFor = (userId: number): SvcAgg => svcByUser.get(userId) ?? { gross: 0, wht: 0, gi: 0, net: 0 };
+
   const headers = [
     "ชื่อ-นามสกุล", "รหัสพนักงาน", "เลขบัตรประชาชน", "ประเภทจ้าง", "รูปแบบภาษี",
-    "เงินได้รวม", "ประกันสังคม", "ภาษีหัก ณ ที่จ่าย", "เงินสุทธิที่รับ", "จำนวนรอบจ่าย"
+    "ค่าตอบแทน", "เซอร์วิสชาร์จ", "เงินได้รวม",
+    "ประกันสังคม", "ภาษีหัก ณ ที่จ่าย", "ประกันกลุ่ม", "เงินสุทธิที่รับ", "จำนวนรอบจ่าย"
   ];
   const typeLabel = (t: string | null) => (t === "ft" ? "รายเดือน (FT)" : t === "pt" ? "รายวัน (PT)" : "");
   const taxLabel = (t: string | null) => (t === "sso" ? "ประกันสังคม" : t === "wht" ? "หัก ณ ที่จ่าย" : "");
 
-  const body: CsvCell[][] = rows.map((r) => [
-    nameWithPrefix(r.title_prefix, r.display_name),
-    r.employee_code ?? "",
-    r.national_id ?? "",
-    typeLabel(r.employment_type),
-    taxLabel(r.salary_tax_mode_snapshot),
-    (r.total_gross ?? 0).toFixed(2),
-    (r.total_sso ?? 0).toFixed(2),
-    (r.total_tax ?? 0).toFixed(2),
-    (r.total_net ?? 0).toFixed(2),
-    String(r.period_count ?? 0)
-  ]);
+  // Per-employee figures in the page's statement order: ค่าตอบแทน + SVC gross =
+  // เงินได้รวม; ภาษี = wage WHT + SVC WHT; สุทธิ = income − (ปกส. + ภาษี + ประกันกลุ่ม).
+  const figures = (r: Row) => {
+    const svc = svcFor(r.user_id);
+    const comp = r.total_gross ?? 0;
+    const income = comp + svc.gross;
+    const sso = r.total_sso ?? 0;
+    const tax = (r.total_tax ?? 0) + svc.wht;
+    const gi = svc.gi;
+    return { comp, svcGross: svc.gross, income, sso, tax, gi, take: income - sso - tax - gi };
+  };
+
+  const body: CsvCell[][] = rows.map((r) => {
+    const f = figures(r);
+    return [
+      nameWithPrefix(r.title_prefix, r.display_name),
+      r.employee_code ?? "",
+      r.national_id ?? "",
+      typeLabel(r.employment_type),
+      taxLabel(r.salary_tax_mode_snapshot),
+      f.comp.toFixed(2),
+      f.svcGross.toFixed(2),
+      f.income.toFixed(2),
+      f.sso.toFixed(2),
+      f.tax.toFixed(2),
+      f.gi.toFixed(2),
+      f.take.toFixed(2),
+      String(r.period_count ?? 0)
+    ];
+  });
 
   // Totals row
-  const sum = (k: keyof Row) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+  const tot = rows.reduce(
+    (a, r) => {
+      const f = figures(r);
+      return {
+        comp: a.comp + f.comp, svcGross: a.svcGross + f.svcGross, income: a.income + f.income,
+        sso: a.sso + f.sso, tax: a.tax + f.tax, gi: a.gi + f.gi, take: a.take + f.take
+      };
+    },
+    { comp: 0, svcGross: 0, income: 0, sso: 0, tax: 0, gi: 0, take: 0 }
+  );
   body.push([
     "รวมทั้งหมด", "", "", "", "",
-    sum("total_gross").toFixed(2), sum("total_sso").toFixed(2),
-    sum("total_tax").toFixed(2), sum("total_net").toFixed(2), ""
+    tot.comp.toFixed(2), tot.svcGross.toFixed(2), tot.income.toFixed(2),
+    tot.sso.toFixed(2), tot.tax.toFixed(2), tot.gi.toFixed(2), tot.take.toFixed(2), ""
   ]);
 
   const csv = "﻿" + rowsToCsv(headers, body); // BOM for Excel Thai
