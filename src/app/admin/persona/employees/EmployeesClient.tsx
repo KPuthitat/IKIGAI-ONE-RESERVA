@@ -1068,6 +1068,26 @@ function EditModal({
     }
   }
 
+  // เปลี่ยนสภาพการจ้าง = วันเดียว (owner 2026-09-03): the ONE effective date the
+  // admin sets for the FT/PT change is also what should drive the SSO/WHT tax
+  // boundary (users.sso_start_month) — เดือนก่อนหน้ายังหัก ณ ที่จ่าย 3% (ยังไม่เข้า
+  // ประกันสังคม) ทั้งเซอร์วิสชาร์จ + เงินเดือน. Derive the change's effective date from
+  // whichever transition is in play so the SSO section can link to it in one click,
+  // instead of the admin having to remember to set the month separately (the bug
+  // that made ฐิติรัตน์ never get the 3% deduction).
+  const employmentChangeDate: string | null =
+    (employmentType === "ft" && employee.employment_type === "pt" && /^\d{4}-\d{2}-\d{2}$/.test(ftEffectiveDate)) ? ftEffectiveDate
+    : (employmentType === "ft" && employee.employment_type !== "ft" && employee.employment_type !== "pt" && /^\d{4}-\d{2}-\d{2}$/.test(hireDate)) ? hireDate
+    : (employmentType === "ft" && employee.employment_type === "ft" && ptEffectiveDate.trim() !== "" && /^\d{4}-\d{2}-\d{2}$/.test(ptEffectiveDate)) ? ptEffectiveDate
+    : null;
+  const employmentChangeMonth = employmentChangeDate ? employmentChangeDate.slice(0, 7) : null;
+  const thMonthLabel = (ym: string): string => {
+    const TH = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+      "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+    const [y, m] = ym.split("-").map(Number);
+    return (m >= 1 && m <= 12 && y) ? `${TH[m - 1]} ${y + 543}` : ym;
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div
@@ -1645,11 +1665,25 @@ function EditModal({
                 </p>
               </div>
 
-              {/* เดือนเข้าประกันสังคม (owner 2026-09-03) — เฉพาะคน SSO. SVC ของเดือน
-                  ก่อนหน้านี้ยังหัก ณ ที่จ่าย 3% (ตอนนั้นยังไม่เข้า SSO). */}
+              {/* เดือนเข้าประกันสังคม (owner 2026-09-03) — เฉพาะคน SSO. เดือนก่อนหน้านี้
+                  ยังหัก ณ ที่จ่าย 3% ทั้งเซอร์วิสชาร์จ + เงินเดือน (ตอนนั้นยังไม่เข้า SSO).
+                  ผูกกับวันที่เปลี่ยนสภาพการจ้าง = ตั้งครั้งเดียว จบทั้งสองระบบ. */}
               {taxMode === "sso" && (
                 <div className="mt-4">
                   <label className="block text-sm font-medium text-slate-700 mb-1">เดือนเข้าประกันสังคม</label>
+                  {/* One-click link to the employment-change date so the admin sets ONE
+                      date for both the FT/PT switch AND the tax boundary. Highlighted
+                      while a change is in play and the SSO month doesn't match it yet. */}
+                  {employmentChangeMonth && ssoStartMonth !== employmentChangeMonth && (
+                    <button type="button" onClick={() => setSsoStartMonth(employmentChangeMonth)}
+                      className="mb-2 flex w-full items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-left text-xs text-amber-800 hover:bg-amber-100 transition">
+                      <span className="text-sm leading-none">↔</span>
+                      <span className="leading-relaxed">
+                        เปลี่ยนสภาพการจ้างมีผล <b>{thMonthLabel(employmentChangeMonth)}</b> —
+                        กดเพื่อตั้งให้เข้าประกันสังคมเดือนเดียวกัน (เดือนก่อนหน้าหัก ณ ที่จ่าย 3%)
+                      </span>
+                    </button>
+                  )}
                   <select
                     value={ssoStartMonth}
                     onChange={(e) => setSsoStartMonth(e.target.value)}
@@ -1665,12 +1699,15 @@ function EditModal({
                         const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + off, 1));
                         opts.push({ v: d.toISOString().slice(0, 7), label: `${TH_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}` });
                       }
-                      if (ssoStartMonth && !opts.some((o) => o.v === ssoStartMonth)) opts.unshift({ v: ssoStartMonth, label: ssoStartMonth });
+                      // Keep the employment-change month + any stored value selectable
+                      // even if outside the ±window.
+                      if (employmentChangeMonth && !opts.some((o) => o.v === employmentChangeMonth)) opts.unshift({ v: employmentChangeMonth, label: thMonthLabel(employmentChangeMonth) });
+                      if (ssoStartMonth && !opts.some((o) => o.v === ssoStartMonth)) opts.unshift({ v: ssoStartMonth, label: thMonthLabel(ssoStartMonth) });
                       return opts.map((o) => <option key={o.v} value={o.v}>{o.label}</option>);
                     })()}
                   </select>
                   <p className="text-xs text-slate-500 mt-1">
-                    เซอร์วิสชาร์จของเดือน<b>ก่อน</b>เดือนนี้จะหัก ณ ที่จ่าย 3% (ตอนนั้นยังไม่เข้าประกันสังคม)
+                    เดือน<b>ก่อน</b>เดือนนี้จะหัก ณ ที่จ่าย 3% ทั้ง<b>เซอร์วิสชาร์จ + เงินเดือน</b> (ตอนนั้นยังไม่เข้าประกันสังคม)
                   </p>
                 </div>
               )}
