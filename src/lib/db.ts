@@ -1109,6 +1109,19 @@ function runMigrations(db: Database.Database): void {
   if (!phcols.some((c) => c.name === "double_pay")) {
     db.exec("ALTER TABLE public_holidays ADD COLUMN double_pay INTEGER NOT NULL DEFAULT 0");
   }
+  // Per-branch scope for holiday premiums (owner 2026-09-05): a วันจ่ายสองเท่า
+  // (double_pay) หรือ วันพิเศษ PT (pt_special) can be limited to specific branches
+  // — clinic vs restaurant don't share the same 2×/1.5× days. A date with NO rows
+  // here applies to EVERY branch (backward compatible with all existing data); a
+  // date WITH rows applies only to the listed branches. Governs both flags for the
+  // date (one scope per date keeps the picker simple).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS holiday_branch_scope (
+      date TEXT NOT NULL,
+      branch_id INTEGER NOT NULL,
+      PRIMARY KEY (date, branch_id)
+    );
+  `);
   // Seed Thai public holidays — ON CONFLICT DO NOTHING เพื่อไม่ทับค่าที่แอดมินแก้
   // วันลูนาร์เป็นค่าประมาณ — แอดมินปรับผ่าน /admin/persona/holidays ได้
   const seedHoliday = db.prepare(`

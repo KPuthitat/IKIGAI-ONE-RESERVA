@@ -12,7 +12,11 @@ export async function DELETE(_req: Request, { params }: { params: { date: string
     return NextResponse.json({ error: "invalid_date" }, { status: 400 });
   }
 
-  const result = getDb().prepare("DELETE FROM public_holidays WHERE date = ?").run(params.date);
+  const db = getDb();
+  const result = db.transaction(() => {
+    db.prepare("DELETE FROM holiday_branch_scope WHERE date = ?").run(params.date);
+    return db.prepare("DELETE FROM public_holidays WHERE date = ?").run(params.date);
+  })();
   if (result.changes === 0) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
