@@ -5870,6 +5870,11 @@ function runMigrations(db: Database.Database): void {
       skills_other TEXT,
       /** [{ name, relationship, phone }] — required 2 by convention */
       references_json TEXT NOT NULL DEFAULT '[]',
+      /** ผู้แนะนำ (referral, owner 2026-09-03) — users.id ของพนักงานที่แนะนำผู้สมัคร
+       *  คนนี้มา. NULL = ไม่มีผู้แนะนำ. เลือกตอนสมัคร ล็อกไม่ให้แก้ภายหลัง. ใช้คำนวณ
+       *  ค่าแนะนำ 500฿ เมื่อผู้ถูกแนะนำผ่านเกณฑ์ (อายุงาน 119 วัน + ขาด/สาย ≤20% +
+       *  ส่งเวร ≥50%). */
+      referred_by_user_id INTEGER,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT
     );
@@ -6018,6 +6023,12 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_recruita_slots_booked
       ON recruita_interview_slots(booked_application_id);
   `);
+
+  // Referral (owner 2026-09-03) — the referrer a candidate picked at apply time.
+  // Added here (not inline) so existing DBs gain the column idempotently at boot.
+  if (!columnExists(db, "recruita_candidates", "referred_by_user_id")) {
+    db.exec("ALTER TABLE recruita_candidates ADD COLUMN referred_by_user_id INTEGER");
+  }
 
   // RC-2 (owner 2026-06-13) — one LINE account per candidate. The removed
   // phone-search bind (RC-1) let the same line_user_id sit on multiple

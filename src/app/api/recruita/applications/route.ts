@@ -70,6 +70,10 @@ const Payload = z.object({
    *  IKIGAI Recruit OA). Web-form applicants send null. Capturing
    *  here lets the stage-change push reach the candidate directly. */
   line_user_id: z.string().max(80).nullable().optional(),
+  /** ผู้แนะนำ (referral, owner 2026-09-03) — users.id of the employee who
+   *  referred this applicant. Validated below to be a real active employee;
+   *  ignored if not. Drives the 500฿ referral reward on qualification. */
+  referred_by_user_id: z.number().int().positive().nullable().optional(),
   // Identity — คำนำหน้า is mandatory at the source (owner #9 2026-06-06)
   // so every candidate (and the employee they become on hire) carries a
   // title prefix from day one.
@@ -257,6 +261,17 @@ export async function POST(req: Request) {
     }
   }
 
+  // Validate the picked referrer is a real, active employee (owner 2026-09-03).
+  // An invalid/absent pick is silently ignored (null) — never fail the
+  // application over it. The referrer is locked to the FIRST application below.
+  let validReferrerId: number | null = null;
+  if (d.referred_by_user_id) {
+    const ref = db.prepare(
+      "SELECT id FROM users WHERE id = ? AND role IN ('staff','admin') AND status NOT IN ('disabled','resigned','terminated') AND is_test_account = 0"
+    ).get(d.referred_by_user_id) as { id: number } | undefined;
+    if (ref) validReferrerId = ref.id;
+  }
+
   // ── Insert / update candidate ─────────────────────────────
   if (candidateId == null) {
     const info = db.prepare(`
@@ -272,8 +287,8 @@ export async function POST(req: Request) {
          personal_email, mobile_phone, line_id, house_address,
          emergency_name, emergency_relationship, emergency_phone,
          education_json, experience_json, skills_language_json,
-         skills_other, references_json)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         skills_other, references_json, referred_by_user_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       dedupeHash,
       effectiveLineUserId,
@@ -295,7 +310,8 @@ export async function POST(req: Request) {
       d.emergency_phone || null,
       toJsonArr(d.education), toJsonArr(d.experience), toJsonArr(d.skills_language),
       d.skills_other || null,
-      JSON.stringify([])  // references_json reserved for future explicit-list UI
+      JSON.stringify([]),  // references_json reserved for future explicit-list UI
+      validReferrerId
     );
     candidateId = Number(info.lastInsertRowid);
   } else {
@@ -340,6 +356,9 @@ export async function POST(req: Request) {
         emergency_phone = COALESCE(?, emergency_phone),
         education_json = ?, experience_json = ?, skills_language_json = ?,
         skills_other = COALESCE(?, skills_other),
+        -- Referrer locks to the FIRST application (owner 2026-09-03: แก้ไม่ได้
+        -- ภายหลัง) — keep the stored value if already set, else take the new pick.
+        referred_by_user_id = COALESCE(referred_by_user_id, ?),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
@@ -359,6 +378,7 @@ export async function POST(req: Request) {
       d.emergency_phone || null,
       toJsonArr(d.education), toJsonArr(d.experience), toJsonArr(d.skills_language),
       d.skills_other || null,
+      validReferrerId,
       candidateId
     );
   }
