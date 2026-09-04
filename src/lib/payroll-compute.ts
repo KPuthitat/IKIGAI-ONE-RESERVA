@@ -1435,6 +1435,40 @@ function round2(x: number): number {
   return Math.round(x * 100) / 100;
 }
 
+/**
+ * Does a branch-scoped holiday premium apply in this period's branch? (owner
+ * 2026-09-05). A วันจ่ายสองเท่า (double_pay) / วันพิเศษ PT (pt_special) may be
+ * limited to specific branches. Semantics:
+ *   - no scope rows (undefined/empty) → applies to EVERY branch (backward compat)
+ *   - scoped, but the period spans all branches (branch_id null) → keep it
+ *   - scoped → applies only when the period's branch is in the scope
+ */
+export function holidayPremiumApplies(
+  scopeBranchIds: number[] | null | undefined, periodBranchId: number | null
+): boolean {
+  if (!scopeBranchIds || scopeBranchIds.length === 0) return true;
+  if (periodBranchId == null) return true;
+  return scopeBranchIds.includes(periodBranchId);
+}
+
+/**
+ * Branch-scoped holiday-premium filter (owner 2026-09-05). Reads
+ * holiday_branch_scope for the window and returns a predicate over dates that
+ * decides — via holidayPremiumApplies — whether each premium date applies to
+ * this period's branch. Legacy NULL-branch periods keep every date.
+ */
+function holidayBranchFilter(
+  db: Database.Database, start: string, end: string, periodBranchId: number | null
+): (date: string) => boolean {
+  const scoped = new Map<string, number[]>();
+  for (const r of db.prepare(
+    "SELECT date, branch_id FROM holiday_branch_scope WHERE date >= ? AND date <= ?"
+  ).all(start, end) as Array<{ date: string; branch_id: number }>) {
+    (scoped.get(r.date) ?? scoped.set(r.date, []).get(r.date)!).push(r.branch_id);
+  }
+  return (date: string): boolean => holidayPremiumApplies(scoped.get(date), periodBranchId);
+}
+
 /** ลาไม่รับค่าจ้าง deduction: salary/30 per day, FT only (a PT's unpaid
  *  leave is already no-shift = no pay, so nothing to deduct). Clamped so it
  *  never drives base pay below zero. owner 2026-06-17. */
@@ -1690,15 +1724,18 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   // PT 1.5× premium applies ONLY on designated "วันพิเศษ" (pt_special=1),
   // NOT on every public holiday (owner 2026-06-03). Public holidays are
   // now informational only.
+  // วันพิเศษ PT / วันจ่ายสองเท่า can be limited to specific branches (owner
+  // 2026-09-05) — filter both sets to dates that apply to THIS period's branch.
+  const holidayApplies = holidayBranchFilter(db, period.period_start, period.period_end, period.branch_id);
   const holidays = db.prepare(`
     SELECT date FROM public_holidays
     WHERE date >= ? AND date <= ? AND pt_special = 1
   `).all(period.period_start, period.period_end) as Array<{ date: string }>;
-  const holidaySet = new Set(holidays.map((h) => h.date));
+  const holidaySet = new Set(holidays.map((h) => h.date).filter(holidayApplies));
   // วันจ่ายสองเท่า in period (owner 2026-07-21) — 2× base + OT for EVERYONE.
   const doubleSet = new Set(
     (db.prepare(`SELECT date FROM public_holidays WHERE date >= ? AND date <= ? AND double_pay = 1`)
-      .all(period.period_start, period.period_end) as Array<{ date: string }>).map((h) => h.date)
+      .all(period.period_start, period.period_end) as Array<{ date: string }>).map((h) => h.date).filter(holidayApplies)
   );
   // ทำงานวันหยุดประเพณี "ใช้สิทธิ์" (owner 2026-08-04) — 2× เฉพาะคนที่แอดมินเลือก
   // 'use' ในวันนั้น (แยกจาก double_pay ที่เป็นทั้งบริษัท). keyed user → set(dates).
@@ -2372,18 +2409,21 @@ export function recomputeLine(
   const fromIso = new Date(`${period.period_start}T00:00:00+07:00`).toISOString();
   const toIso = new Date(`${period.period_end}T23:59:59+07:00`).toISOString();
 
-  // PT 1.5× premium = designated วันพิเศษ only (pt_special=1).
+  // PT 1.5× premium = designated วันพิเศษ only (pt_special=1). Branch-scoped like
+  // computePayrollPeriod (owner 2026-09-05) — a premium day limited to other
+  // branches doesn't apply in this period's branch.
+  const holidayApplies = holidayBranchFilter(db, period.period_start, period.period_end, period.branch_id);
   const holidays = db.prepare(`
     SELECT date FROM public_holidays
     WHERE date >= ? AND date <= ? AND pt_special = 1
   `).all(period.period_start, period.period_end) as Array<{ date: string }>;
-  const holidaySet = new Set(holidays.map((h) => h.date));
+  const holidaySet = new Set(holidays.map((h) => h.date).filter(holidayApplies));
   // วันจ่ายสองเท่า in period (owner 2026-07-21) — 2× base + OT for EVERYONE,
   // plus this user's "ใช้สิทธิ์" holiday-work days (owner 2026-08-04) → 2× for
   // them only. Matches computePayrollPeriod's doubleSetFor(userId).
   const doubleSet = new Set(
     (db.prepare(`SELECT date FROM public_holidays WHERE date >= ? AND date <= ? AND double_pay = 1`)
-      .all(period.period_start, period.period_end) as Array<{ date: string }>).map((h) => h.date)
+      .all(period.period_start, period.period_end) as Array<{ date: string }>).map((h) => h.date).filter(holidayApplies)
   );
   for (const r of db.prepare(
     `SELECT work_date FROM holiday_work_choices

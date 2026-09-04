@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import {
   applyPtGrace, pickScheduled, deductBreak, splitRegularOt, computeOtPay,
   overlaySwapShifts, branchHourlyRateSelect, keepEntryForBranch, loadDayBranchMap,
+  holidayPremiumApplies,
   type ScheduledShift, type PayrollSettings
 } from "@/lib/payroll-compute";
 import { resolveSiblingPeriods } from "@/lib/payroll-cycle";
@@ -197,14 +198,25 @@ export async function GET(
   const phRows = db.prepare(`
     SELECT date, pt_special, double_pay FROM public_holidays WHERE date >= ? AND date <= ?
   `).all(period.period_start, period.period_end) as Array<{ date: string; pt_special: number; double_pay: number }>;
-  const holidaySet = new Set(phRows.filter((h) => h.pt_special === 1).map((h) => h.date));
+  // Per-branch premium scope (owner 2026-09-05) — mirror the pay engine so the
+  // modal doesn't show ×1.5/×2 on a day whose premium is scoped to a different
+  // branch. A date with no scope rows applies everywhere. publicHolidaySet stays
+  // unfiltered (info-only "วันหยุด" marker, not pay).
+  const premiumScope = new Map<string, number[]>();
+  for (const r of db.prepare(
+    "SELECT date, branch_id FROM holiday_branch_scope WHERE date >= ? AND date <= ?"
+  ).all(period.period_start, period.period_end) as Array<{ date: string; branch_id: number }>) {
+    (premiumScope.get(r.date) ?? premiumScope.set(r.date, []).get(r.date)!).push(r.branch_id);
+  }
+  const premiumApplies = (date: string) => holidayPremiumApplies(premiumScope.get(date), period.branch_id);
+  const holidaySet = new Set(phRows.filter((h) => h.pt_special === 1 && premiumApplies(h.date)).map((h) => h.date));
   const publicHolidaySet = new Set(phRows.map((h) => h.date));
   // วันจ่ายสองเท่า (double_pay=1) → PT 2× on both base + OT, and it WINS over the
   // 1.5× วันพิเศษ premium. This must mirror the pay engine (payroll-compute.ts
   // computeShiftBasedPay, `mult = isDouble ? 2 : isHoliday ? 1.5 : 1`) — without
   // it the modal showed PT days at 1× while the actual line was paid 2× (owner
   // 2026-07-28: "2x ยังไม่มีผลกับพาร์ทไทม์").
-  const doubleSet = new Set(phRows.filter((h) => h.double_pay === 1).map((h) => h.date));
+  const doubleSet = new Set(phRows.filter((h) => h.double_pay === 1 && premiumApplies(h.date)).map((h) => h.date));
   // ทำงานวันหยุดประเพณี "ใช้สิทธิ์" ของ user คนนี้ (owner 2026-08-04) → 2× เฉพาะเขา,
   // mirror doubleSetFor() ในเครื่องคิดเงิน เพื่อให้ modal per-day ตรงกับยอดจริง.
   const holidayChoiceByDate = new Map<string, "defer" | "use">();

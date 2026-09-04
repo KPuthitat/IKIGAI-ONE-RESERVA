@@ -15,16 +15,22 @@ export type HolidayRow = {
   name_en: string;
   is_workday: number;
   pt_special: number;
+  // Per-branch scope for the premium flags (owner 2026-09-05). Empty = ทุกสาขา.
+  branch_ids?: number[];
 };
+
+type BranchLite = { id: number; name: string };
 
 export default function HolidaysClient({
   holidays,
   currentYear,
-  yearList
+  yearList,
+  branches
 }: {
   holidays: HolidayRow[];
   currentYear: string;
   yearList: string[];
+  branches: BranchLite[];
 }) {
   const router = useRouter();
   const { t, formatDate, lang } = useLang();
@@ -32,6 +38,13 @@ export default function HolidaysClient({
   const [editTarget, setEditTarget] = useState<HolidayRow | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const { confirm, alert, ConfirmDialog } = useConfirm();
+  const branchName = new Map(branches.map((b) => [b.id, b.name]));
+  const scopeLabel = (h: HolidayRow): string => {
+    if (!h.pt_special && !h.double_pay) return "";
+    const ids = h.branch_ids ?? [];
+    if (ids.length === 0) return "ทุกสาขา";
+    return ids.map((id) => branchName.get(id) ?? `#${id}`).join(", ");
+  };
 
   async function deleteHoliday(date: string) {
     const ok = await confirm({
@@ -100,6 +113,7 @@ export default function HolidaysClient({
                 <th className="py-2 pr-3">{t("admin.persona.holidays.col.workday")}</th>
                 <th className="py-2 pr-3">วันพิเศษ PT</th>
                 <th className="py-2 pr-3">จ่าย 2 เท่า</th>
+                <th className="py-2 pr-3">สาขาที่มีผล</th>
                 <th className="py-2 pr-3 w-32"></th>
               </tr>
             </thead>
@@ -133,6 +147,11 @@ export default function HolidaysClient({
                         </span>
                       : <span className="text-xs text-slate-400">—</span>}
                   </td>
+                  <td className="py-2 pr-3">
+                    {scopeLabel(h)
+                      ? <span className={`text-xs ${(h.branch_ids?.length ?? 0) === 0 ? "text-slate-500" : "font-medium text-slate-700"}`}>{scopeLabel(h)}</span>
+                      : <span className="text-xs text-slate-400">—</span>}
+                  </td>
                   <td className="py-2 pr-3 text-right">
                     <button
                       type="button"
@@ -160,6 +179,7 @@ export default function HolidaysClient({
       {(editTarget || showAdd) && (
         <HolidayModal
           existing={editTarget}
+          branches={branches}
           onClose={() => { setEditTarget(null); setShowAdd(false); }}
           onSaved={() => {
             setEditTarget(null);
@@ -174,9 +194,10 @@ export default function HolidaysClient({
 }
 
 function HolidayModal({
-  existing, onClose, onSaved
+  existing, branches, onClose, onSaved
 }: {
   existing: HolidayRow | null;
+  branches: BranchLite[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -187,8 +208,16 @@ function HolidayModal({
   const [isWorkday, setIsWorkday] = useState(Boolean(existing?.is_workday));
   const [ptSpecial, setPtSpecial] = useState(Boolean(existing?.pt_special));
   const [doublePay, setDoublePay] = useState(Boolean(existing?.double_pay));
+  // Per-branch scope (owner 2026-09-05). Empty set = ทุกสาขา. Only meaningful when
+  // pt_special or double_pay is on; the picker is hidden otherwise.
+  const [scopeIds, setScopeIds] = useState<Set<number>>(new Set(existing?.branch_ids ?? []));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const toggleBranch = (id: number) => setScopeIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   async function save() {
     setErr(null);
@@ -199,7 +228,12 @@ function HolidayModal({
       const res = await fetch(apiUrl("/api/admin/persona/holidays"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, name_th: nameTh, name_en: nameEn, is_workday: isWorkday, pt_special: ptSpecial, double_pay: doublePay })
+        body: JSON.stringify({
+          date, name_th: nameTh, name_en: nameEn, is_workday: isWorkday,
+          pt_special: ptSpecial, double_pay: doublePay,
+          // Scope is only relevant when a premium is on; otherwise clear it.
+          branch_ids: (ptSpecial || doublePay) ? Array.from(scopeIds) : []
+        })
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) onSaved();
@@ -271,6 +305,37 @@ function HolidayModal({
             </span>
           </span>
         </label>
+
+        {(ptSpecial || doublePay) && branches.length > 0 && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+            <div className="text-sm font-medium text-slate-700">
+              สาขาที่ใช้เรทพิเศษวันนี้
+              <span className="block text-[11px] font-normal text-slate-400">
+                ไม่เลือกสาขาใดเลย = มีผลทุกสาขา · เลือกบางสาขา = มีผลเฉพาะสาขาที่เลือก (คลินิกกับร้านอาหารกำหนดคนละวันได้)
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {branches.map((b) => {
+                const on = scopeIds.has(b.id);
+                return (
+                  <button
+                    key={b.id} type="button" onClick={() => toggleBranch(b.id)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                      on ? "bg-brand text-white border-brand" : "bg-white text-slate-600 border-slate-300 hover:border-brand"
+                    }`}
+                  >
+                    {b.name}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-slate-500">
+              {scopeIds.size === 0
+                ? "ตอนนี้: มีผลทุกสาขา"
+                : `ตอนนี้: เฉพาะ ${branches.filter((b) => scopeIds.has(b.id)).map((b) => b.name).join(", ")}`}
+            </p>
+          </div>
+        )}
 
         {err && <div className="text-rose-600 text-sm">{err}</div>}
 

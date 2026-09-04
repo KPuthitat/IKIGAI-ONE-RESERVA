@@ -4,7 +4,7 @@
 // Guarantees: salary/30 per unpaid day, FT only, default 0 = no change,
 // and the deduction never drives base pay negative.
 
-import { computeLineFromMinutes, computeLineForEmployee, computeSso, computeHelperLine, countClockInDays, helperMode, applyPtGrace, keepEntryForBranch, overridesToShiftMap, effectiveTaxModeForMonth, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
+import { computeLineFromMinutes, computeLineForEmployee, computeSso, computeHelperLine, countClockInDays, helperMode, applyPtGrace, keepEntryForBranch, overridesToShiftMap, effectiveTaxModeForMonth, holidayPremiumApplies, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
 
 const SETTINGS: PayrollSettings = {
   ot_mode: "flat", ot_flat_per_15min: 0,
@@ -593,6 +593,24 @@ console.log("\nวันจ่ายสองเท่า (owner 2026-07-21):");
 
   // วันปกติ (ไม่อยู่ใน doubleSet) → ไม่เปลี่ยน.
   eq("วันที่ไม่ได้ตั้ง 2 เท่า → PT ฐานปกติ", ptN.base_pay, 400);
+}
+
+// N2. แยกสาขาสำหรับวันจ่ายสองเท่า / วันพิเศษ PT (owner 2026-09-05) — เลือกได้ว่า
+//     วันพรีเมียมมีผลกับสาขาไหนบ้าง. ไม่ตั้งสาขา = ทุกสาขา; ตั้งบางสาขา = เฉพาะนั้น.
+console.log("\nแยกสาขา วันพรีเมียม (owner 2026-09-05):");
+{
+  const A = 1, B = 2;
+  const b = (n: boolean) => (n ? 1 : 0);
+  // ไม่มีสาขากำหนด (unscoped) → มีผลทุกสาขา.
+  eq("ไม่ตั้งสาขา + รอบสาขา A → มีผล", b(holidayPremiumApplies(undefined, A)), 1);
+  eq("ตั้งเป็น [] (ว่าง) + รอบสาขา B → มีผล", b(holidayPremiumApplies([], B)), 1);
+  eq("ไม่ตั้งสาขา + รอบรวมบริษัท (null) → มีผล", b(holidayPremiumApplies(null, null)), 1);
+  // กำหนดเฉพาะสาขา A.
+  eq("ตั้งเฉพาะ A + รอบสาขา A → มีผล", b(holidayPremiumApplies([A], A)), 1);
+  eq("ตั้งเฉพาะ A + รอบสาขา B → ไม่มีผล", b(holidayPremiumApplies([A], B)), 0);
+  eq("ตั้งเฉพาะ A + รอบรวมบริษัท (null) → คงไว้ (ครอบทุกสาขา)", b(holidayPremiumApplies([A], null)), 1);
+  // หลายสาขา.
+  eq("ตั้ง [A,B] + รอบสาขา B → มีผล", b(holidayPremiumApplies([A, B], B)), 1);
 }
 
 // 11. ทำงานข้ามบริษัท (owner 2026-07-29) — พรนภา สังกัด AT HOME ไปช่วย NAMA/EMIA
