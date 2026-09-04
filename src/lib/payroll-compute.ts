@@ -1815,7 +1815,12 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   if (period.cycle === "weekly") {
     staffWhere = "(employment_type = 'pt' OR (employment_type = 'ft' AND ft_started_at IS NOT NULL AND substr(ft_started_at,1,7) = @pmonth)" + helperClause + ")";
   } else {
-    staffWhere = "employment_type = 'ft' AND (ft_started_at IS NULL OR substr(ft_started_at,1,7) < @pmonth)";
+    // Monthly round = salaried FT only. A cross-company/branch HELPER (paid by the
+    // hour or a day-rate at THIS branch — e.g. พรนภา, FT at AT HOME helping ไฮโป) is
+    // paid in the WEEKLY round via helperClause, so exclude them here or they get
+    // double-counted in both rounds (owner 2026-09-04).
+    const helperExcludeMonthly = period.branch_id != null ? ` AND NOT ${helperExists}` : "";
+    staffWhere = "employment_type = 'ft' AND (ft_started_at IS NULL OR substr(ft_started_at,1,7) < @pmonth)" + helperExcludeMonthly;
   }
   // Branch scoping (owner 2026-06-10): a branch-stamped period only
   // includes employees assigned to that branch (user_branches). Legacy
