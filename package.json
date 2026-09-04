@@ -20,6 +20,7 @@
     "test:branch-cost": "node --import tsx scripts/test-branch-cost.ts",
     "test:payroll": "node --import tsx scripts/test-payroll.ts",
     "test:referral": "node --import tsx scripts/test-referral.ts",
+    "test:quality": "node --import tsx scripts/test-quality-docs.ts",
     "test:clock": "node --import tsx scripts/test-clock-code.ts",
     "test:revshare": "node --import tsx scripts/test-revshare.ts",
     "test:revshare-pos": "node --import tsx scripts/test-revshare-pos.ts",
