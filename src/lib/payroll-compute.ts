@@ -754,6 +754,10 @@ export type DayFieldOverride = {
   // scheduled end so the 8h split credits the excess as OT. When null we
   // fall back to the approved ot_requests row for the day.
   ot_until?: string | null;
+  // ขาดงานไม่ลา ที่แอดมินยืนยันหักเงิน (owner 2026-09-04) — 1 = หักฐานเงินเดือน
+  // salary/30 สำหรับวันนี้ (พนักงานประจำเต็มเดือน). null/0 = ไม่หัก. ระบบตรวจพบ
+  // วันน่าสงสัยแล้ว "ขึ้นธง" แต่หักจริงต่อเมื่อแอดมินติ๊กยืนยันเท่านั้น.
+  unpaid_absence?: number | null;
 };
 
 /**
@@ -1300,8 +1304,22 @@ export function computeLineForEmployee(args: {
     // Else: different pay_cycle than this period, or not the primary branch — exclude
   }
 
-  // ลาไม่รับค่าจ้าง (+ ขาดงานไม่ลา, Phase B) — reduce FT base by salary/30 per day.
-  const totalUnpaidDays = unpaidLeaveDays + noShowDays;
+  // ขาดงานไม่ลา ที่แอดมิน "ยืนยันหักเงิน" (owner 2026-09-04) — for a FULL-MONTH FT
+  // the auto no-show rule doesn't run (noShowDays = 0), so absences must be
+  // admin-confirmed per day (unpaid_absence flag) before they deduct. Guarded to
+  // full-month monthly FT so it never double-counts the partial/transition auto
+  // no-show above. Each confirmed day cuts salary/30, like ลาไม่รับค่าจ้าง.
+  const isFullMonthFt = e.employment_type === "ft" && cycle === "monthly" && ftCycle === "monthly"
+    && !isFtPartialMonth(e.hire_date, e.last_working_day, periodStart, periodEnd);
+  let confirmedAbsenceDays = 0;
+  if (isFullMonthFt && fieldOverridesByDate) {
+    for (const [d, ov] of fieldOverridesByDate) {
+      if (ov?.unpaid_absence && d >= periodStart && d <= periodEnd) confirmedAbsenceDays++;
+    }
+  }
+
+  // ลาไม่รับค่าจ้าง (+ ขาดงานไม่ลา, Phase B + ยืนยันหักเอง) — reduce FT base salary/30/day.
+  const totalUnpaidDays = unpaidLeaveDays + noShowDays + confirmedAbsenceDays;
   const ulDeduction = unpaidLeaveDeduction(e, totalUnpaidDays, basePay);
   // FT วันจ่ายสองเท่า premium no longer inflates ฐานเงินเดือน (owner 2026-09-02:
   // "จ่ายสองเท่า ส่วนที่เพิ่มขึ้นมาให้ไปใส่ช่องเพิ่มอื่นๆ"). It is carried in
@@ -1920,13 +1938,13 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   // win over the time-clock for specific days. Grouped by user.
   const overrideRows = db.prepare(`
     SELECT user_id, work_date, clock_in, clock_out,
-           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until
+           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until, unpaid_absence
     FROM payroll_line_days WHERE period_id = ?
   `).all(periodId) as Array<{
     user_id: number; work_date: string; clock_in: string | null; clock_out: string | null;
     sched_in: string | null; sched_out: string | null;
     break_min: number | null; worked_min: number | null; ot_min: number | null;
-    ot_pay: number | null; ot_until: string | null;
+    ot_pay: number | null; ot_until: string | null; unpaid_absence: number | null;
   }>;
   const overridesByUser = new Map<number, DayOverrideRow[]>();
   const fieldOverridesByUser = new Map<number, Map<string, DayFieldOverride>>();
@@ -1941,7 +1959,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     if (!fm) { fm = new Map(); fieldOverridesByUser.set(r.user_id, fm); }
     fm.set(r.work_date, {
       sched_in: r.sched_in, sched_out: r.sched_out, break_min: r.break_min,
-      worked_min: r.worked_min, ot_min: r.ot_min, ot_pay: r.ot_pay, ot_until: r.ot_until
+      worked_min: r.worked_min, ot_min: r.ot_min, ot_pay: r.ot_pay, ot_until: r.ot_until,
+      unpaid_absence: r.unpaid_absence
     });
   }
 
@@ -2450,13 +2469,13 @@ export function recomputeLine(
   const auto = pairShifts(userEntries);
   const overrideRows = db.prepare(`
     SELECT work_date, clock_in, clock_out,
-           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until
+           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until, unpaid_absence
     FROM payroll_line_days WHERE period_id = ? AND user_id = ?
   `).all(periodId, userId) as Array<{
     work_date: string; clock_in: string | null; clock_out: string | null;
     sched_in: string | null; sched_out: string | null;
     break_min: number | null; worked_min: number | null; ot_min: number | null;
-    ot_pay: number | null; ot_until: string | null;
+    ot_pay: number | null; ot_until: string | null; unpaid_absence: number | null;
   }>;
   const shifts = mergeDayOverrides(
     auto.shifts,
@@ -2469,7 +2488,8 @@ export function recomputeLine(
   for (const r of overrideRows) {
     fieldOverridesByDate.set(r.work_date, {
       sched_in: r.sched_in, sched_out: r.sched_out, break_min: r.break_min,
-      worked_min: r.worked_min, ot_min: r.ot_min, ot_pay: r.ot_pay, ot_until: r.ot_until
+      worked_min: r.worked_min, ot_min: r.ot_min, ot_pay: r.ot_pay, ot_until: r.ot_until,
+      unpaid_absence: r.unpaid_absence
     });
   }
 

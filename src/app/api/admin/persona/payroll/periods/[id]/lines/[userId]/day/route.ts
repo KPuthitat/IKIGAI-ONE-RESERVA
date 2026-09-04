@@ -37,6 +37,9 @@ const Body = z.object({
   // 8h split credits the excess as OT. null = clear (fall back to the
   // approved ot_requests row).
   ot_until: z.string().regex(HHMM).nullable().optional(),
+  // ขาดงานไม่ลา ที่แอดมินยืนยันหักเงิน (owner 2026-09-04) — true = หักฐานเงินเดือน
+  // salary/30 วันนี้ (พนักงานประจำเต็มเดือน). false = ล้างธง. OMITTED = ไม่แตะค่าเดิม.
+  unpaid_absence: z.boolean().nullable().optional(),
   // Per-day BRANCH reattribution (owner 2026-07-31): book THIS day's worked
   // time to another branch (e.g. ลงเวลานามะ แต่ไปช่วยไฮโปทั้งวัน → ค่าแรงเป็นของ
   // ไฮโป). A branch id moves the day; null reverts to the punched branch;
@@ -78,6 +81,8 @@ export async function PATCH(
   const otMin = d.ot_min ?? null;
   const otPay = d.ot_pay ?? null;
   const otUntil = d.ot_until || null;
+  // null = not provided (preserve existing flag on upsert); 1/0 = set/clear.
+  const unpaidAbsenceParam = d.unpaid_absence === undefined ? null : (d.unpaid_absence ? 1 : 0);
   if ((schedIn === null) !== (schedOut === null)) {
     return NextResponse.json({ error: "need_both_sched" }, { status: 400 });
   }
@@ -171,7 +176,8 @@ export async function PATCH(
   const hasDayFieldInput = d.clock_in !== undefined || d.clock_out !== undefined
     || d.sched_in !== undefined || d.sched_out !== undefined
     || d.break_min !== undefined || d.worked_min !== undefined
-    || d.ot_min !== undefined || d.ot_pay !== undefined || d.ot_until !== undefined;
+    || d.ot_min !== undefined || d.ot_pay !== undefined || d.ot_until !== undefined
+    || d.unpaid_absence !== undefined;
 
   // If the admin filled only ONE side (the common case for a "ขาด" day —
   // a real IN exists but the OUT is missing, or vice-versa), auto-fill the
@@ -228,7 +234,7 @@ export async function PATCH(
 
   const allNull = !clockIn && !clockOut && !schedIn && !schedOut
     && breakMin === null && workedMin === null && otMin === null && otPay === null
-    && otUntil === null;
+    && otUntil === null && unpaidAbsenceParam !== 1;
 
   try {
     db.transaction(() => {
@@ -246,8 +252,8 @@ export async function PATCH(
             INSERT INTO payroll_line_days
               (period_id, user_id, work_date, clock_in, clock_out,
                sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until,
-               edited_by, edited_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               unpaid_absence, edited_by, edited_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (period_id, user_id, work_date) DO UPDATE SET
               clock_in = excluded.clock_in,
               clock_out = excluded.clock_out,
@@ -258,12 +264,14 @@ export async function PATCH(
               ot_min = excluded.ot_min,
               ot_pay = excluded.ot_pay,
               ot_until = excluded.ot_until,
+              -- unpaid_absence: null in the request = leave the stored flag as-is.
+              unpaid_absence = COALESCE(excluded.unpaid_absence, payroll_line_days.unpaid_absence),
               edited_by = excluded.edited_by,
               edited_at = excluded.edited_at
           `).run(
             periodId, userId, d.work_date, clockIn, clockOut,
             schedIn, schedOut, breakMin, workedMin, otMin, otPay, otUntil,
-            user.id, new Date().toISOString()
+            unpaidAbsenceParam, user.id, new Date().toISOString()
           );
         }
       }
