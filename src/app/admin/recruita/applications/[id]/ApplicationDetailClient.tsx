@@ -174,7 +174,7 @@ export type PendingStageRequest = {
 };
 
 export default function ApplicationDetailClient({
-  application, applicationNo, candidate, nationalIdPlain, position, documents,
+  application, applicationNo, candidate, referrerName, nationalIdPlain, position, documents,
   education, experience, languages,
   customQuestions, customAnswers, stageMeta,
   branches, supervisors,
@@ -184,6 +184,8 @@ export default function ApplicationDetailClient({
   /** Pre-formatted #YYYYMMDD00x display number (computed server-side). */
   applicationNo: string;
   candidate: CandidateShape;
+  /** ผู้แนะนำ (referral) — the employee's display name, or null. */
+  referrerName: string | null;
   nationalIdPlain: string | null;
   position: PositionShape;
   documents: DocShape[];
@@ -268,6 +270,12 @@ export default function ApplicationDetailClient({
           <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${stageMeta[stage].chip}`}>
             {stageMeta[stage].label}
           </span>
+          {referrerName && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-violet-100 text-violet-700"
+              title="พนักงานที่แนะนำผู้สมัครคนนี้มา — ได้ค่าแนะนำ 500฿ เมื่อผ่านเกณฑ์ (119 วัน)">
+              🙋 ผู้แนะนำ: {referrerName}
+            </span>
+          )}
         </div>
         <h1 className="text-2xl font-bold text-slate-800">{name}</h1>
         {nameEn && <p className="text-sm text-slate-500">{nameEn}{candidate.nickname_th ? ` · ชื่อเล่น ${candidate.nickname_th}` : ""}</p>}

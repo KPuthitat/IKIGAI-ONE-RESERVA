@@ -7,6 +7,7 @@ import { getDb, logPersonaAction } from "@/lib/db";
 import { createInvite } from "@/lib/invites";
 import { decryptSecret } from "@/lib/secret-vault";
 import { notifyHireWelcome } from "@/lib/recruita-notify";
+import { recordReferralOnHire } from "@/lib/referral";
 
 // POST /api/recruita/applications/[id]/hire
 //
@@ -212,6 +213,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         d.employee_code ?? null
       );
       newUserId = Number(r.lastInsertRowid);
+
+      // Referral (owner 2026-09-04) — carry the referrer the applicant picked onto
+      // the new employee + open the referrals ledger (500฿, evaluated at 119 days).
+      recordReferralOnHire(
+        db, newUserId,
+        (candidate.referred_by_user_id as number | null) ?? null,
+        d.hire_date
+      );
 
       // Link to branch
       db.prepare(

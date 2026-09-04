@@ -128,6 +128,11 @@ export default function ApplicationDetailPage(
     "SELECT * FROM recruita_candidates WHERE id = ?"
   ).get(app.candidate_id) as CandidateRow | undefined;
   if (!candidate) notFound();
+  // ผู้แนะนำ (referral, owner 2026-09-04) — resolve the picked employee's name.
+  const referrerName = (candidate as { referred_by_user_id?: number | null }).referred_by_user_id
+    ? ((db.prepare("SELECT display_name FROM users WHERE id = ?")
+        .get((candidate as { referred_by_user_id?: number | null }).referred_by_user_id) as { display_name: string } | undefined)?.display_name ?? null)
+    : null;
   const position = db.prepare(`
     SELECT p.id, p.title, p.code, p.department, p.branch_id, p.custom_questions,
            b.name AS branch_name,
@@ -192,6 +197,7 @@ export default function ApplicationDetailPage(
         application={app}
         applicationNo={applicationNo}
         candidate={candidate}
+        referrerName={referrerName}
         nationalIdPlain={nationalIdPlain}
         position={position}
         documents={docs}
