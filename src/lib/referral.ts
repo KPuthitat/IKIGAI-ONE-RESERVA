@@ -17,6 +17,9 @@
 
 import type Database from "better-sqlite3";
 import { computeMonthlyAttendanceStats } from "./monthly-attendance-stats";
+import { recomputeLine } from "./payroll-compute";
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export const REFERRAL_REWARD_BAHT = 500;
 export const REFERRAL_RETENTION_DAYS = 119;
@@ -192,4 +195,77 @@ export function evaluateDueReferrals(db: Database.Database, today?: string): { q
     else { upd.run("disqualified", null, ev.reasons.join(","), row.id); disqualified++; }
   }
   return { qualified, disqualified };
+}
+
+// ── Payout (part 4) ──────────────────────────────────────────────────
+
+export type PayReferralResult =
+  | { ok: true; periodId: number; amount: number }
+  | { ok: false; reason: "not_qualified" | "no_open_round" | "not_found" };
+
+/**
+ * Admin-confirmed payout of a QUALIFIED referral: add the reward to the
+ * referrer's current OPEN (draft) payroll round as an "เพิ่มอื่นๆ" addition, then
+ * recompute that line so tax falls out correctly (ในระบบ = SSO base unchanged /
+ * นอกระบบ = WHT 3%). Marks the referral 'paid'. No open draft round → no-op error
+ * so the admin opens a round first. Idempotent: a non-qualified referral is
+ * rejected, so a double click can't pay twice.
+ */
+export function payReferral(db: Database.Database, referralId: number): PayReferralResult {
+  const r = db.prepare(
+    "SELECT id, referrer_user_id, reward_amount, status FROM referrals WHERE id = ?"
+  ).get(referralId) as { id: number; referrer_user_id: number; reward_amount: number; status: string } | undefined;
+  if (!r) return { ok: false, reason: "not_found" };
+  if (r.status !== "qualified") return { ok: false, reason: "not_qualified" };
+
+  // The referrer's most recent OPEN (draft) payroll line — the round the money
+  // lands in. Latest pay_date wins so it goes to the round being worked now.
+  const line = db.prepare(`
+    SELECT pl.period_id, pl.other_additions
+    FROM payroll_lines pl JOIN payroll_periods pp ON pp.id = pl.period_id
+    WHERE pl.user_id = ? AND pp.status = 'draft'
+    ORDER BY pp.pay_date DESC, pp.id DESC LIMIT 1
+  `).get(r.referrer_user_id) as { period_id: number; other_additions: number } | undefined;
+  if (!line) return { ok: false, reason: "no_open_round" };
+
+  const amount = round2(r.reward_amount || REFERRAL_REWARD_BAHT);
+  // Atomic: bump the addition, recompute the line (so gross/tax/net include it —
+  // tax mode handled by the engine), and mark the referral paid — all or nothing.
+  db.transaction(() => {
+    db.prepare(
+      "UPDATE payroll_lines SET other_additions = ? WHERE period_id = ? AND user_id = ?"
+    ).run(round2((line.other_additions || 0) + amount), line.period_id, r.referrer_user_id);
+    recomputeLine(db, line.period_id, r.referrer_user_id);
+    db.prepare(`
+      UPDATE referrals
+      SET status = 'paid', paid_at = ?, paid_period_id = ?,
+          note = 'จ่ายค่าแนะนำ ' || ? || ' บาท เข้ารอบเงินเดือน', updated_at = datetime('now')
+      WHERE id = ?
+    `).run(new Date().toISOString(), line.period_id, amount, referralId);
+  })();
+  return { ok: true, periodId: line.period_id, amount };
+}
+
+export type ReferralListRow = {
+  id: number; status: ReferralStatus;
+  referred_user_id: number; referred_name: string | null;
+  referrer_user_id: number; referrer_name: string | null;
+  hire_date: string | null; eligible_on: string | null;
+  reward_amount: number; disqualify_reason: string | null;
+  paid_at: string | null; paid_period_id: number | null;
+};
+
+/** All referrals with both names resolved, newest first. */
+export function listReferrals(db: Database.Database): ReferralListRow[] {
+  return db.prepare(`
+    SELECT rf.id, rf.status,
+           rf.referred_user_id, ru.display_name AS referred_name,
+           rf.referrer_user_id, rr.display_name AS referrer_name,
+           rf.hire_date, rf.eligible_on, rf.reward_amount, rf.disqualify_reason,
+           rf.paid_at, rf.paid_period_id
+    FROM referrals rf
+    LEFT JOIN users ru ON ru.id = rf.referred_user_id
+    LEFT JOIN users rr ON rr.id = rf.referrer_user_id
+    ORDER BY rf.created_at DESC, rf.id DESC
+  `).all() as ReferralListRow[];
 }

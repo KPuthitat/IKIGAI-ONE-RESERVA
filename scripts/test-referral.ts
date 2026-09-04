@@ -110,6 +110,38 @@ process.env.DATABASE_PATH = TMP;
   ok("empA → disqualified", statusOf(empA) === "disqualified");
   ok("empD (ยังไม่ถึงกำหนด) → pending", statusOf(empD) === "pending");
 
+  console.log("\npayReferral:");
+  // not_qualified — a pending referral (empD) can't be paid.
+  const empDref = (db.prepare("SELECT id FROM referrals WHERE referred_user_id=?").get(empD) as { id: number }).id;
+  const pendPay = ref.payReferral(db, empDref);
+  ok("pending → จ่ายไม่ได้ (not_qualified)", !pendPay.ok && pendPay.reason === "not_qualified");
+
+  // no_open_round — qualified but the referrer has no draft payroll line.
+  const refP = mkUser("refP"), empP = mkUser("empP"); link(empP);
+  ref.recordReferralOnHire(db, empP, refP, "2026-01-01");
+  db.prepare("UPDATE referrals SET status='qualified' WHERE referred_user_id=?").run(empP);
+  const refPid = (db.prepare("SELECT id FROM referrals WHERE referred_user_id=?").get(empP) as { id: number }).id;
+  const noRound = ref.payReferral(db, refPid);
+  ok("qualified แต่ไม่มีรอบเปิด → no_open_round", !noRound.ok && noRound.reason === "no_open_round");
+
+  // Happy path — open a draft round + line for the referrer, then pay.
+  link(refP);
+  const per = Number(db.prepare(
+    "INSERT INTO payroll_periods (cycle,target,data_source,period_start,period_end,pay_date,status,branch_id) VALUES ('monthly','ft','auto','2026-09-01','2026-09-30','2026-10-05','draft',?)"
+  ).run(branch).lastInsertRowid);
+  db.prepare(`INSERT INTO payroll_lines
+    (period_id,user_id,employee_code,display_name,employment_type,pay_cycle_snapshot,
+     hourly_rate_snapshot,monthly_salary_snapshot,salary_tax_mode_snapshot,
+     base_pay,ot_pay,service_charge,other_additions,gross_pay,sso_amount,tax_amount,other_deductions,net_pay,days_worked,leave_days)
+    VALUES (?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(per, refP, "E1", "refP", "ft", "monthly", null, 20000, "sso", 20000,0,0,0,20000,750,0,0,19250,0,0);
+  const payRes = ref.payReferral(db, refPid);
+  ok("จ่ายสำเร็จ", payRes.ok === true);
+  ok("referral → paid", statusOf(empP) === "paid");
+  ok("other_additions ของผู้แนะนำ +500",
+    (db.prepare("SELECT other_additions AS o FROM payroll_lines WHERE period_id=? AND user_id=?").get(per, refP) as { o: number }).o === 500);
+  ok("paid ซ้ำไม่ได้", !ref.payReferral(db, refPid).ok);
+
   console.log(`\ntest-referral: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

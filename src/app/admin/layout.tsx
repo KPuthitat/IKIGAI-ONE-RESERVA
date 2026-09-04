@@ -173,6 +173,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             ]
           : []),
         { href: "/admin/persona/service-charge", label: t(lang, "admin.persona.nav.svc") },
+        { href: "/admin/persona/referrals", label: "ค่าแนะนำพนักงาน" },
         { href: "/admin/persona/mealpass", label: "MEALPASS Portal" },
         { href: "/admin/persona/ot-approvals", label: "อนุมัติการทำงานล่วงเวลา" },
         { href: "/admin/persona/shift-requests", label: "คำขอเปลี่ยนเวลางาน" },
