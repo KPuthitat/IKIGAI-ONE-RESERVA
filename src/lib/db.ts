@@ -6033,6 +6033,37 @@ function runMigrations(db: Database.Database): void {
   if (!columnExists(db, "recruita_candidates", "referred_by_user_id")) {
     db.exec("ALTER TABLE recruita_candidates ADD COLUMN referred_by_user_id INTEGER");
   }
+  // Referral part 2 (owner 2026-09-04) — carry the referrer onto the hired
+  // employee + a referrals ledger. The 500฿ reward pays the referrer once the
+  // referred employee reaches 119 days AND clears the attendance gates.
+  if (!columnExists(db, "users", "referred_by_user_id")) {
+    db.exec("ALTER TABLE users ADD COLUMN referred_by_user_id INTEGER");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS referrals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      /** พนักงานใหม่ที่ถูกแนะนำมา — 1 referral ต่อคน (UNIQUE). */
+      referred_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      /** พนักงานผู้แนะนำ (ผู้รับค่าแนะนำ). */
+      referrer_user_id INTEGER NOT NULL REFERENCES users(id),
+      hire_date TEXT,               -- วันเข้างานของผู้ถูกแนะนำ (เริ่มนับ 119 วัน)
+      eligible_on TEXT,             -- hire_date + 119 วัน = วันประเมิน
+      reward_amount REAL NOT NULL DEFAULT 500,
+      -- pending → qualified → paid | disqualified | cancelled
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','qualified','paid','disqualified','cancelled')),
+      qualified_at TEXT,
+      disqualify_reason TEXT,       -- ข้อที่ไม่ผ่าน (late_absence / attendance / retention / resigned)
+      paid_at TEXT,
+      paid_period_id INTEGER REFERENCES payroll_periods(id) ON DELETE SET NULL,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT,
+      UNIQUE (referred_user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_user_id);
+    CREATE INDEX IF NOT EXISTS idx_referrals_status ON referrals(status, eligible_on);
+  `);
 
   // RC-2 (owner 2026-06-13) — one LINE account per candidate. The removed
   // phone-search bind (RC-1) let the same line_user_id sit on multiple
