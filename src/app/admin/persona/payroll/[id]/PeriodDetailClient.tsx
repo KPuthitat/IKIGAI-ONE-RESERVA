@@ -1225,6 +1225,7 @@ type BreakdownDay = {
     sched_in: string | null; sched_out: string | null;
     break_min: number | null; worked_min: number | null;
     ot_min: number | null; ot_pay: number | null; ot_until: string | null;
+    unpaid_absence: number | null;
   } | null;
   // OT "until" time in effect (override ?? approved request), and the
   // approved request alone (for the "ขออนุมัติถึง …" hint).
@@ -1272,6 +1273,9 @@ function LineEditModal({
   // วันหยุดประเพณี เลื่อน/ใช้สิทธิ์ (owner 2026-08-04) — "" = ยังไม่เลือก.
   const [dayHolidayChoice, setDayHolidayChoice] = useState<"" | "defer" | "use">("");
   const [dayHolidayInit, setDayHolidayInit] = useState<"" | "defer" | "use">("");
+  // ขาดงานไม่ลา ที่แอดมินยืนยันหักเงิน (owner 2026-09-04) — FT เต็มเดือนเท่านั้น.
+  const [dayAbsence, setDayAbsence] = useState(false);
+  const [dayAbsenceInit, setDayAbsenceInit] = useState(false);
   // Sibling branches the day can be moved to (from the breakdown response) +
   // this period's own branch. The picker shows only when there is a choice.
   const [branchOptions, setBranchOptions] = useState<Array<{ id: number; name: string; status: string }>>([]);
@@ -1426,6 +1430,8 @@ function LineEditModal({
     setDayBranchId(vBranch); setDayBranchInit(vBranch);
     const vChoice = (day.pairs.find((p) => p.holidayChoice != null)?.holidayChoice ?? "") as "" | "defer" | "use";
     setDayHolidayChoice(vChoice); setDayHolidayInit(vChoice);
+    const vAbsence = !!ov?.unpaid_absence;
+    setDayAbsence(vAbsence); setDayAbsenceInit(vAbsence);
     setDayInit({ in: vIn, out: vOut, schedIn: vSchedIn, schedOut: vSchedOut,
       brk: vBreak, worked: vWorked, otUntil: vOtUntil, otPay: vOtPay });
     setDayHad({
@@ -1449,6 +1455,7 @@ function LineEditModal({
     { const vBranch = periodBranchId != null ? String(periodBranchId) : "";
       setDayBranchId(vBranch); setDayBranchInit(vBranch); }
     setDayHolidayChoice(""); setDayHolidayInit("");
+    setDayAbsence(false); setDayAbsenceInit(false);
     setDayInit({ in: "", out: "", schedIn: "", schedOut: "",
       brk: "", worked: "", otUntil: "", otPay: "" });
     setDayHad({ clock: false, sched: false, brk: false, worked: false, otUntil: false, otPay: false });
@@ -1499,7 +1506,8 @@ function LineEditModal({
     const otPayDirty = dayOtPay !== dayInit.otPay;
     const branchDirty = dayBranchId !== dayBranchInit;
     const holidayChoiceDirty = dayHolidayChoice !== dayHolidayInit;
-    const anyDirty = clockDirty || schedDirty || breakDirty || workedDirty || otUntilDirty || otPayDirty || branchDirty || holidayChoiceDirty;
+    const absenceDirty = dayAbsence !== dayAbsenceInit;
+    const anyDirty = clockDirty || schedDirty || breakDirty || workedDirty || otUntilDirty || otPayDirty || branchDirty || holidayChoiceDirty || absenceDirty;
     const hadAny = selDay?.override != null;
     // A pure branch move sends ONLY the branch (no clock/field keys) so the
     // server never pins an unnecessary clock override — and the clock/sched
@@ -1544,8 +1552,11 @@ function LineEditModal({
       const holidayField = holidayChoiceDirty
         ? { holiday_choice: dayHolidayChoice === "" ? null : dayHolidayChoice }
         : {};
+      // ขาดงานไม่ลา (หักเงิน) — sent ONLY when the toggle changed so a normal
+      // edit never clears an existing confirmation.
+      const absenceField = absenceDirty ? { unpaid_absence: dayAbsence } : {};
       const body = onlyBranch
-        ? { work_date: selectedDate, ...branchField, ...holidayField, admin_pin: dayPin }
+        ? { work_date: selectedDate, ...branchField, ...holidayField, ...absenceField, admin_pin: dayPin }
         : {
             work_date: selectedDate,
             clock_in: dayIn || null,
@@ -1560,6 +1571,7 @@ function LineEditModal({
             // untouched save never moves the day. "" → null (punched branch).
             ...branchField,
             ...holidayField,
+            ...absenceField,
             admin_pin: dayPin
           };
       const res = await fetch(
@@ -2262,6 +2274,24 @@ function LineEditModal({
                     ))}
                   </div>
                 </div>
+              )}
+              {/* ขาดงานไม่ลา — ยืนยันหักเงิน (owner 2026-09-04). โชว์เฉพาะพนักงานประจำ
+                  (FT ไม่ใช่ helper). ติ๊กเพื่อหักฐานเงินเดือน salary/30 ของวันนี้ —
+                  ระบบขึ้นธงวันน่าสงสัยไว้แล้ว แต่จะไม่หักจนแอดมินยืนยันตรงนี้. */}
+              {line.employment_type === "ft" && (line.is_helper ?? 0) === 0 && (
+                <label className={`flex items-start gap-2 rounded-md border px-3 py-2 ${
+                  dayAbsence ? "border-rose-300 bg-rose-50" : "border-slate-200 bg-slate-50"
+                } ${locked ? "opacity-60" : "cursor-pointer"}`}>
+                  <input type="checkbox" className="mt-0.5" disabled={locked}
+                    checked={dayAbsence} onChange={(e) => setDayAbsence(e.target.checked)} />
+                  <span className="text-[11px] leading-relaxed">
+                    <b className="text-rose-700">ขาดงานไม่ลา — หักเงินวันนี้</b> (หักฐานเงินเดือน ÷30 ต่อวัน)
+                    <span className="block text-slate-500">
+                      ติ๊กเมื่อวันนี้เป็นการขาดงานไม่แจ้ง/ไม่มีใบลา (รวมวันที่ตอกบัตรไม่ครบ). ถ้าจริงๆ มาทำงานแต่ลืมตอก
+                      ให้ใช้การรับรองเวลาแทน อย่าติ๊กหัก.
+                    </span>
+                  </span>
+                </label>
               )}
               {/* ลงเวลาทำงานวันหยุดแทนพนักงาน (owner 2026-08-03) — วันที่พนักงานไม่ได้
                   ลงเวลาเอง (โดนเรียกเข้าวันหยุด ฯลฯ) admin กรอกให้ได้ตรงนี้. */}

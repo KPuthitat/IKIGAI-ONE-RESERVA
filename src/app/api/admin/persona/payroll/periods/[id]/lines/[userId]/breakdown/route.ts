@@ -270,10 +270,11 @@ export async function GET(
     sched_in: string | null; sched_out: string | null;
     break_min: number | null; worked_min: number | null;
     ot_min: number | null; ot_pay: number | null; ot_until: string | null;
+    unpaid_absence: number | null;
   };
   const overrideRows = db.prepare(`
     SELECT work_date, clock_in, clock_out,
-           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until
+           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until, unpaid_absence
     FROM payroll_line_days WHERE period_id = ? AND user_id = ?
   `).all(periodId, userId) as Array<{ work_date: string } & FieldOv>;
   const overrideByDate = new Map<string, { clock_in: string | null; clock_out: string | null }>();

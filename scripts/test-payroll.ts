@@ -373,6 +373,33 @@ console.log("\nโหมดภาษีตามเดือนคงค้า�
   eq("เงินเดือน ก.ค. ไม่ตั้งเดือนเริ่ม → ประกันสังคม (ไม่เปลี่ยน)", legacy.sso_amount, 750);
 }
 
+// 11f. ขาดงานไม่ลา ที่แอดมินยืนยันหักเงิน (owner 2026-09-04) — FT เต็มเดือน:
+//      ไม่หักอัตโนมัติ, หักเฉพาะวันที่ override.unpaid_absence = 1 (salary/30/วัน).
+console.log("\nขาดงานไม่ลา (แอดมินยืนยันหัก) FT เต็มเดือน (owner 2026-09-04):");
+{
+  const run = (fov?: Map<string, { unpaid_absence?: number | null }>) =>
+    computeLineForEmployee({
+      employee: ftMonthly(30000), shifts: [], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+      cycle: "monthly", periodStart: "2026-08-01", periodEnd: "2026-08-31",
+      settings: SETTINGS, holidaySet: new Set<string>(),
+      fieldOverridesByDate: fov
+    });
+  // ไม่มีธง → เงินเดือนเต็ม (ไม่หักอัตโนมัติ แม้ไม่มีการตอกบัตรทั้งเดือน)
+  const none = run();
+  eq("ไม่ยืนยัน → เงินเดือนเต็ม 30000 (ไม่หักเอง)", none.base_pay, 30000);
+  eq("ไม่ยืนยัน → unpaid_leave_days = 0", none.unpaid_leave_days, 0);
+  // ยืนยัน 1 วัน → หัก 30000/30 = 1000 → ฐาน 29000
+  const one = run(new Map([["2026-08-27", { unpaid_absence: 1 }]]));
+  eq("ยืนยัน 1 วัน → หัก salary/30 = 1000 → ฐาน 29000", one.base_pay, 29000);
+  eq("ยืนยัน 1 วัน → unpaid_leave_days = 1", one.unpaid_leave_days, 1);
+  // ยืนยัน 2 วัน → หัก 2000 → ฐาน 28000
+  const two = run(new Map([["2026-08-25", { unpaid_absence: 1 }], ["2026-08-27", { unpaid_absence: 1 }]]));
+  eq("ยืนยัน 2 วัน → หัก 2000 → ฐาน 28000", two.base_pay, 28000);
+  // ธง = 0/null → ไม่หัก
+  const zero = run(new Map([["2026-08-27", { unpaid_absence: 0 }]]));
+  eq("ธง = 0 → ไม่หัก (ฐานเต็ม)", zero.base_pay, 30000);
+}
+
 // 11c. เดือนเปลี่ยนผ่าน weekly: ทุกสัปดาห์จ่ายฐานรายวัน salary/30 × วันในสถานะ.
 //      รอบคร่อมเดือน — กฎ A (owner 2026-08-18): วันของเดือนถัดไปไม่จ่ายในรอบสัปดาห์
 //      (ยกไปรอบเดือนนั้น) → จ่ายเฉพาะวันของเดือนเปลี่ยนผ่าน.

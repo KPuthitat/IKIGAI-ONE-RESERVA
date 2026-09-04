@@ -3919,6 +3919,10 @@ function runMigrations(db: Database.Database): void {
   // window to it, then the 8h split decides regular vs OT rate. Falls
   // back to the approved ot_requests row when this is null.
   addPld("ot_until", "TEXT");      // 'HH:MM' approved OT until-time override
+  // ขาดงานไม่ลา ที่แอดมิน "ยืนยันหักเงิน" (owner 2026-09-04) — 1 = หักฐานเงินเดือน
+  // salary/30 สำหรับวันนี้ (พนักงานประจำเต็มเดือน). ระบบ "ขึ้นธง" วันที่น่าสงสัย
+  // (มีกะแต่ไม่ตอกบัตร/ตอกไม่ครบ + ไม่มีใบลา) แต่จะไม่หักจนกว่าแอดมินจะติ๊กยืนยัน.
+  addPld("unpaid_absence", "INTEGER"); // 1 = admin-confirmed ขาดงานไม่ลา (หักเงิน)
 
   // Phase 1D v2 — add new columns to existing payroll_lines if upgrading
   const plCols = db.prepare("PRAGMA table_info(payroll_lines)").all() as Array<{ name: string }>;
