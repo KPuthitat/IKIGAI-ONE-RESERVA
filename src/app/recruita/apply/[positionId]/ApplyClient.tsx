@@ -284,7 +284,7 @@ function ApplyGate({
 
 export default function ApplyClient({
   positionId, positionTitle, positionCode, branchName, department,
-  customQuestions, liffId, oaLink, privacyPolicyUrl, pdpaImageUrl, fieldCfg
+  customQuestions, liffId, oaLink, privacyPolicyUrl, pdpaImageUrl, fieldCfg, referrers
 }: {
   positionId: number;
   positionTitle: string;
@@ -308,6 +308,9 @@ export default function ApplyClient({
    *  "เปิดดูนโยบาย" button instead of the default text. NULL = no
    *  image → fall back to DEFAULT_RECRUITA_PDPA_TEXT. */
   pdpaImageUrl: string | null;
+  /** Active employees the applicant may pick as their ผู้แนะนำ (referral, owner
+   *  2026-09-03). Name + nickname only. Empty = no picker offered. */
+  referrers: Array<{ id: number; display_name: string; nickname_th: string | null }>;
 }) {
   const router = useRouter();
   const { lang } = useLang();
@@ -324,6 +327,11 @@ export default function ApplyClient({
   const [photo, setPhoto] = useState<File | null>(null);
   const [resume, setResume] = useState<File | null>(null);
   const [idCopy, setIdCopy] = useState<File | null>(null);
+  // ผู้แนะนำ (referral, owner 2026-09-03) — an explicit มี/ไม่มี choice, then the
+  // employee picker only when "มี". Locked at submit; drives the 500฿ referral
+  // reward if the applicant is hired and clears the 119-day gates.
+  const [hasReferrer, setHasReferrer] = useState<"" | "yes" | "no">("");
+  const [referrerId, setReferrerId] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const draftLoaded = useRef(false);
@@ -568,6 +576,11 @@ export default function ApplyClient({
       const enabled = fieldCfg[key]?.enabled ?? true;
       if (enabled && !file) miss.add(key);
     }
+    // ผู้แนะนำ — must make the มี/ไม่มี choice; if "มี", must pick an employee.
+    if (referrers.length > 0) {
+      if (hasReferrer === "") miss.add("referrer_choice");
+      else if (hasReferrer === "yes" && !referrerId) miss.add("referrer_pick");
+    }
     // Required custom questions
     for (const q of customQuestions) {
       if (!q.required) continue;
@@ -609,6 +622,8 @@ export default function ApplyClient({
         // LIFF-detected LINE userId (null on plain web form). Server
         // links the candidate row when present.
         line_user_id: lineUserId,
+        // ผู้แนะนำ (referral) — null unless the applicant chose "มี" + an employee.
+        referred_by_user_id: hasReferrer === "yes" && referrerId ? Number(referrerId) : null,
       }));
       // Shrink image attachments client-side so a multi-MB phone photo
       // doesn't 413 at the proxy. PDFs pass through untouched.
@@ -1183,6 +1198,56 @@ export default function ApplyClient({
             accept=".pdf,image/*" required invalid={missing.has("doc_id_copy")} />
         )}
       </Section>
+
+      {/* Referral — the employee who invited this applicant (owner 2026-09-03).
+          Explicit มี/ไม่มี choice; the picker appears only for "มี". */}
+      {referrers.length > 0 && (
+        <Section title={tr("ผู้แนะนำ (พนักงานที่ชวนมาสมัคร)", "Referral (the employee who invited you)")}>
+          <p className="text-[11px] text-slate-500 mb-2">
+            {tr(
+              "ถ้ามีพนักงานของเราแนะนำให้มาสมัคร เลือก “มีผู้แนะนำ” แล้วเลือกชื่อ เพื่อให้เขาได้รับค่าแนะนำเมื่อคุณผ่านเกณฑ์",
+              "If one of our staff referred you, choose “Yes” and pick their name so they receive the referral reward once you qualify."
+            )}
+          </p>
+          <div className="flex gap-2" data-invalid={missing.has("referrer_choice") ? "true" : undefined}>
+            <button type="button"
+              onClick={() => { setHasReferrer("yes"); clearMissing("referrer_choice"); }}
+              className={`flex-1 border rounded-lg px-3 py-2 text-sm ${hasReferrer === "yes" ? "border-brand bg-amber-50 text-brand font-medium" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+              {tr("มีผู้แนะนำ", "Yes, I was referred")}
+            </button>
+            <button type="button"
+              onClick={() => { setHasReferrer("no"); setReferrerId(""); clearMissing("referrer_choice"); clearMissing("referrer_pick"); }}
+              className={`flex-1 border rounded-lg px-3 py-2 text-sm ${hasReferrer === "no" ? "border-slate-400 bg-slate-100 text-slate-700 font-medium" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+              {tr("ไม่มี", "No")}
+            </button>
+          </div>
+          {missing.has("referrer_choice") && (
+            <p className="text-[11px] text-rose-600 mt-1">{tr("กรุณาเลือก มี/ไม่มี ผู้แนะนำ", "Please choose whether you were referred")}</p>
+          )}
+          {hasReferrer === "yes" && (
+            <div className="mt-3" data-invalid={missing.has("referrer_pick") ? "true" : undefined}>
+              <label className="label">
+                {tr("เลือกพนักงานผู้แนะนำ", "Select the employee who referred you")}
+                <span className="text-rose-500 ml-1">*</span>
+              </label>
+              <select
+                className={`input ${missing.has("referrer_pick") ? "border-rose-400 bg-rose-50/40" : ""}`}
+                value={referrerId}
+                onChange={(e) => { setReferrerId(e.target.value); clearMissing("referrer_pick"); }}>
+                <option value="">{tr("— เลือกพนักงาน —", "— Select employee —")}</option>
+                {referrers.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.display_name}{r.nickname_th ? ` (${r.nickname_th})` : ""}
+                  </option>
+                ))}
+              </select>
+              {missing.has("referrer_pick") && (
+                <p className="text-[11px] text-rose-600 mt-1">{tr("กรุณาเลือกพนักงานผู้แนะนำ", "Please select the referring employee")}</p>
+              )}
+            </div>
+          )}
+        </Section>
+      )}
 
       {/* Section 11 — Custom questions */}
       {customQuestions.length > 0 && (

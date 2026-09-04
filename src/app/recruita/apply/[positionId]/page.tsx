@@ -72,6 +72,19 @@ export default function ApplyPage({ params }: { params: { positionId: string } }
     }
   }
 
+  // Active employees the applicant can pick as their ผู้แนะนำ (referral, owner
+  // 2026-09-03). Name + nickname only — no PII. Resigned/disabled/test accounts
+  // excluded so a referral can't be credited to someone no longer here.
+  const referrers = db.prepare(`
+    SELECT id, display_name, nickname_th
+    FROM users
+    WHERE role IN ('staff', 'admin')
+      AND employment_type IS NOT NULL
+      AND is_test_account = 0
+      AND status NOT IN ('disabled', 'resigned', 'terminated')
+    ORDER BY display_name
+  `).all() as Array<{ id: number; display_name: string; nickname_th: string | null }>;
+
   return (
     <div className="min-h-screen bg-amber-50/40 py-6 px-4">
       <main className="max-w-2xl mx-auto">
@@ -87,6 +100,7 @@ export default function ApplyPage({ params }: { params: { positionId: string } }
           privacyPolicyUrl={privacyPolicyUrl}
           pdpaImageUrl={pdpaImageUrl}
           fieldCfg={fieldCfg}
+          referrers={referrers}
         />
       </main>
     </div>
