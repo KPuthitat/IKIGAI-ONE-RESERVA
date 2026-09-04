@@ -469,7 +469,7 @@ export default function PeriodDetailClient({
             <>
               <button type="button" onClick={() => performAction("unfinalize")}
                 disabled={busy !== null} className="btn-secondary text-sm">
-                {busy === "unfinalize" ? "..." : "↺ " + t(lang, "admin.persona.payroll.action.unfinalize")}
+                {busy === "unfinalize" ? "..." : t(lang, "admin.persona.payroll.action.unfinalize")}
               </button>
               <button type="button" onClick={() => setConfirmPay(true)}
                 disabled={busy !== null}

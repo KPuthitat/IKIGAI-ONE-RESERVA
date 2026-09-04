@@ -73,9 +73,30 @@ process.env.DATABASE_PATH = TMP;
   ok("แก้ไข rejected ได้", q.updateDraftVersion(db, d2.versionId, { content: "<p>เพิ่มขั้นตอน</p>" }));
   ok("resubmit ได้", q.submitVersion(db, d2.versionId));
 
+  console.log("\nlistEffectiveForStaff (staff read side):");
+  // Global doc WI-001 (rev 2 effective) applies to everyone.
+  const staffAList = q.listEffectiveForStaff(db, staffA);
+  const staffAWi = staffAList.find((x) => x.doc_code === "WI-001");
+  ok("staffA เห็น WI-001 (global)", !!staffAWi && staffAWi.rev === 2);
+  ok("staffA ยังไม่รับทราบ rev 2 (เพิ่งอนุมัติใหม่)", staffAWi?.acknowledged_at == null);
+  // Branch-scoped doc: only members of that branch see it.
+  const branchId = Number(db.prepare(
+    "INSERT INTO branches (name,slug,status) VALUES ('NAMA','nama','open')"
+  ).run().lastInsertRowid);
+  db.prepare("INSERT INTO user_branches (user_id,branch_id) VALUES (?,?)").run(staffA, branchId);
+  const db3 = q.createDocument(db, { docType: "WI", title: "เฉพาะ NAMA", createdBy: admin, branchId, content: "x" });
+  q.submitVersion(db, db3.versionId);
+  q.approveVersion(db, db3.versionId, admin, "2026-12-01");
+  ok("staffA (สมาชิก NAMA) เห็นเอกสารสาขา", q.listEffectiveForStaff(db, staffA).some((x) => x.document_id === db3.documentId));
+  ok("staffB (ไม่ใช่สมาชิก) ไม่เห็นเอกสารสาขา", !q.listEffectiveForStaff(db, staffB).some((x) => x.document_id === db3.documentId));
+  // Ack flows through to the row.
+  q.acknowledgeVersion(db, db3.versionId, staffA);
+  ok("รับทราบแล้ว → acknowledged_at ไม่ null",
+    q.listEffectiveForStaff(db, staffA).find((x) => x.document_id === db3.documentId)?.acknowledged_at != null);
+
   console.log("\nlistDocuments:");
   const list = q.listDocuments(db);
-  ok("มี 2 เอกสาร", list.length === 2);
+  ok("มี 3 เอกสาร", list.length === 3);
   const wi = list.find((x) => x.doc_code === "WI-001")!;
   ok("WI-001 effective rev = 2", wi.effective_rev === 2 && wi.latest_rev === 2);
 
