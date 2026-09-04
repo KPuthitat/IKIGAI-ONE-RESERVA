@@ -72,6 +72,44 @@ process.env.DATABASE_PATH = TMP;
   ok("ไม่มีผู้แนะนำ → ไม่บันทึก",
     !db.prepare("SELECT 1 FROM referrals WHERE referred_user_id = ?").get(newbie3));
 
+  console.log("\nevaluateReferral / evaluateDueReferrals:");
+  const co = Number(db.prepare("INSERT INTO companies (name_th) VALUES ('IKIGAI')").run().lastInsertRowid);
+  const branch = Number(db.prepare("INSERT INTO branches (slug,name,company_id) VALUES ('b','B',?)").run(co).lastInsertRowid);
+  const link = (uid: number) => db.prepare("INSERT INTO user_branches (user_id, branch_id, is_primary) VALUES (?,?,1)").run(uid, branch);
+  const clockIn = (uid: number, ymd: string) => db.prepare(
+    "INSERT INTO time_entries (user_id, type, ts, branch_id) VALUES (?,?,?,?)"
+  ).run(uid, "in", new Date(`${ymd}T10:00:00+07:00`).toISOString(), branch);
+  const statusOf = (uid: number) => (db.prepare("SELECT status FROM referrals WHERE referred_user_id=?").get(uid) as { status: string } | undefined)?.status;
+
+  // A) retention fail — the referred employee has resigned.
+  const refA = mkUser("refA"), empA = mkUser("empA"); link(empA);
+  ref.recordReferralOnHire(db, empA, refA, "2026-01-01");     // eligible 2026-04-30 (past)
+  db.prepare("UPDATE users SET status='resigned' WHERE id=?").run(empA);
+  const evA = ref.evaluateReferral(db, { referred_user_id: empA, hire_date: "2026-01-01", eligible_on: "2026-04-30" });
+  ok("ลาออก → ไม่ผ่าน (retention)", !evA.qualified && !evA.retentionOk && evA.reasons.includes("retention"));
+
+  // B) no roster but clocked in → qualified (lenient, computable=false).
+  const refB = mkUser("refB"), empB = mkUser("empB"); link(empB);
+  ref.recordReferralOnHire(db, empB, refB, "2026-01-01");
+  clockIn(empB, "2026-01-05"); clockIn(empB, "2026-02-10");
+  const evB = ref.evaluateReferral(db, { referred_user_id: empB, hire_date: "2026-01-01", eligible_on: "2026-04-30" });
+  ok("ไม่มี roster แต่ลงเวลา → ผ่าน (lenient)", evB.qualified && !evB.computable && evB.daysWorked === 2);
+
+  // C) no clock at all → attendance fail.
+  const refC = mkUser("refC"), empC = mkUser("empC"); link(empC);
+  ref.recordReferralOnHire(db, empC, refC, "2026-01-01");
+  const evC = ref.evaluateReferral(db, { referred_user_id: empC, hire_date: "2026-01-01", eligible_on: "2026-04-30" });
+  ok("ไม่ลงเวลาเลย → ไม่ผ่าน (attendance)", !evC.qualified && evC.reasons.includes("attendance"));
+
+  // D) evaluateDueReferrals — A/B/C are due; a far-future one stays pending.
+  const refD = mkUser("refD"), empD = mkUser("empD"); link(empD);
+  ref.recordReferralOnHire(db, empD, refD, "2030-01-01");     // eligible far future
+  const res = ref.evaluateDueReferrals(db);
+  ok("due → มีทั้ง qualified และ disqualified", res.qualified >= 1 && res.disqualified >= 1);
+  ok("empB → qualified", statusOf(empB) === "qualified");
+  ok("empA → disqualified", statusOf(empA) === "disqualified");
+  ok("empD (ยังไม่ถึงกำหนด) → pending", statusOf(empD) === "pending");
+
   console.log(`\ntest-referral: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
