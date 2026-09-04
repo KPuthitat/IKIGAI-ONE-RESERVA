@@ -6065,6 +6065,54 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_referrals_status ON referrals(status, eligible_on);
   `);
 
+  // ── Quality document control (WI/WP) — owner 2026-09-04 ───────────────
+  // ISO-style controlled documents: a master (stable doc_code) + revisions
+  // (draft → pending → approved → obsolete), content held in-system (HTML) and/
+  // or as an attached file, plus per-version read acknowledgements from staff.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS quality_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      doc_type TEXT NOT NULL CHECK (doc_type IN ('WI','WP')),  -- Work Instruction / Work Procedure
+      doc_code TEXT NOT NULL UNIQUE,                           -- WI-001, WP-001 (stable across revisions)
+      title TEXT NOT NULL,
+      department TEXT,
+      owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,   -- ผู้รับผิดชอบเอกสาร
+      branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,    -- ขอบเขต (null = ทุกสาขา)
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS quality_document_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      document_id INTEGER NOT NULL REFERENCES quality_documents(id) ON DELETE CASCADE,
+      rev INTEGER NOT NULL,                                    -- 1,2,3…
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft','pending','approved','obsolete','rejected')),
+      content TEXT,                                            -- in-system body (HTML), nullable
+      file_path TEXT, file_name TEXT, file_mime TEXT,          -- attached file, nullable
+      change_summary TEXT,                                     -- สรุปการแก้ไขรอบนี้
+      effective_date TEXT,                                     -- วันที่มีผลบังคับใช้ (YYYY-MM-DD)
+      created_by INTEGER REFERENCES users(id),
+      submitted_at TEXT,
+      approved_by INTEGER REFERENCES users(id),
+      approved_at TEXT,
+      reject_reason TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT,
+      UNIQUE (document_id, rev)
+    );
+    CREATE INDEX IF NOT EXISTS idx_qdv_document ON quality_document_versions(document_id, rev);
+    CREATE INDEX IF NOT EXISTS idx_qdv_status ON quality_document_versions(status);
+    CREATE TABLE IF NOT EXISTS quality_document_acks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      version_id INTEGER NOT NULL REFERENCES quality_document_versions(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      acknowledged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (version_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_qda_version ON quality_document_acks(version_id);
+  `);
+
   // RC-2 (owner 2026-06-13) — one LINE account per candidate. The removed
   // phone-search bind (RC-1) let the same line_user_id sit on multiple
   // candidate rows, so one person's notifications reached another. Step 1:

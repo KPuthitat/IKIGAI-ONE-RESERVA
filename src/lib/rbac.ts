@@ -22,6 +22,7 @@ export type RbacPermissionKey =
   | "accounta.manage"
   | "delivera.manage"
   | "ir.manage"
+  | "quality.manage"
   | "partner.drink.redeem"
   | "partner.mealpass.confirm";
 
@@ -82,6 +83,12 @@ export const RBAC_PERMISSIONS: RbacPermissionDef[] = [
     module: "IR",
     labelTh: "IR — ความเสี่ยง/อุบัติการณ์",
     descTh: "รับแจ้งเหตุการณ์ไม่พึงประสงค์/ความเสี่ยง ทบทวนหาสาเหตุ ติดตามการแก้ไข และดูเทรนด์รายสัปดาห์ (Risk Management)"
+  },
+  {
+    key: "quality.manage",
+    module: "QUALITY",
+    labelTh: "เอกสารคุณภาพ (WI/WP)",
+    descTh: "สร้าง/แก้ไข/อนุมัติเอกสารวิธีปฏิบัติงาน (WI/WP) ควบคุมเวอร์ชัน และติดตามการรับทราบของพนักงาน (Document Control)"
   },
   {
     key: "partner.drink.redeem",
