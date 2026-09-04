@@ -42,6 +42,27 @@ export default function PeriodDetailPage({
   const periodBranchId = (db.prepare("SELECT branch_id FROM payroll_periods WHERE id = ?")
     .get(id) as { branch_id: number | null }).branch_id;
 
+  // Company-wide combined view (owner 2026-09-04) — when this branch shares a
+  // company with other branches, link to the both-branches overview for this
+  // exact pay cycle (same cycle/target/dates/pay_date). rep = the lowest period
+  // id in that group, which /cycle/[id] expands into the merged view.
+  let companyCycleRepId: number | null = null;
+  if (periodBranchId != null) {
+    const compId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
+      .get(periodBranchId) as { company_id: number | null } | undefined)?.company_id ?? null;
+    const compBranchIds = (compId != null
+      ? db.prepare("SELECT id FROM branches WHERE company_id = ?").all(compId) as Array<{ id: number }>
+      : [{ id: periodBranchId }]).map((r) => r.id);
+    if (compBranchIds.length > 1) {
+      const ph = compBranchIds.map(() => "?").join(",");
+      companyCycleRepId = (db.prepare(
+        `SELECT MIN(id) AS r FROM payroll_periods
+         WHERE cycle = ? AND target = ? AND period_start = ? AND period_end = ? AND pay_date = ?
+           AND branch_id IN (${ph})`
+      ).get(period.cycle, period.target, period.period_start, period.period_end, period.pay_date, ...compBranchIds) as { r: number | null }).r;
+    }
+  }
+
   const lines = db.prepare(`
     SELECT pl.id, pl.user_id, pl.employee_code, pl.display_name, pl.employment_type,
            u.title_prefix,
@@ -207,8 +228,14 @@ export default function PeriodDetailPage({
         <Link href="/admin/persona/payroll" className="text-sm text-slate-500 hover:text-brand">
           ← {t(lang, "admin.persona.payroll.backToHub")}
         </Link>
+        {companyCycleRepId != null && (
+          <Link href={`/admin/persona/payroll/cycle/${companyCycleRepId}`}
+            className="text-sm font-medium text-brand hover:underline ml-auto inline-flex items-center gap-1 rounded-md border border-brand/40 px-3 py-1 hover:bg-amber-50">
+            🏢 ดูภาพรวมรวมทั้งบริษัท (สองสาขา) →
+          </Link>
+        )}
         <Link href={`/admin/persona/payroll/${id}/summary`}
-          className="text-sm text-brand hover:underline ml-auto">
+          className={`text-sm text-brand hover:underline ${companyCycleRepId != null ? "" : "ml-auto"}`}>
           สรุปทั้งรอบ (PDF สำหรับบัญชี) →
         </Link>
       </div>
