@@ -2101,8 +2101,13 @@ function LineEditModal({
                           <td className="px-2 py-1.5 text-right font-mono">
                             {ftMonthly ? (
                               p.statusLabel ? (
-                                // วันหยุด/วัน off/ลา — ได้ค่าจ้างอยู่แล้วในเงินเดือน.
-                                <span className="text-[10px] font-sans text-slate-400">ได้ค่าจ้าง (ในเงินเดือน)</span>
+                                (day.override?.unpaid_absence && p.statusLabel === "ขาดงาน") ? (
+                                  // ยืนยันหักค่าจ้างแล้ว — ขาดงานโดยไม่ได้รับค่าจ้าง.
+                                  <span className="text-[10px] font-sans font-semibold text-rose-600">ขาดงาน — ไม่ได้รับค่าจ้าง</span>
+                                ) : (
+                                  // วันหยุด/วัน off/ลา — ได้รับค่าจ้างตามปกติในเงินเดือน.
+                                  <span className="text-[10px] font-sans text-slate-400">ได้รับค่าจ้าง (ในเงินเดือน)</span>
+                                )
                               ) : p.pay > 0 ? (
                                 <span className="text-emerald-600"
                                   title={p.double ? "วันจ่าย 2 เท่า: ได้เพิ่ม 1 เท่า" : undefined}>
@@ -2285,10 +2290,10 @@ function LineEditModal({
                   <input type="checkbox" className="mt-0.5" disabled={locked}
                     checked={dayAbsence} onChange={(e) => setDayAbsence(e.target.checked)} />
                   <span className="text-[11px] leading-relaxed">
-                    <b className="text-rose-700">ขาดงานไม่ลา — หักเงินวันนี้</b> (หักฐานเงินเดือน ÷30 ต่อวัน)
+                    <b className="text-rose-700">ขาดงานโดยไม่ลา — หักค่าจ้างสำหรับวันนี้</b> (หักตามฐานเงินเดือน ÷ 30 ต่อวัน)
                     <span className="block text-slate-500">
-                      ติ๊กเมื่อวันนี้เป็นการขาดงานไม่แจ้ง/ไม่มีใบลา (รวมวันที่ตอกบัตรไม่ครบ). ถ้าจริงๆ มาทำงานแต่ลืมตอก
-                      ให้ใช้การรับรองเวลาแทน อย่าติ๊กหัก.
+                      เลือกเมื่อพนักงานขาดงานโดยไม่แจ้งหรือไม่มีใบลา (รวมถึงวันที่บันทึกเวลาไม่ครบ) · หากพนักงาน
+                      มาปฏิบัติงานจริงแต่มิได้บันทึกเวลา โปรดใช้การรับรองเวลาแทนการหักค่าจ้าง
                     </span>
                   </span>
                 </label>
