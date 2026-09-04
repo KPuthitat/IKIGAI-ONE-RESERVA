@@ -231,7 +231,7 @@ export default function PeriodDetailPage({
         {companyCycleRepId != null && (
           <Link href={`/admin/persona/payroll/cycle/${companyCycleRepId}`}
             className="text-sm font-medium text-brand hover:underline ml-auto inline-flex items-center gap-1 rounded-md border border-brand/40 px-3 py-1 hover:bg-amber-50">
-            🏢 ดูภาพรวมรวมทั้งบริษัท (สองสาขา) →
+            ภาพรวมค่าตอบแทนรวมทั้งบริษัท (สองสาขา) →
           </Link>
         )}
         <Link href={`/admin/persona/payroll/${id}/summary`}

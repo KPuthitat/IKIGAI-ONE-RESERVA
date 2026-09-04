@@ -215,6 +215,37 @@ export function effectiveVersion(db: Database.Database, documentId: number): Qua
   ).get(documentId) as QualityVersion | undefined) ?? null;
 }
 
+export type StaffDocRow = {
+  document_id: number; doc_type: QualityDocType; doc_code: string; title: string;
+  department: string | null; branch_id: number | null; branch_name: string | null;
+  version_id: number; rev: number; effective_date: string | null;
+  content: string | null; file_path: string | null; file_name: string | null; file_mime: string | null;
+  acknowledged_at: string | null;
+};
+
+/**
+ * Effective (approved) documents a staff member must read, scoped to the
+ * branches they belong to (a doc with branch_id NULL applies to everyone).
+ * Each row carries the staff member's own acknowledgement timestamp (or null).
+ */
+export function listEffectiveForStaff(db: Database.Database, userId: number): StaffDocRow[] {
+  return db.prepare(`
+    SELECT
+      d.id AS document_id, d.doc_type, d.doc_code, d.title, d.department,
+      d.branch_id, b.name AS branch_name,
+      v.id AS version_id, v.rev, v.effective_date,
+      v.content, v.file_path, v.file_name, v.file_mime,
+      ack.acknowledged_at AS acknowledged_at
+    FROM quality_documents d
+    JOIN quality_document_versions v ON v.document_id = d.id AND v.status = 'approved'
+    LEFT JOIN branches b ON b.id = d.branch_id
+    LEFT JOIN quality_document_acks ack ON ack.version_id = v.id AND ack.user_id = @uid
+    WHERE d.branch_id IS NULL
+       OR d.branch_id IN (SELECT branch_id FROM user_branches WHERE user_id = @uid)
+    ORDER BY (ack.acknowledged_at IS NOT NULL), d.doc_type, d.doc_code
+  `).all({ uid: userId }) as StaffDocRow[];
+}
+
 export type AckStatus = {
   total: number; acked: number;
   ackedUsers: Array<{ user_id: number; display_name: string; acknowledged_at: string }>;

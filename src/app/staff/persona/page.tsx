@@ -7,6 +7,7 @@ import { bkkDateIso } from "@/lib/time";
 import { userHasWorkShiftOn, resolveClockBranchId, scheduledWorkBranchesWithNames } from "@/lib/roster";
 import { resolveDrinkPartner } from "@/lib/partner-drink-orders";
 import { myOpenActionItemCount } from "@/lib/meetings";
+import { listEffectiveForStaff } from "@/lib/quality-docs";
 import TimeClockClient from "./TimeClockClient";
 import BranchSwitchPrompt from "./BranchSwitchPrompt";
 
@@ -124,6 +125,9 @@ export default function StaffPersonaPage() {
   // งานที่ได้รับมอบหมายจากการประชุม (owner 2026-08-04) — โชว์การ์ดพร้อมจำนวนงานค้าง.
   const openTaskCount = myOpenActionItemCount(db, user.id);
 
+  // เอกสารคุณภาพ (WI/WP) ที่มีผลบังคับใช้แต่ยังไม่ได้กดรับทราบ (owner 2026-09-04).
+  const qualityPending = listEffectiveForStaff(db, user.id).filter((d) => !d.acknowledged_at).length;
+
   // Cross-branch clock-in helper (owner 2026-07-31): if the ACTIVE branch has no
   // shift today but the staff IS rostered at another branch, offer a one-tap
   // switch pop-up so they don't get stuck at "ไม่มีกะ" / wrong-branch gates.
@@ -211,6 +215,12 @@ export default function StaffPersonaPage() {
         className="block rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 hover:bg-emerald-100 transition"
       >
         ส่งรายงานปิดกะ / เรื่องเข้าประชุม →
+      </Link>
+      <Link
+        href="/staff/quality"
+        className="block rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-medium text-indigo-900 hover:bg-indigo-100 transition"
+      >
+        เอกสารคุณภาพ (WI/WP){qualityPending > 0 ? ` · ${qualityPending} ฉบับยังไม่รับทราบ` : ""} →
       </Link>
       <TimeClockClient
       userName={nameWithPrefix(user.title_prefix, user.display_name)}
