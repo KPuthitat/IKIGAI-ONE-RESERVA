@@ -31,6 +31,10 @@ export type DayPair = {
   effectiveMinutes: number;
   otMinutes: number;
   otPay: number;
+  // Premium baht earned on a ×2 / ×1.5 day = worked-hours × rate × (mult−1).
+  // Uniform for PT and FT (for a salaried FT this equals the double-pay bonus
+  // that rides in other_additions). 0 on a normal day.
+  premiumPay: number;
   pay: number;
   edited: boolean;
   lateMin: number;
@@ -62,6 +66,8 @@ export type BreakdownDay = {
   breakMinutes: number;
   otMinutes: number;
   otPay: number;
+  premiumPay: number;         // ×2 / ×1.5 premium baht for the day
+  absenceDeduction: number;   // ฿ deducted for a confirmed unpaid absence (FT salary/30), else 0
   pay: number;
   edited: boolean;
   override: FieldOv | null;
@@ -303,6 +309,8 @@ export function buildLineBreakdown(
 
     const mult = isDoubleDay ? 2 : holiday ? 1.5 : 1;
     const regularPay = (regMin / 60) * rateForPay * mult;
+    // Premium = the portion above the normal 1× rate (the extra from ×2/×1.5).
+    const premiumPay = (regMin / 60) * rateForPay * (mult - 1);
     const otPay = isExec ? 0
       : (ov?.ot_pay != null ? ov.ot_pay : computeOtPay(otMin, rateForPay, settings, mult));
 
@@ -322,6 +330,7 @@ export function buildLineBreakdown(
       effectiveMinutes: regMin,
       otMinutes: otMin,
       otPay: Math.round(otPay * 100) / 100,
+      premiumPay: Math.round(premiumPay * 100) / 100,
       pay: Math.round((regularPay + otPay) * 100) / 100,
       edited: edited || hasFieldOv,
       lateMin,
@@ -403,7 +412,7 @@ export function buildLineBreakdown(
     if (!d) {
       const approved = approvedOtByDate.get(date) ?? null;
       d = { date, pairs: [], totalMinutes: 0, effectiveMinutes: 0,
-            breakMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false,
+            breakMinutes: 0, otMinutes: 0, otPay: 0, premiumPay: 0, absenceDeduction: 0, pay: 0, edited: false,
             override: fieldOvByDate.get(date) ?? null,
             otUntil: (fieldOvByDate.get(date)?.ot_until ?? approved) || null,
             otApprovedUntil: approved,
@@ -420,6 +429,7 @@ export function buildLineBreakdown(
     day.breakMinutes += p.breakMinutes;
     day.otMinutes += p.otMinutes;
     day.otPay += p.otPay;
+    day.premiumPay += p.premiumPay;
     day.pay += p.pay;
     if (p.edited) day.edited = true;
   }
@@ -438,7 +448,7 @@ export function buildLineBreakdown(
         day.pairs.push({
           date: bkkDate(e.ts), workIn: null, workOut: bkkHHMM(e.ts), durationMinutes: 0,
           schedIn: null, schedOut: null, breakMinutes: 0, effectiveMinutes: 0,
-          otMinutes: 0, otPay: 0, pay: 0, edited: false, lateMin: 0, earlyMin: 0,
+          otMinutes: 0, otPay: 0, premiumPay: 0, pay: 0, edited: false, lateMin: 0, earlyMin: 0,
           holiday: false, double: false, publicHoliday: publicHolidaySet.has(bkkDate(e.ts)),
           holidayChoice: holidayChoiceByDate.get(bkkDate(e.ts)) ?? null,
           branch: effBranchId(bkkDate(e.ts), e.branch_id) != null ? (branchNameById.get(effBranchId(bkkDate(e.ts), e.branch_id)!) ?? null) : null,
@@ -458,7 +468,7 @@ export function buildLineBreakdown(
       day.pairs.push({
         date, workIn: null, workOut: null, durationMinutes: 0,
         schedIn: null, schedOut: null, breakMinutes: 0,
-        effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: true,
+        effectiveMinutes: 0, otMinutes: 0, otPay: 0, premiumPay: 0, pay: 0, edited: true,
         lateMin: 0, earlyMin: 0, holiday: false, double: false,
         publicHoliday: publicHolidaySet.has(date), holidayChoice: holidayChoiceByDate.get(date) ?? null,
         branch: null, branch_id: null, statusLabel: "ขาดงาน"
@@ -475,7 +485,7 @@ export function buildLineBreakdown(
     day.pairs.push({
       date: d, workIn: null, workOut: null, durationMinutes: 0,
       schedIn: null, schedOut: null, breakMinutes: 0,
-      effectiveMinutes: 0, otMinutes: 0, otPay: 0, pay: 0, edited: false,
+      effectiveMinutes: 0, otMinutes: 0, otPay: 0, premiumPay: 0, pay: 0, edited: false,
       lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), double: false,
       publicHoliday: publicHolidaySet.has(d), holidayChoice: holidayChoiceByDate.get(d) ?? null,
       branch: null, branch_id: null, statusLabel: label
@@ -497,6 +507,17 @@ export function buildLineBreakdown(
       day.pay = round2(dayPay);
     }
     doublePremiumTotal = round2(doublePremiumTotal);
+  }
+
+  // Per-day unpaid-absence deduction (owner 2026-09-05): a salaried FT loses
+  // salary/30 for each day the admin CONFIRMED as ขาดงานไม่ลา (payroll_line_days
+  // .unpaid_absence). Mirrors the engine's confirmedAbsence deduction. PT has no
+  // deduction — an absent PT day is simply unpaid (0), so this stays 0.
+  if (ftMonthly && emp?.monthly_salary) {
+    const perDay = round2(emp.monthly_salary / 30);
+    for (const day of sortedDays) {
+      if (fieldOvByDate.get(day.date)?.unpaid_absence) day.absenceDeduction = perDay;
+    }
   }
 
   const selfies = entries
