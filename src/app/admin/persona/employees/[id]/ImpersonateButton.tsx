@@ -15,7 +15,7 @@ export default function ImpersonateButton({
   const [err, setErr] = useState<string | null>(null);
 
   const ERR_TH: Record<string, string> = {
-    admin_can_only_impersonate_staff: "ดูแทนได้เฉพาะพนักงาน (Staff) เท่านั้น",
+    cannot_impersonate_super_admin: "ดูแทนผู้ดูแลสูงสุดไม่ได้",
     target_not_in_your_branch: "พนักงานคนนี้ไม่ได้อยู่สาขาที่คุณดูแล",
     cannot_impersonate_self: "ดูแทนตัวเองไม่ได้",
     forbidden: "ไม่มีสิทธิ์ดูแทน"
@@ -27,9 +27,9 @@ export default function ImpersonateButton({
     try {
       const res = await fetch(apiUrl(`/api/admin/impersonate/${targetId}`), { method: "POST" });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setErr(ERR_TH[j.error] ?? j.error ?? "เริ่มดูแทนไม่สำเร็จ"); return; }
+      if (!res.ok || !j.ok) { setErr(ERR_TH[j.error] ?? j.error ?? "เริ่มดูแทนไม่สำเร็จ"); setBusy(false); return; }
       // Full reload to /staff so every server component re-reads the impersonated
-      // session and the "หยุดดูแทน" banner appears.
+      // session and the "หยุดดูแทน" banner appears. Leave busy=true — we're navigating away.
       window.location.href = "/staff";
     } catch {
       setErr("เชื่อมต่อไม่ได้"); setBusy(false);

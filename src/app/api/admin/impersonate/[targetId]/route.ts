@@ -27,11 +27,14 @@ export async function POST(_req: Request, { params }: { params: { targetId: stri
     .get(targetId) as { id: number; role: string } | undefined;
   if (!target) return NextResponse.json({ error: "target_not_found" }, { status: 404 });
 
-  // Admin (non-super) can only impersonate staff and only within
-  // their own branch. Super_admin has no such restriction.
+  // Admin (non-super) may view-as any NON-super_admin account within their own
+  // branch — staff or a fellow admin/หัวหน้า (owner 2026-09-05: the owner's
+  // account is role "admin" and needs to view-as supervisors too). Impersonating
+  // a super_admin stays forbidden (would be a privilege escalation). Super_admin
+  // has no restriction.
   if (user.role === "admin") {
-    if (target.role !== "staff") {
-      return NextResponse.json({ error: "admin_can_only_impersonate_staff" }, { status: 403 });
+    if (target.role === "super_admin") {
+      return NextResponse.json({ error: "cannot_impersonate_super_admin" }, { status: 403 });
     }
     const sameBranch = db.prepare(`
       SELECT 1 AS ok FROM user_branches ub
