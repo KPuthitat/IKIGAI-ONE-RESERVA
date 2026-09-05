@@ -21,10 +21,11 @@ export default function StaffPayslipPage({ params }: { params: { id: string } })
   const periodId = Number(params.id);
   if (!Number.isInteger(periodId)) notFound();
 
-  // Only ever the signed-in staff's OWN line, and only finalized/paid rounds
-  // (a draft's figures can still change, so it isn't a real payslip yet).
+  // Only ever the signed-in staff's OWN line, and only PAID rounds (owner
+  // 2026-09-05: staff see nothing until the round is actually paid — draft/
+  // finalized figures can still change before payout).
   const view = buildPayslipView(db, periodId, user.id);
-  if (!view || (view.period.status !== "finalized" && view.period.status !== "paid")) notFound();
+  if (!view || view.period.status !== "paid") notFound();
 
   return (
     <>

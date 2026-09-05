@@ -1,5 +1,6 @@
 // /staff/persona/payslip — พนักงานเปิดดูสลิปเงินเดือนของตัวเอง (owner 2026-09-05).
-// เห็นเฉพาะรอบที่ยืนยัน/ทำจ่ายแล้ว (รอบร่างยอดยังเปลี่ยนได้ จึงไม่แสดง).
+// เห็นเฉพาะรอบที่ "ทำจ่ายแล้ว" เท่านั้น (owner 2026-09-05: สถานะอื่นไม่ต้องให้ดู —
+// รอบร่าง/ยืนยันแล้ว ยอดยังปรับได้ก่อนจ่ายจริง).
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
@@ -17,12 +18,10 @@ type Row = {
   period_end: string;
   pay_date: string;
   cycle: "weekly" | "monthly";
-  status: "finalized" | "paid";
+  status: "paid";
   net_pay: number;
   branch_name: string | null;
 };
-
-const STATUS_LABEL: Record<string, string> = { finalized: "ยืนยันแล้ว", paid: "ทำจ่ายแล้ว" };
 
 export default function StaffPayslipListPage() {
   const user = requireUser();
@@ -34,7 +33,7 @@ export default function StaffPayslipListPage() {
     FROM payroll_lines l
     JOIN payroll_periods p ON p.id = l.period_id
     LEFT JOIN branches b ON b.id = p.branch_id
-    WHERE l.user_id = ? AND p.status IN ('finalized','paid')
+    WHERE l.user_id = ? AND p.status = 'paid'
     ORDER BY p.period_start DESC, p.id DESC
   `).all(user.id) as Row[];
 
@@ -47,7 +46,7 @@ export default function StaffPayslipListPage() {
         <Link href="/staff/persona" className="text-sm text-brand hover:underline">← ลงเวลา</Link>
       </div>
       <p className="text-sm text-slate-500 -mt-2">
-        เปิดดูรายละเอียดค่าตอบแทนแต่ละรอบ พร้อมวิธีคำนวณและตารางลงเวลารายวัน · แสดงเฉพาะรอบที่ยืนยัน/ทำจ่ายแล้ว
+        เปิดดูรายละเอียดค่าตอบแทนแต่ละรอบ พร้อมวิธีคำนวณและตารางลงเวลารายวัน · แสดงเฉพาะรอบที่ทำจ่ายแล้ว
       </p>
 
       <div className="card overflow-x-auto">
@@ -80,10 +79,8 @@ export default function StaffPayslipListPage() {
                     ฿{fmtMoney(r.net_pay)}
                   </td>
                   <td className="py-2 pr-3">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                      r.status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"
-                    }`}>
-                      {STATUS_LABEL[r.status]}
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-emerald-100 text-emerald-700">
+                      ทำจ่ายแล้ว
                     </span>
                   </td>
                   <td className="py-2 pr-3 text-right">
