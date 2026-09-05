@@ -122,6 +122,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/persona/calendar", label: t(lang, "staff.persona.nav.calendar") },
         { href: "/staff/persona/mealpass", label: "MEALPASS · อาหาร/เครื่องดื่ม" },
         { href: "/staff/persona/profile", label: t(lang, "staff.persona.nav.profile") },
+        { href: "/staff/persona/payslip", label: "สลิปเงินเดือน" },
         { href: "/staff/persona/discipline", label: t(lang, "staff.persona.nav.discipline") },
         { href: "/staff/persona/leave", label: t(lang, "staff.nav.leave") },
         { href: "/staff/persona/shift-request", label: "คำขอเปลี่ยนเวลางาน" },

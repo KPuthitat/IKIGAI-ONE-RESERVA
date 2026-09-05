@@ -222,12 +222,6 @@ export default function StaffPersonaPage() {
       >
         เอกสารคุณภาพ (WI/WP){qualityPending > 0 ? ` · ${qualityPending} ฉบับยังไม่รับทราบ` : ""} →
       </Link>
-      <Link
-        href="/staff/persona/payslip"
-        className="block rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
-      >
-        สลิปเงินเดือนของฉัน →
-      </Link>
       <TimeClockClient
       userName={nameWithPrefix(user.title_prefix, user.display_name)}
       hasPin={hasPin}
