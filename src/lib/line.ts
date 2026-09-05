@@ -17,7 +17,7 @@ import { nameWithPrefix } from "./name";
 // LINE message kinds we use. Loose typing is intentional — Flex contents are
 // large JSON blobs and the API spec already documents the shape.
 type LineTextMessage = { type: "text"; text: string };
-type LineFlexMessage = { type: "flex"; altText: string; contents: unknown };
+export type LineFlexMessage = { type: "flex"; altText: string; contents: unknown };
 export type LineMessage = LineTextMessage | LineFlexMessage;
 
 type LinePushPayload = {
