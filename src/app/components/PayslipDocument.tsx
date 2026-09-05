@@ -346,7 +346,7 @@ export default function PayslipDocument({
                   <th className="py-1 pr-2 font-medium">วันที่</th>
                   <th className="py-1 pr-2 font-medium">เข้า–ออก</th>
                   <th className="py-1 pr-2 font-medium text-right">ชม.ทำงาน</th>
-                  <th className="py-1 pr-2 font-medium text-right">OT</th>
+                  <th className="py-1 pr-2 font-medium text-right">ค่าล่วงเวลา</th>
                   <th className="py-1 font-medium">หมายเหตุ</th>
                 </tr>
               </thead>
@@ -372,13 +372,28 @@ export default function PayslipDocument({
                       <td className="py-1 pr-2 text-right tabular-nums text-slate-700">
                         {d.effectiveMinutes > 0 ? fmtMin(d.effectiveMinutes, lang) : "—"}
                       </td>
-                      <td className="py-1 pr-2 text-right tabular-nums text-slate-700">
-                        {d.otMinutes > 0 ? fmtMin(d.otMinutes, lang) : "—"}
+                      <td className="py-1 pr-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
+                        {d.otMinutes > 0
+                          ? <>{fmtMin(d.otMinutes, lang)}{d.otPay > 0 && <span className="block text-[10px] text-emerald-700">฿{fmtMoney(d.otPay)}</span>}</>
+                          : "—"}
                       </td>
                       <td className="py-1">
-                        <span className="flex flex-wrap gap-1">
-                          {isDouble && <span className="text-[9px] px-1 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">×2</span>}
-                          {isSpecial && !isDouble && <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700">×1.5</span>}
+                        <span className="flex flex-wrap items-center gap-1">
+                          {isDouble && (
+                            <span className="text-[9px] px-1 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">
+                              จ่าย 2 เท่า{d.premiumPay > 0 ? ` +฿${fmtMoney(d.premiumPay)}` : ""}
+                            </span>
+                          )}
+                          {isSpecial && !isDouble && (
+                            <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700">
+                              วันพิเศษ{d.premiumPay > 0 ? ` +฿${fmtMoney(d.premiumPay)}` : ""}
+                            </span>
+                          )}
+                          {d.absenceDeduction > 0 && (
+                            <span className="text-[9px] px-1 py-0.5 rounded bg-rose-100 text-rose-700 font-medium">
+                              หักขาดงาน −฿{fmtMoney(d.absenceDeduction)}
+                            </span>
+                          )}
                           {worked.length > 0 && status && <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">{status}</span>}
                           {worked.length > 0 && d.pairs[0]?.branch && <span className="text-[9px] text-slate-400">{d.pairs[0].branch}</span>}
                           {isAdmin && d.edited && <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700">แก้ไข</span>}
@@ -391,7 +406,8 @@ export default function PayslipDocument({
             </table>
           </div>
           <p className="text-[10px] text-slate-400 mt-1.5">
-            ชั่วโมงทำงานเป็นเวลาหลังหักพักและปรับตามกะ · ×2 = วันจ่ายสองเท่า · ×1.5 = วันพิเศษ (พาร์ทไทม์)
+            ชั่วโมงทำงานเป็นเวลาหลังหักพักและปรับตามกะ · คอลัมน์ OT แสดงชั่วโมงและค่าล่วงเวลาที่ได้รับ ·
+            “จ่าย 2 เท่า/วันพิเศษ +฿” = ส่วนที่ได้เพิ่มจากเรตปกติในวันนั้น · “หักขาดงาน −฿” = หักค่าจ้างวันขาดงานไม่ลา (เงินเดือน ÷ 30)
           </p>
         </div>
       )}
