@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userCanAdminBranch } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
+import { notifyMeetingItemDone } from "@/lib/meetings-notify";
 
 // PATCH /api/persona/meeting-items/[id] — mark an action item done / reopen it.
 // Allowed for the item's ASSIGNEE (so staff can close their own work) or any
@@ -25,11 +26,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const db = getDb();
   const item = db.prepare(`
-    SELECT ai.id, ai.assignee_user_id, m.branch_id
+    SELECT ai.id, ai.assignee_user_id, ai.status, m.branch_id
     FROM meeting_action_items ai
     JOIN meetings m ON m.id = ai.meeting_id
     WHERE ai.id = ?
-  `).get(id) as { id: number; assignee_user_id: number | null; branch_id: number | null } | undefined;
+  `).get(id) as { id: number; assignee_user_id: number | null; status: "open" | "done"; branch_id: number | null } | undefined;
   if (!item) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   // The item's assignee may always close/reopen their own task. An admin may too,
@@ -46,6 +47,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       "UPDATE meeting_action_items SET status = 'done', done_at = ?, done_by = ? WHERE id = ?"
     ).run(new Date().toISOString(), user.id, id);
     logPersonaAction(user.id, "meeting.item_done", id);
+    // Notify the linked staff LINE group — only on a real open→done transition
+    // (owner 2026-09-05), so re-confirming a done item doesn't re-notify.
+    if (item.status === "open") {
+      await notifyMeetingItemDone(db, id, user.id);
+    }
   } else {
     db.prepare(
       "UPDATE meeting_action_items SET status = 'open', done_at = NULL, done_by = NULL WHERE id = ?"
