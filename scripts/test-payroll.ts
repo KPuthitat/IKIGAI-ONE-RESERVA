@@ -431,7 +431,8 @@ console.log("\nเดือนเปลี่ยนผ่าน weekly: จ่�
   // เพิ่มอื่นๆ (owner 2026-09-02) — ไม่รวมในฐานเงินเดือน แต่ยังอยู่ในฐานภาษี.
   const dbl = runRound("2026-07-20", "2026-07-26", "2026-07-22");
   eq("รอบมีวันคูณสอง → ฐานรายวัน 7 วัน (ไม่รวมพรีเมียม)", dbl.base_pay, base7);
-  eq("รอบมีวันคูณสอง → พรีเมียมคูณสอง 1 วัน อยู่ในเพิ่มอื่นๆ", dbl.other_additions, Math.round(daily * 100) / 100);
+  eq("รอบมีวันคูณสอง → พรีเมียมคูณสอง 1 วัน อยู่ในค่าล่วงเวลา", dbl.ot_pay, Math.round(daily * 100) / 100);
+  eq("รอบมีวันคูณสอง → เพิ่มอื่นๆ ไม่มีพรีเมียมแล้ว", dbl.other_additions, 0);
   eq("รอบมีวันคูณสอง → ยอดรวม = ฐาน + พรีเมียม", dbl.gross_pay, Math.round((base7 + daily) * 100) / 100);
   // ภาษีคิดที่ยอดรวม (รวมพรีเมียม) — เปลี่ยนผ่าน weekly → WHT ไม่ใช่ SSO
   eq("เปลี่ยนผ่าน weekly → หัก WHT ไม่ใช่ SSO", dbl.sso_amount === 0 && dbl.tax_amount > 0 ? 1 : 0, 1);
@@ -462,7 +463,7 @@ console.log("\nเดือนเปลี่ยนผ่าน weekly: จ่�
   // ยังจ่าย โดยไปอยู่ช่องเพิ่มอื่นๆ (owner 2026-09-02).
   const ptDbl = runPT("2026-07-27", "2026-08-02", "2026-07-28");
   eq("กฎ B: วันคูณสอง ≤ จ่ายครบ → ฐาน = 0", ptDbl.base_pay, 0);
-  eq("กฎ B: พรีเมียมคูณสอง 1 วัน อยู่ในเพิ่มอื่นๆ", ptDbl.other_additions, Math.round(daily * 100) / 100);
+  eq("กฎ B: พรีเมียมคูณสอง 1 วัน อยู่ในค่าล่วงเวลา", ptDbl.ot_pay, Math.round(daily * 100) / 100);
 }
 
 // 11f. วันจ่ายสองเท่า สำหรับประจำเต็มเดือน (owner 2026-09-02): พรีเมียมไปช่องเพิ่ม
@@ -482,7 +483,8 @@ console.log("\nวันจ่ายสองเท่า ประจำเต�
   });
   const prem = Math.round((30000 / 30) * 100) / 100; // 1 วัน (8ชม.) = 1000
   eq("ฐานเงินเดือน = 30000 (ไม่รวมพรีเมียม)", line.base_pay, 30000);
-  eq("พรีเมียมคูณสอง อยู่ในเพิ่มอื่นๆ (1000)", line.other_additions, prem);
+  eq("พรีเมียมคูณสอง อยู่ในค่าล่วงเวลา (1000)", line.ot_pay, prem);
+  eq("เพิ่มอื่นๆ ไม่มีพรีเมียมแล้ว", line.other_additions, 0);
   eq("ยอดรวม = 30000 + พรีเมียม", line.gross_pay, Math.round((30000 + prem) * 100) / 100);
   // SSO คิดที่ฐานเงินเดือน 30000 เท่านั้น → 30000×5% = 1500 แต่ cap 750 (ไม่แตะพรีเมียม)
   eq("ประกันสังคมคิดที่ฐานเงินเดือน (cap 750, ไม่รวมพรีเมียม)", line.sso_amount, 750);
@@ -575,21 +577,24 @@ console.log("\nวันจ่ายสองเท่า (owner 2026-07-21):");
   };
   const dbl = new Set<string>([D]);
 
-  // PT rate 50/ชม.: ฐาน 8ชม.×50 = 400 → วัน 2 เท่า = 800; OT ×2.
+  // PT rate 50/ชม. (owner 2026-09-05: เบี้ยสองเท่าไปรวมในค่าล่วงเวลา):
+  //   ฐานคงที่ 1× · ส่วนเพิ่ม 1× (= ฐานปกติ) + OT×2 ไปอยู่ค่าล่วงเวลา · ยอดรวมเท่าเดิม.
   const ptN = computeLineForEmployee({ ...base, employee: ptHourly(50) });
   const ptD = computeLineForEmployee({ ...base, employee: ptHourly(50), doubleSet: dbl });
-  eq("PT วัน 2 เท่า → ฐาน ×2 (400→800)", ptD.base_pay, Math.round(ptN.base_pay * 2 * 100) / 100);
-  eq("PT วัน 2 เท่า → OT ×2", ptD.ot_pay, Math.round(ptN.ot_pay * 2 * 100) / 100);
+  eq("PT วัน 2 เท่า → ฐานคงเดิม (ไม่ ×2 แล้ว)", ptD.base_pay, ptN.base_pay);
+  eq("PT วัน 2 เท่า → ค่าล่วงเวลา = OT×2 + เบี้ย(=ฐาน 1×)", ptD.ot_pay, Math.round((ptN.ot_pay * 2 + ptN.base_pay) * 100) / 100);
+  eq("PT วัน 2 เท่า → ไม่มีในเพิ่มอื่นๆ", ptD.other_additions, 0);
+  eq("PT วัน 2 เท่า → ยอดรวมเท่าเดิม (net-neutral)", ptD.gross_pay, Math.round((ptN.base_pay * 2 + ptN.ot_pay * 2) * 100) / 100);
   eq("PT วัน 2 เท่า → นาทีเท่าเดิม", ptD.ot_minutes, ptN.ot_minutes);
 
   // FT เงินเดือน 30000: ฐานคงเดิม 30000 · พรีเมียม 1 วันเทียบเท่า (125/ชม.×8 = 1000)
-  // ไปช่องเพิ่มอื่นๆ → ยอดรวม 31000 (owner 2026-09-02); OT ×2.
+  // ไปอยู่ค่าล่วงเวลาพร้อม OT×2 (owner 2026-09-05); ยอดรวมเท่าเดิม.
   const ftN = computeLineForEmployee({ ...base, employee: { ...ftMonthly(30000), track_attendance: 1 } });
   const ftD = computeLineForEmployee({ ...base, employee: { ...ftMonthly(30000), track_attendance: 1 }, doubleSet: dbl });
   eq("FT วัน 2 เท่า → ฐานเงินเดือนคงเดิม 30000", ftD.base_pay, 30000);
-  eq("FT วัน 2 เท่า → พรีเมียม 1 วันเทียบเท่า ไปเพิ่มอื่นๆ (1000)", ftD.other_additions, 1000);
-  eq("FT วัน 2 เท่า → ยอดรวม 31000", ftD.gross_pay, 31000);
-  eq("FT วัน 2 เท่า → OT ×2", ftD.ot_pay, Math.round(ftN.ot_pay * 2 * 100) / 100);
+  eq("FT วัน 2 เท่า → เพิ่มอื่นๆ ไม่มีพรีเมียมแล้ว", ftD.other_additions, 0);
+  eq("FT วัน 2 เท่า → ค่าล่วงเวลา = OT×2 + พรีเมียม 1000", ftD.ot_pay, Math.round((ftN.ot_pay * 2 + 1000) * 100) / 100);
+  eq("FT วัน 2 เท่า → ยอดรวมเท่าเดิม (30000 + OT×2 + 1000)", ftD.gross_pay, Math.round((30000 + ftN.ot_pay * 2 + 1000) * 100) / 100);
 
   // วันปกติ (ไม่อยู่ใน doubleSet) → ไม่เปลี่ยน.
   eq("วันที่ไม่ได้ตั้ง 2 เท่า → PT ฐานปกติ", ptN.base_pay, 400);

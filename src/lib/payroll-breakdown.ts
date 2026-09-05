@@ -67,6 +67,8 @@ export type BreakdownDay = {
   otMinutes: number;
   otPay: number;
   premiumPay: number;         // ×2 / ×1.5 premium baht for the day
+  double: boolean;            // day worked on a วันจ่ายสองเท่า (its premium is booked as OT)
+  holiday: boolean;           // day worked on a วันพิเศษ PT (×1.5; premium stays in base)
   absenceDeduction: number;   // ฿ deducted for a confirmed unpaid absence (FT salary/30), else 0
   pay: number;
   edited: boolean;
@@ -412,7 +414,8 @@ export function buildLineBreakdown(
     if (!d) {
       const approved = approvedOtByDate.get(date) ?? null;
       d = { date, pairs: [], totalMinutes: 0, effectiveMinutes: 0,
-            breakMinutes: 0, otMinutes: 0, otPay: 0, premiumPay: 0, absenceDeduction: 0, pay: 0, edited: false,
+            breakMinutes: 0, otMinutes: 0, otPay: 0, premiumPay: 0, double: false, holiday: false,
+            absenceDeduction: 0, pay: 0, edited: false,
             override: fieldOvByDate.get(date) ?? null,
             otUntil: (fieldOvByDate.get(date)?.ot_until ?? approved) || null,
             otApprovedUntil: approved,
@@ -432,6 +435,8 @@ export function buildLineBreakdown(
     day.premiumPay += p.premiumPay;
     day.pay += p.pay;
     if (p.edited) day.edited = true;
+    if (p.double) day.double = true;
+    if (p.holiday) day.holiday = true;
   }
 
   let openIn: EntryRow | null = null;
@@ -494,19 +499,24 @@ export function buildLineBreakdown(
 
   const sortedDays = [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
 
+  // Total double-pay premium (booked as ค่าล่วงเวลา; owner 2026-09-05) — summed
+  // for PT and FT alike so the payslip can note how much of OT is the premium.
   let doublePremiumTotal = 0;
+  for (const day of sortedDays) {
+    for (const p of day.pairs) if (p.double) doublePremiumTotal += p.premiumPay;
+  }
+  doublePremiumTotal = round2(doublePremiumTotal);
+  // FT ประจำ: per-day cash beyond the monthly salary = double premium + OT.
   if (ftMonthly) {
     for (const day of sortedDays) {
       let dayPay = 0;
       for (const p of day.pairs) {
         const regularDelta = p.double ? round2((p.effectiveMinutes / 60) * ftHourlyEquiv) : 0;
-        doublePremiumTotal += regularDelta;
         p.pay = round2(regularDelta + p.otPay);
         dayPay += p.pay;
       }
       day.pay = round2(dayPay);
     }
-    doublePremiumTotal = round2(doublePremiumTotal);
   }
 
   // Per-day unpaid-absence deduction (owner 2026-09-05): a salaried FT loses
@@ -531,7 +541,9 @@ export function buildLineBreakdown(
     period_branch_id: period.branch_id,
     branch_options: branchOptions,
     ftMonthly,
-    salaryBase: round2(actualBase - doublePremiumTotal),
+    // The double-pay premium is booked as ค่าล่วงเวลา now (owner 2026-09-05), so
+    // base_pay is the salary alone — salaryBase = actualBase (no subtraction).
+    salaryBase: actualBase,
     doublePremium: round2(doublePremiumTotal),
     actualBase,
     actualOt,

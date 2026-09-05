@@ -1088,6 +1088,11 @@ export function computeLineForEmployee(args: {
   // is credited as one extra day-equivalent (ftHourlyEquivalent × regular hours)
   // per double day worked — added to basePay below (owner 2026-07-21).
   let ftDoubleBonus = 0;
+  // PT double-pay premium — the extra 1× on regular hours worked on a วันจ่ายสองเท่า.
+  // Kept SEPARATE from ptBasePay so it can be booked as ค่าล่วงเวลา alongside
+  // ftDoubleBonus (owner 2026-09-05: เบี้ยสองเท่าไปรวมในค่าล่วงเวลา). วันพิเศษ ×1.5
+  // stays in base.
+  let ptDoublePremium = 0;
 
   // Cycle this period pays an FT on — period-relative (transition month = weekly),
   // drives both the base and the forced-WHT tax mode (owner 2026-07-16).
@@ -1226,7 +1231,14 @@ export function computeLineForEmployee(args: {
       // PT premium: 2× on a double-pay day, else 1.5× on a วันพิเศษ, else 1× —
       // applied to both base + OT (owner 2026-07-21: 2× wins over the 1.5×).
       const mult = isDouble ? 2 : isHoliday ? PT_HOLIDAY_MULTIPLIER : 1;
-      ptBasePay += (dayRegular / 60) * ptRate * mult;
+      // On a double-pay day the base is paid at 1×, and the extra 1× is booked as
+      // ค่าล่วงเวลา (owner 2026-09-05). วันพิเศษ ×1.5 keeps its premium in base.
+      if (isDouble) {
+        ptBasePay += (dayRegular / 60) * ptRate;
+        ptDoublePremium += (dayRegular / 60) * ptRate;
+      } else {
+        ptBasePay += (dayRegular / 60) * ptRate * mult;
+      }
       // ค่าล่วงเวลา override (typed baht) wins over the computed OT pay.
       ptOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ptRate, settings, mult);
     } else if (e.employment_type === "ft" && e.track_attendance !== 0) {
@@ -1321,14 +1333,15 @@ export function computeLineForEmployee(args: {
   // ลาไม่รับค่าจ้าง (+ ขาดงานไม่ลา, Phase B + ยืนยันหักเอง) — reduce FT base salary/30/day.
   const totalUnpaidDays = unpaidLeaveDays + noShowDays + confirmedAbsenceDays;
   const ulDeduction = unpaidLeaveDeduction(e, totalUnpaidDays, basePay);
-  // FT วันจ่ายสองเท่า premium no longer inflates ฐานเงินเดือน (owner 2026-09-02:
-  // "จ่ายสองเท่า ส่วนที่เพิ่มขึ้นมาให้ไปใส่ช่องเพิ่มอื่นๆ"). It is carried in
-  // other_additions below and kept in the tax base, so ภาษีคิดที่ยอดรวม while
-  // ประกันสังคมคิดที่ฐานเงินเดือน. (ftDoubleBonus is 0 for PT — its 2× is baked
-  // into ptBasePay via the multiplier.)
+  // FT วันจ่ายสองเท่า premium no longer inflates ฐานเงินเดือน (owner 2026-09-02).
+  // Nor does the PT double premium (owner 2026-09-05 — ptBasePay is now the 1×
+  // base). Both are booked as ค่าล่วงเวลา below, staying in the tax base while
+  // ประกันสังคมคิดที่ฐานเงินเดือน.
   basePay = round2(basePay - ulDeduction);
 
-  // Total OT pay
+  // Total OT pay + the double-pay premium, which the owner wants classified as
+  // ค่าล่วงเวลา (owner 2026-09-05). FT and PT premiums are mutually exclusive by
+  // employment_type. DF zeroes both.
   let otPay = e.employment_type === "pt" ? ptOtPay : ftOtPay;
 
   // Service charge — Phase C4 (filled later)
@@ -1341,14 +1354,14 @@ export function computeLineForEmployee(args: {
   // it works for a weekly OR a monthly period. Post-tax — no withholding for now.
   const dfActive = dfBranchPeriod && eIn.df_started_at != null && periodStart.slice(0, 7) >= eIn.df_started_at.slice(0, 7);
   if (dfActive) { basePay = 0; otPay = 0; serviceCharge = 0; }
-  // other_additions holds two mutually-exclusive kinds of extra pay:
-  //   • วันจ่ายสองเท่า premium (owner 2026-09-02) — TAXABLE, so it stays in the
-  //     tax base; ประกันสังคม stays on base salary only. Non-DF FT only.
-  //   • Doctor Fee (DF) — POST-TAX (no withholding for now). DF zeroes base/OT/SVC,
-  //     so the double-pay premium is 0 for a DF doctor; the two never co-occur.
-  const doublePayBonus = dfActive ? 0 : round2(Math.max(0, ftDoubleBonus));
+  // วันจ่ายสองเท่า premium (FT bonus or PT extra 1×) → booked as ค่าล่วงเวลา (owner
+  // 2026-09-05). TAXABLE (stays in the tax base), ประกันสังคมคิดที่ฐานเงินเดือน. 0
+  // for a DF doctor (base/OT zeroed). other_additions now carries only the Doctor
+  // Fee (post-tax).
+  const doublePremium = dfActive ? 0 : round2(Math.max(0, ftDoubleBonus + ptDoublePremium));
+  otPay = round2(otPay + doublePremium);
   const dfAddition = dfActive ? round2(Math.max(0, dfAmount)) : 0;
-  const otherAdditions = round2(dfAddition + doublePayBonus);
+  const otherAdditions = round2(dfAddition);
   // เบี้ยประชุม — paid on top regardless of DF (after-hours meeting attendance),
   // TAXABLE (owner 2026-09-02: คิดภาษีเหมือนค่าตอบแทนปกติ). Its own line, not in
   // other_additions, so the payslip can label it "เบี้ยประชุม". Paid ONCE: only at
@@ -1356,9 +1369,9 @@ export function computeLineForEmployee(args: {
   // primary), so a cross-branch person in several branch periods isn't paid twice.
   const meetingFee = e.is_primary_branch !== 0 ? round2(Math.max(0, meetingFeeIn)) : 0;
 
-  // Tax base = base + OT + service charge + the taxable double-pay premium +
+  // Tax base = base + OT (now including the double-pay premium) + service charge +
   // เบี้ยประชุม (ภาษีคิดที่ยอดรวม). The doctor fee is the only post-tax addition.
-  const taxableGross = basePay + otPay + serviceCharge + doublePayBonus + meetingFee;
+  const taxableGross = basePay + otPay + serviceCharge + meetingFee;
   const grossPay = taxableGross + dfAddition;
 
   // Tax & SSO based on employee's salary_tax_mode

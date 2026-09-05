@@ -53,12 +53,10 @@ export default function PayslipDocument({
   const netTotalRound = incomeTotalRound - dedTotalRound;
   const svcMonth = period.period_start.slice(0, 7);
 
-  // Days worked on วันจ่ายสองเท่า (×2) — the source of the double-pay premium
-  // carried in other_additions. Surfaced so the premium is never a mystery.
+  // Days worked on วันจ่ายสองเท่า (×2) — the source of the double-pay premium,
+  // which is now booked as ค่าล่วงเวลา (owner 2026-09-05). Surfaced under the OT
+  // line so the premium is never a mystery.
   const doubleDates = dayLog.filter((d) => d.pairs.some((p) => p.double)).map((d) => d.date);
-  // The non-double-pay remainder of other_additions (admin adjustment, referral
-  // reward, doctor fee, …) so the two figures always reconcile to the total.
-  const otherRemainder = Math.round((line.other_additions - doublePremium) * 100) / 100;
 
   const employmentLabel =
     line.employment_type === "pt" ? t(lang, "admin.persona.employees.employment.pt") :
@@ -127,6 +125,21 @@ export default function PayslipDocument({
           </div>
         )}
         {line.ot_pay > 0 && <Money label={t(lang, "admin.persona.payroll.col.otPay")} value={line.ot_pay} />}
+        {/* ค่าล่วงเวลารวมค่าตอบแทนวันจ่ายสองเท่าแล้ว (owner 2026-09-05) — อธิบายที่มา
+            ของส่วนนี้เพื่อให้พนักงานเห็นว่ามาจากวันไหน. */}
+        {doublePremium > 0 && (
+          <div className="-mt-1 mb-1.5 text-[11px] text-slate-500">
+            รวมค่าตอบแทนวันจ่ายสองเท่า ฿{fmtMoney(doublePremium)}
+            {line.monthly_salary_snapshot != null && line.monthly_salary_snapshot > 0 && (
+              <> (คิดจากชั่วโมงทำงานในวันจ่ายสองเท่า × ค่าจ้างต่อชั่วโมง ฿{fmtMoney(line.monthly_salary_snapshot / 30 / 8)})</>
+            )}
+            {doubleDates.length > 0 && (
+              <span className="block text-slate-400">
+                วันที่จ่ายสองเท่าซึ่งมาปฏิบัติงาน: {doubleDates.map((d) => formatLongDate(d, lang).replace(/\s\d{4}$/, "")).join(", ")}
+              </span>
+            )}
+          </div>
+        )}
         {line.service_charge > 0 && <Money label={t(lang, "admin.persona.payroll.col.svc")} value={line.service_charge} />}
         {svcRow && (
           <div className="mt-1 mb-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 print:bg-transparent">
@@ -170,37 +183,6 @@ export default function PayslipDocument({
         )}
         {line.other_additions > 0 && (
           <Money label={t(lang, "admin.persona.payroll.col.otherAdd")} value={line.other_additions} />
-        )}
-        {/* Explain "เพิ่มอื่นๆ" — the double-pay premium (and any remainder) so an
-            employee can see WHERE 295.83 etc. came from (owner 2026-09-05). */}
-        {line.other_additions > 0 && (doublePremium > 0 || otherRemainder > 0) && (
-          <div className="-mt-1 mb-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 print:bg-transparent">
-            <div className="font-medium text-slate-700 mb-1">รายละเอียดรายการ “เงินเพิ่มอื่น ๆ”</div>
-            {doublePremium > 0 && (
-              <>
-                <div className="flex justify-between py-0.5">
-                  <span>ค่าตอบแทนเพิ่มสำหรับวันจ่ายสองเท่า (ส่วนที่เพิ่มขึ้นอีกหนึ่งเท่า)</span>
-                  <span className="tabular-nums">฿{fmtMoney(doublePremium)}</span>
-                </div>
-                {line.monthly_salary_snapshot != null && line.monthly_salary_snapshot > 0 && (
-                  <div className="text-[11px] text-slate-400 -mt-0.5 mb-0.5">
-                    คำนวณจาก จำนวนชั่วโมงที่ทำงานในวันจ่ายสองเท่า × ค่าจ้างต่อชั่วโมง (เงินเดือน ฿{fmtMoney(line.monthly_salary_snapshot)} ÷ 30 วัน ÷ 8 ชั่วโมง = ฿{fmtMoney(line.monthly_salary_snapshot / 30 / 8)} ต่อชั่วโมง)
-                  </div>
-                )}
-                {doubleDates.length > 0 && (
-                  <div className="text-[11px] text-slate-400">
-                    วันที่จ่ายสองเท่าซึ่งมาปฏิบัติงาน: {doubleDates.map((d) => formatLongDate(d, lang).replace(/\s\d{4}$/, "")).join(", ")}
-                  </div>
-                )}
-              </>
-            )}
-            {otherRemainder > 0 && (
-              <div className="flex justify-between py-0.5 border-t border-slate-200 mt-1 pt-1">
-                <span>รายการเพิ่มอื่น ๆ (เช่น การปรับปรุงโดยผู้ดูแล ค่าแนะนำพนักงาน หรือค่าตอบแทนแพทย์)</span>
-                <span className="tabular-nums">฿{fmtMoney(otherRemainder)}</span>
-              </div>
-            )}
-          </div>
         )}
         {line.meeting_fee > 0 && <Money label="ค่าเบี้ยประชุม" value={line.meeting_fee} />}
         <Money label={t(lang, "admin.persona.payroll.payslip.grossLabel")} value={line.gross_pay} bold />
@@ -373,15 +355,22 @@ export default function PayslipDocument({
                         {d.effectiveMinutes > 0 ? fmtMin(d.effectiveMinutes, lang) : "—"}
                       </td>
                       <td className="py-1 pr-2 text-right tabular-nums text-slate-700 whitespace-nowrap">
-                        {d.otMinutes > 0
-                          ? <>{fmtMin(d.otMinutes, lang)}{d.otPay > 0 && <span className="block text-[10px] text-emerald-700">฿{fmtMoney(d.otPay)}</span>}</>
-                          : "—"}
+                        {(() => {
+                          // ค่าล่วงเวลาต่อวัน = OT + เบี้ยวันจ่ายสองเท่า (owner 2026-09-05).
+                          // เบี้ยวันพิเศษ ×1.5 อยู่ในฐาน จึงไม่รวมที่นี่.
+                          const otAmt = Math.round((d.otPay + (isDouble ? d.premiumPay : 0)) * 100) / 100;
+                          if (d.otMinutes === 0 && otAmt === 0) return "—";
+                          return <>
+                            {d.otMinutes > 0 && fmtMin(d.otMinutes, lang)}
+                            {otAmt > 0 && <span className="block text-[10px] text-emerald-700">฿{fmtMoney(otAmt)}</span>}
+                          </>;
+                        })()}
                       </td>
                       <td className="py-1">
                         <span className="flex flex-wrap items-center gap-1">
                           {isDouble && (
                             <span className="text-[9px] px-1 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">
-                              ค่าตอบแทนสองเท่า{d.premiumPay > 0 ? ` +฿${fmtMoney(d.premiumPay)}` : ""}
+                              จ่ายสองเท่า{d.premiumPay > 0 ? ` (เบี้ย ฿${fmtMoney(d.premiumPay)} รวมในค่าล่วงเวลา)` : ""}
                             </span>
                           )}
                           {isSpecial && !isDouble && (
@@ -407,8 +396,8 @@ export default function PayslipDocument({
           </div>
           <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
             คำอธิบาย: “ชั่วโมงทำงาน” คือเวลาทำงานหลังหักเวลาพักและปรับตามกะแล้ว ·
-            คอลัมน์ “ค่าล่วงเวลา” แสดงชั่วโมงและจำนวนเงินค่าล่วงเวลาที่ได้รับในวันนั้น ·
-            “ค่าตอบแทนสองเท่า / ค่าตอบแทนวันพิเศษ +฿” คือจำนวนเงินที่ได้รับเพิ่มจากอัตราปกติในวันนั้น ·
+            คอลัมน์ “ค่าล่วงเวลา” แสดงชั่วโมงและจำนวนเงินในวันนั้น โดย<b>รวมค่าตอบแทนวันจ่ายสองเท่าไว้แล้ว</b> ·
+            ป้าย “จ่ายสองเท่า” = วันที่ได้ค่าตอบแทนสองเท่า (เบี้ยส่วนเพิ่มรวมอยู่ในค่าล่วงเวลา) · “ค่าตอบแทนวันพิเศษ +฿” = ส่วนเพิ่มในวันพิเศษ (รวมอยู่ในค่าตอบแทนฐาน) ·
             “หักค่าจ้างวันขาดงาน −฿” คือจำนวนเงินที่ถูกหักเมื่อขาดงานโดยไม่ลา (คำนวณจากเงินเดือนหารด้วย 30 วัน)
           </p>
         </div>
