@@ -23,6 +23,24 @@ export default function MeetingDetailClient({
   const refresh = () => startTransition(() => router.refresh());
   const [busyId, setBusyId] = useState<number | null>(null);
 
+  // ── ส่งเชคลิสต์เข้ากลุ่ม LINE ──
+  const [notifyBusy, setNotifyBusy] = useState(false);
+  const [notifyMsg, setNotifyMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  async function sendChecklist() {
+    setNotifyBusy(true); setNotifyMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/meetings/${meeting.id}/notify`), { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok) { setNotifyMsg({ ok: true, text: "ส่งเชคลิสต์เข้ากลุ่มแล้ว" }); return; }
+      const text = j.reason === "empty" ? "ยังไม่มีรายการค้างให้ส่ง"
+        : j.reason === "no_group" ? "ยังไม่ได้ตั้งค่ากลุ่ม LINE ที่จะแจ้งเตือน"
+        : "ส่งเข้ากลุ่มไม่สำเร็จ ลองใหม่อีกครั้ง";
+      setNotifyMsg({ ok: false, text });
+    } catch {
+      setNotifyMsg({ ok: false, text: "เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง" });
+    } finally { setNotifyBusy(false); }
+  }
+
   // ── AI: สร้างเช็กลิสต์จากสรุปการประชุม ──
   const [suggesting, setSuggesting] = useState(false);
   const [suggested, setSuggested] = useState<Array<{ title: string; include: boolean }> | null>(null);
@@ -139,14 +157,25 @@ export default function MeetingDetailClient({
               </span>
             )}
           </h2>
-          {aiEnabled && meeting.summary?.trim() && (
-            <button type="button" disabled={suggesting} onClick={suggestAI}
-              className="text-xs px-3 py-1.5 rounded-md border border-brand text-brand font-bold hover:bg-brand/5 disabled:opacity-50">
-              {suggesting ? "AI กำลังคิด…" : "สร้างเช็กลิสต์ด้วย AI"}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {items.some((i) => i.status === "open") && (
+              <button type="button" disabled={notifyBusy} onClick={sendChecklist}
+                className="text-xs px-3 py-1.5 rounded-md border border-emerald-300 text-emerald-700 font-medium hover:bg-emerald-50 disabled:opacity-50">
+                {notifyBusy ? "กำลังส่ง…" : "ส่งเชคลิสต์เข้ากลุ่ม LINE"}
+              </button>
+            )}
+            {aiEnabled && meeting.summary?.trim() && (
+              <button type="button" disabled={suggesting} onClick={suggestAI}
+                className="text-xs px-3 py-1.5 rounded-md border border-brand text-brand font-bold hover:bg-brand/5 disabled:opacity-50">
+                {suggesting ? "AI กำลังคิด…" : "สร้างเช็กลิสต์ด้วย AI"}
+              </button>
+            )}
+          </div>
         </div>
 
+        {notifyMsg && (
+          <p className={`text-xs ${notifyMsg.ok ? "text-emerald-600" : "text-rose-600"}`}>{notifyMsg.text}</p>
+        )}
         {aiErr && <p className="text-xs text-rose-600">{aiErr}</p>}
 
         {suggested && (
