@@ -5,6 +5,8 @@ import { getDb, type EmployeeProfile } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import ProfileForm, { type ProfileSupervisor } from "@/app/staff/persona/profile/ProfileForm";
+import { nameWithPrefix } from "@/lib/name";
+import ImpersonateButton from "./ImpersonateButton";
 
 export const dynamic = "force-dynamic";
 
@@ -85,17 +87,24 @@ export default function AdminEmployeeProfilePage({
 
   return (
     <div className="space-y-4">
-      <div>
-        <Link href="/admin/persona/employees"
-          className="text-sm text-brand hover:underline">
-          {t(lang, "common.back")}
-        </Link>
-        <h1 className="text-2xl font-bold text-slate-800 mt-1">
-          {t(lang, "admin.persona.employees.editTitle")}
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          {t(lang, "admin.persona.employees.fullProfileHint")}
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <Link href="/admin/persona/employees"
+            className="text-sm text-brand hover:underline">
+            {t(lang, "common.back")}
+          </Link>
+          <h1 className="text-2xl font-bold text-slate-800 mt-1">
+            {t(lang, "admin.persona.employees.editTitle")}
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {t(lang, "admin.persona.employees.fullProfileHint")}
+          </p>
+        </div>
+        {/* ดูแทน (มุมมองพนักงาน) — เห็นระบบแบบที่พนักงานคนนี้เห็น. ไม่โชว์กับตัวเอง
+            หรือบัญชีทดสอบ; API เช็คสิทธิ์ซ้ำ (แอดมินสาขาดูแทนได้เฉพาะ staff สาขาตน). */}
+        {id !== user.id && (row as { is_test_account?: number }).is_test_account !== 1 && (
+          <ImpersonateButton targetId={id} targetName={nameWithPrefix(row.title_prefix, row.display_name)} />
+        )}
       </div>
 
       {notFilled && (
