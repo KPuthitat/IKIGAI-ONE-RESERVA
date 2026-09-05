@@ -33,6 +33,7 @@ type BreakDay = {
   effectiveMinutes: number;
   otMinutes: number;
   otPay: number;
+  premiumPay: number;
   pay: number;
   holiday: boolean;
   double: boolean;
@@ -231,7 +232,11 @@ function DayTable({ days, baseTotal, otTotal, multiBranch }: { days: BreakDay[];
         </thead>
         <tbody>
           {days.map((d) => {
-            const dayBase = Math.round((d.pay - d.otPay) * 100) / 100;
+            // เบี้ยวันจ่ายสองเท่าถูกจัดเป็นค่าล่วงเวลา (owner 2026-09-05) — แยกออกจาก
+            // ฐานรายวันไปรวมกับ OT. เบี้ยวันพิเศษ ×1.5 ยังอยู่ในฐาน.
+            const dblPrem = d.double ? d.premiumPay : 0;
+            const otShown = Math.round((d.otPay + dblPrem) * 100) / 100;
+            const dayBase = Math.round((d.pay - otShown) * 100) / 100;
             const times = d.pairs.filter((p) => p.workIn || p.workOut)
               .map((p) => `${p.workIn ?? "—"}–${p.workOut ?? "—"}`).join(", ");
             return (
@@ -256,8 +261,8 @@ function DayTable({ days, baseTotal, otTotal, multiBranch }: { days: BreakDay[];
                 <td className={`${numTd} text-slate-600`}>{d.effectiveMinutes ? fmtMin(d.effectiveMinutes) : "—"}</td>
                 <td className={numTd}>{dayBase ? `฿${fmtMoney(dayBase)}` : "—"}</td>
                 <td className={`${numTd} text-amber-700`}>
-                  {d.otMinutes
-                    ? <>฿{fmtMoney(d.otPay)}<span className="text-[10px] text-amber-600/70 ml-1">{fmtMin(d.otMinutes)}</span></>
+                  {otShown > 0
+                    ? <>฿{fmtMoney(otShown)}{d.otMinutes > 0 && <span className="text-[10px] text-amber-600/70 ml-1">{fmtMin(d.otMinutes)}</span>}</>
                     : "—"}
                 </td>
                 <td className={`${numTd} font-semibold text-slate-800`}>{d.pay ? `฿${fmtMoney(d.pay)}` : "—"}</td>
