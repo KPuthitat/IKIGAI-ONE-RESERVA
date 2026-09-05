@@ -100,10 +100,10 @@ export default function PayslipDocument({
           <KV label={t(lang, "admin.persona.payroll.payslip.leaveDays")} value={String(line.leave_days)} />
         )}
         {line.unpaid_leave_days > 0 && (
-          <KV label="ลาไม่รับค่าจ้าง"
+          <KV label="วันลาโดยไม่รับค่าจ้าง"
             value={`${line.unpaid_leave_days} วัน${
               line.monthly_salary_snapshot != null
-                ? ` (หัก ฿${fmtMoney((line.monthly_salary_snapshot / 30) * line.unpaid_leave_days)} จากฐานเงินเดือนแล้ว)`
+                ? ` (หักจากเงินเดือนแล้ว ฿${fmtMoney((line.monthly_salary_snapshot / 30) * line.unpaid_leave_days)})`
                 : ""}`} />
         )}
         {line.employment_type === "pt" && line.hourly_rate_snapshot != null && (
@@ -122,8 +122,8 @@ export default function PayslipDocument({
           line.monthly_salary_snapshot > 0 && line.base_pay > 0 &&
           line.base_pay < line.monthly_salary_snapshot && (
           <div className="-mt-1 mb-1.5 text-[11px] text-slate-500">
-            เฉลี่ยจากวันที่มาทำงาน {Math.round((line.base_pay * 30) / line.monthly_salary_snapshot)} วัน
-            (เงินเดือน ฿{fmtMoney(line.monthly_salary_snapshot)} ÷ 30 × วันทำงาน)
+            คำนวณตามจำนวนวันที่ปฏิบัติงาน {Math.round((line.base_pay * 30) / line.monthly_salary_snapshot)} วัน
+            (เงินเดือน ฿{fmtMoney(line.monthly_salary_snapshot)} ÷ 30 วัน × จำนวนวันที่ปฏิบัติงาน)
           </div>
         )}
         {line.ot_pay > 0 && <Money label={t(lang, "admin.persona.payroll.col.otPay")} value={line.ot_pay} />}
@@ -131,39 +131,39 @@ export default function PayslipDocument({
         {svcRow && (
           <div className="mt-1 mb-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 print:bg-transparent">
             <div className="font-medium text-slate-700 mb-1">
-              วิธีคำนวณเซอร์วิสชาร์จ ({formatLongDate(`${svcMonth}-01`, lang).replace(/^\d+\s/, "")})
+              วิธีคำนวณเซอร์วิสชาร์จ ประจำเดือน{formatLongDate(`${svcMonth}-01`, lang).replace(/^\d+\s/, "")}
             </div>
             <div className="flex justify-between py-0.5">
-              <span>ชั่วโมงทำงานเดือนนี้</span>
+              <span>ชั่วโมงทำงานรวมในเดือนนี้</span>
               <span className="tabular-nums">{fmtMin(svcRow.totalMinutesWorked, lang)} · {svcRow.daysWorked} วัน</span>
             </div>
             {isAdmin && svcSummary && (
               <div className="flex justify-between py-0.5">
-                <span>กองกลางพนักงาน (60% ของยอดที่เก็บได้)</span>
+                <span>เงินกองกลางของพนักงาน (ร้อยละ 60 ของยอดที่จัดเก็บได้)</span>
                 <span className="tabular-nums">฿{fmtMoney(svcSummary.staffPoolTotal)}</span>
               </div>
             )}
             <div className="flex justify-between py-0.5">
-              <span>ส่วนแบ่งตามชั่วโมง (ก่อนหักริบ)</span>
+              <span>ส่วนแบ่งตามชั่วโมงทำงาน (ก่อนตัดสิทธิ์)</span>
               <span className="tabular-nums">฿{fmtMoney(svcRow.grossAllocation)}</span>
             </div>
             <div className="flex justify-between py-0.5">
-              <span>อัตราเข้างานสาย</span>
+              <span>อัตราการเข้างานสาย</span>
               <span className="tabular-nums">
-                {(svcRow.lateRatio * 100).toFixed(1)}%{svcRow.forfeited ? "" : " (ไม่ถูกริบ)"}
+                ร้อยละ {(svcRow.lateRatio * 100).toFixed(1)}{svcRow.forfeited ? "" : " (ไม่ถูกตัดสิทธิ์)"}
               </span>
             </div>
             {svcRow.forfeited ? (
               <div className="flex justify-between py-0.5 text-rose-600">
-                <span>ริบเซอร์วิสชาร์จ</span>
+                <span>ตัดสิทธิ์รับเซอร์วิสชาร์จ</span>
                 <span>
-                  {svcRow.forfeitReason === "late_20pct" ? "สายเกิน 20%"
-                    : svcRow.forfeitReason === "resignation" ? "ลาออก" : "—"}
+                  {svcRow.forfeitReason === "late_20pct" ? "เข้างานสายเกินร้อยละ 20"
+                    : svcRow.forfeitReason === "resignation" ? "ลาออกระหว่างเดือน" : "—"}
                 </span>
               </div>
             ) : null}
             <div className="flex justify-between py-0.5 border-t border-slate-200 mt-1 pt-1 font-medium text-slate-700">
-              <span>ยอดสุทธิที่ได้รับ</span>
+              <span>จำนวนเงินสุทธิที่ได้รับ</span>
               <span className="tabular-nums">฿{fmtMoney(svcRow.netAllocation)}</span>
             </div>
           </div>
@@ -175,34 +175,34 @@ export default function PayslipDocument({
             employee can see WHERE 295.83 etc. came from (owner 2026-09-05). */}
         {line.other_additions > 0 && (doublePremium > 0 || otherRemainder > 0) && (
           <div className="-mt-1 mb-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 print:bg-transparent">
-            <div className="font-medium text-slate-700 mb-1">ที่มาของ “เพิ่มอื่นๆ”</div>
+            <div className="font-medium text-slate-700 mb-1">รายละเอียดรายการ “เงินเพิ่มอื่น ๆ”</div>
             {doublePremium > 0 && (
               <>
                 <div className="flex justify-between py-0.5">
-                  <span>เบี้ยวันจ่ายสองเท่า (ส่วนเพิ่ม ×1 เท่า)</span>
+                  <span>ค่าตอบแทนเพิ่มสำหรับวันจ่ายสองเท่า (ส่วนที่เพิ่มขึ้นอีกหนึ่งเท่า)</span>
                   <span className="tabular-nums">฿{fmtMoney(doublePremium)}</span>
                 </div>
                 {line.monthly_salary_snapshot != null && line.monthly_salary_snapshot > 0 && (
                   <div className="text-[11px] text-slate-400 -mt-0.5 mb-0.5">
-                    คิดจาก (ชั่วโมงทำงานในวันจ่ายสองเท่า) × (เงินเดือน ฿{fmtMoney(line.monthly_salary_snapshot)} ÷ 30 ÷ 8 = ฿{fmtMoney(line.monthly_salary_snapshot / 30 / 8)}/ชม.)
+                    คำนวณจาก จำนวนชั่วโมงที่ทำงานในวันจ่ายสองเท่า × ค่าจ้างต่อชั่วโมง (เงินเดือน ฿{fmtMoney(line.monthly_salary_snapshot)} ÷ 30 วัน ÷ 8 ชั่วโมง = ฿{fmtMoney(line.monthly_salary_snapshot / 30 / 8)} ต่อชั่วโมง)
                   </div>
                 )}
                 {doubleDates.length > 0 && (
                   <div className="text-[11px] text-slate-400">
-                    วันจ่ายสองเท่าที่ทำงาน: {doubleDates.map((d) => formatLongDate(d, lang).replace(/\s\d{4}$/, "")).join(", ")}
+                    วันที่จ่ายสองเท่าซึ่งมาปฏิบัติงาน: {doubleDates.map((d) => formatLongDate(d, lang).replace(/\s\d{4}$/, "")).join(", ")}
                   </div>
                 )}
               </>
             )}
             {otherRemainder > 0 && (
               <div className="flex justify-between py-0.5 border-t border-slate-200 mt-1 pt-1">
-                <span>รายการเพิ่มอื่น (เช่น ปรับโดยผู้ดูแล/ค่าแนะนำ/ค่าตอบแทนแพทย์)</span>
+                <span>รายการเพิ่มอื่น ๆ (เช่น การปรับปรุงโดยผู้ดูแล ค่าแนะนำพนักงาน หรือค่าตอบแทนแพทย์)</span>
                 <span className="tabular-nums">฿{fmtMoney(otherRemainder)}</span>
               </div>
             )}
           </div>
         )}
-        {line.meeting_fee > 0 && <Money label="เบี้ยประชุม" value={line.meeting_fee} />}
+        {line.meeting_fee > 0 && <Money label="ค่าเบี้ยประชุม" value={line.meeting_fee} />}
         <Money label={t(lang, "admin.persona.payroll.payslip.grossLabel")} value={line.gross_pay} bold />
       </Section>
 
@@ -230,7 +230,7 @@ export default function PayslipDocument({
                 <span className="text-slate-600">
                   ค่าตอบแทน
                   <span className="font-medium text-slate-800">{payslipBranchName ? ` · ${payslipBranchName}` : ""}</span>
-                  {line.ot_pay > 0 && <span className="text-xs text-slate-400"> · รวมโอที ฿{fmtMoney(line.ot_pay)}</span>}
+                  {line.ot_pay > 0 && <span className="text-xs text-slate-400"> · รวมค่าล่วงเวลา ฿{fmtMoney(line.ot_pay)}</span>}
                 </span>
                 <span className="tabular-nums font-medium text-slate-800">{fmtMoney(wageComp)}</span>
               </div>
@@ -240,7 +240,7 @@ export default function PayslipDocument({
                 <span className="text-slate-600">
                   เซอร์วิสชาร์จ{" "}
                   <span className="text-xs text-slate-400">
-                    ({isPt ? "ถูกหักภาษี ณ ที่จ่าย" : "ไม่ถูกหักภาษี ณ ที่จ่าย"}{usesMonthlySvc ? " · จ่ายแยก ~วันที่ 20 เดือนถัดไป" : ""})
+                    ({isPt ? "หักภาษี ณ ที่จ่าย" : "ไม่หักภาษี ณ ที่จ่าย"}{usesMonthlySvc ? " · จ่ายแยกต่างหาก ประมาณวันที่ 20 ของเดือนถัดไป" : ""})
                   </span>
                 </span>
                 <span className="tabular-nums font-medium text-violet-700">{fmtMoney(svcGrossRound)}</span>
@@ -291,7 +291,7 @@ export default function PayslipDocument({
             )}
             {svcGiRound > 0 && (
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-slate-600">ประกันกลุ่ม <span className="text-xs text-slate-400">(หักจากเซอร์วิสชาร์จ)</span></span>
+                <span className="text-slate-600">เบี้ยประกันกลุ่ม <span className="text-xs text-slate-400">(หักจากเซอร์วิสชาร์จ)</span></span>
                 <span className="tabular-nums font-medium text-slate-700">{fmtMoney(svcGiRound)}</span>
               </div>
             )}
@@ -307,7 +307,7 @@ export default function PayslipDocument({
 
         <div className="border-2 border-slate-800 rounded-lg p-4 bg-slate-50 space-y-1.5">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="text-sm font-semibold text-slate-700">รายได้ก่อนหัก (รวมรายรับทั้งหมด)</span>
+            <span className="text-sm font-semibold text-slate-700">รายได้รวมก่อนหัก</span>
             <span className="text-lg font-bold text-slate-800 whitespace-nowrap tabular-nums">
               {fmtMoney(incomeTotalRound)} <span className="text-xs font-normal">บาท</span>
             </span>
@@ -319,7 +319,7 @@ export default function PayslipDocument({
             </span>
           </div>
           <div className="flex items-baseline justify-between gap-3 border-t-2 border-slate-300 pt-1.5 mt-1.5">
-            <span className="text-base font-bold">{t(lang, "admin.persona.payroll.payslip.netLabel")} (รับจริง)</span>
+            <span className="text-base font-bold">{t(lang, "admin.persona.payroll.payslip.netLabel")} (จำนวนที่ได้รับจริง)</span>
             <span className="text-2xl font-bold text-emerald-700 whitespace-nowrap tabular-nums">
               {fmtMoney(netTotalRound)} <span className="text-sm font-normal">บาท</span>
             </span>
@@ -337,15 +337,15 @@ export default function PayslipDocument({
       {dayLog.length > 0 && (
         <div className="my-4">
           <div className="text-sm font-semibold text-slate-700 border-b border-slate-200 pb-1 mb-2">
-            ตารางลงเวลารายวัน
+            รายละเอียดการปฏิบัติงานรายวัน
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-left text-slate-500 border-b border-slate-200">
                   <th className="py-1 pr-2 font-medium">วันที่</th>
-                  <th className="py-1 pr-2 font-medium">เข้า–ออก</th>
-                  <th className="py-1 pr-2 font-medium text-right">ชม.ทำงาน</th>
+                  <th className="py-1 pr-2 font-medium">เวลาเข้า–ออก</th>
+                  <th className="py-1 pr-2 font-medium text-right">ชั่วโมงทำงาน</th>
                   <th className="py-1 pr-2 font-medium text-right">ค่าล่วงเวลา</th>
                   <th className="py-1 font-medium">หมายเหตุ</th>
                 </tr>
@@ -381,17 +381,17 @@ export default function PayslipDocument({
                         <span className="flex flex-wrap items-center gap-1">
                           {isDouble && (
                             <span className="text-[9px] px-1 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">
-                              จ่าย 2 เท่า{d.premiumPay > 0 ? ` +฿${fmtMoney(d.premiumPay)}` : ""}
+                              ค่าตอบแทนสองเท่า{d.premiumPay > 0 ? ` +฿${fmtMoney(d.premiumPay)}` : ""}
                             </span>
                           )}
                           {isSpecial && !isDouble && (
                             <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700">
-                              วันพิเศษ{d.premiumPay > 0 ? ` +฿${fmtMoney(d.premiumPay)}` : ""}
+                              ค่าตอบแทนวันพิเศษ{d.premiumPay > 0 ? ` +฿${fmtMoney(d.premiumPay)}` : ""}
                             </span>
                           )}
                           {d.absenceDeduction > 0 && (
                             <span className="text-[9px] px-1 py-0.5 rounded bg-rose-100 text-rose-700 font-medium">
-                              หักขาดงาน −฿{fmtMoney(d.absenceDeduction)}
+                              หักค่าจ้างวันขาดงาน −฿{fmtMoney(d.absenceDeduction)}
                             </span>
                           )}
                           {worked.length > 0 && status && <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">{status}</span>}
@@ -405,9 +405,11 @@ export default function PayslipDocument({
               </tbody>
             </table>
           </div>
-          <p className="text-[10px] text-slate-400 mt-1.5">
-            ชั่วโมงทำงานเป็นเวลาหลังหักพักและปรับตามกะ · คอลัมน์ OT แสดงชั่วโมงและค่าล่วงเวลาที่ได้รับ ·
-            “จ่าย 2 เท่า/วันพิเศษ +฿” = ส่วนที่ได้เพิ่มจากเรตปกติในวันนั้น · “หักขาดงาน −฿” = หักค่าจ้างวันขาดงานไม่ลา (เงินเดือน ÷ 30)
+          <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+            คำอธิบาย: “ชั่วโมงทำงาน” คือเวลาทำงานหลังหักเวลาพักและปรับตามกะแล้ว ·
+            คอลัมน์ “ค่าล่วงเวลา” แสดงชั่วโมงและจำนวนเงินค่าล่วงเวลาที่ได้รับในวันนั้น ·
+            “ค่าตอบแทนสองเท่า / ค่าตอบแทนวันพิเศษ +฿” คือจำนวนเงินที่ได้รับเพิ่มจากอัตราปกติในวันนั้น ·
+            “หักค่าจ้างวันขาดงาน −฿” คือจำนวนเงินที่ถูกหักเมื่อขาดงานโดยไม่ลา (คำนวณจากเงินเดือนหารด้วย 30 วัน)
           </p>
         </div>
       )}
