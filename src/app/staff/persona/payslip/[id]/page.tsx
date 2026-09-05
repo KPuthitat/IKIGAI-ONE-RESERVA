@@ -37,7 +37,7 @@ export default function StaffPayslipPage({ params }: { params: { id: string } })
         </div>
       </div>
 
-      <PayslipDocument lang={lang} view={view} />
+      <PayslipDocument lang={lang} view={view} audience="staff" />
     </>
   );
 }

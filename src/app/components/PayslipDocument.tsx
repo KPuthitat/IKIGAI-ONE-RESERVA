@@ -31,8 +31,15 @@ function maskAccount(acc: string | null): string {
   return `${digits.slice(0, 3)}-x-xxxxx-${digits.slice(-1)}`;
 }
 
-export default function PayslipDocument({ lang, view }: { lang: Lang; view: PayslipView }) {
+// audience controls what a viewer may see. "staff" (an employee reading their
+// own slip, and the admin's "preview as employee") hides internal figures the
+// owner chose to withhold (owner 2026-09-05): the branch-wide service-charge
+// pool, the per-day "แก้ไข" badge, and the (masked) bank account.
+export default function PayslipDocument({
+  lang, view, audience = "admin"
+}: { lang: Lang; view: PayslipView; audience?: "admin" | "staff" }) {
   const { period, line, profile, svcSummary, svcRow, payslipBranchName, dayLog, doublePremium } = view;
+  const isAdmin = audience === "admin";
 
   const isPt = line.employment_type === "pt";
   const usesMonthlySvc = period.cycle === "monthly" && svcRow != null;
@@ -130,7 +137,7 @@ export default function PayslipDocument({ lang, view }: { lang: Lang; view: Pays
               <span>ชั่วโมงทำงานเดือนนี้</span>
               <span className="tabular-nums">{fmtMin(svcRow.totalMinutesWorked, lang)} · {svcRow.daysWorked} วัน</span>
             </div>
-            {svcSummary && (
+            {isAdmin && svcSummary && (
               <div className="flex justify-between py-0.5">
                 <span>กองกลางพนักงาน (60% ของยอดที่เก็บได้)</span>
                 <span className="tabular-nums">฿{fmtMoney(svcSummary.staffPoolTotal)}</span>
@@ -317,7 +324,7 @@ export default function PayslipDocument({ lang, view }: { lang: Lang; view: Pays
               {fmtMoney(netTotalRound)} <span className="text-sm font-normal">บาท</span>
             </span>
           </div>
-          {profile?.bank_name && profile.bank_account && (
+          {isAdmin && profile?.bank_name && profile.bank_account && (
             <div className="text-xs text-slate-600 mt-2 border-t border-slate-300 pt-2">
               {t(lang, "admin.persona.payroll.payslip.transferTo")}:{" "}
               <span className="font-medium">{profile.bank_name}</span> {maskAccount(profile.bank_account)}
@@ -374,7 +381,7 @@ export default function PayslipDocument({ lang, view }: { lang: Lang; view: Pays
                           {isSpecial && !isDouble && <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700">×1.5</span>}
                           {worked.length > 0 && status && <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">{status}</span>}
                           {worked.length > 0 && d.pairs[0]?.branch && <span className="text-[9px] text-slate-400">{d.pairs[0].branch}</span>}
-                          {d.edited && <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700">แก้ไข</span>}
+                          {isAdmin && d.edited && <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700">แก้ไข</span>}
                         </span>
                       </td>
                     </tr>
