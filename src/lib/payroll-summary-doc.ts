@@ -1,15 +1,21 @@
-// สร้างเอกสารสรุปค่าตอบแทนรายเดือน (payroll monthly summary document) — owner
-// 2026-09-06. One source of truth behind the "สร้างเอกสาร" export in three
-// formats (CSV / XLSX / PDF). The accountant reconciles against this, so it
-// must carry: which company/branch, the pay rounds (รอบจ่าย) that landed in the
-// month, and clearly-marked deduction columns (ปกส. / ภาษี / ประกันกลุ่ม).
+// สร้างเอกสารสรุปค่าตอบแทนรายเดือน (payroll monthly summary document).
+// One source of truth behind the "สร้างเอกสาร" export in three formats
+// (CSV / XLSX / PDF) that the accounting office reconciles against.
 //
-// Figures mirror the on-screen summary exactly (page.tsx): per-employee totals
-// accumulated across every pay round paying in the month, PLUS the service
-// charge that hit the pocket that month (= the PREVIOUS month's accrual, paid
-// ~the 20th). SVC is sourced from the SAME engine as the real payout
-// (computeCompanySvcSummary for a company / computeMonthlySvcSummary for a
-// single branch) so the document ties out to the ใบหัก ณ ที่จ่าย.
+// Owner 2026-09-06, Phase 1 — company-level numbers, split by branch heading:
+//   • The authoritative figures are computed at the WHOLE-COMPANY level (SVC via
+//     computeCompanySvcSummary — the company รวมกอง/roll-up engine, NOT the
+//     per-branch one), because per-branch vs combined totals otherwise disagree
+//     and confuse the books.
+//   • The document then SPLITS the display by branch heading (สาขา) so posting
+//     into accounta stays correctly separated.
+//   • It is strictly READ-ONLY: it reflects the payroll lines exactly as stored
+//     (net from net_pay), so a round that is already finalized/posted is never
+//     recomputed or altered — only computed value here is the display-side SVC.
+//
+// Layout: per company → per branch heading → (a) รอบจ่าย broken down per person
+// (ยอดก่อนหัก → หัก → สุทธิ) and (b) a final per-person rollup for the month
+// (ค่าตอบแทนทุกรอบ + เซอร์วิสชาร์จระดับบริษัท), with the deduction columns marked.
 
 import type Database from "better-sqlite3";
 import { getDb } from "./db";
@@ -70,19 +76,19 @@ export function scopeToken(scope: ExportScope): string {
 }
 
 export type ScopeOption = {
-  value: string;              // token for parseScope
-  label: string;              // display
+  value: string;
+  label: string;
   kind: "all" | "company" | "branch";
-  companyKey?: number | null; // for nesting branches under their company
+  companyKey?: number | null;
 };
 
-// Union of branches that either paid payroll this month or had SVC activity in
-// the SVC month — same rule as the summary page, so nobody is dropped.
 type BranchRow = {
   branch_id: number; branch_name: string;
   company_id: number | null; company_name: string | null;
 };
 
+// Union of branches that either paid payroll this month or had SVC activity in
+// the SVC month — same rule as the summary page, so nobody is dropped.
 function unionBranches(db: Database.Database, month: string): BranchRow[] {
   const { from, to } = monthRange(month);
   const svcMonth = shiftMonth(month, -1);
@@ -117,9 +123,8 @@ function unionBranches(db: Database.Database, month: string): BranchRow[] {
 /** Selectable export scopes for the month: ทุกบริษัท + each company + each branch. */
 export function listExportScopes(db: Database.Database, month: string): ScopeOption[] {
   const branches = unionBranches(db, month);
-  const opts: ScopeOption[] = [{ value: "all", label: "ทุกบริษัท (แยกส่วนในไฟล์เดียว)", kind: "all" }];
+  const opts: ScopeOption[] = [{ value: "all", label: "ทุกบริษัท (แยกหัวข้อสาขาในไฟล์เดียว)", kind: "all" }];
   const seenCompany = new Set<string>();
-  // Group: company header option, then its branches.
   for (const b of branches) {
     const key = String(b.company_id);
     if (!seenCompany.has(key)) {
@@ -127,16 +132,10 @@ export function listExportScopes(db: Database.Database, month: string): ScopeOpt
       opts.push({
         value: `company:${b.company_id ?? "null"}`,
         label: b.company_name ?? "ไม่ระบุบริษัท",
-        kind: "company",
-        companyKey: b.company_id
+        kind: "company", companyKey: b.company_id
       });
     }
-    opts.push({
-      value: `branch:${b.branch_id}`,
-      label: b.branch_name,
-      kind: "branch",
-      companyKey: b.company_id
-    });
+    opts.push({ value: `branch:${b.branch_id}`, label: b.branch_name, kind: "branch", companyKey: b.company_id });
   }
   return opts;
 }
@@ -149,22 +148,25 @@ export type EmpDocRow = {
   empTypeLabel: string;
   taxModeLabel: string;
   homeBranch: string;
-  comp: number;         // ค่าตอบแทน (wage across all rounds)
-  svcGross: number;     // เซอร์วิสชาร์จ (gross to the person)
-  income: number;       // comp + svcGross
-  sso: number;          // ประกันสังคม (deduction)
-  tax: number;          // ภาษีหัก ณ ที่จ่าย incl. SVC WHT (deduction)
-  gi: number;           // ประกันกลุ่ม (deduction)
-  take: number;         // income − sso − tax − gi
+  comp: number;        // ค่าตอบแทน (payroll gross, all rounds this month)
+  svcGross: number;    // เซอร์วิสชาร์จ (company-level gross to the person)
+  income: number;      // ยอดก่อนหัก = comp + svcGross
+  sso: number;         // ประกันสังคม (หัก)
+  tax: number;         // ภาษี ณ ที่จ่าย incl. SVC WHT (หัก)
+  gi: number;          // ประกันกลุ่ม (หัก)
+  other: number;       // หักอื่นๆ (เครื่องดื่ม/มื้ออาหาร ฯลฯ ในรอบจ่าย)
+  deduction: number;   // รวมหัก
+  take: number;        // รวมรับจริง = income − deduction
   periodCount: number;
 };
 
 export type DocTotals = {
   comp: number; svcGross: number; income: number;
-  sso: number; tax: number; gi: number; take: number;
+  sso: number; tax: number; gi: number; other: number; deduction: number; take: number;
 };
 
 export type PayRoundInfo = {
+  cycle: "monthly" | "weekly";
   cycleLabel: string;
   periodStart: string;
   periodEnd: string;
@@ -175,23 +177,47 @@ export type PayRoundInfo = {
   net: number;
 };
 
-export type DocSection = {
-  key: string;
-  title: string;              // company or branch name
-  taxId: string | null;       // company-level only
-  address: string | null;
-  rows: EmpDocRow[];
+/** One person's line within a single pay round: ก่อนหัก → หัก → สุทธิ. */
+export type RoundMember = {
+  userId: number;
+  name: string;
+  homeBranch: string;
+  before: number;      // ยอดก่อนหัก = gross_pay ของรอบนั้น (ตามที่บันทึกไว้)
+  deduction: number;   // ยอดหัก = gross_pay − net_pay (สะท้อนยอดที่ลงบัญชีจริง)
+  net: number;         // ยอดสุทธิ = net_pay
+};
+
+export type PayRoundGroup = {
+  info: PayRoundInfo;
+  members: RoundMember[];
+  before: number; deduction: number; net: number;
+};
+
+/** A branch heading inside a company: its pay rounds + its people's rollup. */
+export type BranchBlock = {
+  branchId: number | null;
+  branchName: string;
+  roundGroups: PayRoundGroup[];
+  rollup: EmpDocRow[];      // people whose home branch = this branch (company-wide figures)
   totals: DocTotals;
-  payRounds: PayRoundInfo[];
+};
+
+export type CompanyDoc = {
+  key: string;
+  name: string;
+  taxId: string | null;
+  address: string | null;
+  branches: BranchBlock[];
+  totals: DocTotals;
 };
 
 export type PayrollSummaryDoc = {
-  month: string;              // YYYY-MM
-  monthLabel: string;         // "กันยายน 2569"
+  month: string;
+  monthLabel: string;
   svcMonth: string;
   svcMonthLabel: string;
   scopeLabel: string;
-  sections: DocSection[];
+  companies: CompanyDoc[];
   grand: DocTotals;
 };
 
@@ -205,33 +231,78 @@ const statusLabel = (s: string) =>
 const cycleLabel = (cycle: string, target: string) =>
   cycle === "monthly" ? "รายเดือน (ประจำ)" : target === "pt" ? "รายวัน (พาร์ทไทม์)" : "รายสัปดาห์ (ประจำ)";
 
-// Shape of the SVC row that both engine variants return (fields we consume).
+const zeroTotals = (): DocTotals =>
+  ({ comp: 0, svcGross: 0, income: 0, sso: 0, tax: 0, gi: 0, other: 0, deduction: 0, take: 0 });
+function addRowToTotals(t: DocTotals, r: EmpDocRow) {
+  t.comp = round2(t.comp + r.comp); t.svcGross = round2(t.svcGross + r.svcGross);
+  t.income = round2(t.income + r.income); t.sso = round2(t.sso + r.sso);
+  t.tax = round2(t.tax + r.tax); t.gi = round2(t.gi + r.gi);
+  t.other = round2(t.other + r.other); t.deduction = round2(t.deduction + r.deduction);
+  t.take = round2(t.take + r.take);
+}
+
+// SVC row shape both engine variants share (fields we consume).
 type SvcRow = {
   userId: number; displayName: string; employmentType: string | null;
   taxMode: "sso" | "wht"; netAllocation: number; whtAmount: number;
   groupInsurance: number; netPayout: number;
 };
+type SvcAgg = { gross: number; wht: number; gi: number; net: number;
+  displayName: string; employmentType: string | null; taxMode: "sso" | "wht" };
+
+function companyInfo(db: Database.Database, companyId: number | null) {
+  if (companyId == null) return { name: "ไม่ระบุบริษัท", taxId: null as string | null, address: null as string | null };
+  const c = db.prepare("SELECT name_th, tax_id, address FROM companies WHERE id = ?")
+    .get(companyId) as { name_th: string; tax_id: string | null; address: string | null } | undefined;
+  return { name: c?.name_th ?? "ไม่ระบุบริษัท", taxId: c?.tax_id ?? null, address: c?.address ?? null };
+}
+
+/**
+ * Company-level SVC per user (the authority): computeCompanySvcSummary handles
+ * รวมกอง shared-pool + cross-branch caps so it agrees with the actual payout.
+ * Falls back to summing the per-branch engine for a NULL-company branch set.
+ */
+function companySvcByUser(
+  companyId: number | null, branchIds: number[], svcMonth: string
+): Map<number, SvcAgg> {
+  let rows: SvcRow[] = [];
+  if (companyId != null) {
+    try { rows = computeCompanySvcSummary(companyId, svcMonth).rows as unknown as SvcRow[]; }
+    catch { rows = []; }
+  } else {
+    for (const b of branchIds) {
+      try { rows.push(...(computeMonthlySvcSummary(b, svcMonth).rows as unknown as SvcRow[])); }
+      catch { /* no svc */ }
+    }
+  }
+  const map = new Map<number, SvcAgg>();
+  for (const r of rows) {
+    if (!r.netAllocation && !r.netPayout) continue;
+    const cur = map.get(r.userId)
+      ?? { gross: 0, wht: 0, gi: 0, net: 0, displayName: r.displayName, employmentType: r.employmentType, taxMode: r.taxMode };
+    cur.gross += r.netAllocation; cur.wht += r.whtAmount; cur.gi += r.groupInsurance; cur.net += r.netPayout;
+    map.set(r.userId, cur);
+  }
+  return map;
+}
 
 type EmpAgg = {
   user_id: number; display_name: string; title_prefix: string | null;
   employment_type: "pt" | "ft" | null; salary_tax_mode_snapshot: "sso" | "wht" | null;
-  total_gross: number; total_sso: number; total_tax: number; period_count: number;
+  total_gross: number; total_net: number; total_sso: number; total_tax: number; period_count: number;
 };
 
-/** Merge a branch-set's payroll aggregate with its SVC rows into ordered doc rows + totals. */
-function buildRowsAndTotals(
-  db: Database.Database,
-  range: { from: string; to: string },
-  branchIds: number[],
-  svcRows: SvcRow[],
-  homeByUser: Map<number, string | null>
-): { rows: EmpDocRow[]; totals: DocTotals } {
-  const { from, to } = range;
+/** Company-wide per-person rollup rows (payroll across all company branches + company SVC). */
+function buildCompanyRows(
+  db: Database.Database, range: { from: string; to: string },
+  branchIds: number[], svcByUser: Map<number, SvcAgg>, homeByUser: Map<number, string | null>
+): EmpDocRow[] {
   const empRows: EmpAgg[] = branchIds.length === 0 ? [] : (db.prepare(`
     SELECT pl.user_id, pl.display_name, u.title_prefix,
            MAX(pl.employment_type) AS employment_type,
            MAX(pl.salary_tax_mode_snapshot) AS salary_tax_mode_snapshot,
            SUM(pl.gross_pay)  AS total_gross,
+           SUM(pl.net_pay)    AS total_net,
            SUM(pl.sso_amount) AS total_sso,
            SUM(pl.tax_amount) AS total_tax,
            COUNT(*)           AS period_count
@@ -241,114 +312,104 @@ function buildRowsAndTotals(
     WHERE pp.pay_date >= ? AND pp.pay_date <= ?
       AND pp.branch_id IN (${branchIds.map(() => "?").join(",")})
     GROUP BY pl.user_id
-  `).all(from, to, ...branchIds) as EmpAgg[]);
-
-  const svcByUser = new Map<number, SvcRow & { gross: number; wht: number; gi: number; net: number }>();
-  for (const r of svcRows) {
-    if (!r.netAllocation && !r.netPayout) continue;
-    const cur = svcByUser.get(r.userId)
-      ?? { ...r, gross: 0, wht: 0, gi: 0, net: 0 };
-    cur.gross += r.netAllocation; cur.wht += r.whtAmount;
-    cur.gi += r.groupInsurance; cur.net += r.netPayout;
-    svcByUser.set(r.userId, cur);
-  }
+  `).all(range.from, range.to, ...branchIds) as EmpAgg[]);
 
   const rows: EmpDocRow[] = [];
-  const payrollIds = new Set<number>();
-  const mkFigures = (
-    userId: number, name: string, emp: string | null, tax: string | null,
-    comp: number, ssoRaw: number, taxRaw: number, periodCount: number
+  const seen = new Set<number>();
+  const mk = (
+    userId: number, name: string, emp: string | null, taxMode: string | null,
+    comp: number, payrollNet: number, ssoRaw: number, taxRaw: number, periodCount: number
   ): EmpDocRow => {
     const svc = svcByUser.get(userId);
-    const svcGross = svc?.gross ?? 0;
+    const svcGross = round2(svc?.gross ?? 0);
     const income = round2(comp + svcGross);
     const sso = round2(ssoRaw);
-    const taxTotal = round2(taxRaw + (svc?.wht ?? 0));
+    const tax = round2(taxRaw + (svc?.wht ?? 0));
     const gi = round2(svc?.gi ?? 0);
+    // payrollDed captures EVERYTHING withheld in the round (sso + tax + drink /
+    // mealpass / other), from the stored net so it always reconciles. อื่นๆ =
+    // whatever isn't sso/tax.
+    const payrollDed = round2(comp - payrollNet);
+    const other = round2(Math.max(0, payrollDed - sso - taxRaw));
+    const deduction = round2(sso + tax + gi + other);
+    const take = round2(income - deduction);
     return {
-      userId, name,
-      empTypeLabel: typeLabel(emp), taxModeLabel: taxLabel(tax),
+      userId, name, empTypeLabel: typeLabel(emp), taxModeLabel: taxLabel(taxMode),
       homeBranch: homeByUser.get(userId) ?? "—",
-      comp: round2(comp), svcGross: round2(svcGross), income,
-      sso, tax: taxTotal, gi, take: round2(income - sso - taxTotal - gi),
-      periodCount
+      comp: round2(comp), svcGross, income, sso, tax, gi, other, deduction, take, periodCount
     };
   };
-
   for (const r of empRows) {
-    payrollIds.add(r.user_id);
-    rows.push(mkFigures(
-      r.user_id, nameWithPrefix(r.title_prefix, r.display_name),
+    seen.add(r.user_id);
+    rows.push(mk(r.user_id, nameWithPrefix(r.title_prefix, r.display_name),
       r.employment_type, r.salary_tax_mode_snapshot,
-      r.total_gross ?? 0, r.total_sso ?? 0, r.total_tax ?? 0, r.period_count ?? 0
-    ));
+      r.total_gross ?? 0, r.total_net ?? 0, r.total_sso ?? 0, r.total_tax ?? 0, r.period_count ?? 0));
   }
-  // SVC-only people (no payroll round this month) — zero-wage row so their SVC +
-  // its WHT still land on the sheet.
+  // SVC-only people (no payroll round this month) — zero-wage row so their SVC
+  // + its WHT still land on the sheet.
   for (const [uid, s] of svcByUser) {
-    if (payrollIds.has(uid)) continue;
-    rows.push(mkFigures(uid, s.displayName, s.employmentType, s.taxMode, 0, 0, 0, 0));
+    if (seen.has(uid)) continue;
+    rows.push(mk(uid, s.displayName, s.employmentType, s.taxMode, 0, 0, 0, 0, 0));
   }
-
-  const rank = (t: string) => (t.startsWith("ประจำ") ? 0 : t.startsWith("พาร์ท") ? 1 : 2);
-  rows.sort((a, b) => rank(a.empTypeLabel) - rank(b.empTypeLabel) || a.name.localeCompare(b.name, "th"));
-
-  const totals = rows.reduce<DocTotals>((acc, r) => ({
-    comp: round2(acc.comp + r.comp), svcGross: round2(acc.svcGross + r.svcGross),
-    income: round2(acc.income + r.income), sso: round2(acc.sso + r.sso),
-    tax: round2(acc.tax + r.tax), gi: round2(acc.gi + r.gi), take: round2(acc.take + r.take)
-  }), { comp: 0, svcGross: 0, income: 0, sso: 0, tax: 0, gi: 0, take: 0 });
-
-  return { rows, totals };
+  return rows;
 }
 
-// Pay rounds contributing to a branch-set in the month — the reconciliation key.
-function buildPayRounds(
-  db: Database.Database, range: { from: string; to: string }, branchIds: number[]
-): PayRoundInfo[] {
-  if (branchIds.length === 0) return [];
-  const { from, to } = range;
-  const rows = db.prepare(`
-    SELECT p.id, p.cycle, p.target, p.period_start, p.period_end, p.pay_date, p.status,
-           b.name AS branch_name,
-           (SELECT SUM(gross_pay) FROM payroll_lines WHERE period_id = p.id) AS gross,
-           (SELECT SUM(net_pay)   FROM payroll_lines WHERE period_id = p.id) AS net
+const rowRank = (r: EmpDocRow) => (r.empTypeLabel.startsWith("ประจำ") ? 0 : r.empTypeLabel.startsWith("พาร์ท") ? 1 : 2);
+
+/** Pay-round groups (with member breakdown) for one branch. */
+function buildRoundGroups(
+  db: Database.Database, range: { from: string; to: string },
+  branchId: number, homeByUser: Map<number, string | null>
+): PayRoundGroup[] {
+  const periods = db.prepare(`
+    SELECT p.id, p.cycle, p.target, p.period_start, p.period_end, p.pay_date, p.status, b.name AS branch_name
     FROM payroll_periods p
     LEFT JOIN branches b ON b.id = p.branch_id
-    WHERE p.pay_date >= ? AND p.pay_date <= ?
-      AND p.branch_id IN (${branchIds.map(() => "?").join(",")})
-    ORDER BY p.pay_date, p.id
-  `).all(from, to, ...branchIds) as Array<{
-    id: number; cycle: string; target: string; period_start: string; period_end: string;
-    pay_date: string; status: string; branch_name: string | null; gross: number | null; net: number | null;
+    WHERE p.pay_date >= ? AND p.pay_date <= ? AND p.branch_id = ?
+    ORDER BY (p.cycle = 'monthly') DESC, p.pay_date, p.id
+  `).all(range.from, range.to, branchId) as Array<{
+    id: number; cycle: "monthly" | "weekly"; target: string; period_start: string;
+    period_end: string; pay_date: string; status: string; branch_name: string | null;
   }>;
-  return rows.map((p) => ({
-    cycleLabel: cycleLabel(p.cycle, p.target),
-    periodStart: p.period_start, periodEnd: p.period_end, payDate: p.pay_date,
-    statusLabel: statusLabel(p.status), branchName: p.branch_name,
-    gross: round2(p.gross ?? 0), net: round2(p.net ?? 0)
-  }));
-}
-
-function companyInfo(db: Database.Database, companyId: number | null) {
-  if (companyId == null) return { name: "ไม่ระบุบริษัท", taxId: null as string | null, address: null as string | null };
-  const c = db.prepare("SELECT name_th, tax_id, address FROM companies WHERE id = ?")
-    .get(companyId) as { name_th: string; tax_id: string | null; address: string | null } | undefined;
-  return { name: c?.name_th ?? "ไม่ระบุบริษัท", taxId: c?.tax_id ?? null, address: c?.address ?? null };
-}
-
-function svcRowsForCompany(companyId: number, svcMonth: string): SvcRow[] {
-  try { return computeCompanySvcSummary(companyId, svcMonth).rows as unknown as SvcRow[]; }
-  catch { return []; }
-}
-function svcRowsForBranch(branchId: number, svcMonth: string): SvcRow[] {
-  try { return computeMonthlySvcSummary(branchId, svcMonth).rows as unknown as SvcRow[]; }
-  catch { return []; }
+  const groups: PayRoundGroup[] = [];
+  for (const p of periods) {
+    const lines = db.prepare(`
+      SELECT pl.user_id, pl.display_name, u.title_prefix, pl.employment_type,
+             pl.gross_pay, pl.net_pay
+      FROM payroll_lines pl LEFT JOIN users u ON u.id = pl.user_id
+      WHERE pl.period_id = ?
+      ORDER BY (pl.employment_type = 'ft') DESC, pl.display_name
+    `).all(p.id) as Array<{
+      user_id: number; display_name: string; title_prefix: string | null;
+      employment_type: string | null; gross_pay: number | null; net_pay: number | null;
+    }>;
+    const members: RoundMember[] = [];
+    let before = 0, deduction = 0, net = 0;
+    for (const l of lines) {
+      const b = round2(l.gross_pay ?? 0), n = round2(l.net_pay ?? 0);
+      if (b === 0 && n === 0) continue; // skip zero-noise rows (e.g. FT at a non-home branch)
+      const d = round2(b - n);
+      members.push({
+        userId: l.user_id, name: nameWithPrefix(l.title_prefix, l.display_name),
+        homeBranch: homeByUser.get(l.user_id) ?? "—", before: b, deduction: d, net: n
+      });
+      before = round2(before + b); deduction = round2(deduction + d); net = round2(net + n);
+    }
+    groups.push({
+      info: {
+        cycle: p.cycle, cycleLabel: cycleLabel(p.cycle, p.target),
+        periodStart: p.period_start, periodEnd: p.period_end, payDate: p.pay_date,
+        statusLabel: statusLabel(p.status), branchName: p.branch_name, gross: before, net
+      },
+      members, before, deduction, net
+    });
+  }
+  return groups;
 }
 
 /**
- * Build the full export document for a month + scope. Pure of Date (labels are
- * derived from the month string); the generated-at stamp is added by the route.
+ * Build the export document for a month + scope. Pure of Date (labels derive
+ * from the month string); the generated-at stamp is added by the route.
  */
 export function buildPayrollSummaryDoc(month: string, scope: ExportScope): PayrollSummaryDoc {
   const db = getDb();
@@ -356,7 +417,6 @@ export function buildPayrollSummaryDoc(month: string, scope: ExportScope): Payro
   const svcMonth = shiftMonth(month, -1);
   const branches = unionBranches(db, month);
 
-  // สังกัด (home branch) per user — is_primary=1 else lowest branch_id.
   const homeRows = db.prepare(`
     SELECT ub.user_id,
            (SELECT name FROM branches WHERE id = COALESCE(
@@ -367,101 +427,107 @@ export function buildPayrollSummaryDoc(month: string, scope: ExportScope): Payro
   const homeByUser = new Map<number, string | null>();
   for (const r of homeRows) homeByUser.set(r.user_id, r.home_branch_name);
 
-  const sections: DocSection[] = [];
-
-  const addCompanySection = (companyId: number | null) => {
-    const compBranches = branches.filter((b) => b.company_id === companyId);
-    if (compBranches.length === 0) return;
-    const branchIds = compBranches.map((b) => b.branch_id);
-    const svcRows = companyId != null
-      ? svcRowsForCompany(companyId, svcMonth)
-      : compBranches.flatMap((b) => svcRowsForBranch(b.branch_id, svcMonth));
-    const { rows, totals } = buildRowsAndTotals(db, range, branchIds, svcRows, homeByUser);
-    const info = companyInfo(db, companyId);
-    sections.push({
-      key: `company:${companyId ?? "null"}`,
-      title: info.name, taxId: info.taxId, address: info.address,
-      rows, totals, payRounds: buildPayRounds(db, range, branchIds)
-    });
-  };
-
-  const addBranchSection = (branchId: number) => {
-    const b = branches.find((x) => x.branch_id === branchId)
-      ?? (db.prepare(`SELECT b.id AS branch_id, b.name AS branch_name, b.company_id AS company_id, c.name_th AS company_name
-            FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?`).get(branchId) as BranchRow | undefined);
-    if (!b) return;
-    const svcRows = svcRowsForBranch(branchId, svcMonth);
-    const { rows, totals } = buildRowsAndTotals(db, range, [branchId], svcRows, homeByUser);
-    const info = companyInfo(db, b.company_id);
-    sections.push({
-      key: `branch:${branchId}`,
-      title: `${b.branch_name}${b.company_name ? ` · ${b.company_name}` : ""}`,
-      taxId: info.taxId, address: info.address,
-      rows, totals, payRounds: buildPayRounds(db, range, [branchId])
-    });
-  };
-
+  // Which companies + (optional) single-branch filter the scope asks for.
+  let companyKeys: Array<number | null>;
+  let branchFilter: number | null = null;
   let scopeLabel = "ทุกบริษัท";
   if (scope.kind === "all") {
-    const companyKeys: Array<number | null> = [];
+    companyKeys = [];
     for (const b of branches) if (!companyKeys.includes(b.company_id)) companyKeys.push(b.company_id);
-    for (const ck of companyKeys) addCompanySection(ck);
   } else if (scope.kind === "company") {
-    addCompanySection(scope.id);
+    companyKeys = [scope.id];
     scopeLabel = companyInfo(db, scope.id).name;
   } else {
-    addBranchSection(scope.id);
-    scopeLabel = sections[0]?.title ?? "สาขา";
+    const b = branches.find((x) => x.branch_id === scope.id)
+      ?? (db.prepare(`SELECT b.id AS branch_id, b.name AS branch_name, b.company_id AS company_id, c.name_th AS company_name
+            FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?`).get(scope.id) as BranchRow | undefined);
+    companyKeys = [b?.company_id ?? null];
+    branchFilter = scope.id;
+    scopeLabel = b ? `${b.branch_name}${b.company_name ? ` · ${b.company_name}` : ""}` : "สาขา";
   }
 
-  const grand = sections.reduce<DocTotals>((acc, s) => ({
-    comp: round2(acc.comp + s.totals.comp), svcGross: round2(acc.svcGross + s.totals.svcGross),
-    income: round2(acc.income + s.totals.income), sso: round2(acc.sso + s.totals.sso),
-    tax: round2(acc.tax + s.totals.tax), gi: round2(acc.gi + s.totals.gi), take: round2(acc.take + s.totals.take)
-  }), { comp: 0, svcGross: 0, income: 0, sso: 0, tax: 0, gi: 0, take: 0 });
+  const companies: CompanyDoc[] = [];
+  for (const ck of companyKeys) {
+    const compBranches = branches.filter((b) => b.company_id === ck);
+    if (compBranches.length === 0) continue;
+    const allBranchIds = compBranches.map((b) => b.branch_id);
+    // Company-authoritative SVC + company-wide per-person rollup.
+    const svcByUser = companySvcByUser(ck, allBranchIds, svcMonth);
+    const companyRows = buildCompanyRows(db, range, allBranchIds, svcByUser, homeByUser);
+    const rowsByHome = new Map<string, EmpDocRow[]>();
+    for (const r of companyRows) {
+      const arr = rowsByHome.get(r.homeBranch) ?? [];
+      arr.push(r); rowsByHome.set(r.homeBranch, arr);
+    }
+
+    const blocks: BranchBlock[] = [];
+    const shown = branchFilter != null ? compBranches.filter((b) => b.branch_id === branchFilter) : compBranches;
+    const claimed = new Set<number>();
+    for (const b of shown) {
+      const roundGroups = buildRoundGroups(db, range, b.branch_id, homeByUser);
+      const rollup = (rowsByHome.get(b.branch_name) ?? []).slice()
+        .sort((x, y) => rowRank(x) - rowRank(y) || x.name.localeCompare(y.name, "th"));
+      for (const r of rollup) claimed.add(r.userId);
+      if (roundGroups.length === 0 && rollup.length === 0) continue;
+      const totals = zeroTotals();
+      for (const r of rollup) addRowToTotals(totals, r);
+      blocks.push({ branchId: b.branch_id, branchName: b.branch_name, roundGroups, rollup, totals });
+    }
+    // People whose home branch isn't among the shown branches (rotators homed
+    // elsewhere) — only when not filtering to one branch, so the company total ties.
+    if (branchFilter == null) {
+      const leftover = companyRows.filter((r) => !claimed.has(r.userId));
+      const byHome = new Map<string, EmpDocRow[]>();
+      for (const r of leftover) { const a = byHome.get(r.homeBranch) ?? []; a.push(r); byHome.set(r.homeBranch, a); }
+      for (const [home, rows] of byHome) {
+        rows.sort((x, y) => rowRank(x) - rowRank(y) || x.name.localeCompare(y.name, "th"));
+        const totals = zeroTotals();
+        for (const r of rows) addRowToTotals(totals, r);
+        blocks.push({ branchId: null, branchName: home, roundGroups: [], rollup: rows, totals });
+      }
+    }
+
+    const info = companyInfo(db, ck);
+    const cTotals = zeroTotals();
+    for (const bl of blocks) for (const r of bl.rollup) addRowToTotals(cTotals, r);
+    companies.push({ key: `company:${ck ?? "null"}`, name: info.name, taxId: info.taxId, address: info.address, branches: blocks, totals: cTotals });
+  }
+
+  const grand = zeroTotals();
+  for (const c of companies) for (const bl of c.branches) for (const r of bl.rollup) addRowToTotals(grand, r);
 
   return {
     month, monthLabel: monthLabelTh(month),
     svcMonth, svcMonthLabel: monthLabelTh(svcMonth),
-    scopeLabel, sections, grand
+    scopeLabel, companies, grand
   };
 }
 
-// ── Column definitions shared by the renderers ───────────────────────
-// Deduction columns are flagged so every format marks them consistently
-// (header carries "(หัก)" and the value is shown negative).
+// ── Rollup column defs shared by the renderers ───────────────────────
+export type DocColumn = { key: keyof EmpDocRow; header: string; kind: "text" | "money" | "deduction" | "count" };
 
-export type DocColumn = {
-  key: keyof EmpDocRow;
-  header: string;
-  kind: "text" | "money" | "deduction" | "count";
-};
-
-export const DOC_COLUMNS: DocColumn[] = [
+export const ROLLUP_COLUMNS: DocColumn[] = [
   { key: "name", header: "ชื่อ-นามสกุล", kind: "text" },
   { key: "empTypeLabel", header: "ประเภทจ้าง", kind: "text" },
-  { key: "taxModeLabel", header: "รูปแบบภาษี", kind: "text" },
-  { key: "homeBranch", header: "สังกัด", kind: "text" },
   { key: "comp", header: "ค่าตอบแทน", kind: "money" },
   { key: "svcGross", header: "เซอร์วิสชาร์จ", kind: "money" },
-  { key: "income", header: "รวมรายรับ", kind: "money" },
+  { key: "income", header: "ยอดก่อนหัก", kind: "money" },
   { key: "sso", header: "ประกันสังคม (หัก)", kind: "deduction" },
   { key: "tax", header: "ภาษี ณ ที่จ่าย (หัก)", kind: "deduction" },
   { key: "gi", header: "ประกันกลุ่ม (หัก)", kind: "deduction" },
-  { key: "take", header: "รวมรับจริง", kind: "money" },
-  { key: "periodCount", header: "จำนวนรอบจ่าย", kind: "count" }
+  { key: "other", header: "หักอื่นๆ (หัก)", kind: "deduction" },
+  { key: "deduction", header: "รวมหัก", kind: "deduction" },
+  { key: "take", header: "ยอดสุทธิ", kind: "money" },
+  { key: "periodCount", header: "รอบ", kind: "count" }
 ];
 
 // ── CSV renderer ─────────────────────────────────────────────────────
-// Multi-section CSV: a document header, then per section a pay-round block
-// (for reconciliation) and the employee table. Deduction cells are written as
-// negative numbers so a spreadsheet SUM nets out correctly.
 
 function csvEsc(v: string | number): string {
   const s = String(v ?? "");
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
-function csvCell(r: EmpDocRow, col: DocColumn): string {
+function rollupCell(r: EmpDocRow, col: DocColumn): string {
   const v = r[col.key];
   if (col.kind === "text") return String(v ?? "");
   if (col.kind === "count") return String(v ?? 0);
@@ -476,52 +542,62 @@ export function renderPayrollSummaryCsv(
   const lines: string[] = [];
   const push = (...cells: (string | number)[]) => lines.push(cells.map(csvEsc).join(","));
 
-  push("เอกสารสรุปค่าตอบแทนรายเดือน");
+  push("เอกสารสรุปค่าตอบแทนรายเดือน (คำนวณระดับบริษัท · แยกหัวข้อสาขา)");
   push("ขอบเขต", doc.scopeLabel);
   push("เดือนที่จ่าย", doc.monthLabel);
   push("เซอร์วิสชาร์จของเดือน", doc.svcMonthLabel);
   push("ออกเอกสารเมื่อ", generatedLabel);
   if (note && note.trim()) push("หมายเหตุ", note.trim());
-  push("หมายเหตุการอ่าน", "คอลัมน์ที่มี (หัก) เป็นรายการหัก แสดงเป็นค่าติดลบ");
+  push("การอ่าน", "เซอร์วิสชาร์จคำนวณระดับบริษัท · คอลัมน์ที่มี (หัก) แสดงเป็นค่าติดลบ");
   lines.push("");
 
-  for (const s of doc.sections) {
-    push(`=== ${s.title} ===`);
-    if (s.taxId) push("เลขประจำตัวผู้เสียภาษี", s.taxId);
-    if (s.address) push("ที่อยู่", s.address);
+  for (const c of doc.companies) {
+    push(`บริษัท: ${c.name}`);
+    if (c.taxId) push("เลขประจำตัวผู้เสียภาษี", c.taxId);
+    if (c.address) push("ที่อยู่", c.address);
+    lines.push("");
 
-    // Pay-round block (รอบจ่าย) for the accountant's reconciliation.
-    push("รอบจ่ายที่กระทบยอดในเดือนนี้");
-    push("ประเภทรอบ", "ช่วงงวด", "วันจ่าย", "สถานะ", "สาขา", "ยอดจ่ายรวม", "ยอดสุทธิ");
-    if (s.payRounds.length === 0) push("— ไม่มีรอบจ่ายในเดือนนี้ (มีเฉพาะเซอร์วิสชาร์จ) —");
-    for (const p of s.payRounds) {
-      push(p.cycleLabel, `${p.periodStart} ถึง ${p.periodEnd}`, p.payDate, p.statusLabel,
-        p.branchName ?? "", p.gross.toFixed(2), p.net.toFixed(2));
+    for (const bl of c.branches) {
+      push(`◆ สาขา: ${bl.branchName}`);
+
+      // Per-round breakdown.
+      for (const g of bl.roundGroups) {
+        push(`  รอบจ่าย: ${g.info.cycleLabel} · งวด ${g.info.periodStart} ถึง ${g.info.periodEnd} · จ่าย ${g.info.payDate} · ${g.info.statusLabel}`);
+        push("  ชื่อ-นามสกุล", "สังกัด", "ยอดก่อนหัก", "ยอดหัก", "ยอดสุทธิ");
+        for (const m of g.members) {
+          push("  " + m.name, m.homeBranch, m.before.toFixed(2), m.deduction > 0 ? (-m.deduction).toFixed(2) : "0.00", m.net.toFixed(2));
+        }
+        push("  รวมรอบ", "", g.before.toFixed(2), g.deduction > 0 ? (-g.deduction).toFixed(2) : "0.00", g.net.toFixed(2));
+        lines.push("");
+      }
+      if (bl.roundGroups.length === 0) { push("  (ไม่มีรอบจ่ายในเดือนนี้ — มีเฉพาะเซอร์วิสชาร์จ)"); lines.push(""); }
+
+      // Final per-person rollup for this branch.
+      push("  สรุปรวมต่อคน (ทั้งเดือน · รวมเซอร์วิสชาร์จระดับบริษัท)");
+      push(...ROLLUP_COLUMNS.map((col) => col.header));
+      for (const r of bl.rollup) push(...ROLLUP_COLUMNS.map((col) => rollupCell(r, col)));
+      const t = bl.totals;
+      push("รวมสาขา", "", t.comp.toFixed(2), t.svcGross.toFixed(2), t.income.toFixed(2),
+        t.sso > 0 ? (-t.sso).toFixed(2) : "0.00", t.tax > 0 ? (-t.tax).toFixed(2) : "0.00",
+        t.gi > 0 ? (-t.gi).toFixed(2) : "0.00", t.other > 0 ? (-t.other).toFixed(2) : "0.00",
+        t.deduction > 0 ? (-t.deduction).toFixed(2) : "0.00", t.take.toFixed(2), "");
+      lines.push("");
     }
-    lines.push("");
 
-    // Employee table.
-    push(...DOC_COLUMNS.map((c) => c.header));
-    for (const r of s.rows) push(...DOC_COLUMNS.map((c) => csvCell(r, c)));
-    // Section totals.
-    const t = s.totals;
-    push("รวม", "", "", "",
-      t.comp.toFixed(2), t.svcGross.toFixed(2), t.income.toFixed(2),
-      t.sso > 0 ? (-t.sso).toFixed(2) : "0.00",
-      t.tax > 0 ? (-t.tax).toFixed(2) : "0.00",
-      t.gi > 0 ? (-t.gi).toFixed(2) : "0.00",
-      t.take.toFixed(2), "");
-    lines.push("");
+    const ct = c.totals;
+    push(`รวมทั้งบริษัท ${c.name}`, "", ct.comp.toFixed(2), ct.svcGross.toFixed(2), ct.income.toFixed(2),
+      ct.sso > 0 ? (-ct.sso).toFixed(2) : "0.00", ct.tax > 0 ? (-ct.tax).toFixed(2) : "0.00",
+      ct.gi > 0 ? (-ct.gi).toFixed(2) : "0.00", ct.other > 0 ? (-ct.other).toFixed(2) : "0.00",
+      ct.deduction > 0 ? (-ct.deduction).toFixed(2) : "0.00", ct.take.toFixed(2), "");
+    lines.push(""); lines.push("");
   }
 
-  if (doc.sections.length > 1) {
+  if (doc.companies.length > 1) {
     const g = doc.grand;
-    push("รวมทั้งหมด (ทุกส่วน)", "", "", "",
-      g.comp.toFixed(2), g.svcGross.toFixed(2), g.income.toFixed(2),
-      g.sso > 0 ? (-g.sso).toFixed(2) : "0.00",
-      g.tax > 0 ? (-g.tax).toFixed(2) : "0.00",
-      g.gi > 0 ? (-g.gi).toFixed(2) : "0.00",
-      g.take.toFixed(2), "");
+    push("รวมทั้งหมด (ทุกบริษัท)", "", g.comp.toFixed(2), g.svcGross.toFixed(2), g.income.toFixed(2),
+      g.sso > 0 ? (-g.sso).toFixed(2) : "0.00", g.tax > 0 ? (-g.tax).toFixed(2) : "0.00",
+      g.gi > 0 ? (-g.gi).toFixed(2) : "0.00", g.other > 0 ? (-g.other).toFixed(2) : "0.00",
+      g.deduction > 0 ? (-g.deduction).toFixed(2) : "0.00", g.take.toFixed(2), "");
   }
 
   return "﻿" + lines.join("\r\n"); // BOM so Excel reads Thai UTF-8
