@@ -17,6 +17,7 @@
 
 import type Database from "better-sqlite3";
 import { computeMonthlyAttendanceStats } from "./monthly-attendance-stats";
+import { approvedExcusedDatesForMonth } from "./late-excusals";
 import { recomputeLine } from "./payroll-compute";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -133,8 +134,11 @@ export function evaluateReferral(
       for (const ym of monthsInclusive(from, to)) {
         let stats;
         try {
+          // อนุโลมการมาสายที่อนุมัติแล้ว ไม่นับเป็น "สาย" ในเกณฑ์ 20% (เดียวกับ SVC).
+          const excusedDates = approvedExcusedDatesForMonth(db, ym);
           stats = computeMonthlyAttendanceStats(branch, ym,
-            [{ user_id: r.referred_user_id, shift_start_time: u.shift_start_time }]).get(r.referred_user_id);
+            [{ user_id: r.referred_user_id, shift_start_time: u.shift_start_time }],
+            { excusedDates }).get(r.referred_user_id);
         } catch { continue; }
         if (!stats) continue;
         scheduledDays += stats.scheduledDays;
