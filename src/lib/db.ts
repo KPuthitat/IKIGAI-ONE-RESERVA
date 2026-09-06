@@ -1237,6 +1237,14 @@ function runMigrations(db: Database.Database): void {
       CREATE INDEX IF NOT EXISTS idx_leave_dates ON leave_requests(date_from, date_to);
       COMMIT;
     `);
+    // The rebuild above recreates leave_requests WITHOUT branch_id (it predates
+    // that column). ensureBranchIdColumn already ran earlier this pass, so on a
+    // brand-new DB the column would be silently lost until the next process
+    // restart — which makes computeMonthlyAttendanceStats (WHERE branch_id = ?)
+    // throw. Re-assert it here so a single migration pass leaves it present.
+    ensureBranchIdColumn("leave_requests");
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_leave_branch_status
+      ON leave_requests(branch_id, status, created_at);`);
   }
 
   // Phase 1C v5: resignation_requests

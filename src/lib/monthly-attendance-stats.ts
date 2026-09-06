@@ -222,7 +222,15 @@ function pairInOut(events: Array<{ ts: string; type: "in" | "out" }>):
 export function computeMonthlyAttendanceStats(
   branchId: number,
   yearMonth: string,
-  users: Array<{ user_id: number; shift_start_time: string | null }>
+  users: Array<{ user_id: number; shift_start_time: string | null }>,
+  opts?: {
+    /** Map(userId → Set(YYYY-MM-DD)) of approved late-arrival excusals. On an
+     *  excused date the day is NOT counted as late (lateCount / lateMinutesTotal
+     *  and therefore the combined penalty skip it), so an อนุโลม'd late arrival
+     *  doesn't push the referral 20% gate — same treatment as the SVC forfeiture
+     *  rule. earlyOut / workedMinutes are unaffected. */
+    excusedDates?: Map<number, Set<string>>;
+  }
 ): Map<number, MonthlyAttendanceStats> {
   const out = new Map<number, MonthlyAttendanceStats>();
   const userIds = users.map((u) => u.user_id);
@@ -340,7 +348,8 @@ export function computeMonthlyAttendanceStats(
       // For lateness: take the first "in" of the day vs shift start.
       const firstIn = dayPairs[0].inTs;
       const lateness = computeLateness(firstIn, minToHHMM(ds.start_min));
-      if (lateness.isLate) {
+      const excused = opts?.excusedDates?.get(u.user_id)?.has(date) ?? false;
+      if (lateness.isLate && !excused) {
         stats.lateCount += 1;
         stats.lateMinutesTotal += lateness.minutesLate;
       }

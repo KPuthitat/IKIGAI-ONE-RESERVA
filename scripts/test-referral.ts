@@ -110,6 +110,39 @@ process.env.DATABASE_PATH = TMP;
   ok("empA → disqualified", statusOf(empA) === "disqualified");
   ok("empD (ยังไม่ถึงกำหนด) → pending", statusOf(empD) === "pending");
 
+  // E) late-arrival excusal lowers the referral penalty (owner 2026-09-06).
+  //    With a roster + late clock-ins the penalty is high; approving อนุโลม
+  //    for those days drops it back to 0 (same rule as SVC forfeiture).
+  const ex = await import("../src/lib/late-excusals");
+  const shiftId = Number(db.prepare(
+    "INSERT INTO shift_codes (code,name,start_time,end_time,branch_id) VALUES ('D','Day','09:00','17:00',?)"
+  ).run(branch).lastInsertRowid);
+  const posId = Number(db.prepare(
+    "INSERT INTO roster_positions (branch_id,title) VALUES (?, 'Checker')"
+  ).run(branch).lastInsertRowid);
+  const refE = mkUser("refE"), empE = mkUser("empE"); link(empE);
+  ref.recordReferralOnHire(db, empE, refE, "2026-01-01");
+  const lateDates = ["2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09"];
+  for (const d of lateDates) {
+    db.prepare("INSERT INTO roster_assignments (user_id,branch_id,assignment_date,position_id,shift_code_id) VALUES (?,?,?,?,?)")
+      .run(empE, branch, d, posId, shiftId);
+    // clock in 10:00 (60 min late) and out 17:00
+    db.prepare("INSERT INTO time_entries (user_id,type,ts,branch_id) VALUES (?,?,?,?)")
+      .run(empE, "in", new Date(`${d}T10:00:00+07:00`).toISOString(), branch);
+    db.prepare("INSERT INTO time_entries (user_id,type,ts,branch_id) VALUES (?,?,?,?)")
+      .run(empE, "out", new Date(`${d}T17:00:00+07:00`).toISOString(), branch);
+  }
+  const evE1 = ref.evaluateReferral(db, { referred_user_id: empE, hire_date: "2026-01-01", eligible_on: "2026-04-30" });
+  ok("มาสายทุกวัน (มี roster) → penalty สูง เกิน 20%", evE1.computable && evE1.penaltyPct > 20 && !evE1.penaltyOk);
+  // Approve an อนุโลม for every late day.
+  const adminE = mkUser("adminE");
+  for (const d of lateDates) {
+    const c = ex.createExcusal(db, { userId: empE, workDate: d, branchId: branch, reason: "ติดเรียน" });
+    ex.decideExcusal(db, ("id" in c ? c.id : 0), adminE, true, null);
+  }
+  const evE2 = ref.evaluateReferral(db, { referred_user_id: empE, hire_date: "2026-01-01", eligible_on: "2026-04-30" });
+  ok("อนุโลมครบทุกวัน → penalty = 0 และผ่านเกณฑ์", evE2.computable && evE2.penaltyPct === 0 && evE2.penaltyOk);
+
   console.log("\npayReferral:");
   // not_qualified — a pending referral (empD) can't be paid.
   const empDref = (db.prepare("SELECT id FROM referrals WHERE referred_user_id=?").get(empD) as { id: number }).id;
