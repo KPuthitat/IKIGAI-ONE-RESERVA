@@ -213,8 +213,8 @@ export default function PayPeriodPicker({
           onChange={(e) => { setCompanyWide(e.target.checked); if (e.target.checked) setAllBranches(false); }}
           className="w-4 h-4 accent-brand"
         />
-        <span className="font-medium text-slate-700">ประจำ รวมทั้งบริษัท</span>
-        <span className="text-xs text-slate-400">เงินเดือนประจำรอบเดียว (พนักงานข้ามสาขาไม่เพี้ยน) · ลงบัญชีต้นทุนแยกสาขาตามวันที่ทำจริง</span>
+        <span className="font-medium text-slate-700">ประจำ · รวมเป็นรอบเดียว (ขั้นสูง)</span>
+        <span className="text-xs text-slate-400">เฉพาะพนักงานประจำรายเดือน — คำนวณเงินเดือนรอบเดียวจากทุกสาขา (คนข้ามสาขาไม่เพี้ยน) · ลงบัญชีต้นทุนแยกสาขาตามวันทำจริง</span>
       </label>
 
       {errMsg && (
