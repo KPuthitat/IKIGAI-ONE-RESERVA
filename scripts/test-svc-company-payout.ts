@@ -111,6 +111,23 @@ process.env.DATABASE_PATH = TMP;
   ok("ไม่มีเส้นแบ่ง → ตามโหมดปัจจุบัน (SSO)", sc.svcEffectiveTaxMode("sso", null, "2026-07") === "sso");
   ok("WHT อยู่แล้ว → WHT เสมอ", sc.svcEffectiveTaxMode("wht", "2026-08", "2026-09") === "wht");
 
+  // ── companySvcRowForUser: display helper reflects the COMPANY authority ──
+  // (owner 2026-09-06 — SVC must read the same on every page / match the payout).
+  const compRowForUid = sc.computeCompanySvcSummary(co, ym).rows.find((r) => r.userId === uid) ?? null;
+  const helper = sc.companySvcRowForUser(uid, A, ym);
+  if (compRowForUid) {
+    ok("companySvcRowForUser = company authority (net/gross/wht/gi)",
+      near(helper.row?.netPayout ?? -1, compRowForUid.netPayout)
+      && near(helper.row?.grossAllocation ?? -1, compRowForUid.grossAllocation)
+      && near(helper.row?.whtAmount ?? -1, compRowForUid.whtAmount)
+      && near(helper.row?.groupInsurance ?? -1, compRowForUid.groupInsurance));
+  } else {
+    ok("companySvcRowForUser = null when the company roll-up has no row", helper.row === null);
+  }
+  const noCoBranch = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('nc','NOCO',9)").run().lastInsertRowid);
+  ok("null-company branch → per-branch fallback (no throw)",
+    (() => { try { sc.companySvcRowForUser(uid, noCoBranch, ym); return true; } catch { return false; } })());
+
   console.log(`\nsvc company-payout test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);

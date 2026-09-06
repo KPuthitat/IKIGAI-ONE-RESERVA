@@ -9,7 +9,7 @@ import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
-import { computeMonthlySvcSummary } from "@/lib/service-charge";
+import { computeMonthlySvcSummary, computeCompanySvcSummary } from "@/lib/service-charge";
 import PayslipPrintButton from "../../[id]/payslip/[userId]/PayslipPrintButton";
 
 export const dynamic = "force-dynamic";
@@ -190,19 +190,30 @@ export default function MonthlyPayslipPage({
   for (const ub of db.prepare("SELECT branch_id FROM user_branches WHERE user_id = ?").all(userId) as Array<{ branch_id: number }>) {
     svcBranchIds.add(ub.branch_id);
   }
+  // Authoritative SVC = the COMPANY roll-up ONCE per company (owner 2026-09-06),
+  // NOT the per-branch summaries summed — those disagree in a รวมกอง month or for
+  // a multi-branch person. Group the person's branches by company; a NULL-company
+  // branch falls back to its own per-branch summary.
+  const svcCompanyIds = new Set<number>();
+  const svcNullCoBranches = new Set<number>();
+  for (const b of svcBranchIds) {
+    const cid = (db.prepare("SELECT company_id AS c FROM branches WHERE id = ?").get(b) as { c: number | null } | undefined)?.c ?? null;
+    if (cid == null) svcNullCoBranches.add(b); else svcCompanyIds.add(cid);
+  }
   let svcNetPayout = 0;        // SVC actually received (after WHT + group insurance)
   let svcGroupInsurance = 0;   // group-insurance premium withheld from SVC
   let svcWht = 0;              // WHT withheld from SVC (PT / wht-mode staff only)
-  for (const b of svcBranchIds) {
-    let summary;
-    try { summary = computeMonthlySvcSummary(b, svcMonth); }
-    catch { continue; }
-    const row = summary.rows.find((r) => r.userId === userId);
-    if (row) {
-      svcNetPayout += row.netPayout;
-      svcGroupInsurance += row.groupInsurance;
-      svcWht += row.whtAmount;
-    }
+  const addSvcRow = (row?: { netPayout: number; groupInsurance: number; whtAmount: number }) => {
+    if (!row) return;
+    svcNetPayout += row.netPayout; svcGroupInsurance += row.groupInsurance; svcWht += row.whtAmount;
+  };
+  for (const cid of svcCompanyIds) {
+    try { addSvcRow(computeCompanySvcSummary(cid, svcMonth).rows.find((r) => r.userId === userId)); }
+    catch { /* no svc for this company */ }
+  }
+  for (const b of svcNullCoBranches) {
+    try { addSvcRow(computeMonthlySvcSummary(b, svcMonth).rows.find((r) => r.userId === userId)); }
+    catch { /* no svc for this branch */ }
   }
   // SVC is shown as income at GROSS (before WHT + group insurance). The WHT (PT
   // only) and the group-insurance premium are then listed as deductions, so the
