@@ -3,6 +3,7 @@ import { getDb, getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { autoExpireStaleBookings } from "@/lib/stale-bookings";
+import { pendingExcusalCount } from "@/lib/late-excusals";
 import LogoutButton from "./LogoutButton";
 import HeaderBrand from "../HeaderBrand";
 import LangToggle from "../LangToggle";
@@ -55,6 +56,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Clinic-only Doctor Fee (DF): the active branch has df_enabled — gates the
   // PERSONA → ค่าตอบแทนแพทย์ link so it shows only at the clinic.
   let dfBranch = false;
+  // Pending late-arrival excusals a reviewer can act on (owner 2026-09-05).
+  let excusalPendingCount = 0;
   if (user.activeBranchId) {
     try {
       // Auto-expire stale rows first so the count reflects only bookings
@@ -83,12 +86,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       const dfRow = db.prepare("SELECT df_enabled FROM branches WHERE id = ?")
         .get(user.activeBranchId) as { df_enabled: number } | undefined;
       dfBranch = dfRow?.df_enabled === 1;
+      if (user.role === "admin" || user.role === "super_admin") {
+        excusalPendingCount = pendingExcusalCount(db, user.role === "super_admin" ? null : user.adminBranchIds);
+      }
     } catch {
       // schema not migrated yet (fresh deploy) → just show 0
       pendingCount = 0;
       unlockPendingCount = 0;
       irOpenCount = 0;
       dfBranch = false;
+      excusalPendingCount = 0;
     }
   }
 
@@ -300,6 +307,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {
           href: "/admin/persona/time-certifications",
           label: t(lang, "admin.persona.nav.timeCert")
+        },
+        {
+          href: "/admin/persona/late-excusals",
+          label: "อนุโลมการมาสาย",
+          badge: excusalPendingCount > 0 ? excusalPendingCount : undefined
         }
       ]
     },

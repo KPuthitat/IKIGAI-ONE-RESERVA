@@ -2471,6 +2471,33 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Late-arrival excusals (owner 2026-09-05) — a staffer who arrives late for a
+  // valid reason (ติดเรียน, เลิกเรียนช้า, ประชุมด่วน, ฯลฯ) files a request; a
+  // supervisor/admin อนุโลม it. An APPROVED excusal removes that day's late minutes
+  // from the service-charge 20% forfeiture count, while the record stays as a
+  // statistic. Keyed one-per-(user, work_date). Distinct from time_certifications,
+  // which corrects a wrong/มmissing punch time — here the punch time is correct.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS late_excusals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      work_date TEXT NOT NULL,
+      branch_id INTEGER REFERENCES branches(id),
+      late_minutes INTEGER NOT NULL DEFAULT 0,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','approved','rejected')),
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT,
+      decision_note TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE (user_id, work_date)
+    );
+  `);
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_late_excusal_pending ON late_excusals(status, branch_id) WHERE status = 'pending'"
+  );
+
   // ── REPAIR: approved missing-punch certs that never created an entry ──
   // (owner 2026-06-11, reported repeatedly: ฐิติรัตน์ + อนุธิดา 05/06 รับรอง
   // เวลาออกแล้วแต่ "ไม่มีสักที่เลย"). Earlier builds marked a missing-punch

@@ -28,6 +28,7 @@ import { pairShifts, applyPtGrace, pickScheduled, deductBreak, type ScheduledShi
 import { nameWithPrefix } from "./name";
 import { approvedEarlyLeaveKeys } from "./early-leave";
 import { LATE_GRACE_MINUTES, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
+import { approvedExcusedDatesForMonth } from "./late-excusals";
 import {
   shiftStartByDateForUserMonth,
   scheduledMinutesByUserForMonth
@@ -917,6 +918,9 @@ export function computeMonthlySvcSummary(
   // 8b. Executive forfeiture exemptions + ad-hoc deductions for the month (owner 2026-08-20).
   const exemptedSet = listSvcForfeitExemptions(yearMonth);
   const deductionsByUser = listSvcDeductionsByUser(yearMonth);
+  // 8c. Approved late-arrival excusals (owner 2026-09-05) — an อนุโลม'd late day is
+  // dropped from the lateness count below (kept as a record elsewhere).
+  const excusedByUser = approvedExcusedDatesForMonth(getDb(), yearMonth);
 
   // 9. Roll up per-staff rows + forfeiture
   //
@@ -965,6 +969,8 @@ export function computeMonthlySvcSummary(
       anyComputable = true;
       const startMin = hhmmToMin(effStart);
       if (startMin == null) continue;
+      // อนุโลมการมาสายแล้ว (owner 2026-09-05) — วันนี้ไม่นับในเกณฑ์ 20%.
+      if (excusedByUser.get(s.userId)?.has(dateBkk)) continue;
       const actualMin = bkk.getUTCHours() * 60 + bkk.getUTCMinutes();
       const diff = actualMin - startMin;
       if (diff > LATE_GRACE_MINUTES) lateMinutes += diff;
@@ -1460,6 +1466,7 @@ function computeBranchSvcContext(branchId: number, yearMonth: string): BranchSvc
   }
   const userIds = staff.map((s) => s.userId);
   const rosterScheduledByUser = scheduledMinutesByUserForMonth(branchId, yearMonth, userIds);
+  const excusedByUser = approvedExcusedDatesForMonth(db, yearMonth);
   const lateByUser = new Map<number, { lateMinutes: number; anyComputable: boolean }>();
   for (const s of staff) {
     const isVisitor = visitorIds.has(s.userId);
@@ -1474,6 +1481,8 @@ function computeBranchSvcContext(branchId: number, yearMonth: string): BranchSvc
       anyComputable = true;
       const startMin = hhmmToMin(effStart);
       if (startMin == null) continue;
+      // อนุโลมการมาสายแล้ว (owner 2026-09-05) — วันนี้ไม่นับในเกณฑ์ 20%.
+      if (excusedByUser.get(s.userId)?.has(dateBkk)) continue;
       const actualMin = bkk.getUTCHours() * 60 + bkk.getUTCMinutes();
       const diff = actualMin - startMin;
       if (diff > LATE_GRACE_MINUTES) lateMinutes += diff;

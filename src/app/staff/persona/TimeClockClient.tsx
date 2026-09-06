@@ -1207,22 +1207,30 @@ function ClockAction({
         </div>
         {swapErr && <div className="text-rose-600 text-sm">{swapErr}</div>}
         {swapStep === "ask" ? (
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              onClick={() => submitResolve(isLate ? "late" : "early")}
-              disabled={swapBusy}
-              className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 active:scale-95 transition disabled:opacity-50"
-            >
-              {isLate ? "มาสาย" : "มาก่อนเวลา · ขอ OT"}
-            </button>
-            <button
-              onClick={() => { setSwapStep("pickFriend"); setSwapErr(null); }}
-              disabled={swapBusy}
-              className="py-3 rounded-xl bg-brand text-white text-sm font-bold active:scale-95 transition disabled:opacity-50"
-            >
-              สลับกะกับเพื่อน
-            </button>
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                onClick={() => submitResolve(isLate ? "late" : "early")}
+                disabled={swapBusy}
+                className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 active:scale-95 transition disabled:opacity-50"
+              >
+                {isLate ? "มาสาย" : "มาก่อนเวลา · ขอ OT"}
+              </button>
+              <button
+                onClick={() => { setSwapStep("pickFriend"); setSwapErr(null); }}
+                disabled={swapBusy}
+                className="py-3 rounded-xl bg-brand text-white text-sm font-bold active:scale-95 transition disabled:opacity-50"
+              >
+                สลับกะกับเพื่อน
+              </button>
+            </div>
+            {isLate && (
+              <a href={`/staff/persona/late-excusal?date=${swapPrompt.work_date}`}
+                className="block text-center text-xs text-brand hover:underline pt-1">
+                มาสายเพราะมีเหตุจำเป็น — ขออนุโลม (กรอกเหตุผลให้หัวหน้าพิจารณา)
+              </a>
+            )}
+          </>
         ) : swapPrompt.candidates.length === 0 ? (
           <div className="space-y-2">
             <p className="text-sm text-amber-700">
