@@ -8,7 +8,8 @@ import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
 import { computeMonthlySvcSummary, computeCompanySvcSummary } from "@/lib/service-charge";
-import { Icon } from "@/components/Icon";
+import { listExportScopes } from "@/lib/payroll-summary-doc";
+import ExportDialog from "./ExportDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -452,16 +453,12 @@ export default function PayrollMonthlySummaryPage({
         </Link>
       </div>
 
-      {/* Export for downstream documents (ภ.ง.ด.1 / SSO / bank) — owner 2026-07-04 */}
+      {/* Export for downstream documents (ภ.ง.ด.1 / SSO / bank). สร้างเอกสาร: pick
+          company/branch + format (CSV/XLSX/PDF), with pay rounds + marked
+          deductions (owner 2026-07-04 → 2026-09-06). */}
       {(empRows.length > 0 || svcByUserCompany.size > 0) && (
         <div className="flex justify-end">
-          <a
-            href={`/api/admin/persona/payroll/summary/csv?m=${month}`}
-            className="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-brand text-brand font-medium hover:bg-amber-50"
-          >
-            <Icon name="download" className="h-4 w-4" />
-            ดาวน์โหลด CSV (ต่อพนักงาน)
-          </a>
+          <ExportDialog month={month} scopes={listExportScopes(db, month)} />
         </div>
       )}
 
