@@ -4,7 +4,7 @@
 // per-day time log and the "เพิ่มอื่นๆ" (double-pay premium) explanation.
 
 import type Database from "better-sqlite3";
-import { computeMonthlySvcSummary, type MonthlySvcSummary } from "@/lib/service-charge";
+import { computeMonthlySvcSummary, companySvcRowForUser, type MonthlySvcSummary } from "@/lib/service-charge";
 import { buildLineBreakdown, type BreakdownDay } from "@/lib/payroll-breakdown";
 
 export type PayslipPeriod = {
@@ -115,11 +115,13 @@ export function buildPayslipView(
     ).get(userId) as { branch_id: number } | undefined;
     svcBranchId = ub?.branch_id ?? null;
   }
-  const svcSummary =
-    svcBranchId != null && (line.service_charge > 0 || period.cycle === "monthly")
-      ? computeMonthlySvcSummary(svcBranchId, svcMonth)
-      : null;
-  const svcRow = svcSummary?.rows.find((r) => r.userId === userId) ?? null;
+  // svcSummary = branch pool context (admin-only pool line). svcRow = the person's
+  // AUTHORITATIVE figure — the company roll-up (same as the real payout / accounta),
+  // so the slip agrees with every other page even in a รวมกอง month or for someone
+  // who worked several branches (owner 2026-09-06). Read-only.
+  const svcActive = svcBranchId != null && (line.service_charge > 0 || period.cycle === "monthly");
+  const svcSummary = svcActive ? computeMonthlySvcSummary(svcBranchId!, svcMonth) : null;
+  const svcRow = svcActive ? companySvcRowForUser(userId, svcBranchId!, svcMonth).row : null;
 
   const payslipBranchName = period.branch_id
     ? (db.prepare("SELECT name FROM branches WHERE id = ?").get(period.branch_id) as { name: string } | undefined)?.name ?? null

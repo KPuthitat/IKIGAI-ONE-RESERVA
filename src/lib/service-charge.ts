@@ -2092,6 +2092,65 @@ export function computeBranchSvcPayout(branchId: number, yearMonth: string): Bra
   return out;
 }
 
+/**
+ * Authoritative per-person SVC for DISPLAY surfaces (payslip, summary), adapted
+ * to the MonthlySvcRow shape so existing consumers are unchanged (owner
+ * 2026-09-06). A person's SVC must read the SAME everywhere and match the real
+ * payout, so this uses the COMPANY roll-up (computeCompanySvcSummary — รวมกอง /
+ * shared-pool aware, cross-branch caps applied once) rather than the raw
+ * per-branch engine, which can disagree in a shared-pool month or for someone
+ * who works several branches. Falls back to the per-branch engine only for a
+ * branch with no company. Read-only — never mutates any round.
+ *
+ * `staffPoolTotal` is returned for the admin-only pool-context line: the company
+ * staff pool when company-scoped, else the branch pool.
+ */
+export function companySvcRowForUser(
+  userId: number, branchId: number, yearMonth: string
+): { row: MonthlySvcRow | null; staffPoolTotal: number } {
+  const db = getDb();
+  const companyId = (db.prepare("SELECT company_id AS c FROM branches WHERE id = ?")
+    .get(branchId) as { c: number | null } | undefined)?.c ?? null;
+  if (companyId == null) {
+    const s = computeMonthlySvcSummary(branchId, yearMonth);
+    return { row: s.rows.find((r) => r.userId === userId) ?? null, staffPoolTotal: s.staffPoolTotal };
+  }
+  const cs = computeCompanySvcSummary(companyId, yearMonth);
+  const cr = cs.rows.find((r) => r.userId === userId);
+  if (!cr) return { row: null, staffPoolTotal: cs.staffPoolTotal };
+  const row: MonthlySvcRow = {
+    userId: cr.userId,
+    displayName: cr.displayName,
+    employmentType: cr.employmentType,
+    shiftStartTime: null,
+    totalMinutesWorked: cr.byBranch.reduce((s, b) => s + b.minutesWorked, 0),
+    daysWorked: cr.byBranch.reduce((s, b) => s + b.daysWorked, 0),
+    scheduledMinutes: cr.scheduledMinutes,
+    lateMinutes: cr.lateMinutes,
+    lateRatio: cr.lateRatio,
+    grossAllocation: cr.grossAllocation,
+    forfeited: cr.forfeited,
+    forfeitReason: cr.forfeitReason,
+    exempted: cr.exempted,
+    exemptReason: cr.exemptReason,
+    netAllocation: cr.netAllocation,
+    taxMode: cr.taxMode,
+    whtAmount: cr.whtAmount,
+    groupInsurance: cr.groupInsurance,
+    netPayout: cr.netPayout,
+    dailyBreakdown: cr.dailyBreakdown.map((b) => ({
+      date: b.date, dayAmount: b.dayAmount, staffPool: b.staffPool,
+      userMinutes: b.userMinutes, totalMinutes: b.totalMinutes, staffCount: b.staffCount, share: b.share
+    })),
+    excludedDays: [],
+    foodClawback: cr.foodClawback,
+    foodClawbackDays: [],
+    otherDeductions: cr.otherDeductions,
+    otherDeductionItems: cr.otherDeductionItems
+  };
+  return { row, staffPoolTotal: cs.staffPoolTotal };
+}
+
 /** Clamped worked minutes for ONE user on ONE day at a branch — the exact same
  *  engine the monthly SVC roll-up uses (pairShifts → roster-clamp → break-deduct
  *  → approved-OT extend). The clock-out food-credit warning calls this so the
