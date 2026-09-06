@@ -36,10 +36,16 @@ export function generatePayrollSummaryPdf(
       const bottom = doc.page.height - doc.page.margins.bottom;
       let y = doc.page.margins.top;
 
+      // Every cell stays on ONE line. NOTE: pdfkit's `lineBreak:false` does NOT
+      // reliably prevent wrapping when the text is only slightly wider than the
+      // column (it wrapped a 97pt branch name in a 94pt box), which used to make
+      // rows overlap. Bounding `height` to a single line + `ellipsis` truncates
+      // the overflow with "…" instead — numbers that fit are unaffected.
       const cell = (text: string, x: number, w: number, align: "left" | "right",
         opts: { font?: "th" | "th-b"; size?: number; color?: string } = {}) => {
-        doc.font(opts.font ?? "th").fontSize(opts.size ?? 9).fillColor(opts.color ?? "#333");
-        doc.text(text, x + 3, y, { width: w - 6, align, lineBreak: false });
+        const size = opts.size ?? 9;
+        doc.font(opts.font ?? "th").fontSize(size).fillColor(opts.color ?? "#333");
+        doc.text(text, x + 3, y, { width: w - 6, align, lineBreak: false, height: size * 1.6, ellipsis: true });
       };
       const hr = (color = "#bbb", w = 0.8) => {
         doc.moveTo(left, y).lineTo(right, y).strokeColor(color).lineWidth(w).stroke(); y += 6;
@@ -119,14 +125,16 @@ export function generatePayrollSummaryPdf(
         if (s.payRounds.length === 0) {
           doc.font("th").fontSize(8.5).fillColor("#999").text("— ไม่มีรอบจ่ายในเดือนนี้ (มีเฉพาะเซอร์วิสชาร์จ) —", left, y); y = doc.y + 4;
         } else {
+          // สาขา gets the slack — prod branch names ("NAMA PASTA SRIRACHA") are
+          // long. The other columns are sized to their actual content.
           const rc: Array<{ label: string; w: number; align: "left" | "right" }> = [
-            { label: "ประเภทรอบ", w: 150, align: "left" },
-            { label: "ช่วงงวด", w: 170, align: "left" },
-            { label: "วันจ่าย", w: 90, align: "left" },
-            { label: "สถานะ", w: 80, align: "left" },
-            { label: "สาขา", w: contentW - 150 - 170 - 90 - 80 - 90 - 90, align: "left" },
-            { label: "ยอดจ่ายรวม", w: 90, align: "right" },
-            { label: "ยอดสุทธิ", w: 90, align: "right" }
+            { label: "ประเภทรอบ", w: 110, align: "left" },
+            { label: "ช่วงงวด", w: 125, align: "left" },
+            { label: "วันจ่าย", w: 70, align: "left" },
+            { label: "สถานะ", w: 65, align: "left" },
+            { label: "สาขา", w: contentW - 110 - 125 - 70 - 65 - 85 - 85, align: "left" },
+            { label: "ยอดจ่ายรวม", w: 85, align: "right" },
+            { label: "ยอดสุทธิ", w: 85, align: "right" }
           ];
           const rX = (i: number) => left + rc.slice(0, i).reduce((s2, c) => s2 + c.w, 0);
           rc.forEach((c, i) => cell(c.label, rX(i), c.w, c.align, { font: "th-b", size: 8, color: "#555" }));
