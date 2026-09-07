@@ -6,7 +6,7 @@
 import { getDb } from "./db";
 import { getPlatformChannel, isChannelReady } from "./messaging-channels";
 import { sendLinePush, type LineMessage } from "./line";
-import { MEETING_FEE_PER_HOUR, parseAgendaTopics } from "./exec-meetings";
+import { MEETING_FEE_PER_15MIN, parseAgendaTopics } from "./exec-meetings";
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
 const STAFF_MEETING_URL = `${PUBLIC_BASE}/staff/persona/exec-meetings`;
@@ -24,8 +24,8 @@ function dateLabelTh(ymd: string): string {
 // split into separate lines so each wraps cleanly on its own.
 const WJ = "\u2060";
 const NBSP = "\u00A0";
-const feeLabel = `ชั่วโมงละ${NBSP}${MEETING_FEE_PER_HOUR}${NBSP}บาท`;
-const feeNote = `(คิดตาม${WJ}จำนวน${WJ}นาที)`;
+const feeLabel = `ทุก${NBSP}15${NBSP}นาที${NBSP}${MEETING_FEE_PER_15MIN}${NBSP}บาท`;
+const feeNote = `(คิดเป็น${WJ}บล็อก${WJ}15${WJ}นาที${WJ}เหมือน${WJ}โอที)`;
 
 // วาระที่ตั้งไว้ล่วงหน้า — shown on the card so invitees can prepare (owner
 // 2026-09-02). Each topic is a numbered line; blank list renders nothing.

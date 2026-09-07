@@ -2,7 +2,7 @@
 //
 // Self-contained: builds a throwaway DB, invites a staff member, and proves the
 // gating (only invited, active-only, no double join, minutes required to end)
-// and the เบี้ยประชุม math (200 บาท/ชม., per-minute; exempt → 0).
+// and the เบี้ยประชุม math (เหมือนโอที: 50 บาท ต่อ 15 นาที ปัดลงเป็นบล็อก; exempt → 0).
 //
 // Run:  node --import tsx scripts/test-exec-meetings.ts
 
@@ -31,9 +31,12 @@ process.env.DATABASE_PATH = TMP;
   };
 
   // ── pure fee helper ──
-  ok("fee: 90 นาที = 300", em.meetingFeeForMinutes(90) === 300);
-  ok("fee: 45 นาที = 150", em.meetingFeeForMinutes(45) === 150);
-  ok("fee: 100 นาที = 333.33 (รายนาที)", em.meetingFeeForMinutes(100) === 333.33);
+  // เหมือนโอที: 50 บาท ต่อทุก 15 นาที ปัดลงเป็นบล็อก (owner 2026-09-07)
+  ok("fee: 90 นาที = 300 (6 บล็อก × 50)", em.meetingFeeForMinutes(90) === 300);
+  ok("fee: 45 นาที = 150 (3 บล็อก)", em.meetingFeeForMinutes(45) === 150);
+  ok("fee: 100 นาที = 300 (6 บล็อกเต็ม, เศษ 10 นาทีปัดลง)", em.meetingFeeForMinutes(100) === 300);
+  ok("fee: 14 นาที = 0 (ยังไม่ครบ 15 นาที)", em.meetingFeeForMinutes(14) === 0);
+  ok("fee: 29 นาที = 50 (1 บล็อก)", em.meetingFeeForMinutes(29) === 50);
   ok("fee: 0 นาที = 0", em.meetingFeeForMinutes(0) === 0);
 
   const mkUser = (u: string, exempt = 0) => Number(db.prepare(
@@ -61,7 +64,7 @@ process.env.DATABASE_PATH = TMP;
   db.prepare("UPDATE exec_meeting_attendance SET joined_at = datetime('now','-90 minutes') WHERE meeting_id=? AND user_id=?").run(mid, uid);
   const e1 = em.endMeeting(mid, uid);
   ok("end: คิดเวลา 90 นาที", !("error" in e1) && e1.minutes === 90);
-  ok("end: เบี้ยประชุม = 300 (200/ชม.)", !("error" in e1) && e1.fee === 300);
+  ok("end: เบี้ยประชุม = 300 (90 นาที = 6 บล็อก × 50)", !("error" in e1) && e1.fee === 300);
   ok("end: จบซ้ำไม่ได้", "error" in em.endMeeting(mid, uid));
 
   // ── exempt exec: attends but fee = 0 ──
