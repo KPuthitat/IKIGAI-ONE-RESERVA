@@ -24,7 +24,7 @@
 // not "240/480".
 
 import { getDb } from "./db";
-import { pairShifts, applyPtGrace, pickScheduled, deductBreak, type ScheduledShift, type PayrollSettings } from "./payroll-compute";
+import { pairShifts, applyPtGrace, pickScheduled, deductBreak, MEETING_FEE_SVC_START_MONTH, type ScheduledShift, type PayrollSettings } from "./payroll-compute";
 import { nameWithPrefix } from "./name";
 import { approvedEarlyLeaveKeys } from "./early-leave";
 import { LATE_GRACE_MINUTES, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
@@ -2044,7 +2044,52 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
 export type BranchSvcPayoutRow = {
   userId: number; displayName: string; taxMode: "sso" | "wht";
   gross: number; net: number; wht: number; groupInsurance: number;
+  // เบี้ยประชุม (owner 2026-09-07): meeting fees for meetings on/after the cutover
+  // are paid WITH the service charge (same 20th, company-wide) instead of inside
+  // the payroll round. Attributed to the person's HOME branch. Its own line so
+  // accounting can post it under a distinct category. `net`/`wht` above already
+  // INCLUDE the meeting fee (net += meetingFeeNet, wht += meetingFeeWht) so the
+  // batch total + the cash actually paid are correct; these fields expose the
+  // meeting-fee portion for a separate accounta category + payslip line.
+  meetingFeeGross: number;   // pre-WHT meeting fee attributed to this branch
+  meetingFeeWht: number;     // 3% for wht-mode staff, else 0
+  meetingFeeNet: number;     // meetingFeeGross − meetingFeeWht (cash paid)
 };
+
+/**
+ * Per-user meeting-fee gross for a month (owner 2026-09-07) — SUM of ended
+ * exec-meeting fees whose meeting_date is in `yearMonth`, but ONLY for months
+ * on/after MEETING_FEE_SVC_START_MONTH (before that, meeting fees were paid via
+ * payroll and must not be re-paid here). Keyed user_id → gross baht.
+ */
+export function meetingFeeGrossByUser(yearMonth: string): Map<number, number> {
+  const map = new Map<number, number>();
+  if (yearMonth < MEETING_FEE_SVC_START_MONTH) return map;
+  try {
+    const rows = getDb().prepare(`
+      SELECT a.user_id AS user_id, SUM(a.fee_amount) AS fee
+      FROM exec_meeting_attendance a JOIN exec_meetings m ON m.id = a.meeting_id
+      WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0
+        AND substr(m.meeting_date, 1, 7) = ?
+      GROUP BY a.user_id
+    `).all(yearMonth) as Array<{ user_id: number; fee: number }>;
+    for (const r of rows) {
+      const g = Math.round((r.fee || 0) * 100) / 100;
+      if (g > 0) map.set(r.user_id, g);
+    }
+  } catch { /* exec-meeting tables may not exist yet */ }
+  return map;
+}
+
+/** Home (primary, else lowest) branch id for a user — where their meeting fee books. */
+function homeBranchId(userId: number): number | null {
+  return (getDb().prepare(`
+    SELECT COALESCE(
+      (SELECT branch_id FROM user_branches WHERE user_id = ? AND is_primary = 1 LIMIT 1),
+      (SELECT MIN(branch_id) FROM user_branches WHERE user_id = ?)
+    ) AS b
+  `).get(userId, userId) as { b: number | null }).b;
+}
 
 /** Per-person SVC payout for ONE branch — the authoritative amounts to pay and to
  *  post to ACCOUNTA (owner 2026-08-20). When the (company, month) is on the
@@ -2058,38 +2103,66 @@ export function computeBranchSvcPayout(branchId: number, yearMonth: string): Bra
   const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
     .get(branchId) as { company_id: number | null } | undefined)?.company_id ?? null;
   const shared = companyId != null && !isManualSvcMonth(yearMonth) && isSharedSvcMonth(companyId, yearMonth);
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  const rowsByUser = new Map<number, BranchSvcPayoutRow>();
+  const blank = (userId: number, displayName: string, taxMode: "sso" | "wht"): BranchSvcPayoutRow =>
+    ({ userId, displayName, taxMode, gross: 0, net: 0, wht: 0, groupInsurance: 0,
+       meetingFeeGross: 0, meetingFeeWht: 0, meetingFeeNet: 0 });
 
   if (!shared) {
-    return computeMonthlySvcSummary(branchId, yearMonth).rows.map((r) => ({
-      userId: r.userId, displayName: r.displayName, taxMode: r.taxMode,
-      gross: r.grossAllocation, net: r.netPayout, wht: r.whtAmount, groupInsurance: r.groupInsurance
-    }));
+    for (const r of computeMonthlySvcSummary(branchId, yearMonth).rows) {
+      rowsByUser.set(r.userId, { ...blank(r.userId, r.displayName, r.taxMode),
+        gross: r.grossAllocation, net: r.netPayout, wht: r.whtAmount, groupInsurance: r.groupInsurance });
+    }
+  } else {
+    for (const r of computeCompanySvcSummary(companyId!, yearMonth).rows) {
+      const tg = r.grossAllocation;
+      if (tg <= 0) continue;
+      // Cumulative (prefix-sum) rounding by the person's branch order so the split of
+      // net / WHT / group-insurance across their branches reconciles EXACTLY to their
+      // total (no satang drift): each branch gets round2(v·cumGross) − round2(v·priorGross).
+      let prior = 0, thisGross = 0, found = false;
+      for (const b of r.byBranch) {
+        if (b.branchId === branchId) { thisGross = b.grossAllocation; found = true; break; }
+        prior += b.grossAllocation;
+      }
+      if (!found || thisGross <= 0) continue;
+      const alloc = (v: number) => round2(v * (prior + thisGross) / tg) - round2(v * prior / tg);
+      rowsByUser.set(r.userId, { ...blank(r.userId, r.displayName, r.taxMode),
+        gross: round2(thisGross), net: alloc(r.netPayout), wht: alloc(r.whtAmount), groupInsurance: alloc(r.groupInsurance) });
+    }
   }
 
-  const round2 = (n: number) => Math.round(n * 100) / 100;
-  const out: BranchSvcPayoutRow[] = [];
-  for (const r of computeCompanySvcSummary(companyId!, yearMonth).rows) {
-    const tg = r.grossAllocation;
-    if (tg <= 0) continue;
-    // Cumulative (prefix-sum) rounding by the person's branch order so the split of
-    // net / WHT / group-insurance across their branches reconciles EXACTLY to their
-    // total (no satang drift): each branch gets round2(v·cumGross) − round2(v·priorGross).
-    let prior = 0, thisGross = 0, found = false;
-    for (const b of r.byBranch) {
-      if (b.branchId === branchId) { thisGross = b.grossAllocation; found = true; break; }
-      prior += b.grossAllocation;
+  // เบี้ยประชุม (owner 2026-09-07) — pay the month's meeting fees WITH the service
+  // charge, attributed to each attendee's HOME branch (so it books once). Taxed like
+  // SVC: WHT 3% for wht-mode, none for sso-mode. Folded into net/wht so the batch
+  // total + cash paid include it; the meetingFee* fields expose it for a separate
+  // accounta category. Only for months on/after the cutover (meetingFeeGrossByUser
+  // enforces that), so pre-cutover fees already paid via payroll are never re-paid.
+  const meetingFees = meetingFeeGrossByUser(yearMonth);
+  if (meetingFees.size > 0) {
+    const whtRate = (db.prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")
+      .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03;
+    for (const [userId, gross] of meetingFees) {
+      if (homeBranchId(userId) !== branchId) continue;
+      const u = db.prepare("SELECT display_name, salary_tax_mode, sso_start_month FROM users WHERE id = ?")
+        .get(userId) as { display_name: string; salary_tax_mode: "sso" | "wht" | null; sso_start_month: string | null } | undefined;
+      const taxMode = svcEffectiveTaxMode(u?.salary_tax_mode ?? "sso", u?.sso_start_month ?? null, yearMonth);
+      const mWht = taxMode === "wht" ? round2(gross * whtRate) : 0;
+      const mNet = round2(gross - mWht);
+      const row = rowsByUser.get(userId) ?? blank(userId, u?.display_name ?? "", taxMode);
+      row.meetingFeeGross = round2(row.meetingFeeGross + gross);
+      row.meetingFeeWht = round2(row.meetingFeeWht + mWht);
+      row.meetingFeeNet = round2(row.meetingFeeNet + mNet);
+      row.net = round2(row.net + mNet);
+      row.wht = round2(row.wht + mWht);
+      if (!row.displayName) row.displayName = u?.display_name ?? "";
+      rowsByUser.set(userId, row);
     }
-    if (!found || thisGross <= 0) continue;
-    const alloc = (v: number) => round2(v * (prior + thisGross) / tg) - round2(v * prior / tg);
-    out.push({
-      userId: r.userId, displayName: r.displayName, taxMode: r.taxMode,
-      gross: round2(thisGross),
-      net: alloc(r.netPayout),
-      wht: alloc(r.whtAmount),
-      groupInsurance: alloc(r.groupInsurance)
-    });
   }
-  return out;
+
+  return [...rowsByUser.values()];
 }
 
 /**

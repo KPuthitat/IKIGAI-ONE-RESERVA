@@ -128,6 +128,22 @@ process.env.DATABASE_PATH = TMP;
   ok("null-company branch → per-branch fallback (no throw)",
     (() => { try { sc.companySvcRowForUser(uid, noCoBranch, ym); return true; } catch { return false; } })());
 
+  // ── เบี้ยประชุม rides the SVC payout + posts to accounta (owner 2026-09-07) ──
+  const { postSvcToAccounta } = await import("../src/lib/accounta-db");
+  const mtgU = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status) VALUES ('mtg','x','ผู้ประชุม','staff','active')").run().lastInsertRowid);
+  db.prepare("INSERT INTO user_branches (user_id, branch_id, is_primary) VALUES (?,?,1)").run(mtgU, A); // home = branch A
+  const meet = Number(db.prepare("INSERT INTO exec_meetings (title, meeting_date, status) VALUES ('ประชุม','2026-09-10','ended')").run().lastInsertRowid);
+  db.prepare("INSERT INTO exec_meeting_attendance (meeting_id, user_id, joined_at, ended_at, minutes, fee_amount) VALUES (?,?,datetime('now'),datetime('now'),90,300)").run(meet, mtgU);
+  ok("computeBranchSvcPayout: เบี้ยประชุม 300 ที่สาขาบ้าน (sso → net 300)",
+    (() => { const r = sc.computeBranchSvcPayout(A, ym).find((x) => x.userId === mtgU); return !!r && near(r.meetingFeeGross, 300) && near(r.meetingFeeNet, 300) && near(r.net, 300); })());
+  // Post the A batch to accounta and check the เบี้ยประชุม category row.
+  const batchA = (db.prepare("SELECT id FROM svc_payout_batches WHERE branch_id=? AND year_month=?").get(A, ym) as { id: number }).id;
+  postSvcToAccounta(batchA, uid);
+  const mfExpense = db.prepare(
+    "SELECT amount_total, category FROM accounta_expenses WHERE svc_payout_batch_id=? AND category='เบี้ยประชุม'"
+  ).get(batchA) as { amount_total: number; category: string } | undefined;
+  ok("accounta: โพสต์เบี้ยประชุมแยกหมวด (เบี้ยประชุม 300)", !!mfExpense && near(mfExpense.amount_total, 300));
+
   console.log(`\nsvc company-payout test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);
