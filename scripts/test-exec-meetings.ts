@@ -147,12 +147,14 @@ process.env.DATABASE_PATH = TMP;
   try { ai.parseMeetingAi("ขยะที่อ่านไม่ออก"); } catch { threw = true; }
   ok("ai-parse: ข้อความมั่วๆ → โยน error", threw);
 
-  // ── payroll integration: เบี้ยประชุม lands on the line, taxable, once ──
+  // ── cutover (owner 2026-09-07): meetings on/after MEETING_FEE_SVC_START_MONTH
+  //    (2026-09) are paid WITH the service charge, NOT in the payroll round ──
   const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
   const payroll = await import("../src/lib/payroll-compute");
+  const svc = await import("../src/lib/service-charge");
   const bid = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('m','MEET BRANCH')").run().lastInsertRowid);
-  // uid ended a 90-min meeting on 2026-09-02 → fee 300. Make them an FT with a
-  // primary branch + salary so a monthly round covering that date includes them.
+  // uid ended a 90-min meeting on 2026-09-02 → fee 300. Make them an FT (sso) with a
+  // primary branch + salary so a Sept monthly round covering that date includes them.
   db.prepare("UPDATE users SET employment_type='ft', monthly_salary=30000, pay_cycle='monthly', salary_tax_mode='sso', hire_date='2026-01-01' WHERE id=?").run(uid);
   db.prepare("INSERT OR IGNORE INTO user_branches (user_id, branch_id, is_primary) VALUES (?, ?, 1)").run(uid, bid);
   const pid = Number(db.prepare(
@@ -163,16 +165,20 @@ process.env.DATABASE_PATH = TMP;
     .get(pid, uid) as { base_pay: number; meeting_fee: number; gross_pay: number; sso_amount: number; net_pay: number } | undefined;
   ok("payroll: มีบรรทัดเงินเดือนของผู้เข้าประชุม", !!line);
   if (line) {
-    ok("payroll: เบี้ยประชุม 300 อยู่บนบรรทัด (แยกช่อง)", near(line.meeting_fee, 300));
+    ok("payroll: เบี้ยประชุมเดือน 9 ไม่อยู่ในรอบเงินเดือนแล้ว (ย้ายไป SVC)", near(line.meeting_fee, 0));
     ok("payroll: ฐานเงินเดือน 30000 (ไม่ปนเบี้ย)", near(line.base_pay, 30000));
-    ok("payroll: ยอดรวม = 30000 + 300 เบี้ยประชุม", near(line.gross_pay, 30300));
-    ok("payroll: net รวมเบี้ยประชุม (หักประกันสังคม)", near(line.net_pay, Math.round((30300 - line.sso_amount) * 100) / 100));
+    ok("payroll: ยอดรวม = 30000 (ไม่มีเบี้ยประชุม)", near(line.gross_pay, 30000));
   }
-  // Recompute must keep it (idempotent, no double-count).
-  payroll.computePayrollPeriod(db, pid);
-  const line2 = db.prepare("SELECT meeting_fee, gross_pay FROM payroll_lines WHERE period_id=? AND user_id=?")
-    .get(pid, uid) as { meeting_fee: number; gross_pay: number };
-  ok("payroll: คำนวณใหม่ เบี้ยประชุมไม่ซ้ำซ้อน (ยัง 300)", near(line2.meeting_fee, 300) && near(line2.gross_pay, 30300));
+  // Cutover gate: months BEFORE 2026-09 don't feed the SVC payout (they were paid
+  // via payroll already); 2026-09 onward do.
+  ok("cutover: เดือนก่อน (2026-08) ไม่เข้ารอบ SVC", svc.meetingFeeGrossByUser("2026-08").size === 0);
+  ok("cutover: เบี้ยเดือน 9 เข้ารอบ SVC (uid=300)", near(svc.meetingFeeGrossByUser("2026-09").get(uid) ?? 0, 300));
+  // SVC payout carries the meeting fee, attributed to the home branch, taxed like SVC
+  // (uid is sso → no WHT → net = gross).
+  const payoutRows = svc.computeBranchSvcPayout(bid, "2026-09");
+  const mfRow = payoutRows.find((r) => r.userId === uid);
+  ok("SVC payout: เบี้ยประชุม 300 ของ uid อยู่ที่สาขาบ้าน (sso → ไม่หักภาษี)",
+    !!mfRow && near(mfRow.meetingFeeGross, 300) && near(mfRow.meetingFeeNet, 300) && near(mfRow.net, 300) && near(mfRow.wht, 0));
 
   console.log(`\nexec-meetings test: ${passed} passed, ${failed} failed`);
   cleanup();

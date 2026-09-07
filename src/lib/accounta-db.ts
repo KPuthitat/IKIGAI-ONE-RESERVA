@@ -645,6 +645,7 @@ export function postSvcToAccounta(batchId: number, userId: number): { staff: num
   // branch separately; otherwise it's the plain per-branch payout.
   const payoutRows = computeBranchSvcPayout(batch.branch_id, batch.year_month);
   ensureExpenseCategory("เซอร์วิสชาร์จพนักงาน", "LB");
+  ensureExpenseCategory("เบี้ยประชุม", "LB");
   ensureExpenseCategory("ภาษีหัก ณ ที่จ่าย", "WHT");
   ensureExpenseCategory("ประกันกลุ่มพนักงาน", "GINS");
 
@@ -662,23 +663,45 @@ export function postSvcToAccounta(batchId: number, userId: number): { staff: num
     db.prepare("DELETE FROM accounta_expenses WHERE svc_payout_batch_id = ?").run(batchId);
     let staff = 0, totalNet = 0, totalWht = 0, totalGins = 0;
     for (const r of payoutRows) {
-      const net = round2(r.net || 0);
-      const wht = round2(r.wht || 0);
       const gins = round2(r.groupInsurance || 0);
-      if (net > 0) {
+      // r.net / r.wht INCLUDE the meeting fee (owner 2026-09-07) — split it back out
+      // so service charge and เบี้ยประชุม book under their own categories.
+      const meetingNet = round2(r.meetingFeeNet || 0);
+      const meetingWht = round2(r.meetingFeeWht || 0);
+      const svcNet = round2((r.net || 0) - meetingNet);
+      const svcWht = round2((r.wht || 0) - meetingWht);
+      let counted = false;
+      if (svcNet > 0) {
         ins.run(batch.branch_id, companyId, payDate, r.displayName,
-          "เซอร์วิสชาร์จพนักงาน", net, net, "paid", "transfer", payDate,
+          "เซอร์วิสชาร์จพนักงาน", svcNet, svcNet, "paid", "transfer", payDate,
           `เซอร์วิสชาร์จพนักงาน เดือน ${monthLabel}`, userId, batchId);
-        staff += 1; totalNet += net;
+        staff += 1; counted = true; totalNet += svcNet;
+      }
+      // เบี้ยประชุม paid together with the service charge (owner 2026-09-07) — its own
+      // category so the books separate it from service charge.
+      if (meetingNet > 0) {
+        ins.run(batch.branch_id, companyId, payDate, r.displayName,
+          "เบี้ยประชุม", meetingNet, meetingNet, "paid", "transfer", payDate,
+          `เบี้ยประชุมผู้บริหาร เดือน ${monthLabel}`, userId, batchId);
+        if (!counted) staff += 1;
+        totalNet += meetingNet;
       }
       // Per-staff WHT payable in their name (mirrors payroll), so ภ.ง.ด.1 ties
-      // out per person. รอจ่าย — admin picks the remit date.
-      if (wht > 0) {
+      // out per person. รอจ่าย — admin picks the remit date. SVC and meeting-fee WHT
+      // book as separate rows so each note is accurate.
+      if (svcWht > 0) {
         ins.run(batch.branch_id, companyId, payDate,
           `กรมสรรพากร · ภาษีหัก ณ ที่จ่าย (${r.displayName})`,
-          "ภาษีหัก ณ ที่จ่าย", wht, wht, "unpaid", null, null,
+          "ภาษีหัก ณ ที่จ่าย", svcWht, svcWht, "unpaid", null, null,
           `ภาษีหัก ณ ที่จ่าย 3% เซอร์วิสชาร์จ (${r.displayName}) รอนำส่ง · เดือน ${monthLabel}`, userId, batchId);
-        totalWht += wht;
+        totalWht += svcWht;
+      }
+      if (meetingWht > 0) {
+        ins.run(batch.branch_id, companyId, payDate,
+          `กรมสรรพากร · ภาษีหัก ณ ที่จ่าย (${r.displayName})`,
+          "ภาษีหัก ณ ที่จ่าย", meetingWht, meetingWht, "unpaid", null, null,
+          `ภาษีหัก ณ ที่จ่าย 3% เบี้ยประชุม (${r.displayName}) รอนำส่ง · เดือน ${monthLabel}`, userId, batchId);
+        totalWht += meetingWht;
       }
       // Group-insurance premium withheld from SVC (owner 2026-08-02) — a payable
       // in the person's name, remitted to the insurer. รอจ่าย. Keeps the books

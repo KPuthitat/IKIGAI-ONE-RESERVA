@@ -9,7 +9,7 @@ import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
-import { computeMonthlySvcSummary, computeCompanySvcSummary } from "@/lib/service-charge";
+import { computeMonthlySvcSummary, computeCompanySvcSummary, meetingFeeGrossByUser, svcEffectiveTaxMode } from "@/lib/service-charge";
 import PayslipPrintButton from "../../[id]/payslip/[userId]/PayslipPrintButton";
 
 export const dynamic = "force-dynamic";
@@ -215,9 +215,24 @@ export default function MonthlyPayslipPage({
     try { addSvcRow(computeMonthlySvcSummary(b, svcMonth).rows.find((r) => r.userId === userId)); }
     catch { /* no svc for this branch */ }
   }
+  // เบี้ยประชุม (owner 2026-09-07) is paid WITH the service charge on the 20th, so
+  // it lands in the SAME month's SVC-received figures. Fold it in (taxed like SVC:
+  // WHT 3% for wht-mode, none for sso) so the month's income/net don't undercount.
+  const meetingFeeGross = meetingFeeGrossByUser(svcMonth).get(userId) ?? 0;
+  let meetingFeeWht = 0, meetingFeeNet = 0;
+  if (meetingFeeGross > 0) {
+    const mu = db.prepare("SELECT salary_tax_mode, sso_start_month FROM users WHERE id = ?")
+      .get(userId) as { salary_tax_mode: "sso" | "wht" | null; sso_start_month: string | null } | undefined;
+    const mTax = svcEffectiveTaxMode(mu?.salary_tax_mode ?? "sso", mu?.sso_start_month ?? null, svcMonth);
+    meetingFeeWht = mTax === "wht" ? Math.round(meetingFeeGross * 0.03 * 100) / 100 : 0;
+    meetingFeeNet = Math.round((meetingFeeGross - meetingFeeWht) * 100) / 100;
+    svcNetPayout += meetingFeeNet;
+    svcWht += meetingFeeWht;
+  }
   // SVC is shown as income at GROSS (before WHT + group insurance). The WHT (PT
   // only) and the group-insurance premium are then listed as deductions, so the
-  // slip shows income → deductions → net cleanly (owner 2026-08-02).
+  // slip shows income → deductions → net cleanly (owner 2026-08-02). svcGross now
+  // includes เบี้ยประชุม (paid together on the 20th).
   const svcGross = svcNetPayout + svcWht + svcGroupInsurance;
 
   // Totals across the displayed lines (empty rows contribute 0, so the sum is
@@ -435,9 +450,9 @@ export default function MonthlyPayslipPage({
               {svcIncome > 0 && (
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-slate-600">
-                    เซอร์วิสชาร์จเดือน{monthNameOnly(svcMonth, lang)}{" "}
+                    เซอร์วิสชาร์จ{meetingFeeGross > 0 ? " + เบี้ยประชุม" : ""}เดือน{monthNameOnly(svcMonth, lang)}{" "}
                     <span className="text-xs text-slate-400">
-                      ({isPt ? "ถูกหักภาษี ณ ที่จ่าย" : "ไม่ถูกหักภาษี ณ ที่จ่าย"} · จ่าย ~วันที่ 20 {monthNameOnly(month, lang)})
+                      ({isPt ? "ถูกหักภาษี ณ ที่จ่าย" : "ไม่ถูกหักภาษี ณ ที่จ่าย"} · จ่าย ~วันที่ 20 {monthNameOnly(month, lang)}{meetingFeeGross > 0 ? ` · รวมเบี้ยประชุม ฿${fmtMoney(meetingFeeGross)}` : ""})
                     </span>
                   </span>
                   <span className="tabular-nums font-medium text-violet-700">{fmtMoney(svcIncome)}</span>

@@ -39,6 +39,15 @@ import { isDfBranch, computeDoctorFees } from "./df-db";
 // the admin can never tick and blocks the close forever (owner 2026-09-02). Uses
 // the `pl` table alias and named params @pid (period) + @pbranch (period branch,
 // NULL for company-wide). Callers select `FROM payroll_lines pl`.
+// เบี้ยประชุม cutover (owner 2026-09-07): meetings on/after this month are paid
+// with the SERVICE CHARGE payout (the 20th of the following month, company-wide)
+// instead of inside the payroll round. Meetings BEFORE it stay in payroll exactly
+// as before (those rounds are already paid — never re-pay them). Gating is by the
+// meeting's OWN date (not the payroll period's month) so a week that straddles the
+// boundary splits correctly and nothing is paid twice. To shift the cutover, change
+// this one constant (kept here so both engines share it without an import cycle).
+export const MEETING_FEE_SVC_START_MONTH = "2026-09";
+
 export const VISIBLE_PAYROLL_LINE_FILTER = `
   NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0 AND COALESCE(pl.is_helper, 0) = 0)
   AND NOT (
@@ -2149,8 +2158,10 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         JOIN exec_meetings m ON m.id = a.meeting_id
         WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0
           AND m.meeting_date >= ? AND m.meeting_date <= ?
+          -- meetings on/after the cutover are paid with SERVICE CHARGE, not here
+          AND substr(m.meeting_date, 1, 7) < ?
         GROUP BY a.user_id
-      `).all(period.period_start, period.period_end) as Array<{ user_id: number; fee: number }>;
+      `).all(period.period_start, period.period_end, MEETING_FEE_SVC_START_MONTH) as Array<{ user_id: number; fee: number }>;
       for (const r of rows) meetingFeeByUser.set(r.user_id, round2(r.fee || 0));
     } catch { /* exec-meeting tables may not exist yet — no เบี้ยประชุม */ }
 
@@ -2720,7 +2731,9 @@ export function recomputeLine(
         FROM exec_meeting_attendance a JOIN exec_meetings m ON m.id = a.meeting_id
         WHERE a.user_id = ? AND a.ended_at IS NOT NULL AND a.fee_amount > 0
           AND m.meeting_date >= ? AND m.meeting_date <= ?
-      `).get(userId, period.period_start, period.period_end) as { fee: number }).fee) || 0);
+          -- meetings on/after the cutover are paid with SERVICE CHARGE, not here
+          AND substr(m.meeting_date, 1, 7) < ?
+      `).get(userId, period.period_start, period.period_end, MEETING_FEE_SVC_START_MONTH) as { fee: number }).fee) || 0);
     } catch { /* exec-meeting tables may not exist yet */ }
   }
   const taxBase = (dfActiveRL ? (computed.base_pay + computed.ot_pay + svc) : (computed.base_pay + computed.ot_pay + svc + add)) + meetingFeeRL;
