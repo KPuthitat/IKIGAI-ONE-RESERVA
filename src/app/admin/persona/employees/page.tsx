@@ -5,6 +5,8 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import EmployeesClient, { type EmployeeRow } from "./EmployeesClient";
 import AccountActions from "./AccountActions";
+import EmployeeExportDialog from "./EmployeeExportDialog";
+import { listEmployeeScopes, employeeFieldOptions } from "@/lib/employee-export";
 
 export const dynamic = "force-dynamic";
 
@@ -141,14 +143,22 @@ export default function AdminEmployeesPage({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">
-          {t(lang, "admin.persona.employees.title")}
-          <span className="ml-2 text-sm font-medium text-brand">· {branch.name}</span>
-        </h1>
-        <p className="text-sm text-slate-500">
-          {t(lang, "admin.persona.employees.subtitle")}
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">
+            {t(lang, "admin.persona.employees.title")}
+            <span className="ml-2 text-sm font-medium text-brand">· {branch.name}</span>
+          </h1>
+          <p className="text-sm text-slate-500">
+            {t(lang, "admin.persona.employees.subtitle")}
+          </p>
+        </div>
+        {/* ดึงรายชื่อ/ข้อมูลพนักงาน (เลือกฟิลด์ได้) — สไตล์เดียวกับ export เงินเดือน.
+            Sensitive columns are offered only when this admin can view payroll. */}
+        <EmployeeExportDialog
+          scopes={listEmployeeScopes(db)}
+          fields={employeeFieldOptions().filter((f) => canSeePayroll || !f.sensitive)}
+        />
       </div>
       <AccountActions
         branchId={branch.id}
