@@ -20,6 +20,47 @@ export function isDfBranch(branchId: number): boolean {
   return !!row && row.df_enabled === 1;
 }
 
+// Weekly DF payout cutover (owner 2026-09-11). On/after this date the clinic pays
+// a doctor's DF via the WEEKLY round program (df-rounds.ts → posts to accounta),
+// NOT through payroll — so from here payroll books NO DF for a clinic doctor
+// (base/OT/SVC are still zeroed; their whole pay is the weekly transfer). Before
+// it, unchanged (DF folded into the payroll line). Day-precise: a monthly payroll
+// period that straddles the date pays DF only for its pre-cutover days, and the
+// weekly program refuses weeks starting before it — so no day is paid twice or
+// missed at the boundary. Must be a Monday (weekly rounds are Mon–Sun). Move it
+// to switch the clinic over on a chosen Monday.
+export const DF_WEEKLY_START_DATE = "2026-10-05"; // preferably a Monday; snapped below
+
+function isoMondayOf(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  d.setUTCDate(d.getUTCDate() + (dow === 0 ? -6 : 1 - dow));
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The effective cutover = the Monday of DF_WEEKLY_START_DATE's week. Snapping to
+ * a Monday keeps the payroll↔weekly boundary clean even if the constant is set to
+ * a non-Monday: payroll pays DF up to the Sunday before, the weekly program owns
+ * everything from this Monday on — no gap week, no double-paid day.
+ */
+export function dfWeeklyStartMonday(): string {
+  return isoMondayOf(DF_WEEKLY_START_DATE);
+}
+
+/**
+ * The last day a payroll period still folds DF into the payroll line, or null if
+ * the whole period is on/after the weekly-transfer cutover (payroll books no DF).
+ * Used to clamp computeDoctorFees so the transition month splits cleanly.
+ */
+export function dfPayrollEnd(periodStart: string, periodEnd: string): string | null {
+  const d = new Date(`${dfWeeklyStartMonday()}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  const lastPayrollDay = d.toISOString().slice(0, 10); // Sunday before the cutover Monday
+  if (periodStart > lastPayrollDay) return null;
+  return periodEnd < lastPayrollDay ? periodEnd : lastPayrollDay;
+}
+
 // ── Rules ─────────────────────────────────────────────────────────
 
 export type DfRule = {
