@@ -1801,6 +1801,50 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_df_invoice_lines_branch_date
       ON df_invoice_lines(branch_id, line_date);
+
+    -- Weekly DF payout rounds (owner 2026-09-11). The clinic now pays doctors a
+    -- WEEKLY transfer instead of through the monthly payroll: revenue is imported
+    -- daily (df_invoice_lines), the round is cut every Monday for the previous
+    -- Mon–Sun week, each doctor's fee (rate% of that week's HSC revenue, split
+    -- across the doctors on each day's roster) is snapshotted, WHT is withheld
+    -- per doctor, the net is transferred, and the whole thing posts to accounta.
+    -- Once paid the snapshot is frozen so a later revenue re-import never silently
+    -- changes a settled round. One round per branch-week.
+    CREATE TABLE IF NOT EXISTS df_rounds (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id     INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      week_start    TEXT NOT NULL,                       -- Monday YYYY-MM-DD
+      week_end      TEXT NOT NULL,                       -- Sunday  YYYY-MM-DD
+      status        TEXT NOT NULL DEFAULT 'draft'
+                      CHECK (status IN ('draft','paid')),
+      total_revenue REAL NOT NULL DEFAULT 0,             -- HSC net pool for the week
+      total_fee     REAL NOT NULL DEFAULT 0,             -- gross DF pool (pre-WHT)
+      total_wht     REAL NOT NULL DEFAULT 0,             -- withheld across doctors
+      total_net     REAL NOT NULL DEFAULT 0,             -- transferred to doctors
+      note          TEXT,
+      created_by    INTEGER REFERENCES users(id),
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      paid_by       INTEGER REFERENCES users(id),
+      paid_at       TEXT,
+      UNIQUE (branch_id, week_start)
+    );
+    CREATE INDEX IF NOT EXISTS idx_df_rounds_branch_week
+      ON df_rounds(branch_id, week_start);
+
+    -- Per-doctor snapshot of a round: the frozen fee/WHT/net at cut time. Rebuilt
+    -- on every save while draft; frozen once the round is paid.
+    CREATE TABLE IF NOT EXISTS df_round_lines (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      round_id     INTEGER NOT NULL REFERENCES df_rounds(id) ON DELETE CASCADE,
+      user_id      INTEGER NOT NULL REFERENCES users(id),
+      display_name TEXT NOT NULL,
+      worked_days  INTEGER NOT NULL DEFAULT 0,
+      gross_fee    REAL NOT NULL DEFAULT 0,
+      wht_rate     REAL NOT NULL DEFAULT 0,              -- 0.03 = 3%
+      wht_amount   REAL NOT NULL DEFAULT 0,
+      net_fee      REAL NOT NULL DEFAULT 0,              -- gross_fee − wht_amount
+      UNIQUE (round_id, user_id)
+    );
   `);
   // One-time DF branch correction (owner 2026-09-01): the first release seeded
   // df_enabled onto HYPOPLARAEMIA, which is a RESTAURANT — the clinic is AT HOME
@@ -3457,6 +3501,12 @@ function runMigrations(db: Database.Database): void {
   // the doctor ZERO base/OT/SVC (the DF is their pay); before it, unchanged.
   // NULL = not on DF. Period-relative, like pt_started_at.
   if (!unames3.has("df_started_at")) db.exec("ALTER TABLE users ADD COLUMN df_started_at TEXT");
+  // Per-doctor WHT rate for the weekly DF payout (owner 2026-09-11). When the
+  // clinic pays a doctor via the weekly DF round (not payroll), the transfer is a
+  // professional fee: this rate (e.g. 0.03 = ภ.ง.ด.53 3%) is withheld and booked
+  // as a ภาษีหัก ณ ที่จ่าย payable. 0 = ไม่หัก. Only the weekly-round program reads
+  // it; the legacy payroll DF path is unaffected.
+  if (!unames3.has("df_wht_rate")) db.exec("ALTER TABLE users ADD COLUMN df_wht_rate REAL NOT NULL DEFAULT 0");
   // Month-aware flip (replaces the old blanket flip above): move FT-weekly →
   // monthly once their transition month has passed. FT converted THIS month stay
   // weekly; legacy FT-weekly with no ft_started_at flip immediately (old rule).
@@ -5612,7 +5662,7 @@ function runMigrations(db: Database.Database): void {
       SELECT DISTINCT e.branch_id AS branch_id, TRIM(e.vendor_name) AS name
         FROM accounta_expenses e
        WHERE e.branch_id IS NOT NULL AND e.payroll_period_id IS NULL
-         AND e.svc_payout_batch_id IS NULL
+         AND e.svc_payout_batch_id IS NULL AND e.df_round_id IS NULL
          AND TRIM(COALESCE(e.vendor_name,'')) <> ''
     `).all() as Array<{ branch_id: number; name: string }>;
     const findSup = db.prepare(
@@ -5641,12 +5691,12 @@ function runMigrations(db: Database.Database): void {
         SELECT s.id FROM inventa_suppliers s
         WHERE s.name COLLATE NOCASE IN (
           SELECT DISTINCT TRIM(vendor_name) FROM accounta_expenses
-           WHERE (payroll_period_id IS NOT NULL OR svc_payout_batch_id IS NOT NULL)
+           WHERE (payroll_period_id IS NOT NULL OR svc_payout_batch_id IS NOT NULL OR df_round_id IS NOT NULL)
              AND TRIM(COALESCE(vendor_name,'')) <> ''
         )
         AND s.name COLLATE NOCASE NOT IN (
           SELECT DISTINCT TRIM(vendor_name) FROM accounta_expenses
-           WHERE payroll_period_id IS NULL AND svc_payout_batch_id IS NULL
+           WHERE payroll_period_id IS NULL AND svc_payout_batch_id IS NULL AND df_round_id IS NULL
              AND TRIM(COALESCE(vendor_name,'')) <> ''
         )
         AND NOT EXISTS (SELECT 1 FROM inventa_items i WHERE i.supplier_id = s.id)
@@ -7291,6 +7341,14 @@ function runMigrations(db: Database.Database): void {
   if (!expCols.some((c) => c.name === "svc_payout_batch_id")) {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN svc_payout_batch_id INTEGER REFERENCES svc_payout_batches(id) ON DELETE SET NULL");
     db.exec("CREATE INDEX IF NOT EXISTS idx_accounta_exp_svc ON accounta_expenses(svc_payout_batch_id)");
+  }
+  // df_round_id (owner 2026-09-11): tags the ค่าตอบแทนแพทย์ (DF) + ภาษีหัก ณ ที่จ่าย
+  // expenses auto-posted when a weekly Doctor-Fee round is paid, so a re-post
+  // replaces them (delete-then-insert) and reverting removes them — exactly like
+  // svc_payout_batch_id. NULL for ordinary expenses.
+  if (!expCols.some((c) => c.name === "df_round_id")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN df_round_id INTEGER REFERENCES df_rounds(id) ON DELETE SET NULL");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_accounta_exp_df ON accounta_expenses(df_round_id)");
   }
   // due_date (owner 2026-06-24): for credit-term unpaid bills — when payment is
   // due. Drives the "บิลค้างชำระ" reminder so overdue bills surface. NULL for

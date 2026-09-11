@@ -720,6 +720,70 @@ export function postSvcToAccounta(batchId: number, userId: number): { staff: num
   return run();
 }
 
+// ── Doctor Fee weekly round → ACCOUNTA (owner 2026-09-11) ──────────────
+// When a weekly DF round is paid, each doctor's net fee books as a
+// ค่าตอบแทนแพทย์ (DF) labour expense (paid), and the withheld WHT as a ภาษีหัก ณ
+// ที่จ่าย payable (รอจ่าย) in the doctor's name — net + WHT = gross, nothing
+// double-counts. DF scales with revenue, so unlike salary/SVC it books as a
+// VARIABLE cost (is_fixed = 0). Amounts come from the FROZEN df_round_lines
+// snapshot (the round was cut against that week's revenue), tagged with
+// df_round_id so a re-pay replaces the rows (delete-then-insert) and a revert
+// removes them. No ประกันสังคม (DF is a professional fee, not salary).
+
+export function removeDfRoundFromAccounta(roundId: number): void {
+  getDb().prepare("DELETE FROM accounta_expenses WHERE df_round_id = ?").run(roundId);
+}
+
+export function postDfRoundToAccounta(roundId: number, userId: number): { doctors: number; net: number; wht: number } {
+  const db = getDb();
+  const round = db.prepare(
+    "SELECT id, branch_id, week_start, week_end, paid_at FROM df_rounds WHERE id = ?"
+  ).get(roundId) as { id: number; branch_id: number; week_start: string; week_end: string; paid_at: string | null } | undefined;
+  if (!round) return { doctors: 0, net: 0, wht: 0 };
+  const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
+    .get(round.branch_id) as { company_id: number | null } | undefined)?.company_id ?? null;
+
+  const lines = db.prepare(
+    "SELECT display_name, gross_fee, wht_amount, net_fee FROM df_round_lines WHERE round_id = ?"
+  ).all(roundId) as Array<{ display_name: string; gross_fee: number; wht_amount: number; net_fee: number }>;
+
+  ensureExpenseCategory("ค่าตอบแทนแพทย์ (DF)", "LB");
+  ensureExpenseCategory("ภาษีหัก ณ ที่จ่าย", "WHT");
+
+  // Paid on the day the admin cut+paid the round (its paid_at), else the week end.
+  const payDate = (round.paid_at ? round.paid_at.slice(0, 10) : null) || round.week_end;
+  const weekLabel = `${round.week_start} – ${round.week_end}`;
+  const ins = db.prepare(`
+    INSERT INTO accounta_expenses
+      (branch_id, company_id, bill_date, vendor_name, category, amount_total, has_tax_invoice,
+       vat_amount, base_amount, is_fixed, payment_status, payment_method, paid_date, note, review_status, created_by, df_round_id)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, 0, ?, ?, ?, ?, 'confirmed', ?, ?)`);
+
+  const run = db.transaction(() => {
+    db.prepare("DELETE FROM accounta_expenses WHERE df_round_id = ?").run(roundId);
+    let doctors = 0, totalNet = 0, totalWht = 0;
+    for (const l of lines) {
+      const net = round2(l.net_fee || 0);
+      const wht = round2(l.wht_amount || 0);
+      if (net > 0) {
+        ins.run(round.branch_id, companyId, payDate, l.display_name,
+          "ค่าตอบแทนแพทย์ (DF)", net, net, "paid", "transfer", payDate,
+          `ค่าตอบแทนแพทย์ (DF) สัปดาห์ ${weekLabel}`, userId, roundId);
+        doctors += 1; totalNet += net;
+      }
+      if (wht > 0) {
+        ins.run(round.branch_id, companyId, payDate,
+          `กรมสรรพากร · ภาษีหัก ณ ที่จ่าย (${l.display_name})`,
+          "ภาษีหัก ณ ที่จ่าย", wht, wht, "unpaid", null, null,
+          `ภาษีหัก ณ ที่จ่าย ค่าตอบแทนแพทย์ (${l.display_name}) รอนำส่ง · สัปดาห์ ${weekLabel}`, userId, roundId);
+        totalWht += wht;
+      }
+    }
+    return { doctors, net: round2(totalNet), wht: round2(totalWht) };
+  });
+  return run();
+}
+
 // ── Category vs benchmark % (owner 2026-06-18) ─────────────────────
 // Each category's actual spend as a % of REVENUE for the month, compared to
 // its target band, so the owner can see what's over/under the F&B benchmark.
