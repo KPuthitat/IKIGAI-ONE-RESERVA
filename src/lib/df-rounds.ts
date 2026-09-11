@@ -11,7 +11,7 @@
 
 import { getDb } from "./db";
 import { nameWithPrefix } from "./name";
-import { computeDoctorFees } from "./df-db";
+import { computeDoctorFees, dfWeeklyStartMonday } from "./df-db";
 import { postDfRoundToAccounta, removeDfRoundFromAccounta } from "./accounta-db";
 
 function round2(n: number): number {
@@ -70,6 +70,10 @@ export type DfRoundPreview = {
   // re-imported after the round was cut / paid). Surfaced so the admin can revert
   // + re-cut rather than silently drift.
   stale: boolean;
+  // Weeks before the weekly-transfer cutover are still paid via payroll — the UI
+  // shows them read-only (cutting one would double-pay).
+  cutoverDate: string;
+  beforeCutover: boolean;
 };
 
 // ── Reads ─────────────────────────────────────────────────────────
@@ -98,13 +102,14 @@ export function listRounds(branchId: number, limit = 26): DfRoundRow[] {
   ).all(branchId, limit) as DfRoundRow[];
 }
 
-function whtRatesFor(userIds: number[]): Map<number, number> {
-  const m = new Map<number, number>();
+type DfMeta = { wht: number; startedAt: string | null };
+function dfMetaFor(userIds: number[]): Map<number, DfMeta> {
+  const m = new Map<number, DfMeta>();
   if (userIds.length === 0) return m;
   const rows = getDb().prepare(
-    `SELECT id, COALESCE(df_wht_rate, 0) AS r FROM users WHERE id IN (${userIds.map(() => "?").join(",")})`
-  ).all(...userIds) as Array<{ id: number; r: number }>;
-  for (const row of rows) m.set(row.id, row.r);
+    `SELECT id, COALESCE(df_wht_rate, 0) AS r, df_started_at FROM users WHERE id IN (${userIds.map(() => "?").join(",")})`
+  ).all(...userIds) as Array<{ id: number; r: number; df_started_at: string | null }>;
+  for (const row of rows) m.set(row.id, { wht: row.r, startedAt: row.df_started_at });
   return m;
 }
 
@@ -114,23 +119,36 @@ export function previewDfRound(branchId: number, weekStartInput: string): DfRoun
   const weekStart = mondayOf(weekStartInput);
   const weekEnd = sundayOf(weekStart);
   const res = computeDoctorFees(branchId, weekStart, weekEnd);
-  const rates = whtRatesFor(res.doctors.map((d) => d.user_id));
+  const meta = dfMetaFor(res.doctors.map((d) => d.user_id));
 
-  const doctors: DfRoundDoctor[] = res.doctors.map((d) => {
-    const whtRate = rates.get(d.user_id) ?? 0;
-    const grossFee = round2(d.totalFee);
-    const whtAmount = round2(grossFee * whtRate);
-    const netFee = round2(grossFee - whtAmount);
-    return {
-      user_id: d.user_id, display_name: d.display_name, title_prefix: d.title_prefix,
-      workedDays: d.workedDays, grossFee, whtRate, whtAmount, netFee
-    };
-  });
+  // Only pay doctors who are actually on DF compensation for this week.
+  // computeDoctorFees also surfaces clinic doctors who are NOT on DF (still
+  // salaried / paid ค่าเวร in payroll) — paying those here would double-pay, since
+  // payroll only zeroes base pay for df_started_at doctors. Gate on the same
+  // MONTH granularity as payroll's dfActive (period month >= df_started_at month)
+  // so a doctor is paid in exactly one place with no boundary gap or overlap.
+  const weekMonth = weekStart.slice(0, 7);
+  const doctors: DfRoundDoctor[] = res.doctors
+    .filter((d) => { const s = meta.get(d.user_id)?.startedAt; return s != null && s.slice(0, 7) <= weekMonth; })
+    .map((d) => {
+      const whtRate = meta.get(d.user_id)?.wht ?? 0;
+      const grossFee = round2(d.totalFee);
+      const whtAmount = round2(grossFee * whtRate);
+      const netFee = round2(grossFee - whtAmount);
+      return {
+        user_id: d.user_id, display_name: d.display_name, title_prefix: d.title_prefix,
+        workedDays: d.workedDays, grossFee, whtRate, whtAmount, netFee
+      };
+    });
 
   const totalFee = round2(doctors.reduce((s, d) => s + d.grossFee, 0));
   const totalWht = round2(doctors.reduce((s, d) => s + d.whtAmount, 0));
   const totalNet = round2(doctors.reduce((s, d) => s + d.netFee, 0));
 
+  // stale = the stored round's frozen totals no longer match a live recompute —
+  // usually a revenue re-import, but also a WHT-rate / df_started_at change. Any
+  // of these means the paid figures are out of date; the fix is the same (revert
+  // + re-cut), so the flag covers them all.
   const round = getRound(branchId, weekStart);
   const stale = round != null && (
     Math.abs(round.total_fee - totalFee) > 0.005 || Math.abs(round.total_net - totalNet) > 0.005
@@ -142,7 +160,8 @@ export function previewDfRound(branchId: number, weekStartInput: string): DfRoun
     doctors,
     unassignedFee: res.unassignedFee, unassignedDays: res.unassignedDays,
     hasRoster: res.hasRoster,
-    round, stale
+    round, stale,
+    cutoverDate: dfWeeklyStartMonday(), beforeCutover: weekStart < dfWeeklyStartMonday()
   };
 }
 
@@ -155,6 +174,10 @@ export function previewDfRound(branchId: number, weekStartInput: string): DfRoun
  */
 export function saveDfRound(branchId: number, weekStartInput: string, userId: number, note?: string | null): DfRoundRow {
   const p = previewDfRound(branchId, weekStartInput);
+  // Weekly transfer only covers weeks on/after the cutover; before it the DF is
+  // still paid through payroll, so cutting a round would double-pay (owner
+  // 2026-09-11). previewDfRound stays available for viewing.
+  if (p.weekStart < dfWeeklyStartMonday()) throw new Error("df_before_cutover");
   const db = getDb();
   const existing = getRound(branchId, p.weekStart);
   if (existing && existing.status === "paid") throw new Error("df_round_paid");

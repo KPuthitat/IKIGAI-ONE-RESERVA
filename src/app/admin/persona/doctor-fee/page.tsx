@@ -53,14 +53,21 @@ export default function DoctorFeePage() {
   return (
     <div className="space-y-4">
       <Link href="/admin/persona" className="text-sm text-slate-500 hover:text-brand">← กลับ PERSONA</Link>
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">ค่าตอบแทนแพทย์ (Doctor Fee)</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          สาขา <b>{branch?.name ?? `#${branchId}`}</b> · คิดจากยอดค่าตรวจ (HSC) ตามไฟล์ยอดขาย × เรท แล้วแบ่งตามวันที่หมออยู่เวร
-        </p>
-        <p className="text-[11px] text-slate-400 mt-1">
-          ใช้ติดตามภายในเท่านั้น · หมอที่นับต้องมีบทบาท “แพทย์” และมีชื่อในตารางเวรของวันนั้น
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">ค่าตอบแทนแพทย์ (Doctor Fee)</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            สาขา <b>{branch?.name ?? `#${branchId}`}</b> · คิดจากยอดค่าตรวจ (HSC) ตามไฟล์ยอดขาย × เรท แล้วแบ่งตามวันที่หมออยู่เวร
+          </p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            ใช้ติดตามภายในเท่านั้น · หมอที่นับต้องมีบทบาท “แพทย์” และมีชื่อในตารางเวรของวันนั้น
+          </p>
+        </div>
+        {/* รอบจ่ายรายสัปดาห์ — ตัดรอบทุกจันทร์ โอน + ลงบัญชี (owner 2026-09-11) */}
+        <Link href="/admin/persona/doctor-fee/rounds"
+          className="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-brand text-brand font-medium hover:bg-amber-50 whitespace-nowrap">
+          รอบจ่ายรายสัปดาห์ →
+        </Link>
       </div>
       <DoctorFeeClient
         initialStart={start}

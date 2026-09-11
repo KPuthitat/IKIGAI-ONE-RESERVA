@@ -183,33 +183,36 @@ process.env.DATABASE_PATH = TMP;
 
   // ── 9) WEEKLY ROUNDS: daily revenue → Monday cut → pay + WHT → accounta ──
   // (owner 2026-09-11: pay DF via a weekly transfer that posts to accounta,
-  // instead of through payroll). Reuses the section-7 fixtures: d1 is a clinic
-  // doctor, HSC 1000 net on 2026-08-05 (a Wednesday) → 30% = 300 fee, rostered
-  // that day. Give d1 a 3% WHT rate.
+  // instead of through payroll). Weeks must be on/after DF_WEEKLY_START_DATE
+  // (2026-10-05, a Monday). d1 is a clinic doctor; give a 3% WHT rate and put
+  // HSC 1000 net on 2026-10-07 (a Wednesday) → 30% = 300 fee, rostered that day.
   const rounds = await import("../src/lib/df-rounds");
-  const accounta = await import("../src/lib/accounta-db");
   ok("setDoctorWhtRate 3%", df.setDoctorWhtRate(d1, 0.03));
+  df.importInvoiceLines(bid, [
+    { invoiceNo: "W1", lineDate: "2026-10-07", itemCode: "GEN001", tag: "HSC", description: "[HSC]", qty: 1, gross: 1000, discount: 0, net: 1000 }
+  ], "wk.xlsx");
+  db.prepare("INSERT INTO roster_assignments (branch_id,assignment_date,position_id,user_id,shift_code_id) VALUES (?,?,?,?,?)").run(bid, "2026-10-07", p1, d1, sc);
 
   // week helpers snap to Monday.
-  ok("mondayOf(2026-08-05 Wed) = 2026-08-03", rounds.mondayOf("2026-08-05") === "2026-08-03");
-  ok("sundayOf(2026-08-05) = 2026-08-09", rounds.sundayOf("2026-08-05") === "2026-08-09");
+  ok("mondayOf(2026-10-07 Wed) = 2026-10-05", rounds.mondayOf("2026-10-07") === "2026-10-05");
+  ok("sundayOf(2026-10-07) = 2026-10-11", rounds.sundayOf("2026-10-07") === "2026-10-11");
 
   // preview: gross 300, WHT 9 (3%), net 291.
-  const pv = rounds.previewDfRound(bid, "2026-08-05");
-  ok("preview snaps to the Mon–Sun week", pv.weekStart === "2026-08-03" && pv.weekEnd === "2026-08-09");
+  const pv = rounds.previewDfRound(bid, "2026-10-07");
+  ok("preview snaps to the Mon–Sun week", pv.weekStart === "2026-10-05" && pv.weekEnd === "2026-10-11");
   ok("preview totals: fee 300, wht 9, net 291", near(pv.totalFee, 300) && near(pv.totalWht, 9) && near(pv.totalNet, 291));
   const pvDoc = pv.doctors.find((x) => x.user_id === d1);
   ok("preview doctor: gross 300 / wht 9 / net 291", !!pvDoc && near(pvDoc.grossFee, 300) && near(pvDoc.whtAmount, 9) && near(pvDoc.netFee, 291));
-  ok("preview: no stored round yet", pv.round === null && pv.stale === false);
+  ok("preview: no stored round yet, on/after cutover", pv.round === null && pv.stale === false && pv.beforeCutover === false);
 
   // save (draft) → snapshot.
-  const saved = rounds.saveDfRound(bid, "2026-08-05", 1);
+  const saved = rounds.saveDfRound(bid, "2026-10-07", 1);
   ok("save: draft round with totals", saved.status === "draft" && near(saved.total_fee, 300) && near(saved.total_net, 291));
   ok("save: one snapshot line", rounds.listRoundLines(saved.id).length === 1);
-  ok("getRound resolves by any in-week date", rounds.getRound(bid, "2026-08-07")?.id === saved.id);
+  ok("getRound resolves by any in-week date", rounds.getRound(bid, "2026-10-09")?.id === saved.id);
 
   // pay → paid + posts to accounta (expense 291 paid, WHT 9 payable).
-  const paid = rounds.payDfRound(bid, "2026-08-05", 1);
+  const paid = rounds.payDfRound(bid, "2026-10-07", 1);
   ok("pay: status paid + paid_at stamped", paid.status === "paid" && paid.paid_at != null);
   const dfExp = db.prepare("SELECT category, amount_total, payment_status FROM accounta_expenses WHERE df_round_id=? ORDER BY category").all(saved.id) as Array<{ category: string; amount_total: number; payment_status: string }>;
   ok("accounta: exactly 2 rows tagged df_round_id", dfExp.length === 2);
@@ -219,42 +222,77 @@ process.env.DATABASE_PATH = TMP;
   ok("accounta: WHT payable 9 unpaid", !!whtRow && near(whtRow.amount_total, 9) && whtRow.payment_status === "unpaid");
 
   // re-pay is idempotent (delete-then-insert): still exactly 2 rows.
-  rounds.payDfRound(bid, "2026-08-05", 1);
+  rounds.payDfRound(bid, "2026-10-07", 1);
   ok("re-pay idempotent: still 2 accounta rows", (db.prepare("SELECT COUNT(*) n FROM accounta_expenses WHERE df_round_id=?").get(saved.id) as { n: number }).n === 2);
 
   // stale: revenue re-imported after payment → live recompute differs from the
   // frozen snapshot, flagged for the admin.
   df.importInvoiceLines(bid, [
-    { invoiceNo: "P2", lineDate: "2026-08-06", itemCode: "GEN001", tag: "HSC", description: "[HSC]", qty: 1, gross: 500, discount: 0, net: 500 }
+    { invoiceNo: "W2", lineDate: "2026-10-08", itemCode: "GEN001", tag: "HSC", description: "[HSC]", qty: 1, gross: 500, discount: 0, net: 500 }
   ], "late.xlsx");
-  db.prepare("INSERT INTO roster_assignments (branch_id,assignment_date,position_id,user_id,shift_code_id) VALUES (?,?,?,?,?)").run(bid, "2026-08-06", p1, d1, sc);
-  ok("stale: paid round flagged when revenue changes under it", rounds.previewDfRound(bid, "2026-08-05").stale === true);
+  db.prepare("INSERT INTO roster_assignments (branch_id,assignment_date,position_id,user_id,shift_code_id) VALUES (?,?,?,?,?)").run(bid, "2026-10-08", p1, d1, sc);
+  ok("stale: paid round flagged when revenue changes under it", rounds.previewDfRound(bid, "2026-10-07").stale === true);
 
   // revert → draft + un-post accounta.
-  const reverted = rounds.revertDfRound(bid, "2026-08-05");
+  const reverted = rounds.revertDfRound(bid, "2026-10-07");
   ok("revert: back to draft", reverted?.status === "draft" && reverted?.paid_at == null);
   ok("revert: accounta rows removed", (db.prepare("SELECT COUNT(*) n FROM accounta_expenses WHERE df_round_id=?").get(saved.id) as { n: number }).n === 0);
 
-  // re-cut after revert picks up the corrected revenue (Aug 5 300 + Aug 6 150 = 450 fee).
-  const recut = rounds.payDfRound(bid, "2026-08-05", 1);
+  // re-cut after revert picks up the corrected revenue (Oct 7 300 + Oct 8 150 = 450 fee).
+  const recut = rounds.payDfRound(bid, "2026-10-07", 1);
   ok("re-cut after revert: fee 450, net 436.5", near(recut.total_fee, 450) && near(recut.total_net, 436.5));
   ok("accounta re-posts after re-cut", (db.prepare("SELECT COUNT(*) n FROM accounta_expenses WHERE df_round_id=?").get(saved.id) as { n: number }).n === 2);
 
   // paid rounds cannot be silently re-cut via save (must revert first).
   let refused = false;
-  try { rounds.saveDfRound(bid, "2026-08-05", 1); } catch { refused = true; }
+  try { rounds.saveDfRound(bid, "2026-10-07", 1); } catch { refused = true; }
   ok("save refuses to edit a paid round", refused);
 
-  // doctor with 0% WHT → net = gross, no WHT payable row. Use d2 in a later week.
-  db.prepare("UPDATE users SET df_wht_rate = 0 WHERE id = ?").run(d2);
+  // A clinic doctor NOT on DF comp (no df_started_at) must be EXCLUDED from the
+  // weekly round — payroll still pays them ค่าเวร, so paying here would double-pay.
+  // d2 is a clinical doctor with df_started_at still NULL at this point.
   df.importInvoiceLines(bid, [
-    { invoiceNo: "Q1", lineDate: "2026-08-12", itemCode: "GEN001", tag: "HSC", description: "[HSC]", qty: 1, gross: 200, discount: 0, net: 200 }
+    { invoiceNo: "Q1", lineDate: "2026-10-14", itemCode: "GEN001", tag: "HSC", description: "[HSC]", qty: 1, gross: 200, discount: 0, net: 200 }
   ], "w2.xlsx");
-  db.prepare("INSERT INTO roster_assignments (branch_id,assignment_date,position_id,user_id,shift_code_id) VALUES (?,?,?,?,?)").run(bid, "2026-08-12", p2, d2, sc);
-  const w2 = rounds.payDfRound(bid, "2026-08-12", 1);   // Aug 12 = Wed, week of Aug 10
+  db.prepare("INSERT INTO roster_assignments (branch_id,assignment_date,position_id,user_id,shift_code_id) VALUES (?,?,?,?,?)").run(bid, "2026-10-14", p2, d2, sc);
+  ok("non-DF clinic doctor excluded (no df_started_at)", rounds.previewDfRound(bid, "2026-10-14").doctors.length === 0);
+
+  // Put d2 on DF comp with a 0% WHT rate → now paid weekly; net = gross, no WHT row.
+  db.prepare("UPDATE users SET df_wht_rate = 0, df_started_at = '2026-10-01' WHERE id = ?").run(d2);
+  const w2 = rounds.payDfRound(bid, "2026-10-14", 1);   // Oct 14 = Wed, week of Oct 12
   ok("0% WHT: net = gross 60, no WHT withheld", near(w2.total_fee, 60) && near(w2.total_wht, 0) && near(w2.total_net, 60));
   ok("0% WHT: one accounta row (expense only)", (db.prepare("SELECT COUNT(*) n FROM accounta_expenses WHERE df_round_id=?").get(w2.id) as { n: number }).n === 1);
   ok("two distinct weekly rounds exist", rounds.listRounds(bid).length === 2);
+
+  // ── 10) CUTOVER: payroll ↔ weekly split (no double-pay, no gap) ──
+  // The effective cutover is snapped to a Monday so the boundary is clean even if
+  // the constant is set to a mid-week date.
+  ok("cutover snaps to a Monday", df.dfWeeklyStartMonday() === "2026-10-05");
+  // dfPayrollEnd clamps how much DF payroll still folds in.
+  ok("cutover: fully pre-cutover month → full period", df.dfPayrollEnd("2026-08-01", "2026-08-31") === "2026-08-31");
+  ok("cutover: straddling month → clamped to the day before", df.dfPayrollEnd("2026-10-01", "2026-10-31") === "2026-10-04");
+  ok("cutover: fully post-cutover month → null (no payroll DF)", df.dfPayrollEnd("2026-11-01", "2026-11-30") === null);
+
+  // Weekly program refuses a week before the cutover (would double-pay payroll).
+  let preRefused = false;
+  try { rounds.saveDfRound(bid, "2026-09-30", 1); } catch { preRefused = true; }
+  ok("cutover: weekly round refused before cutover", preRefused);
+  ok("cutover: preview still viewable + flags beforeCutover", rounds.previewDfRound(bid, "2026-09-30").beforeCutover === true);
+
+  // Integration: an October clinic payroll period pays DF ONLY for pre-cutover
+  // days (Oct 1–4). Put HSC 400 net on Oct 2 (Fri, pre-cutover) → 120 fee; the
+  // Oct 7 revenue (paid via the weekly round above) must NOT appear in payroll.
+  df.importInvoiceLines(bid, [
+    { invoiceNo: "PC1", lineDate: "2026-10-02", itemCode: "GEN001", tag: "HSC", description: "[HSC]", qty: 1, gross: 400, discount: 0, net: 400 }
+  ], "pre.xlsx");
+  db.prepare("INSERT INTO roster_assignments (branch_id,assignment_date,position_id,user_id,shift_code_id) VALUES (?,?,?,?,?)").run(bid, "2026-10-02", p1, d1, sc);
+  const octPid = Number(db.prepare(
+    "INSERT INTO payroll_periods (cycle,period_start,period_end,pay_date,status,branch_id,target,data_source) VALUES ('monthly','2026-10-01','2026-10-31','2026-11-05','draft',?,'ft','auto')"
+  ).run(bid).lastInsertRowid);
+  payroll.computePayrollPeriod(db, octPid);
+  const octLine = db.prepare("SELECT base_pay, other_additions, net_pay FROM payroll_lines WHERE period_id=? AND user_id=?").get(octPid, d1) as
+    { base_pay: number; other_additions: number; net_pay: number } | undefined;
+  ok("cutover: Oct payroll folds DF for pre-cutover days only (120)", !!octLine && near(octLine.other_additions, 120) && near(octLine.base_pay, 0));
 
   console.log(`\ndf test: ${passed} passed, ${failed} failed`);
   cleanup();

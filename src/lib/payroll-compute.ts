@@ -26,7 +26,7 @@
 import type Database from "better-sqlite3";
 import { sumRedeemedDrinksForUser } from "./partner-drink-orders";
 import { sumCrossCompanyChargesForUser } from "./mealpass-payroll";
-import { isDfBranch, computeDoctorFees } from "./df-db";
+import { isDfBranch, computeDoctorFees, dfPayrollEnd } from "./df-db";
 
 // Which payroll_lines are shown to the admin (and therefore reviewable). Two
 // kinds of noise are hidden: an FT with no salary set, and an FT's all-zero
@@ -2141,8 +2141,14 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     const dfBranchPeriod = period.branch_id != null && isDfBranch(period.branch_id);
     if (dfBranchPeriod) {
       try {
-        const dfRes = computeDoctorFees(period.branch_id!, period.period_start, period.period_end);
-        for (const doc of dfRes.doctors) dfByUser.set(doc.user_id, doc.totalFee);
+        // Weekly-transfer cutover (owner 2026-09-11): from DF_WEEKLY_START_DATE the
+        // DF is paid via the weekly round program (posts to accounta), so payroll
+        // folds in DF only for the period's pre-cutover days. null ⇒ no DF here.
+        const dfEnd = dfPayrollEnd(period.period_start, period.period_end);
+        if (dfEnd) {
+          const dfRes = computeDoctorFees(period.branch_id!, period.period_start, dfEnd);
+          for (const doc of dfRes.doctors) dfByUser.set(doc.user_id, doc.totalFee);
+        }
       } catch { /* DF is best-effort; never block a payroll run */ }
     }
 
@@ -2691,8 +2697,12 @@ export function recomputeLine(
   let dfPayRL = 0;
   if (dfActiveRL) {
     try {
-      const r = computeDoctorFees(period.branch_id!, period.period_start, period.period_end);
-      dfPayRL = r.doctors.find((d) => d.user_id === userId)?.totalFee ?? 0;
+      // Same weekly-transfer cutover clamp as buildLines (owner 2026-09-11).
+      const dfEnd = dfPayrollEnd(period.period_start, period.period_end);
+      if (dfEnd) {
+        const r = computeDoctorFees(period.branch_id!, period.period_start, dfEnd);
+        dfPayRL = r.doctors.find((d) => d.user_id === userId)?.totalFee ?? 0;
+      }
     } catch { /* best-effort */ }
   }
   const computed = computeLineForEmployee({
