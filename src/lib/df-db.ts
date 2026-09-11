@@ -169,17 +169,24 @@ export type DfComputeResult = {
   hasRoster: boolean;
 };
 
-export type DfDoctor = { user_id: number; display_name: string; title_prefix: string | null };
+export type DfDoctor = { user_id: number; display_name: string; title_prefix: string | null; df_wht_rate: number };
 
 // Users eligible to earn a DF: clinic doctors, or already on the DF comp type
-// (phase 2). Active only.
+// (phase 2). Active only. df_wht_rate is the per-doctor withholding rate the
+// weekly payout program applies (owner 2026-09-11).
 export function eligibleDoctors(): DfDoctor[] {
   return getDb().prepare(
-    `SELECT id AS user_id, display_name, title_prefix FROM users
+    `SELECT id AS user_id, display_name, title_prefix, COALESCE(df_wht_rate, 0) AS df_wht_rate FROM users
      WHERE (clinical_role = 'doctor' OR df_started_at IS NOT NULL)
        AND status NOT IN ('disabled','resigned','terminated')
      ORDER BY display_name`
   ).all() as DfDoctor[];
+}
+
+// Set a doctor's WHT rate (0–1) for the weekly DF payout. Clamped defensively.
+export function setDoctorWhtRate(userId: number, rate: number): boolean {
+  const r = Math.min(1, Math.max(0, Number.isFinite(rate) ? rate : 0));
+  return getDb().prepare("UPDATE users SET df_wht_rate = ? WHERE id = ?").run(r, userId).changes > 0;
 }
 
 // date → [doctor user_ids] rostered that date on this branch (work shifts only).
