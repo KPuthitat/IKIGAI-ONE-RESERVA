@@ -1,61 +1,65 @@
 "use client";
 
-import { useState } from "react";
-import type { DfRoundPreview, DfRoundLine, DfRoundRow } from "@/lib/df-rounds";
+import { Fragment, useRef, useState } from "react";
+import { apiUrl } from "@/lib/url";
+import { fmtMoney } from "@/lib/format";
+import { humanizeApiError } from "@/lib/error-messages";
+import type { DfMonthView, DfMonthWeek } from "@/lib/df-rounds";
 import type { DfDoctor } from "@/lib/df-db";
 
-// Weekly Doctor-Fee round screen (owner 2026-09-11): pick a week, review each
-// doctor's fee (rate% of that week's HSC revenue split by roster) with per-doctor
-// WHT, then cut+transfer+post-to-accounta behind a PIN. Weeks before the cutover
-// are shown read-only (still paid via payroll). Mirrors the revshare rounds flow.
+// Doctor-Fee rounds — revshare-style month view (owner 2026-09-13): import a
+// daily report, the month lists each day's DF grouped into Mon–Sun rounds, and
+// each week is cut + paid (transfers to the doctors + posts to accounta) the
+// following Monday. Mirrors /admin/accounta/revshare/rounds.
 
-const TH_MON = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-function thDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return `${d} ${TH_MON[m - 1]} ${y + 543}`;
-}
-function weekLabel(startIso: string, endIso: string): string {
-  const [, sm, sd] = startIso.split("-").map(Number);
-  const [ey, em, ed] = endIso.split("-").map(Number);
-  const left = sm === em ? `${sd}` : `${sd} ${TH_MON[sm - 1]}`;
-  return `${left}–${ed} ${TH_MON[em - 1]} ${ey + 543}`;
-}
-const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-function addDays(iso: string, n: number): string {
-  const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
+const TH_MONTHS = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+const TH_MON = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+function thDate(iso: string): string { const [y, m, d] = iso.split("-").map(Number); return `${d} ${TH_MON[m]} ${y + 543}`; }
+function weekLabel(a: string, b: string): string {
+  const [, am, ad] = a.split("-").map(Number); const [by, bm, bd] = b.split("-").map(Number);
+  return `${ad}${am === bm ? "" : ` ${TH_MON[am]}`}–${bd} ${TH_MON[bm]} ${by + 543}`;
 }
 
 type PinAction =
-  | { kind: "save" | "pay" | "revert"; week: string }
+  | { kind: "pay" | "revert"; week: string; label: string }
   | { kind: "set_wht"; userId: number; rate: number; label: string };
 
-export default function DoctorFeeRoundsClient({
-  initialPreview, initialLines, initialRounds, initialDoctors
-}: {
-  initialPreview: DfRoundPreview; initialLines: DfRoundLine[];
-  initialRounds: DfRoundRow[]; initialDoctors: DfDoctor[];
-}) {
-  const [preview, setPreview] = useState(initialPreview);
-  const [lines, setLines] = useState(initialLines);
-  const [rounds, setRounds] = useState(initialRounds);
+export default function DoctorFeeRoundsClient({ view: initialView, doctors: initialDoctors }: { view: DfMonthView; doctors: DfDoctor[] }) {
+  const [view, setView] = useState(initialView);
   const [doctors, setDoctors] = useState(initialDoctors);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [pin, setPin] = useState("");
   const [pending, setPending] = useState<PinAction | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showWht, setShowWht] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const paid = preview.round?.status === "paid";
-
-  async function loadWeek(week: string) {
+  async function loadMonth(year: number, month: number) {
     setBusy(true); setMsg(null);
     try {
-      const r = await fetch(`/api/admin/persona/doctor-fee/rounds?week=${week}`);
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error ?? "error");
-      setPreview(j.preview); setLines(j.lines); setRounds(j.rounds); setDoctors(j.doctors);
+      const r = await fetch(apiUrl(`/api/admin/persona/doctor-fee/rounds?year=${year}&month=${month}`));
+      const j = await r.json(); if (!r.ok) throw new Error(j.error ?? "error");
+      setView(j.view); setDoctors(j.doctors);
     } catch (e) { setMsg({ kind: "err", text: errText(e) }); }
+    finally { setBusy(false); }
+  }
+  const shift = (delta: number) => {
+    let y = view.year, m = view.month + delta;
+    if (m < 1) { m = 12; y--; } else if (m > 12) { m = 1; y++; }
+    loadMonth(y, m);
+  };
+
+  async function importFile(file: File) {
+    setBusy(true); setMsg(null);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const r = await fetch(apiUrl("/api/admin/persona/doctor-fee/import"), { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) { setMsg({ kind: "err", text: humanizeApiError(j, "นำเข้าไฟล์ไม่สำเร็จ") }); return; }
+      setMsg({ kind: "ok", text: `นำเข้าแล้ว ${j.total} รายการ (${j.inserted} ใหม่ · ${j.updated} อัปเดต)` });
+      await loadMonth(view.year, view.month);
+    } catch { setMsg({ kind: "err", text: "นำเข้าไฟล์ไม่สำเร็จ" }); }
     finally { setBusy(false); }
   }
 
@@ -63,210 +67,111 @@ export default function DoctorFeeRoundsClient({
     if (!pending || pin.length < 4) return;
     setBusy(true); setMsg(null);
     try {
-      const body: Record<string, unknown> = { action: pending.kind, pin };
+      const body: Record<string, unknown> = { action: pending.kind, pin, year: view.year, month: view.month };
       if (pending.kind === "set_wht") { body.userId = pending.userId; body.rate = pending.rate; }
       else body.week = pending.week;
-      const r = await fetch("/api/admin/persona/doctor-fee/rounds", {
+      const r = await fetch(apiUrl("/api/admin/persona/doctor-fee/rounds"), {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
       });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error ?? "error");
-      if (pending.kind === "set_wht") {
-        setDoctors(j.doctors);
-        // refresh the current week so the new WHT flows into the preview
-        await loadWeek(preview.weekStart);
-        setMsg({ kind: "ok", text: "บันทึกอัตราภาษีหักแล้ว" });
-      } else {
-        setPreview(j.preview); setLines(j.lines); setRounds(j.rounds);
-        setMsg({ kind: "ok", text: pending.kind === "pay" ? "ตัดรอบ + โอน + ลงบัญชีเรียบร้อย" : pending.kind === "revert" ? "ยกเลิกการจ่ายแล้ว (กลับเป็นร่าง)" : "บันทึกร่างแล้ว" });
-      }
+      const j = await r.json(); if (!r.ok) throw new Error(j.error ?? "error");
+      setView(j.view); setDoctors(j.doctors);
+      setMsg({ kind: "ok", text: pending.kind === "pay" ? "ตัดรอบ + จ่าย + ลงบัญชีแล้ว" : pending.kind === "revert" ? "ยกเลิกการจ่ายแล้ว" : "บันทึกอัตราภาษีแล้ว" });
       setPending(null); setPin("");
     } catch (e) { setMsg({ kind: "err", text: errText(e) }); }
     finally { setBusy(false); }
   }
 
-  const p = preview;
-  // A paid round shows its FROZEN snapshot (what was actually transferred); a
-  // draft / not-yet-cut week shows the live recompute.
-  const rows = paid && lines.length > 0
-    ? lines.map((l) => ({ user_id: l.user_id, name: l.display_name, workedDays: l.worked_days, grossFee: l.gross_fee, whtRate: l.wht_rate, whtAmount: l.wht_amount, netFee: l.net_fee }))
-    : p.doctors.map((d) => ({ user_id: d.user_id, name: `${d.title_prefix ?? ""}${d.display_name}`, workedDays: d.workedDays, grossFee: d.grossFee, whtRate: d.whtRate, whtAmount: d.whtAmount, netFee: d.netFee }));
-  const tot = paid && p.round
-    ? { fee: p.round.total_fee, wht: p.round.total_wht, net: p.round.total_net, revenue: p.round.total_revenue }
-    : { fee: p.totalFee, wht: p.totalWht, net: p.totalNet, revenue: p.totalRevenue };
+  const toggle = (wk: string) => setExpanded((p) => { const n = new Set(p); if (n.has(wk)) n.delete(wk); else n.add(wk); return n; });
 
   return (
     <div className="space-y-4">
-      {/* Week navigator */}
+      {/* Month navigator */}
+      <div className="flex items-center justify-center gap-3">
+        <button type="button" onClick={() => shift(-1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">←</button>
+        <span className="text-sm font-bold text-slate-700">{TH_MONTHS[view.month]} {view.year + 543}</span>
+        <button type="button" onClick={() => shift(1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">→</button>
+      </div>
+
+      {/* Workflow bar */}
+      <div className="card text-[11px] text-slate-500">
+        จังหวะการทำงาน: <b className="text-slate-700">นำเข้าไฟล์รายงานประจำวัน</b> → ระบบรวม <b className="text-slate-700">รอบจ่ายรายสัปดาห์</b> (จ–อา) ให้อัตโนมัติ → <b className="text-slate-700">ตัดรอบ + จ่าย</b> ในจันทร์ถัดไป แล้วลงบัญชี accounta
+      </div>
+
+      {/* Import card */}
       <div className="card flex flex-wrap items-center gap-2">
-        <button className="btn-secondary text-sm" disabled={busy} onClick={() => loadWeek(addDays(p.weekStart, -7))}>← สัปดาห์ก่อน</button>
-        <div className="text-center px-2">
-          <div className="font-semibold text-slate-800">{weekLabel(p.weekStart, p.weekEnd)}</div>
-          <div className="text-[11px] text-slate-400">จันทร์ {thDate(p.weekStart)} – อาทิตย์ {thDate(p.weekEnd)}</div>
-          <div className="text-[11px] text-brand mt-0.5">จ่ายวันจันทร์ที่ {thDate(p.payDate)}</div>
-        </div>
-        <button className="btn-secondary text-sm" disabled={busy} onClick={() => loadWeek(addDays(p.weekStart, 7))}>สัปดาห์ถัดไป →</button>
-        <input type="date" className="input ml-auto" value={p.weekStart} disabled={busy}
-          onChange={(e) => e.target.value && loadWeek(e.target.value)} />
-        <StatusPill round={p.round} />
-      </div>
-
-      {msg && (
-        <div className={`text-sm rounded-lg px-3 py-2 ${msg.kind === "ok" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>{msg.text}</div>
-      )}
-
-      {p.beforeCutover && (
-        <div className="text-sm rounded-lg px-3 py-2 bg-amber-50 text-amber-800">
-          สัปดาห์นี้อยู่ก่อนวันเริ่มจ่ายรายสัปดาห์ ({thDate(p.cutoverDate)}) — ยังจ่ายผ่านรอบเงินเดือนตามเดิม จึงดูได้อย่างเดียว ตัดรอบไม่ได้ (กันจ่ายซ้ำ)
-        </div>
-      )}
-      {p.stale && !p.beforeCutover && (
-        <div className="text-sm rounded-lg px-3 py-2 bg-amber-50 text-amber-800">
-          ข้อมูล (ยอด/อัตราภาษี/สถานะหมอ) เปลี่ยนไปหลังจากตัดรอบนี้ — ตัวเลขที่จ่ายไปยังเป็นชุดเดิม หากต้องการอัปเดต ให้กด “ยกเลิกการจ่าย” แล้วตัดรอบใหม่
-        </div>
-      )}
-      {!p.hasRoster && p.totalFee > 0 && (
-        <div className="text-sm rounded-lg px-3 py-2 bg-amber-50 text-amber-800">
-          สัปดาห์นี้มีรายได้แต่ยังไม่มีหมอในตารางเวร — ยอด {baht(p.unassignedFee)} บาท ยังไม่ถูกจัดสรรให้ใคร
-        </div>
-      )}
-
-      {/* Daily breakdown (revshare-style): each day's DF pool + bills, Mon–Sun */}
-      <div className="card overflow-x-auto">
-        <h3 className="font-semibold text-slate-800 text-sm mb-2">ยอด DF รายวัน (จันทร์–อาทิตย์)</h3>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-slate-500 border-b">
-              <th className="py-1.5 pr-3">วันที่</th>
-              <th className="py-1.5 px-2 text-right">ยอดค่าตรวจ (HSC)</th>
-              <th className="py-1.5 px-2 text-center">บิล</th>
-              <th className="py-1.5 pl-2 text-right">DF ของวัน</th>
-            </tr>
-          </thead>
-          <tbody>
-            {p.days.map((d) => (
-              <tr key={d.date} className={`border-b last:border-0 ${d.fee > 0 ? "" : "text-slate-300"}`}>
-                <td className="py-1.5 pr-3 whitespace-nowrap">{thDate(d.date)}</td>
-                <td className="py-1.5 px-2 text-right tabular-nums">{d.pool > 0 ? baht(d.pool) : "—"}</td>
-                <td className="py-1.5 px-2 text-center tabular-nums">{d.bills > 0 ? `${d.bills} บิล` : "—"}</td>
-                <td className="py-1.5 pl-2 text-right tabular-nums font-medium text-slate-700">{d.fee > 0 ? baht(d.fee) : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t font-semibold text-slate-800">
-              <td className="py-1.5 pr-3">รวมทั้งสัปดาห์</td>
-              <td className="py-1.5 px-2 text-right tabular-nums">{baht(tot.revenue)}</td>
-              <td className="py-1.5 px-2 text-center tabular-nums">{p.totalBills} บิล</td>
-              <td className="py-1.5 pl-2 text-right tabular-nums">{baht(tot.fee)}</td>
-            </tr>
-          </tfoot>
-        </table>
-        <div className="text-[11px] text-slate-400 mt-2">
-          ยอดมาจากไฟล์รายงานที่นำเข้าในหน้า “ค่าตอบแทนแพทย์” (โปรแกรมจับรายการ DF ตามกฎ [HSC]/[HSC-GRP] ให้อัตโนมัติ)
-        </div>
-      </div>
-
-      {/* Doctor table */}
-      <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-slate-500 border-b">
-              <th className="py-2 pr-3">แพทย์</th>
-              <th className="py-2 px-2 text-center">วันอยู่เวร</th>
-              <th className="py-2 px-2 text-right">ค่าตอบแทน (ก่อนหัก)</th>
-              <th className="py-2 px-2 text-center">หัก ณ ที่จ่าย</th>
-              <th className="py-2 px-2 text-right">ภาษีหัก</th>
-              <th className="py-2 pl-2 text-right">โอนสุทธิ</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr><td colSpan={6} className="py-6 text-center text-slate-400">ไม่มีค่าตอบแทนในสัปดาห์นี้</td></tr>
-            )}
-            {rows.map((d) => (
-              <tr key={d.user_id} className="border-b last:border-0">
-                <td className="py-2 pr-3 text-slate-800">{d.name}</td>
-                <td className="py-2 px-2 text-center text-slate-600">{d.workedDays}</td>
-                <td className="py-2 px-2 text-right tabular-nums">{baht(d.grossFee)}</td>
-                <td className="py-2 px-2 text-center text-slate-500">{(d.whtRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 2 })}%</td>
-                <td className="py-2 px-2 text-right tabular-nums text-rose-700">{d.whtAmount > 0 ? `−${baht(d.whtAmount)}` : "—"}</td>
-                <td className="py-2 pl-2 text-right tabular-nums font-semibold">{baht(d.netFee)}</td>
-              </tr>
-            ))}
-          </tbody>
-          {rows.length > 0 && (
-            <tfoot>
-              <tr className="border-t font-semibold text-slate-800">
-                <td className="py-2 pr-3">รวม</td>
-                <td></td>
-                <td className="py-2 px-2 text-right tabular-nums">{baht(tot.fee)}</td>
-                <td></td>
-                <td className="py-2 px-2 text-right tabular-nums text-rose-700">{tot.wht > 0 ? `−${baht(tot.wht)}` : "—"}</td>
-                <td className="py-2 pl-2 text-right tabular-nums">{baht(tot.net)}</td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
-        <div className="text-[11px] text-slate-400 mt-2">ยอดค่าตรวจ (HSC) สัปดาห์นี้รวม {baht(tot.revenue)} บาท</div>
-      </div>
-
-      {/* Actions */}
-      {!p.beforeCutover && (
-        <div className="flex flex-wrap gap-2">
-          {!paid && (
-            <>
-              <button className="btn-primary" disabled={busy || p.doctors.length === 0}
-                onClick={() => setPending({ kind: "pay", week: p.weekStart })}>
-                ตัดรอบ + โอน + ลงบัญชี
-              </button>
-              <button className="btn-secondary" disabled={busy || p.doctors.length === 0}
-                onClick={() => setPending({ kind: "save", week: p.weekStart })}>
-                บันทึกร่าง (ยังไม่โอน)
-              </button>
-            </>
-          )}
-          {paid && (
-            <button className="btn-secondary text-rose-700" disabled={busy}
-              onClick={() => setPending({ kind: "revert", week: p.weekStart })}>
-              ยกเลิกการจ่าย (กลับเป็นร่าง)
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* WHT config */}
-      <div className="card">
-        <button className="text-sm font-medium text-brand" onClick={() => setShowWht((s) => !s)}>
-          {showWht ? "▾" : "▸"} ตั้งอัตราภาษีหัก ณ ที่จ่ายต่อหมอ
+        <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ""; }} disabled={busy} />
+        <button type="button" className="btn-secondary text-sm" disabled={busy} onClick={() => fileRef.current?.click()}>
+          {busy ? "กำลังทำงาน…" : "นำเข้าไฟล์รายงานประจำวัน"}
         </button>
-        {showWht && (
-          <div className="mt-3 space-y-2">
-            <p className="text-[11px] text-slate-400">เปอร์เซ็นต์ที่หักจากค่าตอบแทนตอนโอน (เช่น 3 = ภ.ง.ด.53) · 0 = ไม่หัก · มีผลกับรอบที่ยังไม่ตัด</p>
-            {doctors.map((d) => (
-              <WhtRow key={d.user_id} doctor={d} disabled={busy}
-                onSave={(rate) => setPending({ kind: "set_wht", userId: d.user_id, rate, label: `${d.title_prefix ?? ""}${d.display_name}` })} />
-            ))}
-          </div>
-        )}
+        <span className="text-[11px] text-slate-400">โปรแกรมจับรายการ DF ตามกฎ (ตั้งกฎที่หน้า “ค่าตอบแทนแพทย์”) · นำเข้าซ้ำได้ ระบบอัปเดตให้เอง</span>
+        <span className="flex-1" />
+        <button type="button" onClick={() => setShowWht((s) => !s)} className="rounded-md border border-brand text-brand px-3 py-2 text-xs font-bold hover:bg-brand/5">
+          อัตราภาษีหัก ณ ที่จ่าย (แยกตามแพทย์)
+        </button>
       </div>
 
-      {/* Recent rounds */}
-      <div className="card">
-        <div className="text-sm font-medium text-slate-700 mb-2">รอบล่าสุด</div>
-        <div className="divide-y">
-          {rounds.length === 0 && <div className="text-sm text-slate-400 py-3">ยังไม่มีรอบที่บันทึก</div>}
-          {rounds.map((r) => (
-            <button key={r.id} className="w-full flex items-center justify-between py-2 text-sm hover:bg-slate-50 px-1 rounded"
-              onClick={() => loadWeek(r.week_start)}>
-              <span className="text-slate-700">{weekLabel(r.week_start, r.week_end)}</span>
-              <span className="flex items-center gap-3">
-                <span className="tabular-nums text-slate-600">{baht(r.total_net)} บาท</span>
-                <StatusPill round={r} />
-              </span>
-            </button>
+      {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.kind === "ok" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>{msg.text}</div>}
+
+      {showWht && (
+        <div className="card space-y-2">
+          <div className="text-sm font-semibold text-slate-700">อัตราภาษีหัก ณ ที่จ่าย · แยกตามแพทย์</div>
+          <p className="text-[11px] text-slate-400">เปอร์เซ็นต์ที่หักตอนโอน (เช่น 3 = ภ.ง.ด.53) · 0 = ไม่หัก · มีผลกับรอบที่ยังไม่ตัด</p>
+          {doctors.map((d) => (
+            <WhtRow key={d.user_id} doctor={d} disabled={busy}
+              onSave={(rate) => setPending({ kind: "set_wht", userId: d.user_id, rate, label: `${d.title_prefix ?? ""}${d.display_name}` })} />
           ))}
         </div>
+      )}
+
+      {/* Daily entries grouped by week (weekly round) */}
+      <div className="card space-y-2">
+        <div className="text-sm font-bold text-slate-800">ยอด DF รายวัน + รอบจ่ายรายสัปดาห์</div>
+        {view.weeks.length === 0 ? (
+          <p className="text-xs text-slate-400">ยังไม่มีข้อมูลเดือนนี้ — กด “นำเข้าไฟล์รายงานประจำวัน” ด้านบน</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-[11px] text-slate-400 border-b border-slate-200">
+                <th className="text-left py-1.5 px-2">วันที่</th>
+                <th className="text-right py-1.5 px-2">ยอดค่าตรวจ</th>
+                <th className="text-right py-1.5 px-2">DF</th>
+                <th className="text-left py-1.5 px-2">ที่มา</th>
+                <th></th>
+              </tr></thead>
+              <tbody>
+                {view.weeks.map((w) => (
+                  <Fragment key={w.weekStart}>
+                    {w.days.map((d) => (
+                      <tr key={d.date} className="border-b border-slate-50">
+                        <td className="py-1 px-2 text-slate-600 whitespace-nowrap">{thDate(d.date)}</td>
+                        <td className="py-1 px-2 text-right tabular-nums text-slate-500">฿{fmtMoney(d.pool)}</td>
+                        <td className="py-1 px-2 text-right tabular-nums font-medium text-slate-700">฿{fmtMoney(d.fee)}</td>
+                        <td className="py-1 px-2 text-[11px] text-slate-400">นำเข้าไฟล์{d.bills > 0 && <span className="text-slate-500"> · {d.bills} บิล</span>}</td>
+                        <td></td>
+                      </tr>
+                    ))}
+                    <WeekRow w={w} expanded={expanded.has(w.weekStart)} busy={busy}
+                      onToggle={() => toggle(w.weekStart)}
+                      onPay={() => setPending({ kind: "pay", week: w.weekStart, label: weekLabel(w.weekStart, w.weekEnd) })}
+                      onRevert={() => setPending({ kind: "revert", week: w.weekStart, label: weekLabel(w.weekStart, w.weekEnd) })} />
+                    {expanded.has(w.weekStart) && (
+                      <tr><td colSpan={5} className="bg-slate-50/60 px-2 py-2">
+                        <DoctorTable w={w} />
+                      </td></tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+              <tfoot><tr className="border-t-2 border-slate-300 font-bold">
+                <td className="py-1.5 px-2 text-slate-700">รวมทั้งเดือน</td>
+                <td className="py-1.5 px-2 text-right tabular-nums">฿{fmtMoney(view.monthRevenue)}</td>
+                <td className="py-1.5 px-2 text-right tabular-nums">฿{fmtMoney(view.monthFee)}</td>
+                <td colSpan={2} className="py-1.5 px-2 text-[11px] text-slate-400">{view.monthBills} บิล · จ่ายเป็นรายสัปดาห์</td>
+              </tr></tfoot>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* PIN modal */}
@@ -278,16 +183,15 @@ export default function DoctorFeeRoundsClient({
             <p className="text-sm text-slate-500">
               {pending.kind === "set_wht"
                 ? `ตั้งอัตราภาษีหัก ${(pending.rate * 100).toLocaleString("th-TH", { maximumFractionDigits: 2 })}% สำหรับ ${pending.label}`
-                : pending.kind === "pay" ? "ตัดรอบและโอนค่าตอบแทน + ลงบัญชีในสัปดาห์นี้"
-                : pending.kind === "save" ? "บันทึกร่างรอบนี้"
-                : "ยกเลิกการจ่ายรอบนี้ (ลบรายการในบัญชีด้วย)"}
+                : pending.kind === "pay" ? `ตัดรอบ + จ่าย + ลงบัญชี สัปดาห์ ${pending.label}`
+                : `ยกเลิกการจ่ายรอบ ${pending.label} (ลบรายการในบัญชีด้วย)`}
             </p>
             <input type="password" inputMode="numeric" autoFocus maxLength={4} className="input w-full text-center tracking-[0.5em] text-lg"
               value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
               onKeyDown={(e) => { if (e.key === "Enter") runPin(); }} placeholder="••••" />
             <div className="flex gap-2">
-              <button className="btn-secondary flex-1" onClick={() => { setPending(null); setPin(""); }}>ยกเลิก</button>
-              <button className="btn-primary flex-1" disabled={busy || pin.length < 4} onClick={runPin}>ยืนยัน</button>
+              <button type="button" className="btn-secondary flex-1" onClick={() => { setPending(null); setPin(""); }}>ยกเลิก</button>
+              <button type="button" className="btn-primary flex-1" disabled={busy || pin.length < 4} onClick={runPin}>ยืนยัน</button>
             </div>
           </div>
         </div>
@@ -296,11 +200,64 @@ export default function DoctorFeeRoundsClient({
   );
 }
 
-function StatusPill({ round }: { round: DfRoundRow | null }) {
-  if (!round) return <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">ยังไม่ตัดรอบ</span>;
-  return round.status === "paid"
-    ? <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">จ่ายแล้ว</span>
-    : <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">ร่าง</span>;
+function WeekRow({ w, expanded, busy, onToggle, onPay, onRevert }: {
+  w: DfMonthWeek; expanded: boolean; busy: boolean; onToggle: () => void; onPay: () => void; onRevert: () => void;
+}) {
+  const paid = w.status === "paid";
+  return (
+    <tr className="bg-slate-50 border-b border-slate-200">
+      <td className="py-1 px-2 text-[11px] font-bold text-slate-600 whitespace-nowrap">
+        <button type="button" onClick={onToggle} className="hover:text-brand">{expanded ? "▾" : "▸"} รอบจ่ายสัปดาห์ {weekLabel(w.weekStart, w.weekEnd)}</button>
+        <div className="text-[10px] font-normal text-brand">จ่ายวันจันทร์ที่ {thDate(w.payDate)}{w.spansMonth && <span className="text-slate-400"> · รอบเต็ม ฿{fmtMoney(w.roundFee)}</span>}</div>
+      </td>
+      <td className="py-1 px-2 text-right tabular-nums text-[11px] text-slate-400">฿{fmtMoney(w.shownRevenue)}</td>
+      <td className="py-1 px-2 text-right tabular-nums font-bold text-brand">฿{fmtMoney(w.shownFee)}</td>
+      <td colSpan={2} className="py-1 px-2 text-right whitespace-nowrap">
+        {w.unassignedFee > 0 && (
+          <span className="text-[10px] text-amber-700 mr-2" title="มีรายได้ในวันที่ไม่มีแพทย์ในตารางเวร — ยังไม่ถูกจัดสรร">⚠ มีรายได้แต่ไม่มีแพทย์ในเวร ฿{fmtMoney(w.unassignedFee)}</span>
+        )}
+        {w.beforeCutover ? (
+          <span className="text-[10px] text-amber-700">ก่อนวันเริ่มจ่ายรายสัปดาห์ — จ่ายผ่านเงินเดือน</span>
+        ) : paid ? (
+          <>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 mr-2">จ่ายแล้ว ฿{fmtMoney(w.roundNet)}</span>
+            {w.stale && <span className="text-[10px] text-amber-700 mr-2">ยอดเปลี่ยน</span>}
+            <button type="button" disabled={busy} onClick={onRevert} className="text-[11px] text-rose-500 hover:underline">ยกเลิก</button>
+          </>
+        ) : (
+          <button type="button" disabled={busy || w.roundNet <= 0} onClick={onPay}
+            className="rounded-md bg-brand text-white px-3 py-1 text-[11px] font-bold hover:opacity-90 disabled:opacity-40">
+            ตัดรอบ + จ่าย ฿{fmtMoney(w.roundNet)}
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function DoctorTable({ w }: { w: DfMonthWeek }) {
+  if (w.doctors.length === 0) return <div className="text-[11px] text-slate-400">ไม่มีค่าตอบแทนในสัปดาห์นี้ (ยังไม่มีแพทย์ในเวร)</div>;
+  return (
+    <table className="w-full text-[12px]">
+      <thead><tr className="text-slate-400 text-left">
+        <th className="py-1 pr-2">แพทย์</th><th className="py-1 px-2 text-center">วันเวร</th>
+        <th className="py-1 px-2 text-right">ก่อนหัก</th><th className="py-1 px-2 text-center">หัก%</th>
+        <th className="py-1 px-2 text-right">ภาษี</th><th className="py-1 pl-2 text-right">โอนสุทธิ</th>
+      </tr></thead>
+      <tbody>
+        {w.doctors.map((d) => (
+          <tr key={d.user_id} className="border-t border-slate-100">
+            <td className="py-1 pr-2 text-slate-700">{d.title_prefix ?? ""}{d.display_name}</td>
+            <td className="py-1 px-2 text-center text-slate-500">{d.workedDays}</td>
+            <td className="py-1 px-2 text-right tabular-nums">฿{fmtMoney(d.grossFee)}</td>
+            <td className="py-1 px-2 text-center text-slate-400">{(d.whtRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 2 })}%</td>
+            <td className="py-1 px-2 text-right tabular-nums text-rose-700">{d.whtAmount > 0 ? `−฿${fmtMoney(d.whtAmount)}` : "—"}</td>
+            <td className="py-1 pl-2 text-right tabular-nums font-semibold">฿{fmtMoney(d.netFee)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 function WhtRow({ doctor, disabled, onSave }: { doctor: DfDoctor; disabled: boolean; onSave: (rate: number) => void }) {
@@ -308,12 +265,11 @@ function WhtRow({ doctor, disabled, onSave }: { doctor: DfDoctor; disabled: bool
   const rate = Math.min(1, Math.max(0, (Number(pct) || 0) / 100));
   const changed = Math.abs(rate - doctor.df_wht_rate) > 1e-9;
   return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="text-slate-700 flex-1">{doctor.title_prefix ?? ""}{doctor.display_name}</span>
-      <input type="number" min={0} max={100} step={0.5} className="input w-20 text-right" value={pct}
-        onChange={(e) => setPct(e.target.value)} />
-      <span className="text-slate-400">%</span>
-      <button className="btn-secondary text-xs" disabled={disabled || !changed} onClick={() => onSave(rate)}>บันทึก</button>
+    <div className="flex items-center gap-2 text-sm border-b border-slate-50 pb-2 last:border-0">
+      <span className="text-slate-700 flex-1 min-w-0 truncate">{doctor.title_prefix ?? ""}{doctor.display_name}</span>
+      <input type="number" min={0} max={100} step={0.5} className="input !py-1 !w-16 text-right shrink-0" value={pct} onChange={(e) => setPct(e.target.value)} />
+      <span className="text-slate-400 shrink-0">%</span>
+      <button className="btn-secondary text-xs shrink-0" disabled={disabled || !changed} onClick={() => onSave(rate)}>บันทึก</button>
     </div>
   );
 }
@@ -322,12 +278,9 @@ function errText(e: unknown): string {
   const m = e instanceof Error ? e.message : String(e);
   const map: Record<string, string> = {
     df_before_cutover: "สัปดาห์นี้อยู่ก่อนวันเริ่มจ่ายรายสัปดาห์ — ตัดรอบไม่ได้",
-    df_round_paid: "รอบนี้จ่ายไปแล้ว — ต้องยกเลิกการจ่ายก่อนจึงจะแก้ได้",
-    no_pin: "คุณยังไม่ได้ตั้ง PIN",
-    wrong_pin: "PIN ไม่ถูกต้อง",
-    not_df_branch: "สาขานี้ไม่ได้เปิดใช้ค่าตอบแทนแพทย์",
-    not_a_doctor: "ผู้ใช้นี้ไม่ใช่แพทย์ที่รับค่าตอบแทน",
-    bad_week: "สัปดาห์ไม่ถูกต้อง"
+    df_round_paid: "รอบนี้จ่ายไปแล้ว — ต้องยกเลิกก่อนจึงจะแก้ได้",
+    no_pin: "คุณยังไม่ได้ตั้ง PIN", wrong_pin: "PIN ไม่ถูกต้อง",
+    not_df_branch: "สาขานี้ไม่ได้เปิดใช้ค่าตอบแทนแพทย์", not_a_doctor: "ผู้ใช้นี้ไม่ใช่แพทย์ที่รับค่าตอบแทน"
   };
   return map[m] ?? `เกิดข้อผิดพลาด: ${m}`;
 }

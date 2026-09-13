@@ -87,6 +87,12 @@ process.env.DATABASE_PATH = TMP;
   ok("upsert didn't touch the multi-tag HSC rule", df.listRules(bid).filter((r) => r.item_tags.length === 1 && r.item_tags[0] === "IM").length === 1);
   df.deleteRule(imRule.id, bid);  // clean up so later sections keep HSC-only
 
+  // ruleValidationMessage names the offending field (owner 2026-09-13 bug: a long
+  // ชื่อกฎ was rejected with a generic message).
+  ok("rule msg: name → ชื่อกฎ", df.ruleValidationMessage({ name: ["too long"] }).includes("ชื่อกฎ"));
+  ok("rule msg: rate → เรท", df.ruleValidationMessage({ rate: ["nan"] }).includes("เรท"));
+  ok("rule msg: tags → รหัส", df.ruleValidationMessage({ item_tags: ["empty"] }).includes("รหัส"));
+
   const d1 = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,clinical_role,status) VALUES ('doc1','x','หมอเอ','admin','doctor','active')").run().lastInsertRowid);
   const d2 = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,clinical_role,status) VALUES ('doc2','x','หมอบี','admin','doctor','active')").run().lastInsertRowid);
   const sc = Number(db.prepare("INSERT INTO shift_codes (branch_id,code,name,start_time,end_time,kind,active) VALUES (?,'D','Day','09:00','17:00','work',1)").run(bid).lastInsertRowid);
@@ -292,6 +298,15 @@ process.env.DATABASE_PATH = TMP;
   ok("0% WHT: net = gross 60, no WHT withheld", near(w2.total_fee, 60) && near(w2.total_wht, 0) && near(w2.total_net, 60));
   ok("0% WHT: one accounta row (expense only)", (db.prepare("SELECT COUNT(*) n FROM accounta_expenses WHERE df_round_id=?").get(w2.id) as { n: number }).n === 1);
   ok("two distinct weekly rounds exist", rounds.listRounds(bid).length === 2);
+
+  // month view (revshare-style): October = week of Oct 5 (Oct 7=300, Oct 8=150)
+  // + week of Oct 12 (Oct 14=60). monthFee 510.
+  const mv = rounds.buildDfMonthRounds(bid, 2026, 10);
+  ok("month view: ≥2 weeks", mv.weeks.length >= 2);
+  ok("month view: monthFee = 510", near(mv.monthFee, 510));
+  const mvWk = mv.weeks.find((w: { weekStart: string }) => w.weekStart === "2026-10-05");
+  ok("month view: Oct 5 week paid, 2 in-month days", !!mvWk && mvWk.status === "paid" && mvWk.days.length === 2);
+  ok("month view: pay Monday shown per week", !!mvWk && mvWk.payDate === "2026-10-12");
 
   // ── 10) CUTOVER: payroll ↔ weekly split (no double-pay, no gap) ──
   // The effective cutover is snapped to a Monday so the boundary is clean even if

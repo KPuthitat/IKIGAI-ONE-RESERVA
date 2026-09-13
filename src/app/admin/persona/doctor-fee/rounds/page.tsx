@@ -3,13 +3,18 @@ import Link from "next/link";
 import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isDfBranch, importedSpan, eligibleDoctors } from "@/lib/df-db";
-import { previewDfRound, listRoundLines, listRounds } from "@/lib/df-rounds";
+import { buildDfMonthRounds } from "@/lib/df-rounds";
 import DoctorFeeRoundsClient from "./DoctorFeeRoundsClient";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "PERSONA · รอบจ่ายค่าตอบแทนแพทย์ (รายสัปดาห์)" };
 
-export default function DoctorFeeRoundsPage() {
+function nowBkk(): { y: number; m: number } {
+  const d = new Date(Date.now() + 7 * 3600_000);
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1 };
+}
+
+export default function DoctorFeeRoundsPage({ searchParams }: { searchParams: { year?: string; month?: string } }) {
   const user = requirePayrollAccess();
   const branchId = user.activeBranchId ?? null;
 
@@ -21,10 +26,7 @@ export default function DoctorFeeRoundsPage() {
       </div>
     );
   }
-
-  const branch = getDb().prepare("SELECT name FROM branches WHERE id = ?")
-    .get(branchId) as { name: string } | undefined;
-
+  const branch = getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
   if (!isDfBranch(branchId)) {
     return (
       <div className="space-y-4">
@@ -36,29 +38,31 @@ export default function DoctorFeeRoundsPage() {
     );
   }
 
-  // Land on the week of the latest imported revenue (else this week).
+  // Default to the month of the latest imported revenue, else this month.
   const span = importedSpan(branchId);
-  const anchor = span.max ?? new Date().toISOString().slice(0, 10);
-  const preview = previewDfRound(branchId, anchor);
-  const lines = preview.round ? listRoundLines(preview.round.id) : [];
+  const now = nowBkk();
+  const anchor = span.max ?? `${now.y}-${String(now.m).padStart(2, "0")}-01`;
+  const y = Number(searchParams.year) || Number(anchor.slice(0, 4));
+  const m = Number(searchParams.month) || Number(anchor.slice(5, 7));
+  // Clamp to a sane range so a hand-edited ?month=13 can't build an empty month.
+  const year = Number.isInteger(y) && y >= 2000 && y <= 2100 ? y : now.y;
+  const month = Number.isInteger(m) && m >= 1 && m <= 12 ? m : now.m;
 
   return (
     <div className="space-y-4">
-      <Link href="/admin/persona/doctor-fee" className="text-sm text-slate-500 hover:text-brand">← ค่าตอบแทนแพทย์</Link>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <Link href="/admin/persona/doctor-fee" className="text-sm text-slate-500 hover:text-brand">← นำเข้ารายงาน / ตั้งกฎ</Link>
+      </div>
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">รอบจ่ายค่าตอบแทนแพทย์ (รายสัปดาห์)</h1>
+        <h1 className="text-2xl font-bold text-slate-800">รอบจ่ายค่าตอบแทนแพทย์ · {branch?.name ?? `#${branchId}`}</h1>
         <p className="text-sm text-slate-500 mt-1">
-          สาขา <b>{branch?.name ?? `#${branchId}`}</b> · ตัดรอบทุกวันจันทร์ (จันทร์–อาทิตย์) · โอนให้หมอแล้วลงบัญชีอัตโนมัติใน accounta
-        </p>
-        <p className="text-[11px] text-slate-400 mt-1">
-          ยอดมาจากไฟล์ยอดขายที่อัปโหลดในหน้า “ค่าตอบแทนแพทย์” · ตัดรอบ/โอน ต้องใส่ PIN
+          นำเข้าไฟล์รายงานประจำวัน · ระบบรวมรอบจ่ายรายสัปดาห์ (จันทร์–อาทิตย์) ให้อัตโนมัติ · จ่ายจันทร์ถัดไปแล้วลงบัญชี accounta
         </p>
       </div>
       <DoctorFeeRoundsClient
-        initialPreview={preview}
-        initialLines={lines}
-        initialRounds={listRounds(branchId)}
-        initialDoctors={eligibleDoctors()}
+        key={`${year}-${month}`}
+        view={buildDfMonthRounds(branchId, year, month)}
+        doctors={eligibleDoctors()}
       />
     </div>
   );

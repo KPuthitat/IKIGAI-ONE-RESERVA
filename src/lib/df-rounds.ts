@@ -217,6 +217,84 @@ export function previewDfRound(branchId: number, weekStartInput: string): DfRoun
   };
 }
 
+// ── Month view (revshare-style: daily rows + weekly rounds) ───────────
+
+export type DfMonthWeek = {
+  weekStart: string; weekEnd: string; payDate: string;
+  days: DfDayRow[];                 // this month's days in the week (revenue present)
+  shownFee: number; shownRevenue: number; shownBills: number;  // in-month totals (revshare-style subtotal)
+  roundFee: number; roundNet: number; roundWht: number;        // FULL Mon–Sun round (what's paid)
+  spansMonth: boolean;              // week has days outside the selected month
+  unassignedFee: number;            // week has DF revenue on days with no rostered doctor
+  doctors: DfRoundDoctor[];
+  round: DfRoundRow | null; status: "none" | "draft" | "paid"; stale: boolean; beforeCutover: boolean;
+};
+export type DfMonthView = {
+  year: number; month: number;
+  weeks: DfMonthWeek[];
+  monthRevenue: number; monthFee: number; monthBills: number;
+  cutoverDate: string;
+};
+
+/**
+ * The whole month as daily rows grouped into Mon–Sun weekly rounds — mirrors the
+ * revshare rounds page (owner 2026-09-13). A week is shown when it has a DF day
+ * in the month or a stored round touching it; the weekly subtotal is the
+ * in-month days (like revshare's transfer subtotal), while the round pays the
+ * full Mon–Sun week.
+ */
+export function buildDfMonthRounds(branchId: number, year: number, month: number): DfMonthView {
+  const mm = String(month).padStart(2, "0");
+  const first = `${year}-${mm}-01`;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const last = `${year}-${mm}-${String(lastDay).padStart(2, "0")}`;
+  const db = getDb();
+
+  const mondays = new Set<string>();
+  for (const r of db.prepare(
+    "SELECT DISTINCT line_date FROM df_invoice_lines WHERE branch_id = ? AND line_date >= ? AND line_date <= ?"
+  ).all(branchId, first, last) as Array<{ line_date: string }>) mondays.add(mondayOf(r.line_date));
+  for (const r of db.prepare(
+    "SELECT week_start FROM df_rounds WHERE branch_id = ? AND week_start >= ? AND week_start <= ?"
+  ).all(branchId, mondayOf(first), last) as Array<{ week_start: string }>) mondays.add(r.week_start);
+
+  const weeks: DfMonthWeek[] = [];
+  let monthRevenue = 0, monthFee = 0, monthBills = 0;
+  for (const wk of [...mondays].sort()) {
+    const p = previewDfRound(branchId, wk);
+    // Include any day with revenue from a ruled tag (pool > 0), so a 0%-rate day
+    // still reconciles the revenue column.
+    const inMonth = p.days.filter((d) => d.date >= first && d.date <= last && d.pool > 0);
+    const shownFee = round2(inMonth.reduce((s, d) => s + d.fee, 0));
+    const shownRevenue = round2(inMonth.reduce((s, d) => s + d.pool, 0));
+    const shownBills = inMonth.reduce((s, d) => s + d.bills, 0);
+    monthRevenue += shownRevenue; monthFee += shownFee; monthBills += shownBills;
+    const spansMonth = p.weekStart < first || p.weekEnd > last;
+    // A PAID round shows its FROZEN snapshot (what was actually transferred), not
+    // a live recompute — so a later revenue re-import can't change a settled
+    // round's displayed figures (the `stale` flag warns of the drift instead).
+    const paid = p.round?.status === "paid";
+    const frozen = paid ? listRoundLines(p.round!.id) : [];
+    const doctors: DfRoundDoctor[] = paid
+      ? frozen.map((l) => ({ user_id: l.user_id, display_name: l.display_name, title_prefix: null, workedDays: l.worked_days, grossFee: l.gross_fee, whtRate: l.wht_rate, whtAmount: l.wht_amount, netFee: l.net_fee }))
+      : p.doctors;
+    weeks.push({
+      weekStart: p.weekStart, weekEnd: p.weekEnd, payDate: p.payDate,
+      days: inMonth, shownFee, shownRevenue, shownBills,
+      roundFee: paid ? p.round!.total_fee : p.totalFee,
+      roundNet: paid ? p.round!.total_net : p.totalNet,
+      roundWht: paid ? p.round!.total_wht : p.totalWht,
+      spansMonth, unassignedFee: p.unassignedFee, doctors,
+      round: p.round, status: p.round ? p.round.status : "none", stale: p.stale, beforeCutover: p.beforeCutover
+    });
+  }
+  return {
+    year, month, weeks,
+    monthRevenue: round2(monthRevenue), monthFee: round2(monthFee), monthBills,
+    cutoverDate: dfWeeklyStartMonday()
+  };
+}
+
 // ── Mutations ─────────────────────────────────────────────────────
 
 /**
