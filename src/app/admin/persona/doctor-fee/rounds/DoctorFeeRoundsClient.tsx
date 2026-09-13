@@ -226,9 +226,14 @@ function WeekRow({ w, expanded, busy, onToggle, onPay, onRevert }: {
   const paid = w.status === "paid";
   return (
     <tr className="bg-slate-50 border-b border-slate-200">
-      <td className="py-1 px-2 text-[11px] font-bold text-slate-600 whitespace-nowrap">
-        <button type="button" onClick={onToggle} className="hover:text-brand">{expanded ? "▾" : "▸"} รอบจ่ายสัปดาห์ {weekLabel(w.weekStart, w.weekEnd)}</button>
+      <td className="py-1 px-2 text-[11px] font-bold text-slate-600">
+        <button type="button" onClick={onToggle} className="hover:text-brand whitespace-nowrap">{expanded ? "▾" : "▸"} รอบจ่ายสัปดาห์ {weekLabel(w.weekStart, w.weekEnd)}</button>
         <div className="text-[10px] font-normal text-brand">จ่ายวันจันทร์ที่ {thDate(w.payDate)}{w.spansMonth && <span className="text-slate-400"> · รอบเต็ม ฿{fmtMoney(w.roundFee)}</span>}</div>
+        {w.doctors.length > 0 && (
+          <div className="text-[10px] font-normal text-slate-500 mt-0.5">
+            แพทย์: {w.doctors.map((d) => `${d.title_prefix ?? ""}${d.display_name} ฿${fmtMoney(d.netFee)}`).join(" · ")}
+          </div>
+        )}
       </td>
       <td className="py-1 px-2 text-right tabular-nums text-[11px] text-slate-400">฿{fmtMoney(w.shownRevenue)}</td>
       <td className="py-1 px-2 text-right tabular-nums font-bold text-brand">฿{fmtMoney(w.shownFee)}</td>
