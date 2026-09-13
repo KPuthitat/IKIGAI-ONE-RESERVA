@@ -4,7 +4,7 @@ import { Fragment, useRef, useState } from "react";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
-import type { DfMonthView, DfMonthWeek } from "@/lib/df-rounds";
+import type { DfMonthView, DfMonthWeek, DfDayLine } from "@/lib/df-rounds";
 import type { DfDoctor } from "@/lib/df-db";
 
 // Doctor-Fee rounds — revshare-style month view (owner 2026-09-13): import a
@@ -33,7 +33,20 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
   const [pending, setPending] = useState<PinAction | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showWht, setShowWht] = useState(false);
+  const [dayOpen, setDayOpen] = useState<Set<string>>(new Set());
+  const [dayLines, setDayLines] = useState<Record<string, DfDayLine[]>>({});
   const fileRef = useRef<HTMLInputElement>(null);
+
+  async function toggleDay(date: string) {
+    setDayOpen((p) => { const n = new Set(p); if (n.has(date)) n.delete(date); else n.add(date); return n; });
+    if (!dayLines[date]) {
+      try {
+        const r = await fetch(apiUrl(`/api/admin/persona/doctor-fee/rounds?day=${date}`));
+        const j = await r.json();
+        if (r.ok && j.ok) setDayLines((p) => ({ ...p, [date]: j.lines as DfDayLine[] }));
+      } catch { /* ignore — the row just shows nothing */ }
+    }
+  }
 
   async function loadMonth(year: number, month: number) {
     setBusy(true); setMsg(null);
@@ -143,13 +156,20 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
                 {view.weeks.map((w) => (
                   <Fragment key={w.weekStart}>
                     {w.days.map((d) => (
-                      <tr key={d.date} className="border-b border-slate-50">
-                        <td className="py-1 px-2 text-slate-600 whitespace-nowrap">{thDate(d.date)}</td>
-                        <td className="py-1 px-2 text-right tabular-nums text-slate-500">฿{fmtMoney(d.pool)}</td>
-                        <td className="py-1 px-2 text-right tabular-nums font-medium text-slate-700">฿{fmtMoney(d.fee)}</td>
-                        <td className="py-1 px-2 text-[11px] text-slate-400">นำเข้าไฟล์{d.bills > 0 && <span className="text-slate-500"> · {d.bills} บิล</span>}</td>
-                        <td></td>
-                      </tr>
+                      <Fragment key={d.date}>
+                        <tr className="border-b border-slate-50 hover:bg-slate-50/50 cursor-pointer" onClick={() => toggleDay(d.date)}>
+                          <td className="py-1 px-2 text-slate-600 whitespace-nowrap">
+                            <span className="text-slate-300 mr-1">{dayOpen.has(d.date) ? "▾" : "▸"}</span>{thDate(d.date)}
+                          </td>
+                          <td className="py-1 px-2 text-right tabular-nums text-slate-500">฿{fmtMoney(d.pool)}</td>
+                          <td className="py-1 px-2 text-right tabular-nums font-medium text-slate-700">฿{fmtMoney(d.fee)}</td>
+                          <td className="py-1 px-2 text-[11px] text-slate-400">นำเข้าไฟล์{d.bills > 0 && <span className="text-slate-500"> · {d.bills} บิล</span>}</td>
+                          <td></td>
+                        </tr>
+                        {dayOpen.has(d.date) && (
+                          <tr><td colSpan={5} className="bg-slate-50/60 px-2 py-2"><DayDetail lines={dayLines[d.date]} /></td></tr>
+                        )}
+                      </Fragment>
                     ))}
                     <WeekRow w={w} expanded={expanded.has(w.weekStart)} busy={busy}
                       onToggle={() => toggle(w.weekStart)}
@@ -232,6 +252,30 @@ function WeekRow({ w, expanded, busy, onToggle, onPay, onRevert }: {
         )}
       </td>
     </tr>
+  );
+}
+
+function DayDetail({ lines }: { lines: DfDayLine[] | undefined }) {
+  if (lines === undefined) return <div className="text-[11px] text-slate-400">กำลังโหลด…</div>;
+  if (lines.length === 0) return <div className="text-[11px] text-slate-400">ไม่มีรายการที่คิด DF ในวันนี้</div>;
+  return (
+    <table className="w-full text-[12px]">
+      <thead><tr className="text-slate-400 text-left">
+        <th className="py-1 pr-2">ใบแจ้งหนี้</th><th className="py-1 px-2">รหัส</th><th className="py-1 px-2">รายการ</th>
+        <th className="py-1 px-2 text-right">ยอดสุทธิ</th><th className="py-1 pl-2 text-right">DF</th>
+      </tr></thead>
+      <tbody>
+        {lines.map((l, i) => (
+          <tr key={`${l.invoice_no}-${l.item_tag}-${i}`} className="border-t border-slate-100">
+            <td className="py-1 pr-2 text-slate-500 whitespace-nowrap">{l.invoice_no}</td>
+            <td className="py-1 px-2 text-slate-600 whitespace-nowrap">[{l.item_tag}]</td>
+            <td className="py-1 px-2 text-slate-500 max-w-[360px] truncate" title={l.description ?? ""}>{l.description ?? l.item_code ?? "—"}</td>
+            <td className="py-1 px-2 text-right tabular-nums text-slate-500">฿{fmtMoney(l.net)}</td>
+            <td className="py-1 pl-2 text-right tabular-nums font-medium text-slate-700">฿{fmtMoney(l.fee)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requirePayrollAccess } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { isDfBranch, setDoctorWhtRate, eligibleDoctors } from "@/lib/df-db";
-import { buildDfMonthRounds, saveDfRound, payDfRound, revertDfRound } from "@/lib/df-rounds";
+import { buildDfMonthRounds, saveDfRound, payDfRound, revertDfRound, dfDayDetail } from "@/lib/df-rounds";
 
 // Weekly Doctor-Fee rounds, revshare-style month view (owner 2026-09-13). Clinic
 // branch only; payroll access. GET returns the month (daily rows grouped into
@@ -35,6 +35,11 @@ export function GET(req: Request) {
   const { branchId, ok } = ctx();
   if (!ok) return NextResponse.json({ error: "not_df_branch" }, { status: 403 });
   const sp = new URL(req.url).searchParams;
+  // Drill-down: one day's source invoice lines.
+  const day = sp.get("day") ?? "";
+  if (dateRe.test(day)) {
+    return NextResponse.json({ ok: true, day, lines: dfDayDetail(branchId!, day) });
+  }
   const now = bkkNow();
   const year = Number(sp.get("year")) || now.year;
   const month = Number(sp.get("month")) || now.month;

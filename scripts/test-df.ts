@@ -308,6 +308,11 @@ process.env.DATABASE_PATH = TMP;
   ok("month view: Oct 5 week paid, 2 in-month days", !!mvWk && mvWk.status === "paid" && mvWk.days.length === 2);
   ok("month view: pay Monday shown per week", !!mvWk && mvWk.payDate === "2026-10-12");
 
+  // day drill-down: Oct 7 → 1 line (invoice W1, HSC 1000 → DF 300).
+  const detail = rounds.dfDayDetail(bid, "2026-10-07");
+  ok("day detail: Oct 7 has 1 earning line", detail.length === 1);
+  ok("day detail: line = W1 HSC net 1000 fee 300", detail[0].invoice_no === "W1" && detail[0].item_tag === "HSC" && near(detail[0].net, 1000) && near(detail[0].fee, 300));
+
   // ── 10) CUTOVER: payroll ↔ weekly split (no double-pay, no gap) ──
   // The effective cutover is snapped to a Monday so the boundary is clean even if
   // the constant is set to a mid-week date.

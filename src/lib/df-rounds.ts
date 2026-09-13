@@ -161,6 +161,36 @@ function dailyBreakdown(branchId: number, weekStart: string): DfDayRow[] {
   return out;
 }
 
+export type DfDayLine = {
+  invoice_no: string; item_tag: string; item_code: string | null;
+  description: string | null; net: number; fee: number;
+};
+
+/** The invoice lines that made up one day's DF — the drill-down under a daily row
+ *  (owner 2026-09-13: "ยอด DF ประจำวันเกิดจากยอดใด"). One row per earning line,
+ *  newest bills first, with the DF it contributed. */
+export function dfDayDetail(branchId: number, date: string): DfDayLine[] {
+  const db = getDb();
+  const tagRate = new Map<string, number>();
+  for (const r of db.prepare(
+    "SELECT item_tags, rate FROM df_fee_rules WHERE branch_id = ? AND active = 1"
+  ).all(branchId) as Array<{ item_tags: string; rate: number }>) {
+    try { for (const t of JSON.parse(r.item_tags) as string[]) tagRate.set(String(t).toUpperCase(), r.rate); }
+    catch { /* skip */ }
+  }
+  const lines = db.prepare(
+    `SELECT invoice_no, item_tag, item_code, description, net FROM df_invoice_lines
+     WHERE branch_id = ? AND line_date = ? ORDER BY invoice_no`
+  ).all(branchId, date) as Array<{ invoice_no: string; item_tag: string; item_code: string | null; description: string | null; net: number }>;
+  const out: DfDayLine[] = [];
+  for (const l of lines) {
+    const rate = tagRate.get(l.item_tag);
+    if (rate === undefined) continue;
+    out.push({ ...l, fee: round2(l.net * rate) });
+  }
+  return out;
+}
+
 // ── Preview (live compute) ────────────────────────────────────────
 
 export function previewDfRound(branchId: number, weekStartInput: string): DfRoundPreview {
