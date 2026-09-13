@@ -4,8 +4,9 @@ import { Fragment, useRef, useState } from "react";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
-import type { DfMonthView, DfMonthWeek, DfDayLine } from "@/lib/df-rounds";
+import type { DfMonthView, DfMonthWeek, DfDayLine, DfDayDoctor, DfRoundDoctor } from "@/lib/df-rounds";
 import type { DfDoctor } from "@/lib/df-db";
+import { DfSendModal, DfDailyPreview, DfWeeklyPreview, type DailyPreviewData, type WeeklyPreviewData } from "./DfCardPreviews";
 
 // Doctor-Fee rounds — revshare-style month view (owner 2026-09-13): import a
 // daily report, the month lists each day's DF grouped into Mon–Sun rounds, and
@@ -24,7 +25,13 @@ type PinAction =
   | { kind: "pay" | "revert"; week: string; label: string }
   | { kind: "set_wht"; userId: number; rate: number; label: string };
 
-export default function DoctorFeeRoundsClient({ view: initialView, doctors: initialDoctors }: { view: DfMonthView; doctors: DfDoctor[] }) {
+// A pending LINE-card send (owner 2026-09-13). Carries the client-built preview
+// + the request body; the server recomputes the amount before sending.
+type SendAction =
+  | { kind: "daily"; userId: number; date: string; heading: string; preview: DailyPreviewData }
+  | { kind: "weekly"; userId: number; week: string; heading: string; preview: WeeklyPreviewData };
+
+export default function DoctorFeeRoundsClient({ view: initialView, doctors: initialDoctors, clinicName }: { view: DfMonthView; doctors: DfDoctor[]; clinicName: string }) {
   const [view, setView] = useState(initialView);
   const [doctors, setDoctors] = useState(initialDoctors);
   const [busy, setBusy] = useState(false);
@@ -35,7 +42,12 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
   const [showWht, setShowWht] = useState(false);
   const [dayOpen, setDayOpen] = useState<Set<string>>(new Set());
   const [dayLines, setDayLines] = useState<Record<string, DfDayLine[]>>({});
+  const [dayDoctors, setDayDoctors] = useState<Record<string, DfDayDoctor[]>>({});
+  const [send, setSend] = useState<SendAction | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Guarantee doctors get the weekly guarantee summary, not a daily DF card.
+  const guaranteeIds = new Set(doctors.filter((d) => d.guarantee_enabled).map((d) => d.user_id));
 
   async function toggleDay(date: string) {
     setDayOpen((p) => { const n = new Set(p); if (n.has(date)) n.delete(date); else n.add(date); return n; });
@@ -43,9 +55,53 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
       try {
         const r = await fetch(apiUrl(`/api/admin/persona/doctor-fee/rounds?day=${date}`));
         const j = await r.json();
-        if (r.ok && j.ok) setDayLines((p) => ({ ...p, [date]: j.lines as DfDayLine[] }));
+        if (r.ok && j.ok) {
+          setDayLines((p) => ({ ...p, [date]: j.lines as DfDayLine[] }));
+          setDayDoctors((p) => ({ ...p, [date]: (j.doctors ?? []) as DfDayDoctor[] }));
+        }
       } catch { /* ignore — the row just shows nothing */ }
     }
+  }
+
+  async function doSend(pin4: string): Promise<{ ok: boolean; message?: string }> {
+    if (!send) return { ok: false };
+    const body = send.kind === "daily"
+      ? { kind: "daily", userId: send.userId, date: send.date, pin: pin4 }
+      : { kind: "weekly", userId: send.userId, week: send.week, pin: pin4 };
+    try {
+      const r = await fetch(apiUrl("/api/admin/persona/doctor-fee/notify"), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) return { ok: false, message: j.message ?? humanizeApiError(j, "ส่งไม่สำเร็จ") };
+      setSend(null);
+      setMsg({ kind: "ok", text: "ส่งการ์ด LINE ให้แพทย์แล้ว" });
+      return { ok: true };
+    } catch { return { ok: false, message: "ส่งไม่สำเร็จ" }; }
+  }
+
+  function sendWeekly(w: DfMonthWeek, d: DfRoundDoctor) {
+    setSend({
+      kind: "weekly", userId: d.user_id, week: w.weekStart,
+      heading: `ส่งสรุป DF รายสัปดาห์ · ${d.title_prefix ?? ""}${d.display_name}`,
+      preview: {
+        doctorName: `${d.title_prefix ?? ""}${d.display_name}`, clinicName,
+        weekLabel: weekLabel(w.weekStart, w.weekEnd), payDateLabel: thDate(w.payDate),
+        workedDays: d.workedDays, grossFee: d.grossFee, whtRate: d.whtRate, whtAmount: d.whtAmount, netFee: d.netFee,
+        isGuarantee: d.isGuarantee, guaranteeHours: d.guaranteeHours, guaranteeAmount: d.guaranteeAmount,
+        dfEarned: d.dfEarned, deficitBefore: d.deficitBefore, deficitAfter: d.deficitAfter
+      }
+    });
+  }
+  function sendDaily(date: string, d: DfDayDoctor) {
+    setSend({
+      kind: "daily", userId: d.user_id, date,
+      heading: `ส่งสรุป DF รายวัน · ${d.title_prefix ?? ""}${d.display_name}`,
+      preview: {
+        doctorName: `${d.title_prefix ?? ""}${d.display_name}`, clinicName,
+        dateLabel: thDate(date), dayPool: d.dayPool, doctorCount: d.doctorCount, share: d.share
+      }
+    });
   }
 
   async function loadMonth(year: number, month: number) {
@@ -167,7 +223,9 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
                           <td></td>
                         </tr>
                         {dayOpen.has(d.date) && (
-                          <tr><td colSpan={5} className="bg-slate-50/60 px-2 py-2"><DayDetail lines={dayLines[d.date]} /></td></tr>
+                          <tr><td colSpan={5} className="bg-slate-50/60 px-2 py-2">
+                            <DayDetail lines={dayLines[d.date]} doctors={dayDoctors[d.date]} guaranteeIds={guaranteeIds} onSend={(doc) => sendDaily(d.date, doc)} />
+                          </td></tr>
                         )}
                       </Fragment>
                     ))}
@@ -177,7 +235,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
                       onRevert={() => setPending({ kind: "revert", week: w.weekStart, label: weekLabel(w.weekStart, w.weekEnd) })} />
                     {expanded.has(w.weekStart) && (
                       <tr><td colSpan={5} className="bg-slate-50/60 px-2 py-2">
-                        <DoctorTable w={w} />
+                        <DoctorTable w={w} onSend={(doc) => sendWeekly(w, doc)} />
                       </td></tr>
                     )}
                   </Fragment>
@@ -215,6 +273,16 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
             </div>
           </div>
         </div>
+      )}
+
+      {/* LINE card preview + send (per-doctor) */}
+      {send && (
+        <DfSendModal
+          heading={send.heading}
+          preview={send.kind === "daily" ? <DfDailyPreview {...send.preview} /> : <DfWeeklyPreview {...send.preview} />}
+          onConfirm={doSend}
+          onClose={() => setSend(null)}
+        />
       )}
     </div>
   );
@@ -260,39 +328,62 @@ function WeekRow({ w, expanded, busy, onToggle, onPay, onRevert }: {
   );
 }
 
-function DayDetail({ lines }: { lines: DfDayLine[] | undefined }) {
+function DayDetail({ lines, doctors, guaranteeIds, onSend }: {
+  lines: DfDayLine[] | undefined; doctors: DfDayDoctor[] | undefined;
+  guaranteeIds: Set<number>; onSend: (d: DfDayDoctor) => void;
+}) {
   if (lines === undefined) return <div className="text-[11px] text-slate-400">กำลังโหลด…</div>;
   if (lines.length === 0) return <div className="text-[11px] text-slate-400">ไม่มีรายการที่คิด DF ในวันนี้</div>;
   return (
-    <table className="w-full text-[12px]">
-      <thead><tr className="text-slate-400 text-left">
-        <th className="py-1 pr-2">ใบแจ้งหนี้</th><th className="py-1 px-2">รหัส</th><th className="py-1 px-2">รายการ</th>
-        <th className="py-1 px-2 text-right">ยอดสุทธิ</th><th className="py-1 pl-2 text-right">DF</th>
-      </tr></thead>
-      <tbody>
-        {lines.map((l, i) => (
-          <tr key={`${l.invoice_no}-${l.item_tag}-${i}`} className="border-t border-slate-100">
-            <td className="py-1 pr-2 text-slate-500 whitespace-nowrap">{l.invoice_no}</td>
-            <td className="py-1 px-2 text-slate-600 whitespace-nowrap">[{l.item_tag}]</td>
-            <td className="py-1 px-2 text-slate-500 max-w-[360px] truncate" title={l.description ?? ""}>{l.description ?? l.item_code ?? "—"}</td>
-            <td className="py-1 px-2 text-right tabular-nums text-slate-500">฿{fmtMoney(l.net)}</td>
-            <td className="py-1 pl-2 text-right tabular-nums font-medium text-slate-700">฿{fmtMoney(l.fee)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="space-y-2">
+      <table className="w-full text-[12px]">
+        <thead><tr className="text-slate-400 text-left">
+          <th className="py-1 pr-2">ใบแจ้งหนี้</th><th className="py-1 px-2">รหัส</th><th className="py-1 px-2">รายการ</th>
+          <th className="py-1 px-2 text-right">ยอดสุทธิ</th><th className="py-1 pl-2 text-right">DF</th>
+        </tr></thead>
+        <tbody>
+          {lines.map((l, i) => (
+            <tr key={`${l.invoice_no}-${l.item_tag}-${i}`} className="border-t border-slate-100">
+              <td className="py-1 pr-2 text-slate-500 whitespace-nowrap">{l.invoice_no}</td>
+              <td className="py-1 px-2 text-slate-600 whitespace-nowrap">[{l.item_tag}]</td>
+              <td className="py-1 px-2 text-slate-500 max-w-[360px] truncate" title={l.description ?? ""}>{l.description ?? l.item_code ?? "—"}</td>
+              <td className="py-1 px-2 text-right tabular-nums text-slate-500">฿{fmtMoney(l.net)}</td>
+              <td className="py-1 pl-2 text-right tabular-nums font-medium text-slate-700">฿{fmtMoney(l.fee)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {doctors && doctors.length > 0 && (
+        <div className="border-t border-slate-100 pt-2">
+          <div className="text-[11px] text-slate-500 mb-1">ค่าตอบแทน DF รายวัน (แบ่งตามแพทย์ในเวร) · ส่งการ์ดให้เฉพาะแพทย์ท่านนั้น</div>
+          <div className="space-y-1">
+            {doctors.map((d) => (
+              <div key={d.user_id} className="flex items-center gap-2 text-[12px]">
+                <span className="text-slate-700 flex-1 min-w-0 truncate">{d.title_prefix ?? ""}{d.display_name}</span>
+                <span className="tabular-nums text-emerald-700 font-medium shrink-0">฿{fmtMoney(d.share)}</span>
+                {guaranteeIds.has(d.user_id) ? (
+                  <span className="text-[10px] text-violet-600 shrink-0">การันตี (ดูรายสัปดาห์)</span>
+                ) : (
+                  <button type="button" onClick={() => onSend(d)} className="text-[11px] text-emerald-700 hover:underline shrink-0 whitespace-nowrap">ส่ง LINE</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
-function DoctorTable({ w }: { w: DfMonthWeek }) {
+function DoctorTable({ w, onSend }: { w: DfMonthWeek; onSend: (d: DfRoundDoctor) => void }) {
   if (w.doctors.length === 0) return <div className="text-[11px] text-slate-400">ไม่มีค่าตอบแทนในสัปดาห์นี้ (ยังไม่มีแพทย์ในเวร)</div>;
-  const hasGuarantee = w.doctors.some((d) => d.isGuarantee);
   return (
     <table className="w-full text-[12px]">
       <thead><tr className="text-slate-400 text-left">
         <th className="py-1 pr-2">แพทย์</th><th className="py-1 px-2 text-center">วันเวร</th>
         <th className="py-1 px-2 text-right">ก่อนหัก</th><th className="py-1 px-2 text-center">หัก%</th>
-        <th className="py-1 px-2 text-right">ภาษี</th><th className="py-1 pl-2 text-right">โอนสุทธิ</th>
+        <th className="py-1 px-2 text-right">ภาษี</th><th className="py-1 px-2 text-right">โอนสุทธิ</th>
+        <th className="py-1 pl-2 text-right">แจ้งเตือน</th>
       </tr></thead>
       <tbody>
         {w.doctors.map((d) => (
@@ -306,11 +397,14 @@ function DoctorTable({ w }: { w: DfMonthWeek }) {
               <td className="py-1 px-2 text-right tabular-nums">฿{fmtMoney(d.grossFee)}</td>
               <td className="py-1 px-2 text-center text-slate-400">{(d.whtRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 2 })}%</td>
               <td className="py-1 px-2 text-right tabular-nums text-rose-700">{d.whtAmount > 0 ? `−฿${fmtMoney(d.whtAmount)}` : "—"}</td>
-              <td className="py-1 pl-2 text-right tabular-nums font-semibold">฿{fmtMoney(d.netFee)}</td>
+              <td className="py-1 px-2 text-right tabular-nums font-semibold">฿{fmtMoney(d.netFee)}</td>
+              <td className="py-1 pl-2 text-right">
+                <button type="button" onClick={() => onSend(d)} className="text-[11px] text-emerald-700 hover:underline whitespace-nowrap">ส่ง LINE</button>
+              </td>
             </tr>
             {d.isGuarantee && (
               <tr className="border-0">
-                <td colSpan={6} className="pb-1.5 pl-2 pr-2">
+                <td colSpan={7} className="pb-1.5 pl-2 pr-2">
                   <span className="text-[10.5px] text-violet-600">
                     การันตี ฿{fmtMoney(d.guaranteeAmount)} ({d.guaranteeHours.toLocaleString("th-TH", { maximumFractionDigits: 1 })} ชม.)
                     {" · "}DF ที่ทำได้ ฿{fmtMoney(d.dfEarned)}

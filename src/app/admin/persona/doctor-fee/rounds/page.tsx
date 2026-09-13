@@ -63,6 +63,7 @@ export default function DoctorFeeRoundsPage({ searchParams }: { searchParams: { 
         key={`${year}-${month}`}
         view={buildDfMonthRounds(branchId, year, month)}
         doctors={eligibleDoctors()}
+        clinicName={branch?.name ?? `#${branchId}`}
       />
     </div>
   );
