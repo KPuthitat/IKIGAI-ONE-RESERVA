@@ -14,7 +14,8 @@ import { DfSendModal, DfDailyPreview, DfWeeklyPreview, type DailyPreviewData, ty
 // following Monday. Mirrors /admin/accounta/revshare/rounds.
 
 const TH_MONTHS = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-const TH_MON = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+// Full month names everywhere — no abbreviations (owner 2026-09-13).
+const TH_MON = TH_MONTHS;
 function thDate(iso: string): string { const [y, m, d] = iso.split("-").map(Number); return `${d} ${TH_MON[m]} ${y + 543}`; }
 function weekLabel(a: string, b: string): string {
   const [, am, ad] = a.split("-").map(Number); const [by, bm, bd] = b.split("-").map(Number);

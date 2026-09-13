@@ -128,7 +128,7 @@ export default function EmployeeExportDialog({ scopes, fields }: { scopes: Scope
             <div>
               <label className="label">4. ข้อความหัวเอกสาร (ถ้ามี)</label>
               <input type="text" className="input w-full" value={note} maxLength={300}
-                onChange={(e) => setNote(e.target.value)} placeholder="เช่น ทะเบียนพนักงาน ณ ก.ย. 2569" />
+                onChange={(e) => setNote(e.target.value)} placeholder="เช่น ทะเบียนพนักงาน ณ กันยายน 2569" />
             </div>
 
             <div className="flex gap-2 pt-1">

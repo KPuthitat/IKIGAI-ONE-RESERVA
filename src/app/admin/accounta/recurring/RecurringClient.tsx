@@ -22,7 +22,7 @@ type Method = { id: number; name: string };
 type Vendor = { name: string; tax_id: string | null };
 
 function thisMonth() { return new Date().toISOString().slice(0, 7); }
-const TH_MON = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 function monthLabel(ym: string | null): string {
   if (!ym) return "ไม่มีกำหนด";
   const [y, m] = ym.split("-").map(Number);

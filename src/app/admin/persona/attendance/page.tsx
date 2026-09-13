@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "PERSONA · ภาพรวม ขา
 
 const TH_MONTHS = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 function monthLabel(m: string): string { const [y, mo] = m.split("-").map(Number); return `${TH_MONTHS[mo]} ${y + 543}`; }
-function shortMonth(m: string): string { const [y, mo] = m.split("-").map(Number); return `${TH_MONTHS[mo].slice(0, 3)} ${String(y + 543).slice(2)}`; }
+function shortMonth(m: string): string { const [y, mo] = m.split("-").map(Number); return `${TH_MONTHS[mo]} ${y + 543}`; }
 function shiftMonth(m: string, dir: number): string {
   const [y, mo] = m.split("-").map(Number);
   const d = new Date(Date.UTC(y, mo - 1 + dir, 1));

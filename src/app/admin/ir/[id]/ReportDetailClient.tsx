@@ -19,7 +19,7 @@ function fmtDateTime(s: string | null): string {
   if (!s) return "—";
   const d = new Date(s.includes("T") || s.includes(" ") ? s : `${s}T00:00:00`);
   if (isNaN(d.getTime())) return s;
-  return d.toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("th-TH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function ReportDetailClient({

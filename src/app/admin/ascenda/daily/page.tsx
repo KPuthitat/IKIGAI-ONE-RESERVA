@@ -15,8 +15,8 @@ export const metadata: Metadata = { title: "ASCENDA · ยอดขาย + %COL
 type BranchRow = { id: number; name: string };
 
 const TH_MONTHS_ABBR = [
-  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
-  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
 ];
 
 function fmtBaht(n: number): string {
@@ -25,7 +25,7 @@ function fmtBaht(n: number): string {
 
 function fmtThaiDate(yyyymmdd: string): string {
   const [y, m, d] = yyyymmdd.split("-").map(Number);
-  return `${d} ${TH_MONTHS_ABBR[m - 1]} ${(y + 543) % 100}`;
+  return `${d} ${TH_MONTHS_ABBR[m - 1]} ${y + 543}`;
 }
 
 export default function AscendaDailyPage({

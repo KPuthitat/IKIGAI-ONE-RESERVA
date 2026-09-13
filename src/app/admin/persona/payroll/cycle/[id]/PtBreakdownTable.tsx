@@ -50,7 +50,7 @@ function fmtMin(min: number): string {
 }
 function fmtDay(date: string): string {
   const d = new Date(`${date}T00:00:00+07:00`);
-  return d.toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Bangkok" });
+  return d.toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "long", timeZone: "Asia/Bangkok" });
 }
 
 export default function PtBreakdownTable({
