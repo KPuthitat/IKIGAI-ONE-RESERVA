@@ -74,7 +74,7 @@ export type DfRoundDoctor = {
 // One row per day of the Mon–Sun week: the day's HSC revenue pool, the DF it
 // earns, and how many bills (invoices) it came from — the revshare-style daily
 // view (owner 2026-09-13).
-export type DfDayRow = { date: string; pool: number; fee: number; bills: number };
+export type DfDayRow = { date: string; pool: number; fee: number; bills: number; doctors: string[] };
 
 export type DfRoundPreview = {
   branchId: number; weekStart: string; weekEnd: string;
@@ -179,13 +179,37 @@ function dailyBreakdown(branchId: number, weekStart: string): DfDayRow[] {
     if (!d) { d = { pool: 0, fee: 0, bills: new Set() }; byDay.set(l.line_date, d); }
     d.pool += l.net; d.fee += l.net * rate; d.bills.add(l.invoice_no);
   }
+  // Doctor(s) rostered each day (owner 2026-09-13: show who earned the day's DF).
+  const docByDate = doctorNamesByDate(branchId, weekStart, weekEnd);
   const out: DfDayRow[] = [];
   for (let i = 0; i < 7; i++) {
     const date = addDaysIso(weekStart, i);
     const d = byDay.get(date);
-    out.push({ date, pool: round2(d?.pool ?? 0), fee: round2(d?.fee ?? 0), bills: d?.bills.size ?? 0 });
+    out.push({ date, pool: round2(d?.pool ?? 0), fee: round2(d?.fee ?? 0), bills: d?.bills.size ?? 0, doctors: docByDate.get(date) ?? [] });
   }
   return out;
+}
+
+// date → rostered doctor display names (with prefix) for the branch's work shifts.
+function doctorNamesByDate(branchId: number, start: string, end: string): Map<string, string[]> {
+  const rows = getDb().prepare(
+    `SELECT DISTINCT ra.assignment_date AS d, u.display_name AS name, u.title_prefix AS prefix
+     FROM roster_assignments ra
+     JOIN shift_codes sc ON sc.id = ra.shift_code_id
+     JOIN users u ON u.id = ra.user_id
+     WHERE ra.branch_id = ? AND ra.assignment_date >= ? AND ra.assignment_date <= ?
+       AND sc.kind = 'work'
+       AND (u.clinical_role = 'doctor' OR u.df_started_at IS NOT NULL)
+       AND u.status NOT IN ('disabled','resigned','terminated')
+     ORDER BY u.display_name`
+  ).all(branchId, start, end) as Array<{ d: string; name: string; prefix: string | null }>;
+  const m = new Map<string, string[]>();
+  for (const r of rows) {
+    const a = m.get(r.d) ?? [];
+    a.push(nameWithPrefix(r.prefix, r.name));
+    m.set(r.d, a);
+  }
+  return m;
 }
 
 export type DfDayLine = {

@@ -209,6 +209,27 @@ export function linesInRange(branchId: number, start: string, end: string): DfIn
   ).all(branchId, start, end) as DfInvoiceLine[];
 }
 
+/**
+ * Clear imported invoice lines for a branch in a given month (owner 2026-09-13:
+ * "ลบข้อมูลได้ เผื่อผิดพลาด แล้วนำเข้าใหม่"). Refuses if a PAID round overlaps the
+ * month — the paid figures are frozen but their source revenue must not vanish;
+ * the admin reverts the round first. Returns the number of lines removed.
+ */
+export function clearImportedMonth(branchId: number, year: number, month: number): number {
+  const mm = String(month).padStart(2, "0");
+  const first = `${year}-${mm}-01`;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const last = `${year}-${mm}-${String(lastDay).padStart(2, "0")}`;
+  const db = getDb();
+  const paid = db.prepare(
+    "SELECT COUNT(*) AS n FROM df_rounds WHERE branch_id = ? AND status = 'paid' AND week_end >= ? AND week_start <= ?"
+  ).get(branchId, first, last) as { n: number };
+  if (paid.n > 0) throw new Error("df_month_has_paid_round");
+  return db.prepare(
+    "DELETE FROM df_invoice_lines WHERE branch_id = ? AND line_date >= ? AND line_date <= ?"
+  ).run(branchId, first, last).changes;
+}
+
 /** The imported date span for a branch (for defaulting the period picker). */
 export function importedSpan(branchId: number): { min: string | null; max: string | null; count: number } {
   return getDb().prepare(

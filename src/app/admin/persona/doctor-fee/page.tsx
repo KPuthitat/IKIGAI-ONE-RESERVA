@@ -46,10 +46,10 @@ export default function DoctorFeePage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-800">ค่าตอบแทนแพทย์ (Doctor Fee)</h1>
         <p className="text-sm text-slate-500 mt-1">
-          สาขา <b>{branch?.name ?? `#${branchId}`}</b> · คิดจากยอดค่าตรวจ (HSC) ตามไฟล์ยอดขาย × เรท แล้วแบ่งตามวันที่หมออยู่เวร
+          สาขา <b>{branch?.name ?? `#${branchId}`}</b> · คิดจากยอดค่าตรวจ (HSC) ตามไฟล์ยอดขาย × เรท แล้วแบ่งตามวันที่แพทย์อยู่เวร
         </p>
         <p className="text-[11px] text-slate-400 mt-1">
-          ใช้ติดตามภายในเท่านั้น · หมอที่นับต้องมีบทบาท “แพทย์” และมีชื่อในตารางเวรของวันนั้น
+          ใช้ติดตามภายในเท่านั้น · แพทย์ที่นับต้องมีบทบาท “แพทย์” และมีชื่อในตารางเวรของวันนั้น
         </p>
       </div>
 
