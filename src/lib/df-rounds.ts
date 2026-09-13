@@ -11,7 +11,7 @@
 
 import { getDb } from "./db";
 import { nameWithPrefix } from "./name";
-import { computeDoctorFees, dfWeeklyStartMonday } from "./df-db";
+import { computeDoctorFees, dfWeeklyStartMonday, eligibleDoctors, rosterHoursByDoctor } from "./df-db";
 import { postDfRoundToAccounta, removeDfRoundFromAccounta } from "./accounta-db";
 
 function round2(n: number): number {
@@ -57,11 +57,18 @@ export type DfRoundRow = {
 export type DfRoundLine = {
   user_id: number; display_name: string; worked_days: number;
   gross_fee: number; wht_rate: number; wht_amount: number; net_fee: number;
+  is_guarantee: number; guarantee_hours: number; guarantee_amount: number;
+  df_earned: number; deficit_before: number; deficit_after: number;
 };
 
 export type DfRoundDoctor = {
   user_id: number; display_name: string; title_prefix: string | null;
   workedDays: number; grossFee: number; whtRate: number; whtAmount: number; netFee: number;
+  // Guarantee (การันตี) breakdown (owner 2026-09-13). For a guarantee doctor,
+  // grossFee is the guarantee-adjusted payout; the fields below show how it was
+  // derived. For a plain-DF doctor isGuarantee=false and grossFee = dfEarned.
+  isGuarantee: boolean; guaranteeHours: number; guaranteeAmount: number;
+  dfEarned: number; deficitBefore: number; deficitAfter: number;
 };
 
 // One row per day of the Mon–Sun week: the day's HSC revenue pool, the DF it
@@ -104,9 +111,29 @@ export function getRoundById(id: number): DfRoundRow | null {
 
 export function listRoundLines(roundId: number): DfRoundLine[] {
   return getDb().prepare(
-    `SELECT user_id, display_name, worked_days, gross_fee, wht_rate, wht_amount, net_fee
+    `SELECT user_id, display_name, worked_days, gross_fee, wht_rate, wht_amount, net_fee,
+            is_guarantee, guarantee_hours, guarantee_amount, df_earned, deficit_before, deficit_after
      FROM df_round_lines WHERE round_id = ? ORDER BY net_fee DESC`
   ).all(roundId) as DfRoundLine[];
+}
+
+/**
+ * The clinic's carried-forward guarantee shortfall for a doctor entering a given
+ * week = the deficit_after of that doctor's most recent PAID guarantee round
+ * before this week (owner 2026-09-13: the deficit rolls forward indefinitely).
+ * 0 when there is no prior paid guarantee round. Draft rounds don't count — only
+ * money actually transferred creates a shortfall to recover.
+ */
+export function guaranteeDeficitBefore(branchId: number, userId: number, weekStart: string): number {
+  const row = getDb().prepare(
+    `SELECT rl.deficit_after AS d
+     FROM df_round_lines rl
+     JOIN df_rounds r ON r.id = rl.round_id
+     WHERE rl.user_id = ? AND r.branch_id = ? AND r.status = 'paid'
+       AND rl.is_guarantee = 1 AND r.week_start < ?
+     ORDER BY r.week_start DESC LIMIT 1`
+  ).get(userId, branchId, mondayOf(weekStart)) as { d: number } | undefined;
+  return row ? round2(row.d) : 0;
 }
 
 /** Recent rounds for a branch (newest first), for the list view. */
@@ -197,27 +224,88 @@ export function previewDfRound(branchId: number, weekStartInput: string): DfRoun
   const weekStart = mondayOf(weekStartInput);
   const weekEnd = sundayOf(weekStart);
   const res = computeDoctorFees(branchId, weekStart, weekEnd);
-  const meta = dfMetaFor(res.doctors.map((d) => d.user_id));
 
-  // Only pay doctors who are actually on DF compensation for this week.
+  // Raw DF earned per doctor this week (roster-split), keyed by user id.
+  const dfByUser = new Map<number, { D: number; workedDays: number; display_name: string; title_prefix: string | null }>();
+  for (const d of res.doctors) {
+    dfByUser.set(d.user_id, { D: round2(d.totalFee), workedDays: d.workedDays, display_name: d.display_name, title_prefix: d.title_prefix });
+  }
+
+  // Guarantee settings + names for the eligible doctors, and their rostered hours
+  // this week (the guarantee is rate/hr × ชั่วโมงตามตารางเวร).
+  const elig = eligibleDoctors();
+  const eligById = new Map(elig.map((e) => [e.user_id, e]));
+  const rosterHours = rosterHoursByDoctor(branchId, weekStart, weekEnd);
+
+  // Who gets paid this week: every doctor who earned DF, PLUS any guarantee doctor
+  // rostered this week (they are owed the guarantee even on a zero-revenue week).
+  const candidateIds = new Set<number>(dfByUser.keys());
+  for (const e of elig) {
+    if (e.guarantee_enabled && (rosterHours.get(e.user_id)?.total ?? 0) > 0) candidateIds.add(e.user_id);
+  }
+
+  // Only pay doctors who are actually on the weekly DF program for this week.
   // computeDoctorFees also surfaces clinic doctors who are NOT on DF (still
   // salaried / paid ค่าเวร in payroll) — paying those here would double-pay, since
   // payroll only zeroes base pay for df_started_at doctors. Gate on the same
   // MONTH granularity as payroll's dfActive (period month >= df_started_at month)
   // so a doctor is paid in exactly one place with no boundary gap or overlap.
   const weekMonth = weekStart.slice(0, 7);
-  const doctors: DfRoundDoctor[] = res.doctors
-    .filter((d) => { const s = meta.get(d.user_id)?.startedAt; return s != null && s.slice(0, 7) <= weekMonth; })
-    .map((d) => {
-      const whtRate = meta.get(d.user_id)?.wht ?? 0;
-      const grossFee = round2(d.totalFee);
+  const meta = dfMetaFor([...candidateIds]);
+  const doctors: DfRoundDoctor[] = [];
+  for (const uid of candidateIds) {
+    const startedAt = meta.get(uid)?.startedAt;
+    if (!(startedAt != null && startedAt.slice(0, 7) <= weekMonth)) continue;
+    const e = eligById.get(uid);
+    const df = dfByUser.get(uid);
+    const D = round2(df?.D ?? 0);
+    const display_name = df?.display_name ?? e?.display_name ?? ("#" + uid);
+    const title_prefix = df?.title_prefix ?? e?.title_prefix ?? null;
+
+    if (e?.guarantee_enabled) {
+      // Guarantee scheme: pay MAX(guarantee, DF), fronting/recovering the deficit.
+      const hrs = rosterHours.get(uid);
+      const guaranteeHours = round2(hrs?.total ?? 0);
+      const guaranteeAmount = round2((e.guarantee_rate || 0) * guaranteeHours);
+      const deficitBefore = guaranteeDeficitBefore(branchId, uid, weekStart);
+      let grossFee: number, deficitAfter: number;
+      if (D >= guaranteeAmount) {
+        // DF beat the guarantee — the surplus repays the clinic's earlier support
+        // first; only what's left over lands above the guarantee.
+        const repay = Math.min(round2(D - guaranteeAmount), deficitBefore);
+        grossFee = round2(D - repay);
+        deficitAfter = round2(deficitBefore - repay);
+      } else {
+        // DF fell short — the clinic tops up to the guarantee and carries the gap.
+        grossFee = guaranteeAmount;
+        deficitAfter = round2(deficitBefore + (guaranteeAmount - D));
+      }
+      const whtRate = e.guarantee_wht ? (meta.get(uid)?.wht ?? 0) : 0;
       const whtAmount = round2(grossFee * whtRate);
       const netFee = round2(grossFee - whtAmount);
-      return {
-        user_id: d.user_id, display_name: d.display_name, title_prefix: d.title_prefix,
-        workedDays: d.workedDays, grossFee, whtRate, whtAmount, netFee
-      };
-    });
+      doctors.push({
+        user_id: uid, display_name, title_prefix,
+        workedDays: hrs?.byDate.size ?? df?.workedDays ?? 0,
+        grossFee, whtRate, whtAmount, netFee,
+        isGuarantee: true, guaranteeHours, guaranteeAmount, dfEarned: D,
+        deficitBefore, deficitAfter
+      });
+    } else {
+      // Plain DF doctor — unchanged behaviour.
+      if (!df) continue;
+      const whtRate = meta.get(uid)?.wht ?? 0;
+      const grossFee = D;
+      const whtAmount = round2(grossFee * whtRate);
+      const netFee = round2(grossFee - whtAmount);
+      doctors.push({
+        user_id: uid, display_name, title_prefix, workedDays: df.workedDays,
+        grossFee, whtRate, whtAmount, netFee,
+        isGuarantee: false, guaranteeHours: 0, guaranteeAmount: 0, dfEarned: D,
+        deficitBefore: 0, deficitAfter: 0
+      });
+    }
+  }
+  doctors.sort((a, b) => b.netFee - a.netFee);
 
   const totalFee = round2(doctors.reduce((s, d) => s + d.grossFee, 0));
   const totalWht = round2(doctors.reduce((s, d) => s + d.whtAmount, 0));
@@ -306,7 +394,12 @@ export function buildDfMonthRounds(branchId: number, year: number, month: number
     const paid = p.round?.status === "paid";
     const frozen = paid ? listRoundLines(p.round!.id) : [];
     const doctors: DfRoundDoctor[] = paid
-      ? frozen.map((l) => ({ user_id: l.user_id, display_name: l.display_name, title_prefix: null, workedDays: l.worked_days, grossFee: l.gross_fee, whtRate: l.wht_rate, whtAmount: l.wht_amount, netFee: l.net_fee }))
+      ? frozen.map((l) => ({
+          user_id: l.user_id, display_name: l.display_name, title_prefix: null,
+          workedDays: l.worked_days, grossFee: l.gross_fee, whtRate: l.wht_rate, whtAmount: l.wht_amount, netFee: l.net_fee,
+          isGuarantee: l.is_guarantee === 1, guaranteeHours: l.guarantee_hours, guaranteeAmount: l.guarantee_amount,
+          dfEarned: l.df_earned, deficitBefore: l.deficit_before, deficitAfter: l.deficit_after
+        }))
       : p.doctors;
     weeks.push({
       weekStart: p.weekStart, weekEnd: p.weekEnd, payDate: p.payDate,
@@ -360,11 +453,15 @@ export function saveDfRound(branchId: number, weekStartInput: string, userId: nu
       roundId = Number(info.lastInsertRowid);
     }
     const insL = db.prepare(
-      `INSERT INTO df_round_lines (round_id, user_id, display_name, worked_days, gross_fee, wht_rate, wht_amount, net_fee)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO df_round_lines
+         (round_id, user_id, display_name, worked_days, gross_fee, wht_rate, wht_amount, net_fee,
+          is_guarantee, guarantee_hours, guarantee_amount, df_earned, deficit_before, deficit_after)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const d of p.doctors) {
-      insL.run(roundId, d.user_id, nameWithPrefix(d.title_prefix, d.display_name), d.workedDays, d.grossFee, d.whtRate, d.whtAmount, d.netFee);
+      insL.run(roundId, d.user_id, nameWithPrefix(d.title_prefix, d.display_name), d.workedDays,
+        d.grossFee, d.whtRate, d.whtAmount, d.netFee,
+        d.isGuarantee ? 1 : 0, d.guaranteeHours, d.guaranteeAmount, d.dfEarned, d.deficitBefore, d.deficitAfter);
     }
     return roundId;
   });

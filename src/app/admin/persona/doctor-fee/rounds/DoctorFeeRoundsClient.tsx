@@ -286,6 +286,7 @@ function DayDetail({ lines }: { lines: DfDayLine[] | undefined }) {
 
 function DoctorTable({ w }: { w: DfMonthWeek }) {
   if (w.doctors.length === 0) return <div className="text-[11px] text-slate-400">ไม่มีค่าตอบแทนในสัปดาห์นี้ (ยังไม่มีแพทย์ในเวร)</div>;
+  const hasGuarantee = w.doctors.some((d) => d.isGuarantee);
   return (
     <table className="w-full text-[12px]">
       <thead><tr className="text-slate-400 text-left">
@@ -295,14 +296,33 @@ function DoctorTable({ w }: { w: DfMonthWeek }) {
       </tr></thead>
       <tbody>
         {w.doctors.map((d) => (
-          <tr key={d.user_id} className="border-t border-slate-100">
-            <td className="py-1 pr-2 text-slate-700">{d.title_prefix ?? ""}{d.display_name}</td>
-            <td className="py-1 px-2 text-center text-slate-500">{d.workedDays}</td>
-            <td className="py-1 px-2 text-right tabular-nums">฿{fmtMoney(d.grossFee)}</td>
-            <td className="py-1 px-2 text-center text-slate-400">{(d.whtRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 2 })}%</td>
-            <td className="py-1 px-2 text-right tabular-nums text-rose-700">{d.whtAmount > 0 ? `−฿${fmtMoney(d.whtAmount)}` : "—"}</td>
-            <td className="py-1 pl-2 text-right tabular-nums font-semibold">฿{fmtMoney(d.netFee)}</td>
-          </tr>
+          <Fragment key={d.user_id}>
+            <tr className="border-t border-slate-100">
+              <td className="py-1 pr-2 text-slate-700">
+                {d.title_prefix ?? ""}{d.display_name}
+                {d.isGuarantee && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 align-middle">การันตี</span>}
+              </td>
+              <td className="py-1 px-2 text-center text-slate-500">{d.workedDays}</td>
+              <td className="py-1 px-2 text-right tabular-nums">฿{fmtMoney(d.grossFee)}</td>
+              <td className="py-1 px-2 text-center text-slate-400">{(d.whtRate * 100).toLocaleString("th-TH", { maximumFractionDigits: 2 })}%</td>
+              <td className="py-1 px-2 text-right tabular-nums text-rose-700">{d.whtAmount > 0 ? `−฿${fmtMoney(d.whtAmount)}` : "—"}</td>
+              <td className="py-1 pl-2 text-right tabular-nums font-semibold">฿{fmtMoney(d.netFee)}</td>
+            </tr>
+            {d.isGuarantee && (
+              <tr className="border-0">
+                <td colSpan={6} className="pb-1.5 pl-2 pr-2">
+                  <span className="text-[10.5px] text-violet-600">
+                    การันตี ฿{fmtMoney(d.guaranteeAmount)} ({d.guaranteeHours.toLocaleString("th-TH", { maximumFractionDigits: 1 })} ชม.)
+                    {" · "}DF ที่ทำได้ ฿{fmtMoney(d.dfEarned)}
+                    {d.dfEarned >= d.guaranteeAmount
+                      ? (d.deficitBefore > 0 ? ` · คืนยอดที่คลินิกออกให้ ฿${fmtMoney(Math.min(d.dfEarned - d.guaranteeAmount, d.deficitBefore))}` : " · จ่ายตาม DF")
+                      : ` · คลินิกออกให้ ฿${fmtMoney(d.guaranteeAmount - d.dfEarned)}`}
+                    {d.deficitAfter > 0 && <span className="text-amber-700"> · ยกยอดขาดสะสม ฿{fmtMoney(d.deficitAfter)}</span>}
+                  </span>
+                </td>
+              </tr>
+            )}
+          </Fragment>
         ))}
       </tbody>
     </table>

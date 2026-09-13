@@ -1867,13 +1867,34 @@ function runMigrations(db: Database.Database): void {
       user_id      INTEGER NOT NULL REFERENCES users(id),
       display_name TEXT NOT NULL,
       worked_days  INTEGER NOT NULL DEFAULT 0,
-      gross_fee    REAL NOT NULL DEFAULT 0,
+      gross_fee    REAL NOT NULL DEFAULT 0,              -- what is actually paid (DF, or the guarantee-adjusted amount)
       wht_rate     REAL NOT NULL DEFAULT 0,              -- 0.03 = 3%
       wht_amount   REAL NOT NULL DEFAULT 0,
       net_fee      REAL NOT NULL DEFAULT 0,              -- gross_fee − wht_amount
+      -- Guarantee (การันตี) snapshot columns (owner 2026-09-13). For a guarantee
+      -- doctor, gross_fee is the guarantee-adjusted payout = MAX(guarantee, DF −
+      -- deficit carried in). These record how it was derived so the ledger is
+      -- auditable and the carried-forward deficit chains across rounds.
+      is_guarantee    INTEGER NOT NULL DEFAULT 0,        -- 1 = paid under the guarantee scheme
+      guarantee_hours REAL NOT NULL DEFAULT 0,           -- rostered hours used for the guarantee
+      guarantee_amount REAL NOT NULL DEFAULT 0,          -- G = df_guarantee_rate × guarantee_hours
+      df_earned       REAL NOT NULL DEFAULT 0,           -- D = the raw DF the doctor earned this week
+      deficit_before  REAL NOT NULL DEFAULT 0,           -- clinic's carried-forward shortfall entering this round
+      deficit_after   REAL NOT NULL DEFAULT 0,           -- shortfall carried out of this round to the next
       UNIQUE (round_id, user_id)
     );
   `);
+  // df_round_lines guarantee columns — ALTER for DBs created before the guarantee
+  // scheme (owner 2026-09-13). Idempotent; existing rows default to non-guarantee.
+  {
+    const rlCols = new Set((db.prepare("PRAGMA table_info(df_round_lines)").all() as Array<{ name: string }>).map((c) => c.name));
+    if (!rlCols.has("is_guarantee")) db.exec("ALTER TABLE df_round_lines ADD COLUMN is_guarantee INTEGER NOT NULL DEFAULT 0");
+    if (!rlCols.has("guarantee_hours")) db.exec("ALTER TABLE df_round_lines ADD COLUMN guarantee_hours REAL NOT NULL DEFAULT 0");
+    if (!rlCols.has("guarantee_amount")) db.exec("ALTER TABLE df_round_lines ADD COLUMN guarantee_amount REAL NOT NULL DEFAULT 0");
+    if (!rlCols.has("df_earned")) db.exec("ALTER TABLE df_round_lines ADD COLUMN df_earned REAL NOT NULL DEFAULT 0");
+    if (!rlCols.has("deficit_before")) db.exec("ALTER TABLE df_round_lines ADD COLUMN deficit_before REAL NOT NULL DEFAULT 0");
+    if (!rlCols.has("deficit_after")) db.exec("ALTER TABLE df_round_lines ADD COLUMN deficit_after REAL NOT NULL DEFAULT 0");
+  }
   // One-time DF branch correction (owner 2026-09-01): the first release seeded
   // df_enabled onto HYPOPLARAEMIA, which is a RESTAURANT — the clinic is AT HOME
   // CLINIC. Move it once and wipe the DF rules/lines that landed on the wrong
@@ -3535,6 +3556,19 @@ function runMigrations(db: Database.Database): void {
   // as a ภาษีหัก ณ ที่จ่าย payable. 0 = ไม่หัก. Only the weekly-round program reads
   // it; the legacy payroll DF path is unaffected.
   if (!unames3.has("df_wht_rate")) db.exec("ALTER TABLE users ADD COLUMN df_wht_rate REAL NOT NULL DEFAULT 0");
+  // Guarantee (การันตี) DF program (owner 2026-09-13). A doctor may agree an
+  // hourly guarantee instead of pure DF: they are paid MAX(guarantee, DF) for the
+  // week, where guarantee = df_guarantee_rate (baht/hour) × their rostered hours.
+  // The clinic fronts any shortfall (DF < guarantee); a later week where DF beats
+  // the guarantee first repays that carried-forward shortfall before the doctor
+  // pockets anything above guarantee — so the deficit rolls forward indefinitely
+  // (never resets). A guarantee doctor earns the guarantee-adjusted amount INSTEAD
+  // of plain DF. df_guarantee_enabled = on/off; df_guarantee_rate = baht per hour;
+  // df_guarantee_wht = whether the weekly transfer withholds WHT on the guarantee
+  // payout (1 = หัก like DF, 0 = ไม่หัก) — owner decides per doctor.
+  if (!unames3.has("df_guarantee_enabled")) db.exec("ALTER TABLE users ADD COLUMN df_guarantee_enabled INTEGER NOT NULL DEFAULT 0");
+  if (!unames3.has("df_guarantee_rate")) db.exec("ALTER TABLE users ADD COLUMN df_guarantee_rate REAL NOT NULL DEFAULT 0");
+  if (!unames3.has("df_guarantee_wht")) db.exec("ALTER TABLE users ADD COLUMN df_guarantee_wht INTEGER NOT NULL DEFAULT 1");
   // Month-aware flip (replaces the old blanket flip above): move FT-weekly →
   // monthly once their transition month has passed. FT converted THIS month stay
   // weekly; legacy FT-weekly with no ft_started_at flip immediately (old rule).

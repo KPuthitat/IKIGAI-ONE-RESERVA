@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { isDfBranch, listRules, importedSpan } from "@/lib/df-db";
+import { isDfBranch, listRules, importedSpan, eligibleDoctors } from "@/lib/df-db";
 import DoctorFeeConfigClient from "../DoctorFeeConfigClient";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +49,7 @@ export default function DoctorFeeConfigPage() {
       <DoctorFeeConfigClient
         initialRules={listRules(branchId)}
         span={importedSpan(branchId)}
+        initialDoctors={eligibleDoctors()}
       />
     </div>
   );
