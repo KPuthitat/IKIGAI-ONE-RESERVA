@@ -12,7 +12,8 @@ function pct(rate: number): string {
 }
 function fmtDay(date: string): string {
   const d = new Date(`${date}T00:00:00+07:00`);
-  return d.toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "long", timeZone: "Asia/Bangkok" });
+  // No weekday — same "1 กันยายน 2569" standard as the rounds page (owner 2026-09-13).
+  return d.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" });
 }
 function monthBounds(ym: string): { start: string; end: string } {
   const [y, m] = ym.split("-").map(Number);
@@ -152,7 +153,7 @@ export default function DoctorFeeClient({
       {/* Per-doctor */}
       <div className="card">
         <h2 className="font-semibold text-slate-700 mb-1">ค่าตอบแทนรายแพทย์</h2>
-        <p className="text-[11px] text-slate-400 mb-3">แบ่งตามวันที่แพทย์อยู่เวร · วันที่มีหมอหลายคน หารเท่ากัน · กดชื่อเพื่อดูรายวัน</p>
+        <p className="text-[11px] text-slate-400 mb-3">แบ่งตามวันที่แพทย์อยู่เวร · วันที่มีแพทย์หลายท่าน หารเท่ากัน · กดชื่อเพื่อดูรายวัน</p>
         {result.doctors.length === 0 ? (
           <div className="text-sm text-slate-400 py-2">
             {result.totalFee === 0
@@ -196,8 +197,8 @@ export default function DoctorFeeClient({
                               <tr className="text-[11px] text-slate-400 border-b border-slate-100">
                                 <th className="py-1 pr-3 text-left">วันที่</th>
                                 <th className="py-1 pr-3 text-right">ยอด HSC วันนั้น</th>
-                                <th className="py-1 pr-3 text-right">หมอในวัน</th>
-                                <th className="py-1 pr-3 text-right">ส่วนของหมอคนนี้</th>
+                                <th className="py-1 pr-3 text-right">แพทย์ในวัน</th>
+                                <th className="py-1 pr-3 text-right">ส่วนของแพทย์ท่านนี้</th>
                               </tr>
                             </thead>
                             <tbody>

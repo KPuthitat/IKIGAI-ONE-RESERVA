@@ -24,7 +24,8 @@ function weekLabel(a: string, b: string): string {
 
 type PinAction =
   | { kind: "pay" | "revert"; week: string; label: string }
-  | { kind: "set_wht"; userId: number; rate: number; label: string };
+  | { kind: "set_wht"; userId: number; rate: number; label: string }
+  | { kind: "clear_month"; label: string };
 
 // A pending LINE-card send (owner 2026-09-13). Carries the client-built preview
 // + the request body; the server recomputes the amount before sending.
@@ -139,13 +140,17 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
     try {
       const body: Record<string, unknown> = { action: pending.kind, pin, year: view.year, month: view.month };
       if (pending.kind === "set_wht") { body.userId = pending.userId; body.rate = pending.rate; }
-      else body.week = pending.week;
+      else if (pending.kind === "pay" || pending.kind === "revert") { body.week = pending.week; }
       const r = await fetch(apiUrl("/api/admin/persona/doctor-fee/rounds"), {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
       });
       const j = await r.json(); if (!r.ok) throw new Error(j.error ?? "error");
       setView(j.view); setDoctors(j.doctors);
-      setMsg({ kind: "ok", text: pending.kind === "pay" ? "ตัดรอบ + จ่าย + ลงบัญชีแล้ว" : pending.kind === "revert" ? "ยกเลิกการจ่ายแล้ว" : "บันทึกอัตราภาษีแล้ว" });
+      setMsg({ kind: "ok", text:
+        pending.kind === "pay" ? "ตัดรอบ + จ่าย + ลงบัญชีแล้ว"
+        : pending.kind === "revert" ? "ยกเลิกการจ่ายแล้ว"
+        : pending.kind === "clear_month" ? `ล้างข้อมูลนำเข้าเดือนนี้แล้ว (${j.removed ?? 0} รายการ)`
+        : "บันทึกอัตราภาษีแล้ว" });
       setPending(null); setPin("");
     } catch (e) { setMsg({ kind: "err", text: errText(e) }); }
     finally { setBusy(false); }
@@ -168,17 +173,25 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
       </div>
 
       {/* Import card */}
-      <div className="card flex flex-wrap items-center gap-2">
-        <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ""; }} disabled={busy} />
-        <button type="button" className="btn-secondary text-sm" disabled={busy} onClick={() => fileRef.current?.click()}>
-          {busy ? "กำลังทำงาน…" : "นำเข้าไฟล์รายงานประจำวัน"}
-        </button>
-        <span className="text-[11px] text-slate-400">โปรแกรมจับรายการ DF ตามกฎ (ตั้งกฎที่หน้า “ค่าตอบแทนแพทย์”) · นำเข้าซ้ำได้ ระบบอัปเดตให้เอง</span>
-        <span className="flex-1" />
-        <button type="button" onClick={() => setShowWht((s) => !s)} className="rounded-md border border-brand text-brand px-3 py-2 text-xs font-bold hover:bg-brand/5">
-          อัตราภาษีหัก ณ ที่จ่าย (แยกตามแพทย์)
-        </button>
+      <div className="card space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ""; }} disabled={busy} />
+          <button type="button" className="btn-secondary text-sm" disabled={busy} onClick={() => fileRef.current?.click()}>
+            {busy ? "กำลังทำงาน…" : "นำเข้าไฟล์รายงานประจำวัน"}
+          </button>
+          <button type="button" disabled={busy}
+            onClick={() => setPending({ kind: "clear_month", label: `${TH_MONTHS[view.month]} ${view.year + 543}` })}
+            className="rounded-md border border-rose-300 text-rose-600 px-3 py-2 text-xs font-medium hover:bg-rose-50 disabled:opacity-40">
+            ล้างข้อมูลนำเข้าเดือนนี้
+          </button>
+          <span className="flex-1" />
+          <button type="button" onClick={() => setShowWht((s) => !s)} className="rounded-md border border-brand text-brand px-3 py-2 text-xs font-bold hover:bg-brand/5">
+            อัตราภาษีหัก ณ ที่จ่าย (แยกตามแพทย์)
+          </button>
+        </div>
+        <span className="block text-[11px] text-slate-400">โปรแกรมจับรายการ DF ตามกฎ (ตั้งกฎที่หน้า “ค่าตอบแทนแพทย์”) · นำเข้าซ้ำได้ ระบบอัปเดตให้เอง · นำเข้าผิดไฟล์กด “ล้างข้อมูลนำเข้าเดือนนี้” แล้วนำเข้าใหม่ได้</span>
+        <span className="block text-[11px] text-emerald-700">💬 ส่งการ์ดสรุปค่าตอบแทน (DF) ให้แพทย์ทาง LINE: กดขยาย ▸ ที่แต่ละวัน (การ์ดรายวัน) หรือแต่ละรอบจ่าย (การ์ดรายสัปดาห์) แล้วกดปุ่ม “ส่ง LINE” ของแพทย์ท่านนั้น</span>
       </div>
 
       {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.kind === "ok" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>{msg.text}</div>}
@@ -220,7 +233,10 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
                           </td>
                           <td className="py-1 px-2 text-right tabular-nums text-slate-500">฿{fmtMoney(d.pool)}</td>
                           <td className="py-1 px-2 text-right tabular-nums font-medium text-slate-700">฿{fmtMoney(d.fee)}</td>
-                          <td className="py-1 px-2 text-[11px] text-slate-400">นำเข้าไฟล์{d.bills > 0 && <span className="text-slate-500"> · {d.bills} บิล</span>}</td>
+                          <td className="py-1 px-2 text-[11px] text-slate-400">
+                            {d.doctors.length > 0 ? <span className="text-slate-600">แพทย์: {d.doctors.join(", ")}</span> : "นำเข้าไฟล์"}
+                            {d.bills > 0 && <span className="text-slate-400"> · {d.bills} บิล</span>}
+                          </td>
                           <td></td>
                         </tr>
                         {dayOpen.has(d.date) && (
@@ -263,6 +279,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
               {pending.kind === "set_wht"
                 ? `ตั้งอัตราภาษีหัก ${(pending.rate * 100).toLocaleString("th-TH", { maximumFractionDigits: 2 })}% สำหรับ ${pending.label}`
                 : pending.kind === "pay" ? `ตัดรอบ + จ่าย + ลงบัญชี สัปดาห์ ${pending.label}`
+                : pending.kind === "clear_month" ? `ล้างข้อมูลนำเข้าทั้งหมดของเดือน ${pending.label} — ลบยอดค่าตรวจที่นำเข้าไว้ทิ้ง เพื่อนำเข้าไฟล์ใหม่ (รอบที่จ่ายแล้วต้องยกเลิกก่อน)`
                 : `ยกเลิกการจ่ายรอบ ${pending.label} (ลบรายการในบัญชีด้วย)`}
             </p>
             <input type="password" inputMode="numeric" autoFocus maxLength={4} className="input w-full text-center tracking-[0.5em] text-lg"
@@ -443,6 +460,7 @@ function errText(e: unknown): string {
   const map: Record<string, string> = {
     df_before_cutover: "สัปดาห์นี้อยู่ก่อนวันเริ่มจ่ายรายสัปดาห์ — ตัดรอบไม่ได้",
     df_round_paid: "รอบนี้จ่ายไปแล้ว — ต้องยกเลิกก่อนจึงจะแก้ได้",
+    df_month_has_paid_round: "เดือนนี้มีรอบที่จ่ายแล้ว — ยกเลิกรอบนั้นก่อนจึงจะล้างข้อมูลได้",
     no_pin: "คุณยังไม่ได้ตั้ง PIN", wrong_pin: "PIN ไม่ถูกต้อง",
     not_df_branch: "สาขานี้ไม่ได้เปิดใช้ค่าตอบแทนแพทย์", not_a_doctor: "ผู้ใช้นี้ไม่ใช่แพทย์ที่รับค่าตอบแทน"
   };

@@ -198,43 +198,51 @@ function RuleRow({ rule, busy, isNew, onSave, onDelete, onCancel }: {
   const rateOk = ratePct.trim() !== "" && Number.isFinite(rateNum) && rateNum >= 0 && rateNum <= 100;
   const nameOk = name.trim().length > 0 && name.trim().length <= 160;
   const valid = nameOk && parsedTags.length > 0 && rateOk;
-  const hint = !nameOk ? (name.trim() ? "ชื่อกฎยาวเกิน 160 ตัวอักษร — ลองย่อให้สั้นลง" : "กรุณากรอกชื่อกฎ")
+  const hint = !nameOk ? (name.trim() ? "ชื่อหัวข้อยาวเกิน 160 ตัวอักษร — ลองย่อให้สั้นลง" : "กรุณากรอกชื่อหัวข้อ")
     : parsedTags.length === 0 ? "กรุณากรอกรหัสอย่างน้อย 1 รหัส"
     : !rateOk ? "เรทต้องเป็นตัวเลข 0–100" : null;
 
+  // A tidy responsive layout (owner 2026-09-13: the fixed narrow boxes looked
+  // cramped). Fields on their own row — the ชื่อหัวข้อ box grows to fill; actions
+  // on a second row so nothing wraps awkwardly.
   return (
-    <div className={`flex flex-wrap items-end gap-2 border rounded-lg p-2.5 ${isNew ? "border-brand/40 bg-brand/5" : "border-slate-100"}`}>
-      <label className="flex flex-col gap-1">
-        <span className="text-[11px] text-slate-500">ชื่อกฎ</span>
-        <input className="input !py-1.5 !w-40 text-sm" value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น ฉีดยา (IM)" />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-[11px] text-slate-500">รหัส (คั่นด้วย ,)</span>
-        <input className="input !py-1.5 !w-44 text-sm" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="HSC, HSC-GRP" />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-[11px] text-slate-500">เรท %</span>
-        <input type="number" min={0} max={100} step="0.1" className="input !py-1.5 !w-20 text-sm text-right"
-          value={ratePct} onChange={(e) => setRatePct(e.target.value)} />
-      </label>
-      <label className="flex items-center gap-1.5 text-sm pb-1.5">
-        <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="w-4 h-4" />
-        ใช้งาน
-      </label>
-      <button type="button" disabled={busy || !valid || (!isNew && !dirty)}
-        className="btn btn-primary text-xs !py-1.5 disabled:opacity-40"
-        onClick={() => onSave({
-          name: name.trim(),
-          item_tags: parsedTags,
-          rate: Math.max(0, Math.min(1, Number(ratePct) / 100)),
-          active
-        })}>
-        {isNew ? "เพิ่ม" : "บันทึก"}
-      </button>
-      {isNew
-        ? <button type="button" className="btn-secondary text-xs !py-1.5" onClick={onCancel}>ยกเลิก</button>
-        : onDelete && <button type="button" disabled={busy} className="text-xs text-rose-500 hover:text-rose-700 pb-1.5" onClick={onDelete}>ลบ</button>}
-      {dirty && hint && <span className="text-[11px] text-amber-600 pb-1.5 w-full sm:w-auto">{hint}</span>}
+    <div className={`border rounded-lg p-3 space-y-2.5 ${isNew ? "border-brand/40 bg-brand/5" : "border-slate-100"}`}>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1 flex-1 min-w-[12rem]">
+          <span className="text-[11px] text-slate-500">ชื่อหัวข้อ</span>
+          <input className="input !py-1.5 text-sm" value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น ฉีดยา (IM)" />
+        </label>
+        <label className="flex flex-col gap-1 w-40">
+          <span className="text-[11px] text-slate-500">รหัส (คั่นด้วย ,)</span>
+          <input className="input !py-1.5 text-sm" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="HSC, HSC-GRP" />
+        </label>
+        <label className="flex flex-col gap-1 w-24">
+          <span className="text-[11px] text-slate-500">เรท %</span>
+          <input type="number" min={0} max={100} step="0.1" className="input !py-1.5 text-sm text-right"
+            value={ratePct} onChange={(e) => setRatePct(e.target.value)} />
+        </label>
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="flex items-center gap-1.5 text-sm">
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="w-4 h-4" />
+          ใช้งาน
+        </label>
+        {dirty && hint && <span className="text-[11px] text-amber-600">{hint}</span>}
+        <span className="flex-1" />
+        {isNew
+          ? <button type="button" className="btn-secondary text-xs !py-1.5" onClick={onCancel}>ยกเลิก</button>
+          : onDelete && <button type="button" disabled={busy} className="text-xs text-rose-500 hover:text-rose-700" onClick={onDelete}>ลบ</button>}
+        <button type="button" disabled={busy || !valid || (!isNew && !dirty)}
+          className="btn btn-primary text-xs !py-1.5 disabled:opacity-40"
+          onClick={() => onSave({
+            name: name.trim(),
+            item_tags: parsedTags,
+            rate: Math.max(0, Math.min(1, Number(ratePct) / 100)),
+            active
+          })}>
+          {isNew ? "เพิ่ม" : "บันทึก"}
+        </button>
+      </div>
     </div>
   );
 }
