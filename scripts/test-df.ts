@@ -205,6 +205,14 @@ process.env.DATABASE_PATH = TMP;
   ok("preview doctor: gross 300 / wht 9 / net 291", !!pvDoc && near(pvDoc.grossFee, 300) && near(pvDoc.whtAmount, 9) && near(pvDoc.netFee, 291));
   ok("preview: no stored round yet, on/after cutover", pv.round === null && pv.stale === false && pv.beforeCutover === false);
 
+  // daily breakdown (revshare-style): 7 rows Mon–Sun; Oct 7 (Wed) carries the DF.
+  ok("preview: 7 daily rows (Mon–Sun)", pv.days.length === 7);
+  ok("preview: pay date = following Monday (Oct 12)", pv.payDate === "2026-10-12");
+  const wed = pv.days.find((d: { date: string }) => d.date === "2026-10-07");
+  ok("preview: Oct 7 day → pool 1000, fee 300, 1 bill", !!wed && near(wed.pool, 1000) && near(wed.fee, 300) && wed.bills === 1);
+  ok("preview: empty days are zero", pv.days.filter((d: { fee: number }) => d.fee > 0).length === 1);
+  ok("preview: totalBills counts the week's bills", pv.totalBills === 1);
+
   // save (draft) → snapshot.
   const saved = rounds.saveDfRound(bid, "2026-10-07", 1);
   ok("save: draft round with totals", saved.status === "draft" && near(saved.total_fee, 300) && near(saved.total_net, 291));
@@ -220,6 +228,9 @@ process.env.DATABASE_PATH = TMP;
   const whtRow = dfExp.find((r) => r.category === "ภาษีหัก ณ ที่จ่าย");
   ok("accounta: DF expense 291 paid", !!feeRow && near(feeRow.amount_total, 291) && feeRow.payment_status === "paid");
   ok("accounta: WHT payable 9 unpaid", !!whtRow && near(whtRow.amount_total, 9) && whtRow.payment_status === "unpaid");
+  // booked on the Monday after the week (Oct 12).
+  const billDate = (db.prepare("SELECT bill_date FROM accounta_expenses WHERE df_round_id=? LIMIT 1").get(saved.id) as { bill_date: string }).bill_date;
+  ok("accounta: bill_date = following Monday (Oct 12)", billDate === "2026-10-12");
 
   // re-pay is idempotent (delete-then-insert): still exactly 2 rows.
   rounds.payDfRound(bid, "2026-10-07", 1);
