@@ -55,6 +55,7 @@ export default function DoctorFeeClient({
   const [err, setErr] = useState<string | null>(null);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<number>>(new Set());
+  const [showSetup, setShowSetup] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function loadCompute(s: string, e: string) {
@@ -111,33 +112,40 @@ export default function DoctorFeeClient({
 
   return (
     <div className="space-y-4">
-      {/* Import */}
-      <div className="card space-y-3">
-        <h2 className="font-semibold text-slate-700">1) นำเข้าไฟล์ยอดขายคลินิก (Invoice Report .xlsx)</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <input ref={fileRef} type="file" accept=".xlsx,.xls"
-            className="text-sm file:mr-3 file:rounded-full file:border-0 file:bg-brand file:text-white file:px-4 file:py-2 file:text-sm" />
-          <button type="button" className="btn btn-primary text-sm" onClick={upload} disabled={busy}>
-            {busy ? "กำลังนำเข้า…" : "นำเข้า"}
-          </button>
-          {span.count > 0 && (
-            <span className="text-[11px] text-slate-400">
-              มีข้อมูลแล้ว {span.count} บรรทัด ({span.min} – {span.max})
-            </span>
-          )}
-        </div>
-        {uploadMsg && <div className="text-xs text-emerald-700">{uploadMsg}</div>}
-        <p className="text-[11px] text-slate-400">
-          ระบบดึงเฉพาะบรรทัดที่ตรงรหัสในกฎด้านล่าง (เช่น HSC, HSC-GRP) · นำเข้าไฟล์เดิมซ้ำได้ ระบบจะอัปเดตทับให้เอง
-        </p>
+      {/* Setup (import + rules) — collapsed by default so the read-only summary
+          leads; the owner opens it only to change the codes/rates (owner
+          2026-09-13, like the revshare config behind a button). */}
+      <div className="card">
+        <button type="button" onClick={() => setShowSetup((s) => !s)}
+          className="w-full flex items-center justify-between text-sm font-semibold text-slate-700">
+          <span>{showSetup ? "▾" : "▸"} ตั้งค่า DF · นำเข้าไฟล์ · กฎ (รหัส × เรท)</span>
+          <span className="text-[11px] font-normal text-slate-400">
+            {span.count > 0 ? `มีข้อมูล ${span.count} บรรทัด` : "ยังไม่มีข้อมูล"} · {rules.length} กฎ
+          </span>
+        </button>
+        {showSetup && (
+          <div className="mt-3 space-y-4">
+            <div className="space-y-3">
+              <h3 className="font-medium text-slate-600 text-sm">นำเข้าไฟล์ยอดขายคลินิก (Invoice Report .xlsx)</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <input ref={fileRef} type="file" accept=".xlsx,.xls"
+                  className="text-sm file:mr-3 file:rounded-full file:border-0 file:bg-brand file:text-white file:px-4 file:py-2 file:text-sm" />
+                <button type="button" className="btn btn-primary text-sm" onClick={upload} disabled={busy}>
+                  {busy ? "กำลังนำเข้า…" : "นำเข้า"}
+                </button>
+                {span.count > 0 && <span className="text-[11px] text-slate-400">มีข้อมูลแล้ว {span.count} บรรทัด ({span.min} – {span.max})</span>}
+              </div>
+              {uploadMsg && <div className="text-xs text-emerald-700">{uploadMsg}</div>}
+              <p className="text-[11px] text-slate-400">ระบบดึงเฉพาะบรรทัดที่ตรงรหัสในกฎ (เช่น HSC, HSC-GRP) · นำเข้าซ้ำได้ ระบบอัปเดตทับให้เอง · หรือใช้หน้า “รอบจ่ายรายสัปดาห์” นำเข้ารายวัน</p>
+            </div>
+            <RulesEditor rules={rules} onChange={setRules} onSaved={() => loadCompute(start, end)} />
+          </div>
+        )}
       </div>
-
-      {/* Rules */}
-      <RulesEditor rules={rules} onChange={setRules} onSaved={() => loadCompute(start, end)} />
 
       {/* Period */}
       <div className="card space-y-3">
-        <h2 className="font-semibold text-slate-700">3) เลือกงวด</h2>
+        <h2 className="font-semibold text-slate-700">เลือกงวด</h2>
         <div className="flex flex-wrap items-center gap-2">
           {(["month", "week", "custom"] as const).map((m) => (
             <button key={m} type="button" onClick={() => setMode(m)}
