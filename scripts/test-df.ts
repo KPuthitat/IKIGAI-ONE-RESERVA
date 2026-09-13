@@ -70,6 +70,34 @@ process.env.DATABASE_PATH = TMP;
   ok("scan HSC: 2 lines, 2 bills, net 300", !!hscScan && hscScan.lines === 2 && hscScan.bills === 2 && near(hscScan.net, 300));
   ok("scan sorts by net desc", scan.tags[0].net >= scan.tags[scan.tags.length - 1].net);
 
+  // ── 2b) bill-level (end-of-bill) discount (owner 2026-09-13 bug) ──
+  // The real export applies a ส่วนลดท้ายบิล on the bill's first row; each line's
+  // own ส่วนลด stays 0. A visit fully discounted to 0 must earn NO DF, and a
+  // partial bill discount is spread across the lines proportionally.
+  const bd = [
+    ["เลขที่ใบแจ้งหนี้", "วัน", "รหัส", "รายการ", "จำนวน", "ราคารวม", "ส่วนลด", "ราคาสุทธิ", "ยอดรวม", "ส่วนลดท้ายบิล", "รวมสุทธิ"],
+    // Bill A — total 400, discounted to 0 (free visit). HSC line net must → 0.
+    ["A1", "05/09/2569", "GEN001", "[HSC] ค่าบริการผู้ป่วยนอก", 1, 300, 0, 300, 400, 400, 0],
+    ["A1", "05/09/2569", "GEN005", "[PHY] ค่าตรวจ", 1, 100, 0, 100, "", "", ""],
+    // Bill B — total 14400, bill discount 400 → net 14000. HSC 300 → 300×(14000/14400)=291.67.
+    ["B1", "05/09/2569", "GEN001", "[HSC] ค่าบริการผู้ป่วยนอก", 1, 300, 0, 300, 14400, 400, 14000],
+    ["B1", "05/09/2569", "GEN008", "[CF] ค่าให้คำปรึกษา", 1, 14100, 0, 14100, "", "", ""],
+    // Bill C — no bill discount (blank cols) → nets unchanged.
+    ["C1", "05/09/2569", "GEN001", "[HSC] ค่าบริการผู้ป่วยนอก", 1, 500, 0, 500, 500, 0, 500]
+  ];
+  const bws = XLSX.utils.aoa_to_sheet(bd);
+  const bwb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(bwb, bws, "Invoice Report");
+  const bbuf = XLSX.write(bwb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  const bParsed = parse.parseInvoiceBuffer(bbuf, ["HSC"]);
+  const hscOf = (inv: string) => bParsed.lines.find((l) => l.invoiceNo === inv);
+  ok("bill discount: free visit (bill→0) earns no DF", near(hscOf("A1")?.net ?? -1, 0));
+  ok("bill discount: partial spread proportionally (300→291.67)", near(hscOf("B1")?.net ?? -1, 291.67));
+  ok("bill discount: no bill discount → net unchanged (500)", near(hscOf("C1")?.net ?? -1, 500));
+  ok("bill discount: folded into discount, net = gross − discount", (() => {
+    const l = hscOf("B1"); return !!l && near(l.gross - l.discount, l.net) && near(l.discount, 8.33);
+  })());
+
   // ── 3) fixtures ──
   const db = getDb();
   const bid = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('c','CLINIC')").run().lastInsertRowid);
