@@ -61,6 +61,15 @@ process.env.DATABASE_PATH = TMP;
   ok("parser net sum = 600 (waived counts 0)", near(parsed.lines.reduce((s, l) => s + l.net, 0), 600));
   ok("parser period span", parsed.periodStart === "2026-08-01" && parsed.periodEnd === "2026-08-03");
 
+  // scanInvoiceTags: lists EVERY leading [TAG] with stats (no wanted filter) so
+  // the admin can tick codes instead of typing them (owner 2026-09-13).
+  const scan = parse.scanInvoiceTags(buf);
+  const scanTags = scan.tags.map((t) => t.tag).sort();
+  ok("scan finds all codes incl. drug bin", scanTags.join(",") === "#D1Y,HSC,HSC-GRP");
+  const hscScan = scan.tags.find((t) => t.tag === "HSC");
+  ok("scan HSC: 2 lines, 2 bills, net 300", !!hscScan && hscScan.lines === 2 && hscScan.bills === 2 && near(hscScan.net, 300));
+  ok("scan sorts by net desc", scan.tags[0].net >= scan.tags[scan.tags.length - 1].net);
+
   // ── 3) fixtures ──
   const db = getDb();
   const bid = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('c','CLINIC')").run().lastInsertRowid);
@@ -68,6 +77,15 @@ process.env.DATABASE_PATH = TMP;
   db.prepare(`INSERT INTO df_fee_rules (branch_id,name,item_tags,rate,active,sort_order) VALUES (?,'HSC','["HSC","HSC-GRP"]',0.30,1,0)`).run(bid);
   ok("isDfBranch true", df.isDfBranch(bid));
   ok("wantedTags from active rule", df.wantedTags(bid).sort().join(",") === "HSC,HSC-GRP");
+
+  // upsertSingleTagRule (pick-from-file setup): new tag → new rule; existing
+  // single-tag rule → rate updated + re-activated (owner 2026-09-13).
+  const imRule = df.upsertSingleTagRule(bid, "im", 0.4);  // lowercased → normalized
+  ok("upsert new tag → single-tag rule at 40%", imRule.item_tags.join(",") === "IM" && near(imRule.rate, 0.4) && imRule.active);
+  const imRule2 = df.upsertSingleTagRule(bid, "IM", 0.5); // update, not duplicate
+  ok("upsert same tag → updates in place (no dup)", imRule2.id === imRule.id && near(imRule2.rate, 0.5));
+  ok("upsert didn't touch the multi-tag HSC rule", df.listRules(bid).filter((r) => r.item_tags.length === 1 && r.item_tags[0] === "IM").length === 1);
+  df.deleteRule(imRule.id, bid);  // clean up so later sections keep HSC-only
 
   const d1 = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,clinical_role,status) VALUES ('doc1','x','หมอเอ','admin','doctor','active')").run().lastInsertRowid);
   const d2 = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,clinical_role,status) VALUES ('doc2','x','หมอบี','admin','doctor','active')").run().lastInsertRowid);
