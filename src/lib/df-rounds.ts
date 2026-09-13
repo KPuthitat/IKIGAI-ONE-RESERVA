@@ -35,6 +35,12 @@ export function sundayOf(iso: string): string {
   return addDaysIso(mondayOf(iso), 6);
 }
 
+/** The Monday AFTER a week — when this round is transferred + booked (owner
+ *  2026-09-13: "ตัดรอบ จ–อา จ่ายจันทร์ถัดไป", like part-time). */
+export function payMondayFor(weekStartInput: string): string {
+  return addDaysIso(mondayOf(weekStartInput), 7);
+}
+
 // ── Types ─────────────────────────────────────────────────────────
 
 export type DfRoundStatus = "draft" | "paid";
@@ -58,9 +64,17 @@ export type DfRoundDoctor = {
   workedDays: number; grossFee: number; whtRate: number; whtAmount: number; netFee: number;
 };
 
+// One row per day of the Mon–Sun week: the day's HSC revenue pool, the DF it
+// earns, and how many bills (invoices) it came from — the revshare-style daily
+// view (owner 2026-09-13).
+export type DfDayRow = { date: string; pool: number; fee: number; bills: number };
+
 export type DfRoundPreview = {
   branchId: number; weekStart: string; weekEnd: string;
+  payDate: string;                 // the Monday after — when it's transferred
   totalRevenue: number; totalFee: number; totalWht: number; totalNet: number;
+  days: DfDayRow[];                // Mon–Sun daily breakdown (revshare-style)
+  totalBills: number;
   doctors: DfRoundDoctor[];
   unassignedFee: number;
   unassignedDays: Array<{ date: string; pool: number; fee: number }>;
@@ -113,6 +127,40 @@ function dfMetaFor(userIds: number[]): Map<number, DfMeta> {
   return m;
 }
 
+// Per-day HSC pool / DF / bill count across the Mon–Sun week (revshare-style
+// daily view). Emits all 7 days, zero-filled, so the week reads like the sales
+// list. DF per day = Σ line.net × the active rule's rate for its tag; bills =
+// distinct invoice numbers that earned a fee.
+function dailyBreakdown(branchId: number, weekStart: string): DfDayRow[] {
+  const db = getDb();
+  const tagRate = new Map<string, number>();
+  for (const r of db.prepare(
+    "SELECT item_tags, rate FROM df_fee_rules WHERE branch_id = ? AND active = 1"
+  ).all(branchId) as Array<{ item_tags: string; rate: number }>) {
+    try { for (const t of JSON.parse(r.item_tags) as string[]) tagRate.set(String(t).toUpperCase(), r.rate); }
+    catch { /* skip malformed */ }
+  }
+  const weekEnd = sundayOf(weekStart);
+  const lines = db.prepare(
+    "SELECT line_date, invoice_no, item_tag, net FROM df_invoice_lines WHERE branch_id = ? AND line_date >= ? AND line_date <= ?"
+  ).all(branchId, weekStart, weekEnd) as Array<{ line_date: string; invoice_no: string; item_tag: string; net: number }>;
+  const byDay = new Map<string, { pool: number; fee: number; bills: Set<string> }>();
+  for (const l of lines) {
+    const rate = tagRate.get(l.item_tag);
+    if (rate === undefined) continue;
+    let d = byDay.get(l.line_date);
+    if (!d) { d = { pool: 0, fee: 0, bills: new Set() }; byDay.set(l.line_date, d); }
+    d.pool += l.net; d.fee += l.net * rate; d.bills.add(l.invoice_no);
+  }
+  const out: DfDayRow[] = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDaysIso(weekStart, i);
+    const d = byDay.get(date);
+    out.push({ date, pool: round2(d?.pool ?? 0), fee: round2(d?.fee ?? 0), bills: d?.bills.size ?? 0 });
+  }
+  return out;
+}
+
 // ── Preview (live compute) ────────────────────────────────────────
 
 export function previewDfRound(branchId: number, weekStartInput: string): DfRoundPreview {
@@ -154,9 +202,13 @@ export function previewDfRound(branchId: number, weekStartInput: string): DfRoun
     Math.abs(round.total_fee - totalFee) > 0.005 || Math.abs(round.total_net - totalNet) > 0.005
   );
 
+  const days = dailyBreakdown(branchId, weekStart);
+  const totalBills = days.reduce((s, d) => s + d.bills, 0);
+
   return {
-    branchId, weekStart, weekEnd,
+    branchId, weekStart, weekEnd, payDate: payMondayFor(weekStart),
     totalRevenue: round2(res.totalPool), totalFee, totalWht, totalNet,
+    days, totalBills,
     doctors,
     unassignedFee: res.unassignedFee, unassignedDays: res.unassignedDays,
     hasRoster: res.hasRoster,

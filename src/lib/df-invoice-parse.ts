@@ -94,26 +94,65 @@ function locateColumns(header: unknown[]): Record<string, number> {
   return idx;
 }
 
-export function parseInvoiceBuffer(
-  buf: Buffer | ArrayBuffer,
-  wantedTags: string[]
-): DfParseResult {
-  const want = new Set(wantedTags.map((t) => t.trim().toUpperCase()));
+// Read the first sheet's rows and locate the header + columns (shared by parse
+// and scan). headerIdx < 0 when no recognizable header row is found.
+function readRowsAndHeader(buf: Buffer | ArrayBuffer): { rows: unknown[][]; headerIdx: number; cols: Record<string, number> } {
   const wb = XLSX.read(buf, { type: "buffer" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const rows = (sheet
     ? XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, blankrows: false })
     : []) as unknown[][];
-
-  // Header = first row that has both a "รายการ" and a "ราคาสุทธิ" column.
-  let headerIdx = -1;
-  let cols: Record<string, number> = {};
+  // Header = first row that has a "รายการ" + "ราคาสุทธิ" + invoice column.
   for (let i = 0; i < Math.min(rows.length, 20); i++) {
     const c = locateColumns(rows[i]);
     if (c.desc !== undefined && c.net !== undefined && c.invoice !== undefined) {
-      headerIdx = i; cols = c; break;
+      return { rows, headerIdx: i, cols: c };
     }
   }
+  return { rows, headerIdx: -1, cols: {} };
+}
+
+export type DfScannedTag = {
+  tag: string;      // leading [TAG], uppercased
+  lines: number;    // matched line-item rows
+  bills: number;    // distinct invoice numbers
+  net: number;      // Σ ราคาสุทธิ
+  sample: string;   // an example full description
+};
+
+// Scan a report for EVERY leading [TAG] present (no wanted filter), with stats,
+// so the admin can just tick the codes that count and set a rate — instead of
+// typing tag strings by hand (owner 2026-09-13). Drug-bin tags (e.g. "#D1Y")
+// show up too; the admin simply doesn't tick them.
+export function scanInvoiceTags(buf: Buffer | ArrayBuffer): { tags: DfScannedTag[]; totalRows: number } {
+  const { rows, headerIdx, cols } = readRowsAndHeader(buf);
+  if (headerIdx < 0) return { tags: [], totalRows: 0 };
+  const agg = new Map<string, { lines: number; bills: Set<string>; net: number; sample: string }>();
+  let totalRows = 0;
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const desc = str(rows[i][cols.desc]);
+    if (!desc) continue;
+    const tag = leadingTag(desc);
+    if (!tag) continue;
+    totalRows++;
+    let a = agg.get(tag);
+    if (!a) { a = { lines: 0, bills: new Set(), net: 0, sample: desc }; agg.set(tag, a); }
+    a.lines++;
+    a.bills.add(str(rows[i][cols.invoice]));
+    a.net += num(rows[i][cols.net]);
+  }
+  const tags = [...agg.entries()]
+    .map(([tag, a]) => ({ tag, lines: a.lines, bills: a.bills.size, net: Math.round(a.net * 100) / 100, sample: a.sample }))
+    .sort((x, y) => y.net - x.net);
+  return { tags, totalRows };
+}
+
+export function parseInvoiceBuffer(
+  buf: Buffer | ArrayBuffer,
+  wantedTags: string[]
+): DfParseResult {
+  const want = new Set(wantedTags.map((t) => t.trim().toUpperCase()));
+  const { rows, headerIdx, cols } = readRowsAndHeader(buf);
   if (headerIdx < 0) return { periodStart: null, periodEnd: null, lines: [], skippedNoDate: 0 };
 
   const lines: DfParsedLine[] = [];

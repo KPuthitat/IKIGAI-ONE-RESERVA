@@ -750,8 +750,13 @@ export function postDfRoundToAccounta(roundId: number, userId: number): { doctor
   ensureExpenseCategory("ค่าตอบแทนแพทย์ (DF)", "LB");
   ensureExpenseCategory("ภาษีหัก ณ ที่จ่าย", "WHT");
 
-  // Paid on the day the admin cut+paid the round (its paid_at), else the week end.
-  const payDate = (round.paid_at ? round.paid_at.slice(0, 10) : null) || round.week_end;
+  // Transferred + booked on the MONDAY AFTER the Mon–Sun week (owner 2026-09-13:
+  // "ตัดรอบ จ–อา จ่ายจันทร์ถัดไป", like part-time). Derived from week_end + 1 day.
+  const payMonday = (() => {
+    const d = new Date(`${round.week_end}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  })();
+  const payDate = payMonday;
   const weekLabel = `${round.week_start} – ${round.week_end}`;
   const ins = db.prepare(`
     INSERT INTO accounta_expenses

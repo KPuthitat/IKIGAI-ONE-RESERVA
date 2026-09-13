@@ -103,6 +103,7 @@ export default function DoctorFeeRoundsClient({
         <div className="text-center px-2">
           <div className="font-semibold text-slate-800">{weekLabel(p.weekStart, p.weekEnd)}</div>
           <div className="text-[11px] text-slate-400">จันทร์ {thDate(p.weekStart)} – อาทิตย์ {thDate(p.weekEnd)}</div>
+          <div className="text-[11px] text-brand mt-0.5">จ่ายวันจันทร์ที่ {thDate(p.payDate)}</div>
         </div>
         <button className="btn-secondary text-sm" disabled={busy} onClick={() => loadWeek(addDays(p.weekStart, 7))}>สัปดาห์ถัดไป →</button>
         <input type="date" className="input ml-auto" value={p.weekStart} disabled={busy}
@@ -129,6 +130,42 @@ export default function DoctorFeeRoundsClient({
           สัปดาห์นี้มีรายได้แต่ยังไม่มีหมอในตารางเวร — ยอด {baht(p.unassignedFee)} บาท ยังไม่ถูกจัดสรรให้ใคร
         </div>
       )}
+
+      {/* Daily breakdown (revshare-style): each day's DF pool + bills, Mon–Sun */}
+      <div className="card overflow-x-auto">
+        <h3 className="font-semibold text-slate-800 text-sm mb-2">ยอด DF รายวัน (จันทร์–อาทิตย์)</h3>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-500 border-b">
+              <th className="py-1.5 pr-3">วันที่</th>
+              <th className="py-1.5 px-2 text-right">ยอดค่าตรวจ (HSC)</th>
+              <th className="py-1.5 px-2 text-center">บิล</th>
+              <th className="py-1.5 pl-2 text-right">DF ของวัน</th>
+            </tr>
+          </thead>
+          <tbody>
+            {p.days.map((d) => (
+              <tr key={d.date} className={`border-b last:border-0 ${d.fee > 0 ? "" : "text-slate-300"}`}>
+                <td className="py-1.5 pr-3 whitespace-nowrap">{thDate(d.date)}</td>
+                <td className="py-1.5 px-2 text-right tabular-nums">{d.pool > 0 ? baht(d.pool) : "—"}</td>
+                <td className="py-1.5 px-2 text-center tabular-nums">{d.bills > 0 ? `${d.bills} บิล` : "—"}</td>
+                <td className="py-1.5 pl-2 text-right tabular-nums font-medium text-slate-700">{d.fee > 0 ? baht(d.fee) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t font-semibold text-slate-800">
+              <td className="py-1.5 pr-3">รวมทั้งสัปดาห์</td>
+              <td className="py-1.5 px-2 text-right tabular-nums">{baht(tot.revenue)}</td>
+              <td className="py-1.5 px-2 text-center tabular-nums">{p.totalBills} บิล</td>
+              <td className="py-1.5 pl-2 text-right tabular-nums">{baht(tot.fee)}</td>
+            </tr>
+          </tfoot>
+        </table>
+        <div className="text-[11px] text-slate-400 mt-2">
+          ยอดมาจากไฟล์รายงานที่นำเข้าในหน้า “ค่าตอบแทนแพทย์” (โปรแกรมจับรายการ DF ตามกฎ [HSC]/[HSC-GRP] ให้อัตโนมัติ)
+        </div>
+      </div>
 
       {/* Doctor table */}
       <div className="card overflow-x-auto">

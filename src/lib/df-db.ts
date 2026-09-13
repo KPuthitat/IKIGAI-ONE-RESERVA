@@ -129,6 +129,19 @@ export function wantedTags(branchId: number): string[] {
   return normTags(activeRules(branchId).flatMap((r) => r.item_tags));
 }
 
+/**
+ * Create or update the single-tag rule for one code (owner 2026-09-13, the
+ * "pick codes from the file" setup). If a rule already covers exactly this one
+ * tag, its rate is updated and it's re-activated; otherwise a new rule is made,
+ * named after the tag. Multi-tag rules are left untouched.
+ */
+export function upsertSingleTagRule(branchId: number, tag: string, rate: number): DfRule {
+  const t = tag.trim().toUpperCase();
+  const existing = listRules(branchId).find((r) => r.item_tags.length === 1 && r.item_tags[0] === t);
+  if (existing) return updateRule(existing.id, branchId, { rate, active: true })!;
+  return createRule(branchId, { name: `[${t}]`, item_tags: [t], rate, active: true });
+}
+
 // ── Invoice lines (imported) ──────────────────────────────────────
 
 export type ImportSummary = { inserted: number; updated: number; total: number; periodStart: string | null; periodEnd: string | null };

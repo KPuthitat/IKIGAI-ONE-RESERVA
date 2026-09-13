@@ -358,6 +358,7 @@ function RulesEditor({ rules, onChange, onSaved }: {
   return (
     <div className="card space-y-3">
       <h2 className="font-semibold text-slate-700">2) กฎค่าตอบแทน (รหัส × เรท)</h2>
+      <ScanPicker onApplied={(r) => { onChange(r); onSaved(); }} />
       <div className="space-y-2">
         {rules.map((r) => (
           <RuleRow key={r.id} rule={r} busy={busy} onSave={(b) => patch(r.id, b)} onDelete={() => remove(r.id)} />
@@ -375,6 +376,106 @@ function RulesEditor({ rules, onChange, onSaved }: {
         <p className="text-[11px] text-slate-400">แต่ละกลุ่มหัตถการ (เช่น ฉีดยา IM, เย็บแผล SUT) ใส่เป็นกฎแยก ตั้ง % ของตัวเองได้</p>
         {!adding && <button type="button" className="btn-secondary text-xs" onClick={() => setAdding(true)}>+ เพิ่มกฎ</button>}
       </div>
+    </div>
+  );
+}
+
+// Pick codes straight from an uploaded report (owner 2026-09-13): scan the file,
+// tick which service codes count as DF, set a rate — no typing tag strings.
+type DetectedTag = { tag: string; lines: number; bills: number; net: number; sample: string; currentRate: number | null };
+
+function ScanPicker({ onApplied }: { onApplied: (rules: DfRule[]) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [detected, setDetected] = useState<DetectedTag[] | null>(null);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [ratePct, setRatePct] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function scan(file: File) {
+    setBusy(true); setErr(null); setMsg(null);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const res = await fetch(apiUrl("/api/admin/persona/doctor-fee/scan"), { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "สแกนไฟล์ไม่สำเร็จ")); setDetected(null); return; }
+      const tags = j.tags as DetectedTag[];
+      setDetected(tags);
+      // Pre-tick codes that already earn a fee; default others to 30%.
+      const preSel = new Set<string>(); const rates: Record<string, string> = {};
+      for (const t of tags) {
+        rates[t.tag] = t.currentRate != null ? String(Math.round(t.currentRate * 1000) / 10) : "30";
+        if (t.currentRate != null) preSel.add(t.tag);
+      }
+      setSel(preSel); setRatePct(rates);
+    } catch { setErr("สแกนไฟล์ไม่สำเร็จ"); }
+    finally { setBusy(false); }
+  }
+
+  async function apply() {
+    const picks = [...sel].map((tag) => ({ tag, rate: Math.max(0, Math.min(1, (Number(ratePct[tag]) || 0) / 100)) }));
+    if (picks.length === 0) return;
+    setBusy(true); setErr(null); setMsg(null);
+    try {
+      const res = await fetch(apiUrl("/api/admin/persona/doctor-fee/rules/apply"), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ picks })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "สร้างกฎไม่สำเร็จ")); return; }
+      onApplied(j.rules as DfRule[]);
+      setMsg(`ตั้งกฎจากที่เลือกแล้ว ${j.applied} รหัส`);
+      setDetected(null); setSel(new Set());
+    } catch { setErr("สร้างกฎไม่สำเร็จ"); }
+    finally { setBusy(false); }
+  }
+
+  const toggle = (tag: string) => setSel((p) => { const n = new Set(p); if (n.has(tag)) n.delete(tag); else n.add(tag); return n; });
+
+  return (
+    <div className="rounded-lg border border-brand/30 bg-brand/5 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="text-sm font-medium text-slate-700">ตั้งค่าง่าย: เลือกรหัสจากไฟล์</div>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) scan(f); e.target.value = ""; }} />
+        <button type="button" className="btn-secondary text-xs" disabled={busy} onClick={() => fileRef.current?.click()}>
+          {busy && !detected ? "กำลังสแกน…" : "สแกนโค้ดจากไฟล์"}
+        </button>
+      </div>
+      <p className="text-[11px] text-slate-500">อัปโหลดไฟล์ Invoice Report → ระบบลิสต์รหัสที่เจอทั้งหมด → ติ๊กรหัสที่จะคิด DF แล้วใส่เรท (ไฟล์นี้ใช้สแกนอย่างเดียว ไม่ได้บันทึกยอด)</p>
+      {err && <div className="text-xs text-rose-600">{err}</div>}
+      {msg && <div className="text-xs text-emerald-600">{msg}</div>}
+
+      {detected && (
+        <div className="space-y-1.5">
+          {detected.length === 0 && <div className="text-sm text-slate-400">ไม่พบรหัสในไฟล์</div>}
+          <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+            {detected.map((t) => (
+              <label key={t.tag} className="flex items-center gap-2 py-1.5 text-sm cursor-pointer">
+                <input type="checkbox" checked={sel.has(t.tag)} onChange={() => toggle(t.tag)} className="w-4 h-4 accent-brand" />
+                <span className="font-medium text-slate-800 w-28 shrink-0">[{t.tag}]</span>
+                <span className="text-[11px] text-slate-400 flex-1 min-w-0 truncate">
+                  {t.lines} รายการ · {t.bills} บิล · ฿{fmtMoney(t.net)}
+                  {t.currentRate != null && <span className="text-emerald-600"> · มีกฎแล้ว</span>}
+                  <span className="block truncate text-slate-300">{t.sample}</span>
+                </span>
+                <span className="flex items-center gap-1 shrink-0">
+                  <input type="number" min={0} max={100} step="0.1" disabled={!sel.has(t.tag)}
+                    className="input !py-1 !w-16 text-sm text-right disabled:opacity-40"
+                    value={ratePct[t.tag] ?? "30"} onChange={(e) => setRatePct((p) => ({ ...p, [t.tag]: e.target.value }))} />
+                  <span className="text-[11px] text-slate-400">%</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className="btn-secondary text-xs" disabled={busy} onClick={() => setDetected(null)}>ยกเลิก</button>
+            <button type="button" className="btn btn-primary text-xs !py-1.5 disabled:opacity-40" disabled={busy || sel.size === 0} onClick={apply}>
+              ตั้งกฎจากที่เลือก ({sel.size})
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
