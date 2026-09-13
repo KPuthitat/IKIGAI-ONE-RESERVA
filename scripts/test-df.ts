@@ -343,6 +343,75 @@ process.env.DATABASE_PATH = TMP;
     { base_pay: number; other_additions: number; net_pay: number } | undefined;
   ok("cutover: Oct payroll folds DF for pre-cutover days only (120)", !!octLine && near(octLine.other_additions, 120) && near(octLine.base_pay, 0));
 
+  // ── 11) GUARANTEE (การันตี): pay MAX(guarantee, DF) with carried-forward deficit ──
+  // (owner 2026-09-13). A doctor agrees an hourly guarantee instead of pure DF:
+  // paid MAX(guarantee, DF) where guarantee = rate/hr × rostered hours. When DF <
+  // guarantee the clinic fronts the gap; a later week where DF beats the guarantee
+  // first repays that carried shortfall before the doctor pockets anything extra.
+  // The deficit rolls forward indefinitely (never resets). Uses NOVEMBER weeks so
+  // the earlier October assertions are untouched.
+
+  // shiftHours helper: span − break, with an overnight wrap.
+  ok("shiftHours 09:00–17:00 = 8", near(df.shiftHours("09:00", "17:00", null, null), 8));
+  ok("shiftHours minus a 1h break = 7", near(df.shiftHours("09:00", "17:00", "12:00", "13:00"), 7));
+  ok("shiftHours overnight 22:00–06:00 = 8", near(df.shiftHours("22:00", "06:00", null, null), 8));
+
+  // A guarantee doctor: 100 บาท/ชม., 4h shifts, on the weekly program from Nov.
+  const d3 = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,clinical_role,status,df_started_at) VALUES ('doc3','x','หมอซี','admin','doctor','active','2026-11-01')").run().lastInsertRowid);
+  const sc4 = Number(db.prepare("INSERT INTO shift_codes (branch_id,code,name,start_time,end_time,kind,active) VALUES (?,'H','Half','09:00','13:00','work',1)").run(bid).lastInsertRowid);
+  ok("setDoctorGuarantee 100/hr, no WHT", df.setDoctorGuarantee(d3, { enabled: true, rate: 100, wht: false }));
+  const d3elig = df.eligibleDoctors().find((x) => x.user_id === d3);
+  ok("eligibleDoctors carries guarantee fields", !!d3elig && d3elig.guarantee_enabled && near(d3elig.guarantee_rate, 100) && d3elig.guarantee_wht === false);
+
+  const rosterH = (uid: number, date: string, pos: number, code: number) =>
+    db.prepare("INSERT INTO roster_assignments (branch_id,assignment_date,position_id,user_id,shift_code_id) VALUES (?,?,?,?,?)").run(bid, date, pos, uid, code);
+
+  // Round A — week of Nov 2: 5 × 4h = 20h → G 2000. Revenue HSC 5000 on Nov 2 →
+  // DF 1500 (< G). Pay the guarantee 2000; clinic fronts 500 → deficit 500.
+  for (const day of ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06"]) rosterH(d3, day, p1, sc4);
+  df.importInvoiceLines(bid, [{ invoiceNo: "G1", lineDate: "2026-11-02", itemCode: "GEN001", tag: "HSC", description: "[HSC]", qty: 1, gross: 5000, discount: 0, net: 5000 }], "g1.xlsx");
+  const rh = df.rosterHoursByDoctor(bid, "2026-11-02", "2026-11-08").get(d3);
+  ok("rosterHours: 5 × 4h = 20h", !!rh && near(rh.total, 20));
+  const gA = rounds.previewDfRound(bid, "2026-11-02").doctors.find((x) => x.user_id === d3);
+  ok("guarantee A: isGuarantee, G 2000, DF 1500", !!gA && gA.isGuarantee && near(gA.guaranteeAmount, 2000) && near(gA.dfEarned, 1500));
+  ok("guarantee A: pay the guarantee 2000 (DF < G)", !!gA && near(gA.grossFee, 2000));
+  ok("guarantee A: deficit 0 → 500 (clinic fronts the gap)", !!gA && near(gA.deficitBefore, 0) && near(gA.deficitAfter, 500));
+  const paidA = rounds.payDfRound(bid, "2026-11-02", 1);
+  ok("guarantee A: round total = guarantee 2000", near(paidA.total_fee, 2000));
+
+  // Round B — week of Nov 9: 20h → G 2000. Revenue HSC 10000 on Nov 9 → DF 3000
+  // (> G). Surplus 1000 repays the 500 deficit → pay 2500; deficit back to 0.
+  for (const day of ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"]) rosterH(d3, day, p1, sc4);
+  df.importInvoiceLines(bid, [{ invoiceNo: "G2", lineDate: "2026-11-09", itemCode: "GEN001", tag: "HSC", description: "[HSC]", qty: 1, gross: 10000, discount: 0, net: 10000 }], "g2.xlsx");
+  const gB = rounds.previewDfRound(bid, "2026-11-09").doctors.find((x) => x.user_id === d3);
+  ok("guarantee B: DF 3000 > G 2000, deficitBefore 500", !!gB && near(gB.dfEarned, 3000) && near(gB.deficitBefore, 500));
+  ok("guarantee B: pay 2500 (DF − recovered 500), deficit → 0", !!gB && near(gB.grossFee, 2500) && near(gB.deficitAfter, 0));
+  rounds.payDfRound(bid, "2026-11-09", 1);
+
+  // Round C — week of Nov 16: 20h → G 2000. Revenue HSC 10000 → DF 3000. No
+  // deficit left → the doctor pockets the FULL DF above the guarantee (3000).
+  // Also switch WHT-on-guarantee ON at 5% → net 2850.
+  for (const day of ["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"]) rosterH(d3, day, p1, sc4);
+  df.importInvoiceLines(bid, [{ invoiceNo: "G3", lineDate: "2026-11-16", itemCode: "GEN001", tag: "HSC", description: "[HSC]", qty: 1, gross: 10000, discount: 0, net: 10000 }], "g3.xlsx");
+  df.setDoctorWhtRate(d3, 0.05);
+  df.setDoctorGuarantee(d3, { enabled: true, rate: 100, wht: true });
+  const gC = rounds.previewDfRound(bid, "2026-11-16").doctors.find((x) => x.user_id === d3);
+  ok("guarantee C: no deficit → full DF 3000 above guarantee", !!gC && near(gC.grossFee, 3000) && near(gC.deficitBefore, 0) && near(gC.deficitAfter, 0));
+  ok("guarantee C: WHT-on-guarantee 5% → wht 150, net 2850", !!gC && near(gC.whtAmount, 150) && near(gC.netFee, 2850));
+  rounds.payDfRound(bid, "2026-11-16", 1);
+
+  // Zero-revenue week: rostered but no DF → still paid the full guarantee, and
+  // the (now cleared) deficit grows again.
+  for (const day of ["2026-11-23", "2026-11-24", "2026-11-25"]) rosterH(d3, day, p1, sc4);  // 3 × 4h = 12h
+  const gE = rounds.previewDfRound(bid, "2026-11-23").doctors.find((x) => x.user_id === d3);
+  ok("guarantee D: zero-revenue week still pays guarantee (12h → 1200)", !!gE && near(gE.dfEarned, 0) && near(gE.guaranteeAmount, 1200) && near(gE.grossFee, 1200));
+  ok("guarantee D: deficit 0 → 1200 (whole guarantee fronted)", !!gE && near(gE.deficitBefore, 0) && near(gE.deficitAfter, 1200));
+
+  // The carried deficit chains only through PAID rounds; the frozen snapshot keeps
+  // each round's derivation for audit.
+  const aLine = rounds.listRoundLines(paidA.id).find((l) => l.user_id === d3);
+  ok("guarantee snapshot: frozen line records is_guarantee + deficit_after", !!aLine && aLine.is_guarantee === 1 && near(aLine.deficit_after, 500) && near(aLine.guarantee_amount, 2000));
+
   console.log(`\ndf test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);

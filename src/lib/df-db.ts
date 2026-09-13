@@ -233,24 +233,118 @@ export type DfComputeResult = {
   hasRoster: boolean;
 };
 
-export type DfDoctor = { user_id: number; display_name: string; title_prefix: string | null; df_wht_rate: number };
+export type DfDoctor = {
+  user_id: number; display_name: string; title_prefix: string | null; df_wht_rate: number;
+  // Guarantee (การันตี) scheme (owner 2026-09-13): when enabled, the doctor is paid
+  // MAX(guarantee, DF) where guarantee = rate/hr × rostered hours, with a
+  // carried-forward deficit — and does NOT get plain DF.
+  guarantee_enabled: boolean; guarantee_rate: number; guarantee_wht: boolean;
+};
+
+type DfDoctorRow = {
+  user_id: number; display_name: string; title_prefix: string | null; df_wht_rate: number;
+  guarantee_enabled: number; guarantee_rate: number; guarantee_wht: number;
+};
+function mapDoctor(r: DfDoctorRow): DfDoctor {
+  return {
+    user_id: r.user_id, display_name: r.display_name, title_prefix: r.title_prefix,
+    df_wht_rate: r.df_wht_rate,
+    guarantee_enabled: r.guarantee_enabled === 1, guarantee_rate: r.guarantee_rate, guarantee_wht: r.guarantee_wht === 1
+  };
+}
 
 // Users eligible to earn a DF: clinic doctors, or already on the DF comp type
 // (phase 2). Active only. df_wht_rate is the per-doctor withholding rate the
-// weekly payout program applies (owner 2026-09-11).
+// weekly payout program applies (owner 2026-09-11); the guarantee_* fields carry
+// the optional การันตี arrangement (owner 2026-09-13).
 export function eligibleDoctors(): DfDoctor[] {
-  return getDb().prepare(
-    `SELECT id AS user_id, display_name, title_prefix, COALESCE(df_wht_rate, 0) AS df_wht_rate FROM users
+  return (getDb().prepare(
+    `SELECT id AS user_id, display_name, title_prefix,
+            COALESCE(df_wht_rate, 0) AS df_wht_rate,
+            COALESCE(df_guarantee_enabled, 0) AS guarantee_enabled,
+            COALESCE(df_guarantee_rate, 0) AS guarantee_rate,
+            COALESCE(df_guarantee_wht, 1) AS guarantee_wht
+     FROM users
      WHERE (clinical_role = 'doctor' OR df_started_at IS NOT NULL)
        AND status NOT IN ('disabled','resigned','terminated')
      ORDER BY display_name`
-  ).all() as DfDoctor[];
+  ).all() as DfDoctorRow[]).map(mapDoctor);
 }
 
 // Set a doctor's WHT rate (0–1) for the weekly DF payout. Clamped defensively.
 export function setDoctorWhtRate(userId: number, rate: number): boolean {
   const r = Math.min(1, Math.max(0, Number.isFinite(rate) ? rate : 0));
   return getDb().prepare("UPDATE users SET df_wht_rate = ? WHERE id = ?").run(r, userId).changes > 0;
+}
+
+// Set a doctor's guarantee (การันตี) arrangement (owner 2026-09-13). rate is
+// baht per hour (>= 0); wht toggles whether the guarantee payout withholds WHT.
+export function setDoctorGuarantee(
+  userId: number, opts: { enabled: boolean; rate: number; wht: boolean }
+): boolean {
+  const rate = Math.max(0, Number.isFinite(opts.rate) ? opts.rate : 0);
+  return getDb().prepare(
+    "UPDATE users SET df_guarantee_enabled = ?, df_guarantee_rate = ?, df_guarantee_wht = ? WHERE id = ?"
+  ).run(opts.enabled ? 1 : 0, rate, opts.wht ? 1 : 0, userId).changes > 0;
+}
+
+// Scheduled roster hours per doctor across [start, end] (owner 2026-09-13, for
+// the guarantee: "ชั่วโมงตามตารางเวร"). Hours = each work shift's span minus its
+// break; when a doctor holds several positions the same day, the LONGEST single
+// shift counts (positions overlap in time — never double-count a day). Returns a
+// map user_id → { date → hours } and the per-doctor total.
+export type DfRosterHours = { total: number; byDate: Map<string, number> };
+export function rosterHoursByDoctor(branchId: number, start: string, end: string): Map<number, DfRosterHours> {
+  const rows = getDb().prepare(
+    `SELECT ra.assignment_date AS d, ra.user_id AS uid,
+            sc.start_time AS st, sc.end_time AS et, sc.break_start AS bs, sc.break_end AS be
+     FROM roster_assignments ra
+     JOIN shift_codes sc ON sc.id = ra.shift_code_id
+     WHERE ra.branch_id = ? AND ra.assignment_date >= ? AND ra.assignment_date <= ?
+       AND sc.kind = 'work'
+       AND ra.user_id IN (
+         SELECT id FROM users
+         WHERE (clinical_role = 'doctor' OR df_started_at IS NOT NULL)
+           AND status NOT IN ('disabled','resigned','terminated'))`
+  ).all(branchId, start, end) as Array<{ d: string; uid: number; st: string; et: string; bs: string | null; be: string | null }>;
+  // Collect the max shift hours per (uid, date) first, then total per uid.
+  const perDay = new Map<number, Map<string, number>>();
+  for (const r of rows) {
+    const h = shiftHours(r.st, r.et, r.bs, r.be);
+    let m = perDay.get(r.uid);
+    if (!m) { m = new Map(); perDay.set(r.uid, m); }
+    m.set(r.d, Math.max(m.get(r.d) ?? 0, h));
+  }
+  const out = new Map<number, DfRosterHours>();
+  for (const [uid, byDate] of perDay) {
+    let total = 0;
+    for (const h of byDate.values()) total += h;
+    out.set(uid, { total: round2(total), byDate });
+  }
+  return out;
+}
+
+// "HH:MM" → minutes since midnight (0 on garbage).
+function hhmmToMin(s: string | null): number | null {
+  if (!s) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  if (!m) return null;
+  const h = Number(m[1]), mi = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(mi)) return null;
+  return h * 60 + mi;
+}
+
+/** Scheduled worked hours for one shift = (end − start) − break, handling an
+ *  overnight wrap. Never negative. */
+export function shiftHours(start: string, end: string, breakStart: string | null, breakEnd: string | null): number {
+  const s = hhmmToMin(start), e0 = hhmmToMin(end);
+  if (s == null || e0 == null) return 0;
+  let e = e0;
+  if (e <= s) e += 24 * 60;              // overnight shift wraps past midnight
+  let span = e - s;
+  const bs = hhmmToMin(breakStart), be = hhmmToMin(breakEnd);
+  if (bs != null && be != null && be > bs) span -= (be - bs);
+  return Math.max(0, round2(span / 60));
 }
 
 // date → [doctor user_ids] rostered that date on this branch (work shifts only).
