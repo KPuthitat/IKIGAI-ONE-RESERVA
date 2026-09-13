@@ -24,7 +24,7 @@ function nowLocalInput(): string {
 function fmtOccurred(s: string): string {
   const d = new Date(s);
   if (isNaN(d.getTime())) return s;
-  return d.toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("th-TH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function ReportsClient({ initialReports }: { initialReports: IrReportView[] }) {

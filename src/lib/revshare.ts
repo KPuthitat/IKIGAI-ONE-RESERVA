@@ -202,10 +202,9 @@ export const TH_MONTHS_FULL = [
   "", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
   "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
 ];
-export const TH_MONTHS_ABBR = [
-  "", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
-  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."
-];
+// Full month names everywhere — no abbreviations (owner 2026-09-13). Kept as an
+// alias so any remaining reference still renders the full name.
+export const TH_MONTHS_ABBR = TH_MONTHS_FULL;
 
 /** "2026-06-15" → "15 มิถุนายน 2569". */
 export function thaiDate(iso: string): string {

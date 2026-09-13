@@ -39,8 +39,8 @@ function toBE(d: string | null): string {
   if (!d) return "—";
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return "—";
-  const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
-    "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
   return `${dt.getDate()} ${months[dt.getMonth()]} ${dt.getFullYear() + 543}`;
 }
 

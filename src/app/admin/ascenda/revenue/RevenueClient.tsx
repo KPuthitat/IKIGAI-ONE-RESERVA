@@ -11,8 +11,8 @@ import { fmtMoney } from "@/lib/format";
 // PUT /api/admin/ascenda/revenue with { branch_id, date, revenue }
 // upserts via the lib helper.
 
-const TH_MONTHS = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.",
-                   "ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const TH_MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
+                   "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 const TH_DAYS = ["อา","จ","อ","พ","พฤ","ศ","ส"];
 
 function friendlyDate(d: string): { line1: string; line2: string } {

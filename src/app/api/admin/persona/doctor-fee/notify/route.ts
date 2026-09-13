@@ -17,7 +17,8 @@ import { nameWithPrefix } from "@/lib/name";
 export const dynamic = "force-dynamic";
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
-const TH_MON = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+// Full month names — no abbreviations (owner 2026-09-13).
+const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 function thDate(iso: string): string { const [y, m, d] = iso.split("-").map(Number); return `${d} ${TH_MON[m]} ${y + 543}`; }
 function weekLabel(a: string, b: string): string {
   const [, am, ad] = a.split("-").map(Number); const [by, bm, bd] = b.split("-").map(Number);

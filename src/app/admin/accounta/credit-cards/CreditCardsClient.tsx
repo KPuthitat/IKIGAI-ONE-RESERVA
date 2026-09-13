@@ -20,8 +20,8 @@ type Reserve = {
 };
 type Card = { id: number; name: string; bank_label: string | null; last4: string | null };
 
-const TH_MON = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-function monthShort(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} ${String(y + 543).slice(2)}`; }
+const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+function monthShort(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} ${y + 543}`; }
 function addMonth(ym: string, n: number): string { const [y, m] = ym.split("-").map(Number); const t = y * 12 + (m - 1) + n; return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`; }
 
 type Form = {

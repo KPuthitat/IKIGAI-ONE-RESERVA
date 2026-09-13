@@ -9,7 +9,7 @@ type CodItem = { order_id: number; order_no: string; rider_name: string | null; 
 function fmtWhen(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso.replace(" ", "T") + "Z");
-  return isNaN(d.getTime()) ? iso : d.toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
+  return isNaN(d.getTime()) ? iso : d.toLocaleString("th-TH", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
 }
 
 export default function CodClient() {
