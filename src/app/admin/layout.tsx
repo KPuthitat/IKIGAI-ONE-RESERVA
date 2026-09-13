@@ -4,6 +4,7 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { autoExpireStaleBookings } from "@/lib/stale-bookings";
 import { pendingExcusalCount } from "@/lib/late-excusals";
+import { pendingBreakSkipCount } from "@/lib/break-skip";
 import LogoutButton from "./LogoutButton";
 import HeaderBrand from "../HeaderBrand";
 import LangToggle from "../LangToggle";
@@ -58,6 +59,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   let dfBranch = false;
   // Pending late-arrival excusals a reviewer can act on (owner 2026-09-05).
   let excusalPendingCount = 0;
+  let breakSkipPendingCount = 0;
   if (user.activeBranchId) {
     try {
       // Auto-expire stale rows first so the count reflects only bookings
@@ -87,13 +89,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         .get(user.activeBranchId) as { df_enabled: number } | undefined;
       dfBranch = dfRow?.df_enabled === 1;
       if (user.role === "admin" || user.role === "super_admin") {
-        excusalPendingCount = pendingExcusalCount(db, user.role === "super_admin" ? null : user.adminBranchIds);
+        const scope = user.role === "super_admin" ? null : user.adminBranchIds;
+        excusalPendingCount = pendingExcusalCount(db, scope);
+        breakSkipPendingCount = pendingBreakSkipCount(db, scope);
       }
     } catch {
       // schema not migrated yet (fresh deploy) → just show 0
       pendingCount = 0;
       unlockPendingCount = 0;
       irOpenCount = 0;
+      breakSkipPendingCount = 0;
       dfBranch = false;
       excusalPendingCount = 0;
     }
@@ -312,6 +317,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           href: "/admin/persona/late-excusals",
           label: "อนุโลมการมาสาย",
           badge: excusalPendingCount > 0 ? excusalPendingCount : undefined
+        },
+        {
+          href: "/admin/persona/break-skip",
+          label: "อนุมัติทำงานช่วงพัก",
+          badge: breakSkipPendingCount > 0 ? breakSkipPendingCount : undefined
         }
       ]
     },

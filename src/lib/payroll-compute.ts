@@ -1077,8 +1077,14 @@ export function computeLineForEmployee(args: {
   // meeting date falls in the period. Taxable, paid on top of everything as its
   // own "เบี้ยประชุม" line — independent of DF (a DF doctor still earns it).
   meetingFee?: number;
+  // Approved "work through the break" dates (owner 2026-09-13). On these dates the
+  // day's break is NOT deducted, so the freed time flows into worked minutes and —
+  // being past 8h — pays as OT (the approval also un-gates that OT). FT and PT
+  // alike; an admin per-day break_min override still wins. Requires attendance
+  // tracking (never a salaried exec).
+  breakSkipDates?: Set<string>;
 }): ComputedLine {
-  const { employee: eIn, shifts: shiftsIn, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates, dfAmount = 0, dfBranchPeriod = false, meetingFee: meetingFeeIn = 0 } = args;
+  const { employee: eIn, shifts: shiftsIn, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates, dfAmount = 0, dfBranchPeriod = false, meetingFee: meetingFeeIn = 0, breakSkipDates } = args;
   // FT→PT switch (owner 2026-08-31): from pt_started_at's calendar month the
   // employee is treated as PART-TIME (hourly), before it as FULL-TIME (salary) —
   // period-relative so backfilled months still compute correctly. The stored
@@ -1182,6 +1188,13 @@ export function computeLineForEmployee(args: {
     const reqFrom = isExec ? null : (approvedEarlyByDate?.get(shiftDate) ?? null);
     const lateApproved = !!(reqUntil && /^\d{2}:\d{2}$/.test(reqUntil));
     const earlyApproved = !!(reqFrom && /^\d{2}:\d{2}$/.test(reqFrom));
+    // Approved break-skip (owner 2026-09-13): don't deduct this day's break; the
+    // returned break minutes that land above 8h pay as OT (capped to the break —
+    // NOT any pre-existing over-8h, which stays gated by a late/early approval).
+    // Admin per-day break_min override still wins; never for a salaried exec.
+    // NOTE: keyed by date, so on a rare multi-shift day it applies to each shift
+    // that has a break (the request snapshots only the earliest window).
+    const breakSkip = !isExec && (breakSkipDates?.has(shiftDate) ?? false) && ov?.break_min == null;
     const otApproved = lateApproved || earlyApproved;
     let otUntilTs: string | null = null;
     let otFromTs: string | null = null;
@@ -1210,6 +1223,14 @@ export function computeLineForEmployee(args: {
       deducted = ov.break_min;
       workedMinutes = Math.max(0, grossMin - ov.break_min);
     }
+    // Approved break-skip → give the break time back as worked minutes. Track how
+    // much we returned so only that slice (above 8h) is credited as OT below.
+    let breakSkipReturned = 0;
+    if (breakSkip && ov?.break_min == null && deducted > 0) {
+      breakSkipReturned = deducted;
+      workedMinutes += deducted;
+      deducted = 0;
+    }
 
     shiftMin += grossMin;
     breakDeducted += deducted;
@@ -1219,7 +1240,15 @@ export function computeLineForEmployee(args: {
     // (otUntilTs null → applyPtGrace clamps) so split.ot is 0; on an
     // unscheduled day (no cap) we zero it here and the reclassification below
     // rolls the over-8h into regular. Per-day overrides still win.
-    const autoOt = otApproved ? split.ot : 0;
+    let autoOt = otApproved ? split.ot : 0;
+    // Break-skip (owner 2026-09-13): with no window-extension approval, credit as
+    // OT ONLY the returned break minutes that push the day past 8h — the
+    // incremental over-8h. A shift already scheduled longer than 8h+break keeps
+    // its pre-existing over-8h as regular (that needs its own OT approval).
+    if (!otApproved && breakSkipReturned > 0) {
+      const withoutBreak = workedMinutes - breakSkipReturned;
+      autoOt = Math.max(0, split.ot - Math.max(0, withoutBreak - 480));
+    }
     // Per-day overrides of the final regular / OT minutes win over the
     // computed split.
     const dayRegular = ov?.worked_min != null ? ov.worked_min : split.regular + (split.ot - autoOt);
@@ -2104,6 +2133,18 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     }
   }
 
+  // Approved break-skip dates (owner 2026-09-13) → user → Set(date). On these the
+  // engine skips the break deduction and pays the freed over-8h as OT.
+  const breakSkipByUser = new Map<number, Set<string>>();
+  for (const r of db.prepare(`
+    SELECT user_id, work_date FROM break_skip_requests
+    WHERE status = 'approved' AND work_date >= ? AND work_date <= ?
+  `).all(period.period_start, period.period_end) as Array<{ user_id: number; work_date: string }>) {
+    let s = breakSkipByUser.get(r.user_id);
+    if (!s) { s = new Set(); breakSkipByUser.set(r.user_id, s); }
+    s.add(r.work_date);
+  }
+
   // Reviewed lines are FROZEN (owner 2026-09-02: "ติ๊กตรวจแล้ว เวลาออกจากหน้านี้
   // ข้อมูลต้องไม่เปลี่ยน"). A line the admin has signed off ("ตรวจแล้ว") keeps its
   // stored numbers and its review through a full recompute — it survives the wipe
@@ -2273,7 +2314,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         leaveDates: leaveDatesByUser.get(emp.user_id),
         dfAmount: dfByUser.get(emp.user_id) ?? 0,
         dfBranchPeriod,
-        meetingFee: meetingFeeByUser.get(emp.user_id) ?? 0
+        meetingFee: meetingFeeByUser.get(emp.user_id) ?? 0,
+        breakSkipDates: breakSkipByUser.get(emp.user_id)
       });
       // Flag the helper line but store the person's REAL employment_type (the PT
       // cast was only to borrow the hourly math), so every write path agrees and
@@ -2587,6 +2629,14 @@ export function recomputeLine(
     if (r.early_status === "approved" && r.requested_from) approvedEarlyByDate.set(r.work_date, r.requested_from);
   }
 
+  // Approved break-skip dates for this user (owner 2026-09-13) — skip the break,
+  // pay the freed over-8h as OT.
+  const breakSkipDates = new Set(
+    (db.prepare(
+      "SELECT work_date FROM break_skip_requests WHERE user_id = ? AND status = 'approved' AND work_date >= ? AND work_date <= ?"
+    ).all(userId, period.period_start, period.period_end) as Array<{ work_date: string }>).map((r) => r.work_date)
+  );
+
   // Home-branch check for FT salary (owner 2026-07-14) — same rule as the full
   // compute: pay salary only when this period's branch is the employee's
   // primary (is_primary=1, else lowest branch_id). Legacy NULL-branch periods
@@ -2710,7 +2760,7 @@ export function recomputeLine(
     leaveDays: existing.leave_days,
     cycle: period.cycle, periodStart: period.period_start, periodEnd: period.period_end, payDate: period.pay_date,
     settings, holidaySet, doubleSet, scheduledByDate, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates,
-    dfAmount: dfPayRL, dfBranchPeriod: rlDfBranch
+    dfAmount: dfPayRL, dfBranchPeriod: rlDfBranch, breakSkipDates
   });
   // No worked time and no existing line → don't create a phantom 0-baht hourly-helper
   // line (matches computePayrollPeriod's skip).

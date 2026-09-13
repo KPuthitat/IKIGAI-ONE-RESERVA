@@ -822,6 +822,34 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // break_skip_requests (owner 2026-09-13) — a staffer who does NOT want to take
+  // their scheduled break asks to work through it. They file BEFORE the break
+  // starts (enforced at submit); a branch supervisor/admin approves (retroactive
+  // OK). An approved row makes the payroll engine NOT deduct that day's break, so
+  // the freed time flows into worked minutes and — being past 8h — pays as OT
+  // (see payroll-compute breakSkipDates). Both ประจำ and พาร์ทไทม์. Mirrors
+  // ot_requests: one row per (user, day), re-submitting resets to pending.
+  // break_label snapshots the skipped window (e.g. '14:00–16:00') for display.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS break_skip_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      branch_id INTEGER REFERENCES branches(id),
+      work_date TEXT NOT NULL,          -- YYYY-MM-DD (BKK)
+      break_label TEXT,                 -- 'HH:MM–HH:MM' snapshot of the skipped break
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','approved','rejected')),
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT,
+      decision_note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, work_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_break_skip_status ON break_skip_requests(status, work_date);
+    CREATE INDEX IF NOT EXISTS idx_break_skip_user_date ON break_skip_requests(user_id, work_date);
+  `);
+
   // early_leave_requests (owner 2026-07-30) — a staffer who redeemed the free
   // lunch coupon but needs to leave the ≥8h shift early asks permission FIRST.
   // A supervisor/admin APPROVES; an approved row for the day exempts them from
