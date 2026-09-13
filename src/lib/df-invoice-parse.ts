@@ -46,6 +46,9 @@ function num(v: unknown): number {
   }
   return 0;
 }
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
 
 // "01/08/2569" (DD/MM/BBBB Buddhist) → "2026-08-01". Also tolerates a 4-digit
 // Gregorian year and an ISO string, so re-exports in another locale still work.
@@ -82,7 +85,12 @@ function locateColumns(header: unknown[]): Record<string, number> {
     ["qty", (h) => h === "จำนวน"],
     ["gross", (h) => h.includes("ราคารวม")],
     ["discount", (h) => h === "ส่วนลด"],
-    ["net", (h) => h.includes("ราคาสุทธิ")]
+    ["net", (h) => h.includes("ราคาสุทธิ")],
+    // Bill-level (end-of-bill) discount + the resulting bill net — present on the
+    // FIRST line of each bill only (owner 2026-09-13). A visit can be discounted
+    // to 0 here while each line's own ส่วนลด stays 0, so DF must fold this in.
+    ["billDiscount", (h) => h === "ส่วนลดท้ายบิล"],
+    ["billNet", (h) => h === "รวมสุทธิ"]
   ];
   for (let c = 0; c < header.length; c++) {
     const h = str(header[c]);
@@ -155,6 +163,45 @@ export function parseInvoiceBuffer(
   const { rows, headerIdx, cols } = readRowsAndHeader(buf);
   if (headerIdx < 0) return { periodStart: null, periodEnd: null, lines: [], skippedNoDate: 0 };
 
+  // Pass 1 — group EVERY line item by bill so the end-of-bill discount can be
+  // spread across all its lines (owner 2026-09-13). netSum is over ALL lines
+  // (not just wanted ones), since the bill discount applies to the whole bill.
+  // The bill-level fields sit on the bill's first row; capture them there.
+  type BillAgg = { netSum: number; billDiscount: number; billNet: number | null };
+  const bills = new Map<string, BillAgg>();
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const desc = str(row[cols.desc]);
+    if (!desc) continue;                 // totals row / blank → not a line item
+    const inv = str(row[cols.invoice]);
+    if (!inv) continue;
+    let b = bills.get(inv);
+    if (!b) {
+      // First row of this bill — read the bill-level discount / net here.
+      const billDiscount = cols.billDiscount !== undefined ? num(row[cols.billDiscount]) : 0;
+      let billNet: number | null = null;
+      if (cols.billNet !== undefined && str(row[cols.billNet]) !== "") billNet = num(row[cols.billNet]);
+      b = { netSum: 0, billDiscount, billNet };
+      bills.set(inv, b);
+    }
+    b.netSum += num(row[cols.net]);
+  }
+
+  // Per-bill scale factor = (bill net after end-of-bill discount) / Σ line nets.
+  // Prefer the report's own รวมสุทธิ; else derive it from ส่วนลดท้ายบิล. Clamp to
+  // [0,1] — a discount can zero a bill but never inflate it. 1 = no bill discount.
+  const scaleOf = (inv: string): number => {
+    const b = bills.get(inv);
+    if (!b || b.netSum <= 0) return 1;
+    let billNet: number;
+    if (b.billNet != null) billNet = b.billNet;
+    else if (b.billDiscount > 0) billNet = b.netSum - b.billDiscount;
+    else return 1;
+    const s = billNet / b.netSum;
+    return Number.isFinite(s) ? Math.max(0, Math.min(1, s)) : 1;
+  };
+
+  // Pass 2 — keep the wanted lines, folding each bill's discount into net.
   const lines: DfParsedLine[] = [];
   let skippedNoDate = 0;
   for (let i = headerIdx + 1; i < rows.length; i++) {
@@ -165,16 +212,24 @@ export function parseInvoiceBuffer(
     if (!tag || !want.has(tag)) continue;
     const lineDate = parseThaiDate(str(row[cols.date]));
     if (!lineDate) { skippedNoDate++; continue; }
+    const invoiceNo = str(row[cols.invoice]);
+    const rawNet = num(row[cols.net]);
+    const scale = scaleOf(invoiceNo);
+    const net = round2(rawNet * scale);
+    const lineDiscount = num(row[cols.discount]);
+    // Fold the line's share of the bill discount into `discount` so the invariant
+    // net = gross − discount still holds and the allocation is auditable.
+    const discount = round2(lineDiscount + (rawNet - net));
     lines.push({
-      invoiceNo: str(row[cols.invoice]),
+      invoiceNo,
       lineDate,
       itemCode: str(row[cols.code]),
       tag,
       description: desc,
       qty: num(row[cols.qty]),
       gross: num(row[cols.gross]),
-      discount: num(row[cols.discount]),
-      net: num(row[cols.net])
+      discount,
+      net
     });
   }
 
