@@ -129,6 +129,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/persona/shift-swap", label: "สลับกะ" },
         { href: "/staff/persona/time-certification", label: t(lang, "staff.persona.nav.timeCert") },
         { href: "/staff/persona/late-excusal", label: "ขออนุโลมการมาสาย" },
+        { href: "/staff/persona/break-skip", label: "ขอทำงานช่วงพัก (ไม่พัก)" },
         {
           href: "/staff/persona/shift/edit-requests",
           label: t(lang, "staff.nav.editRequests"),

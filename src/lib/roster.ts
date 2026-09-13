@@ -222,6 +222,27 @@ export function effectiveShiftStartForUserDate(
   return row?.start_time ?? null;
 }
 
+/** The scheduled break window for a user on a date at a branch (owner
+ *  2026-09-13, break-skip). Returns the EARLIEST break window among the day's
+ *  assignments, or null when the day has no break to skip. Drives the break-skip
+ *  request (enforce "file before the break starts" + snapshot the label). */
+export function breakWindowForUserDate(
+  userId: number,
+  branchId: number,
+  dateBkk: string
+): { start: string; end: string } | null {
+  const row = getDb().prepare(`
+    SELECT s.break_start AS bs, s.break_end AS be
+    FROM roster_assignments a
+    JOIN shift_codes s ON s.id = a.shift_code_id
+    WHERE a.user_id = ? AND a.branch_id = ? AND a.assignment_date = ?
+      AND s.break_start IS NOT NULL AND s.break_end IS NOT NULL
+    ORDER BY s.break_start ASC
+    LIMIT 1
+  `).get(userId, branchId, dateBkk) as { bs: string; be: string } | undefined;
+  return row ? { start: row.bs, end: row.be } : null;
+}
+
 /** Total scheduled shift MINUTES the user is rostered for on a date at a branch
  *  (owner 2026-07-30, meal-benefit eligibility). Sum of each assignment's
  *  (end − start), treating end ≤ start as an overnight shift (+24h). This is the

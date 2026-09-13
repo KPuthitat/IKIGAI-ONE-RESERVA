@@ -159,6 +159,74 @@ console.log("\nOT ต้องได้รับอนุมัติก่อ�
   eq("ผู้บริหารมีอนุมัติ OT → ot_minutes 0", exec.ot_minutes, 0);
 }
 
+// 8a. ขอทำงานช่วงพัก (break-skip, owner 2026-09-13) — เมื่ออนุมัติ ไม่หักเวลาพัก
+//     เวลาที่คืนมาทำให้เกิน 8 ชม. จ่ายเป็น OT (ทั้งประจำและพาร์ทไทม์). ไม่อนุมัติ =
+//     หักพักตามปกติ. ผู้บริหารไม่เกี่ยว. break_min override ของแอดมินยังชนะ.
+console.log("\nขอทำงานช่วงพัก (break-skip):");
+{
+  const D = "2026-06-16";
+  const iso = (hhmm: string) => new Date(`${D}T${hhmm}:00+07:00`).toISOString();
+  // กะ 09:00–19:00 (10 ชม.) พัก 12:00–14:00 (2 ชม.) → ปกติทำงาน 8 ชม.พอดี. คลิกจริง 09:00–19:00.
+  const sched: ScheduledShift = {
+    startTs: iso("09:00"), endTs: iso("19:00"),
+    breakStartTs: iso("12:00"), breakEndTs: iso("14:00")
+  };
+  const scheduledByDate = new Map<string, ScheduledShift[]>([[D, [sched]]]);
+  const shift = { startTs: iso("09:00"), endTs: iso("19:00"), durationMinutes: 600 };
+  const base = {
+    shifts: [shift], unpaired: 0, leaveDays: 0, unpaidLeaveDays: 0,
+    cycle: "monthly" as const, periodStart: "2026-06-01", periodEnd: "2026-06-30",
+    settings: { ...SETTINGS, ot_flat_per_15min: 25 },
+    holidaySet: new Set<string>(), scheduledByDate
+  };
+  const skip = new Set<string>([D]);
+
+  // FT ไม่ขอไม่พัก → หักพัก 120, ทำงาน 8 ชม., OT 0
+  const ftNo = computeLineForEmployee({ ...base, employee: { ...ftMonthly(30000), track_attendance: 1 } });
+  eq("FT ไม่ขอไม่พัก → หักพัก 120", ftNo.break_deducted_minutes, 120);
+  eq("FT ไม่ขอไม่พัก → OT 0", ftNo.ot_minutes, 0);
+  // FT อนุมัติไม่พัก → ไม่หักพัก, ทำงาน 10 ชม., OT 120 (โดยไม่ต้องมี ot_request แยก)
+  const ftSkip = computeLineForEmployee({ ...base, employee: { ...ftMonthly(30000), track_attendance: 1 }, breakSkipDates: skip });
+  eq("FT อนุมัติไม่พัก → ไม่หักพัก (0)", ftSkip.break_deducted_minutes, 0);
+  eq("FT อนุมัติไม่พัก → OT 120 นาที", ftSkip.ot_minutes, 120);
+  eq("FT อนุมัติไม่พัก → OT pay 200 (8×25)", ftSkip.ot_pay, 200);
+  eq("FT อนุมัติไม่พัก → regular ยัง 480", ftSkip.regular_minutes, 480);
+
+  // PT เหมือนกัน
+  const ptNo = computeLineForEmployee({ ...base, employee: ptHourly(50) });
+  eq("PT ไม่ขอไม่พัก → OT 0", ptNo.ot_minutes, 0);
+  const ptSkip = computeLineForEmployee({ ...base, employee: ptHourly(50), breakSkipDates: skip });
+  eq("PT อนุมัติไม่พัก → OT 120 นาที", ptSkip.ot_minutes, 120);
+  eq("PT อนุมัติไม่พัก → ไม่หักพัก (0)", ptSkip.break_deducted_minutes, 0);
+
+  // ผู้บริหาร (track_attendance=0) → break-skip ไม่มีผล
+  const exec = computeLineForEmployee({ ...base, employee: { ...ftMonthly(30000), track_attendance: 0 }, breakSkipDates: skip });
+  eq("ผู้บริหาร อนุมัติไม่พัก → OT 0", exec.ot_minutes, 0);
+
+  // break_min override ของแอดมินยังชนะ break-skip (หักตามที่แอดมินกรอก)
+  const override = computeLineForEmployee({
+    ...base, employee: { ...ftMonthly(30000), track_attendance: 1 }, breakSkipDates: skip,
+    fieldOverridesByDate: new Map([[D, { break_min: 60 }]])
+  });
+  eq("break_min override ชนะ break-skip → หักพัก 60", override.break_deducted_minutes, 60);
+
+  // กะยาวเกิน 8ชม.+พัก: 09:00–20:00 (11ชม.) พัก 2ชม. → ปกติทำงาน 9ชม.
+  // break-skip ต้องให้ OT เฉพาะ "เวลาพักที่คืนมา" ที่เกิน 8ชม. (=2ชม.) เท่านั้น —
+  // ชม.ที่ 9 ที่เกินอยู่ก่อนแล้วยังเป็น regular (ต้องขอ OT ของมันเอง).
+  const longSched: ScheduledShift = {
+    startTs: iso("09:00"), endTs: iso("20:00"),
+    breakStartTs: iso("12:00"), breakEndTs: iso("14:00")
+  };
+  const longBase = {
+    ...base, scheduledByDate: new Map<string, ScheduledShift[]>([[D, [longSched]]]),
+    shifts: [{ startTs: iso("09:00"), endTs: iso("20:00"), durationMinutes: 660 }]
+  };
+  const longNo = computeLineForEmployee({ ...longBase, employee: { ...ftMonthly(30000), track_attendance: 1 } });
+  eq("กะยาว ไม่ขอ → OT 0 (ชม.9 เป็น regular)", longNo.ot_minutes, 0);
+  const longSkip = computeLineForEmployee({ ...longBase, employee: { ...ftMonthly(30000), track_attendance: 1 }, breakSkipDates: skip });
+  eq("กะยาว break-skip → OT 120 เฉพาะพัก (ไม่ใช่ 180)", longSkip.ot_minutes, 120);
+}
+
 // 8b. เข้างานก่อนเวลาตามมอบหมาย — ต้องได้รับอนุมัติก่อนถึงจะนับเป็น OT
 //     (owner 2026-07-28, สมมาตรกับ OT อยู่เกินเวลา). อนุมัติ → หน้าต่างเริ่มจาก
 //     เวลาที่ตอกเข้าจริง เกิน 8 ชม. = OT. ไม่อนุมัติ → นับเข้างานตามกะ.
