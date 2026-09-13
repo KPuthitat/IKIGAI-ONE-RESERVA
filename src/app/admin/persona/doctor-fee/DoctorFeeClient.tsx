@@ -118,9 +118,9 @@ export default function DoctorFeeClient({
       <div className="card">
         <button type="button" onClick={() => setShowSetup((s) => !s)}
           className="w-full flex items-center justify-between text-sm font-semibold text-slate-700">
-          <span>{showSetup ? "▾" : "▸"} ตั้งค่า DF · นำเข้าไฟล์ · กฎ (รหัส × เรท)</span>
+          <span>{showSetup ? "▾" : "▸"} ตั้งค่าการคำนวณค่าตอบแทนแพทย์</span>
           <span className="text-[11px] font-normal text-slate-400">
-            {span.count > 0 ? `มีข้อมูล ${span.count} บรรทัด` : "ยังไม่มีข้อมูล"} · {rules.length} กฎ
+            {span.count > 0 ? `มีข้อมูล ${span.count} บรรทัด` : "ยังไม่มีข้อมูล"} · {rules.length} หัวข้อ
           </span>
         </button>
         {showSetup && (
@@ -193,7 +193,7 @@ export default function DoctorFeeClient({
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
-                <th className="py-1.5 pr-3">กฎ</th>
+                <th className="py-1.5 pr-3">หัวข้อรายการค่าตอบแทนแพทย์</th>
                 <th className="py-1.5 pr-3">รหัส</th>
                 <th className="py-1.5 pr-3 text-right">เรท</th>
                 <th className="py-1.5 pr-3 text-right">ฐานยอด</th>
@@ -355,23 +355,23 @@ function RulesEditor({ rules, onChange, onSaved }: {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "เพิ่มกฎไม่สำเร็จ")); return; }
+      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "เพิ่มหัวข้อไม่สำเร็จ")); return; }
       onChange(j.rules as DfRule[]);
       setAdding(false);
       onSaved();
-    } catch { setErr("เพิ่มกฎไม่สำเร็จ"); }
+    } catch { setErr("เพิ่มหัวข้อไม่สำเร็จ"); }
     finally { setBusy(false); }
   }
 
   return (
     <div className="card space-y-3">
-      <h2 className="font-semibold text-slate-700">2) กฎค่าตอบแทน (รหัส × เรท)</h2>
+      <h2 className="font-semibold text-slate-700">หัวข้อรายการค่าตอบแทนแพทย์ (รหัส × เรท)</h2>
       <ScanPicker onApplied={(r) => { onChange(r); onSaved(); }} />
       <div className="space-y-2">
         {rules.map((r) => (
           <RuleRow key={r.id} rule={r} busy={busy} onSave={(b) => patch(r.id, b)} onDelete={() => remove(r.id)} />
         ))}
-        {rules.length === 0 && <div className="text-sm text-slate-400">ยังไม่มีกฎ — กด “+ เพิ่มกฎ” เพื่อสร้าง เช่น HSC 30%</div>}
+        {rules.length === 0 && <div className="text-sm text-slate-400">ยังไม่มีหัวข้อ — กด “+ เพิ่มหัวข้อ” เพื่อสร้าง เช่น HSC 30%</div>}
         {adding && (
           <RuleRow
             rule={{ id: 0, branch_id: 0, name: "", item_tags: [], rate: 0.3, active: true, sort_order: 0 }}
@@ -381,8 +381,8 @@ function RulesEditor({ rules, onChange, onSaved }: {
       </div>
       {err && <div className="text-xs text-rose-600">{err}</div>}
       <div className="flex items-center justify-between">
-        <p className="text-[11px] text-slate-400">แต่ละกลุ่มหัตถการ (เช่น ฉีดยา IM, เย็บแผล SUT) ใส่เป็นกฎแยก ตั้ง % ของตัวเองได้</p>
-        {!adding && <button type="button" className="btn-secondary text-xs" onClick={() => setAdding(true)}>+ เพิ่มกฎ</button>}
+        <p className="text-[11px] text-slate-400">แต่ละกลุ่มหัตถการ (เช่น ฉีดยา IM, เย็บแผล SUT) เพิ่มเป็นหัวข้อแยก ตั้ง % ของตัวเองได้</p>
+        {!adding && <button type="button" className="btn-secondary text-xs" onClick={() => setAdding(true)}>+ เพิ่มหัวข้อ</button>}
       </div>
     </div>
   );
