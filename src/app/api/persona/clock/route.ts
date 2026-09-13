@@ -510,6 +510,21 @@ export async function POST(req: Request) {
     }
   }
 
+  // On a fresh clock-OUT, if the staffer has an APPROVED "work through the break"
+  // request today, confirm that their break won't be deducted and the over-8h
+  // pays as OT (owner 2026-09-13). Advisory only — informational, never blocks.
+  let breakSkipInfo: { breakLabel: string | null } | null = null;
+  if (action === "out") {
+    try {
+      const bs = db.prepare(
+        "SELECT break_label FROM break_skip_requests WHERE user_id = ? AND work_date = ? AND status = 'approved' LIMIT 1"
+      ).get(user.id, todayBkk) as { break_label: string | null } | undefined;
+      if (bs) breakSkipInfo = { breakLabel: bs.break_label };
+    } catch (e) {
+      console.warn("[clock] break-skip notice failed:", e);
+    }
+  }
+
   // ── Fire-and-forget: ส่ง LINE flex confirmation message on clock-in ──
   // Channel: IKIGAI OS (platform-level OA, shared across all branches).
   // Branch context: ใช้แค่ดึงเวลาพักกลางวัน + ชื่อสาขามาแสดงในข้อความ.
@@ -565,6 +580,7 @@ export async function POST(req: Request) {
     action,
     ...(owl ? { owl } : {}),
     ...(swap ? { swap } : {}),
-    ...(foodWarning ? { foodWarning } : {})
+    ...(foodWarning ? { foodWarning } : {}),
+    ...(breakSkipInfo ? { breakSkipInfo } : {})
   });
 }
