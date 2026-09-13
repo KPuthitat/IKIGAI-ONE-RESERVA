@@ -91,6 +91,16 @@ export function activeRules(branchId: number): DfRule[] {
   return listRules(branchId).filter((r) => r.active);
 }
 
+// Turn a rules zod failure into a Thai message that names the offending field,
+// so the admin sees the real reason instead of a generic "ข้อมูลไม่ถูกต้อง"
+// (owner 2026-09-13 — a long ชื่อกฎ was being silently rejected).
+export function ruleValidationMessage(fe: Record<string, string[] | undefined>): string {
+  if (fe.name) return "ชื่อกฎยาว/ว่างเกินไป — ต้องมี 1–160 ตัวอักษร (ลองย่อชื่อให้สั้นลง)";
+  if (fe.item_tags) return "รหัสไม่ถูกต้อง — กรอกอย่างน้อย 1 รหัส แต่ละรหัสยาวไม่เกิน 40 ตัวอักษร";
+  if (fe.rate) return "เรทต้องเป็นตัวเลข 0–100";
+  return "ข้อมูลไม่ครบหรือไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง";
+}
+
 export type UpsertRuleInput = { name: string; item_tags: string[]; rate: number; active: boolean };
 
 export function createRule(branchId: number, input: UpsertRuleInput): DfRule {

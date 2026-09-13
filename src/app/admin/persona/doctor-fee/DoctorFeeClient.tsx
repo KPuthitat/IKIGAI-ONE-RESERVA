@@ -491,7 +491,13 @@ function RuleRow({ rule, busy, isNew, onSave, onDelete, onCancel }: {
   const parsedTags = tags.split(",").map((t) => t.trim()).filter(Boolean);
   const dirty = name !== rule.name || tags !== rule.item_tags.join(", ")
     || Number(ratePct) !== Math.round(rule.rate * 1000) / 10 || active !== rule.active;
-  const valid = name.trim().length > 0 && parsedTags.length > 0 && ratePct !== "";
+  const rateNum = Number(ratePct);
+  const rateOk = ratePct.trim() !== "" && Number.isFinite(rateNum) && rateNum >= 0 && rateNum <= 100;
+  const nameOk = name.trim().length > 0 && name.trim().length <= 160;
+  const valid = nameOk && parsedTags.length > 0 && rateOk;
+  const hint = !nameOk ? (name.trim() ? "ชื่อกฎยาวเกิน 160 ตัวอักษร — ลองย่อให้สั้นลง" : "กรุณากรอกชื่อกฎ")
+    : parsedTags.length === 0 ? "กรุณากรอกรหัสอย่างน้อย 1 รหัส"
+    : !rateOk ? "เรทต้องเป็นตัวเลข 0–100" : null;
 
   return (
     <div className={`flex flex-wrap items-end gap-2 border rounded-lg p-2.5 ${isNew ? "border-brand/40 bg-brand/5" : "border-slate-100"}`}>
@@ -525,6 +531,7 @@ function RuleRow({ rule, busy, isNew, onSave, onDelete, onCancel }: {
       {isNew
         ? <button type="button" className="btn-secondary text-xs !py-1.5" onClick={onCancel}>ยกเลิก</button>
         : onDelete && <button type="button" disabled={busy} className="text-xs text-rose-500 hover:text-rose-700 pb-1.5" onClick={onDelete}>ลบ</button>}
+      {dirty && hint && <span className="text-[11px] text-amber-600 pb-1.5 w-full sm:w-auto">{hint}</span>}
     </div>
   );
 }
