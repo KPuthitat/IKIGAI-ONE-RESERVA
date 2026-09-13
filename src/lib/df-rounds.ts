@@ -218,6 +218,25 @@ export function dfDayDetail(branchId: number, date: string): DfDayLine[] {
   return out;
 }
 
+export type DfDayDoctor = {
+  user_id: number; display_name: string; title_prefix: string | null;
+  dayPool: number; doctorCount: number; share: number;
+};
+
+/** Per-doctor DF split for a single day — who was on the roster and each one's
+ *  share of that day's DF (owner 2026-09-13, for the daily LINE card). Used by
+ *  the day drill-down and the notify route. */
+export function dfDayDoctorSplit(branchId: number, date: string): DfDayDoctor[] {
+  const res = computeDoctorFees(branchId, date, date);
+  return res.doctors.map((d) => {
+    const day = d.days.find((x) => x.date === date);
+    return {
+      user_id: d.user_id, display_name: d.display_name, title_prefix: d.title_prefix,
+      dayPool: round2(day?.dayPool ?? 0), doctorCount: day?.doctorCount ?? 1, share: round2(day?.share ?? d.totalFee)
+    };
+  });
+}
+
 // ── Preview (live compute) ────────────────────────────────────────
 
 export function previewDfRound(branchId: number, weekStartInput: string): DfRoundPreview {
