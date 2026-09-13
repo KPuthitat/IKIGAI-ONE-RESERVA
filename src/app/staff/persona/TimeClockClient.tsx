@@ -38,7 +38,7 @@ function haversineMetersClient(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl" | "swap" | "coupon" | "food_warn";
+type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl" | "swap" | "coupon" | "food_warn" | "break_skip_info";
 
 // Meal-coupon pop-up payload from the clock route (owner 2026-07-12).
 type CouponInfo = { food: boolean; drink: boolean; redeemBefore: string };
@@ -456,6 +456,7 @@ function ClockAction({
   // Food-credit early-leave warning (owner 2026-07-30) — shown on a clock-out
   // that leaves the ≥8h shift early after redeeming the free lunch.
   const [foodWarn, setFoodWarn] = useState<{ credit: number; workedMinutes: number; workDate: string } | null>(null);
+  const [breakSkipInfo, setBreakSkipInfo] = useState<{ breakLabel: string | null } | null>(null);
   const [foodWarnBusy, setFoodWarnBusy] = useState(false);
   const [foodWarnRequested, setFoodWarnRequested] = useState(false);
   // Shift-swap / late-early prompt (owner 2026-06-08).
@@ -811,6 +812,14 @@ function ClockAction({
           return;
         }
       }
+      // Break-skip confirmation (owner 2026-09-13) — clocked out on a day with an
+      // approved "work through the break" request: reassure that the break won't
+      // be deducted and the over-8h pays as OT. Informational only.
+      if (data.action === "out" && data.breakSkipInfo) {
+        setBreakSkipInfo(data.breakSkipInfo as { breakLabel: string | null });
+        setPhase("break_skip_info");
+        return;
+      }
       // Food-credit early-leave warning (owner 2026-07-30) — clocked out of the
       // ≥8h shift early after redeeming the free lunch. Warn + offer to request
       // approval (an approval exempts the SVC clawback).
@@ -1118,6 +1127,28 @@ function ClockAction({
             </button>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // ── Break-skip confirmation (owner 2026-09-13) ────
+  // Shown on clock-out when today's "work through the break" request is approved.
+  // Informational: the break isn't deducted and the over-8h pays as OT.
+  if (phase === "break_skip_info" && breakSkipInfo) {
+    return (
+      <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4 space-y-3 text-left">
+        <div className="text-base font-bold text-emerald-800 text-center">วันนี้ทำงานช่วงพัก (อนุมัติแล้ว)</div>
+        <div className="text-sm text-slate-700 leading-relaxed text-center">
+          วันนี้พี่{nickname}ทำงานช่วงพัก
+          {breakSkipInfo.breakLabel ? <> ({breakSkipInfo.breakLabel})</> : null}
+          {" "}เวลาพักจะไม่ถูกหัก และเวลาที่เกิน 8 ชม. จะจ่ายเป็นค่าล่วงเวลา (OT) ให้อัตโนมัติครับ
+        </div>
+        <button
+          onClick={onSuccess}
+          className="w-full py-3 rounded-xl bg-brand text-white text-sm font-bold active:scale-95 transition"
+        >
+          รับทราบ
+        </button>
       </div>
     );
   }
