@@ -273,6 +273,63 @@ export function dfDayDoctorSplit(branchId: number, date: string): DfDayDoctor[] 
   });
 }
 
+// Rich per-doctor daily-card data (owner 2026-09-14): the doctor's DF split by
+// service code, the patients (bills) seen that day, and the running totals for
+// the current week (Mon–Sun) and month — for the daily LINE card + its preview.
+export type DfDailyCardData = {
+  perCode: Array<{ code: string; share: number; bills: number }>;
+  patients: number;      // distinct bills (visits) that earned DF that day
+  doctorCount: number;   // doctors sharing the day
+  dayShare: number;      // the doctor's DF that day (= Σ perCode.share)
+  weekAccum: number;     // the doctor's DF, Monday → this day
+  monthAccum: number;    // the doctor's DF, 1st of month → this day
+};
+
+/** Build the daily-card figures for one doctor on one day, or null when the
+ *  doctor earned no DF that day. Amounts are the doctor's SHARE (day fee split
+ *  equally across the rostered doctors), so the per-code lines sum to dayShare. */
+export function dfDoctorDailyCard(branchId: number, date: string, userId: number): DfDailyCardData | null {
+  const db = getDb();
+  const dayRes = computeDoctorFees(branchId, date, date);
+  const dayDoc = dayRes.doctors.find((d) => d.user_id === userId);
+  if (!dayDoc) return null;
+  const day = dayDoc.days.find((x) => x.date === date);
+  const doctorCount = day?.doctorCount ?? 1;
+  const dayShare = round2(dayDoc.totalFee);
+
+  // Per service code that earned DF this day (net × rate ÷ doctorCount).
+  const tagRate = new Map<string, number>();
+  for (const r of db.prepare(
+    "SELECT item_tags, rate FROM df_fee_rules WHERE branch_id = ? AND active = 1"
+  ).all(branchId) as Array<{ item_tags: string; rate: number }>) {
+    try { for (const t of JSON.parse(r.item_tags) as string[]) tagRate.set(String(t).toUpperCase(), r.rate); }
+    catch { /* skip malformed */ }
+  }
+  const lines = db.prepare(
+    "SELECT invoice_no, item_tag, net FROM df_invoice_lines WHERE branch_id = ? AND line_date = ?"
+  ).all(branchId, date) as Array<{ invoice_no: string; item_tag: string; net: number }>;
+  const byCode = new Map<string, { fee: number; bills: Set<string> }>();
+  const allBills = new Set<string>();
+  for (const l of lines) {
+    const rate = tagRate.get(l.item_tag);
+    if (rate === undefined) continue;
+    let c = byCode.get(l.item_tag);
+    if (!c) { c = { fee: 0, bills: new Set() }; byCode.set(l.item_tag, c); }
+    c.fee += l.net * rate; c.bills.add(l.invoice_no); allBills.add(l.invoice_no);
+  }
+  const perCode = [...byCode.entries()]
+    .map(([code, c]) => ({ code, share: round2(c.fee / doctorCount), bills: c.bills.size }))
+    .sort((a, b) => b.share - a.share);
+
+  // Running totals for this doctor (roster-split), through this day.
+  const weekStart = mondayOf(date);
+  const monthStart = date.slice(0, 8) + "01";
+  const weekAccum = round2(computeDoctorFees(branchId, weekStart, date).doctors.find((d) => d.user_id === userId)?.totalFee ?? 0);
+  const monthAccum = round2(computeDoctorFees(branchId, monthStart, date).doctors.find((d) => d.user_id === userId)?.totalFee ?? 0);
+
+  return { perCode, patients: allBills.size, doctorCount, dayShare, weekAccum, monthAccum };
+}
+
 // ── Preview (live compute) ────────────────────────────────────────
 
 export function previewDfRound(branchId: number, weekStartInput: string): DfRoundPreview {

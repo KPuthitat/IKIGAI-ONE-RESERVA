@@ -440,6 +440,33 @@ process.env.DATABASE_PATH = TMP;
   const aLine = rounds.listRoundLines(paidA.id).find((l) => l.user_id === d3);
   ok("guarantee snapshot: frozen line records is_guarantee + deficit_after", !!aLine && aLine.is_guarantee === 1 && near(aLine.deficit_after, 500) && near(aLine.guarantee_amount, 2000));
 
+  // ── 12) DAILY CARD (owner 2026-09-14): per-code split + patients + running totals ──
+  db.prepare(`INSERT INTO df_fee_rules (branch_id,name,item_tags,rate,active,sort_order) VALUES (?,'PHY','["PHY"]',0.30,1,5)`).run(bid);
+  const d4 = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,clinical_role,status) VALUES ('doc4','x','หมอดี','admin','doctor','active')").run().lastInsertRowid);
+  for (const day of ["2026-12-01", "2026-12-02"]) rosterH(d4, day, p1, sc); // solo
+  df.importInvoiceLines(bid, [
+    { invoiceNo: "DC1", lineDate: "2026-12-01", itemCode: "G", tag: "HSC", description: "[HSC]", qty: 1, gross: 600, discount: 0, net: 600 },
+    { invoiceNo: "DC2", lineDate: "2026-12-01", itemCode: "G", tag: "HSC", description: "[HSC]", qty: 1, gross: 400, discount: 0, net: 400 },
+    { invoiceNo: "DC1", lineDate: "2026-12-01", itemCode: "P", tag: "PHY", description: "[PHY]", qty: 1, gross: 200, discount: 0, net: 200 },
+    { invoiceNo: "DC3", lineDate: "2026-12-02", itemCode: "G", tag: "HSC", description: "[HSC]", qty: 1, gross: 500, discount: 0, net: 500 }
+  ], "dc.xlsx");
+  // Dec 1: HSC net 1000 → 300 (bills DC1,DC2), PHY net 200 → 60 (bill DC1). Solo → share = fee.
+  const card = rounds.dfDoctorDailyCard(bid, "2026-12-01", d4);
+  ok("daily card: dayShare = 360", !!card && near(card.dayShare, 360));
+  const hsc = card?.perCode.find((c) => c.code === "HSC");
+  const phy = card?.perCode.find((c) => c.code === "PHY");
+  ok("daily card: HSC 300 · 2 บิล", !!hsc && near(hsc.share, 300) && hsc.bills === 2);
+  ok("daily card: PHY 60 · 1 บิล", !!phy && near(phy.share, 60) && phy.bills === 1);
+  ok("daily card: perCode sorted by share desc", !!card && card.perCode[0].code === "HSC");
+  ok("daily card: patients = 2 distinct bills", !!card && card.patients === 2);
+  ok("daily card: weekAccum through Dec 1 = 360", !!card && near(card.weekAccum, 360));
+  ok("daily card: monthAccum through Dec 1 = 360", !!card && near(card.monthAccum, 360));
+  // Dec 2 accumulates: 360 (Dec 1) + 150 (Dec 2) = 510 for both week + month.
+  const card2 = rounds.dfDoctorDailyCard(bid, "2026-12-02", d4);
+  ok("daily card Dec 2: dayShare 150, weekAccum 510, monthAccum 510",
+    !!card2 && near(card2.dayShare, 150) && near(card2.weekAccum, 510) && near(card2.monthAccum, 510));
+  ok("daily card: null when the doctor had no DF that day", rounds.dfDoctorDailyCard(bid, "2026-12-05", d4) === null);
+
   console.log(`\ndf test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);

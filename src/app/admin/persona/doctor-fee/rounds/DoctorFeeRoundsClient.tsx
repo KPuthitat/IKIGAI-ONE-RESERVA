@@ -30,7 +30,7 @@ type PinAction =
 // A pending LINE-card send (owner 2026-09-13). Carries the client-built preview
 // + the request body; the server recomputes the amount before sending.
 type SendAction =
-  | { kind: "daily"; userId: number; date: string; heading: string; preview: DailyPreviewData }
+  | { kind: "daily"; userId: number; date: string; heading: string; preview: DailyPreviewData | null }
   | { kind: "weekly"; userId: number; week: string; heading: string; preview: WeeklyPreviewData };
 
 export default function DoctorFeeRoundsClient({ view: initialView, doctors: initialDoctors, clinicName }: { view: DfMonthView; doctors: DfDoctor[]; clinicName: string }) {
@@ -93,15 +93,18 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
       }
     });
   }
-  function sendDailyRow(day: DfDayRow, doc: DfDayDoctorMini) {
-    setSend({
-      kind: "daily", userId: doc.user_id, date: day.date,
-      heading: `ส่งสรุป DF รายวัน · ${doc.name}`,
-      preview: {
-        doctorName: doc.name, clinicName,
-        dateLabel: thDate(day.date), dayPool: day.pool, doctorCount: day.doctors.length, share: doc.share
+  async function sendDailyRow(day: DfDayRow, doc: DfDayDoctorMini) {
+    // Open the modal in a loading state, then fetch the rich card (per-code
+    // breakdown + patients + running totals) so the preview == what's sent.
+    setSend({ kind: "daily", userId: doc.user_id, date: day.date, heading: `ส่งสรุป DF รายวัน · ${doc.name}`, preview: null });
+    try {
+      const r = await fetch(apiUrl(`/api/admin/persona/doctor-fee/notify?userId=${doc.user_id}&date=${day.date}`));
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) {
+        setSend((prev) => (prev && prev.kind === "daily" && prev.userId === doc.user_id && prev.date === day.date
+          ? { ...prev, preview: j.card as DailyPreviewData } : prev));
       }
-    });
+    } catch { /* leave the loading note; the send still recomputes server-side */ }
   }
 
   async function loadMonth(year: number, month: number) {
@@ -302,7 +305,9 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
       {send && (
         <DfSendModal
           heading={send.heading}
-          preview={send.kind === "daily" ? <DfDailyPreview {...send.preview} /> : <DfWeeklyPreview {...send.preview} />}
+          preview={send.kind === "daily"
+            ? (send.preview ? <DfDailyPreview {...send.preview} /> : <div className="text-sm text-slate-500 text-center py-6">กำลังโหลดข้อมูล…</div>)
+            : <DfWeeklyPreview {...send.preview} />}
           onConfirm={doSend}
           onClose={() => setSend(null)}
         />
