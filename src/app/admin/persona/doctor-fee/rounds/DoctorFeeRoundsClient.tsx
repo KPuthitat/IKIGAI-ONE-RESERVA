@@ -75,7 +75,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.ok) return { ok: false, message: j.message ?? humanizeApiError(j, "ส่งไม่สำเร็จ") };
       setSend(null);
-      setMsg({ kind: "ok", text: "ส่งการ์ด LINE ให้แพทย์แล้ว" });
+      setMsg({ kind: "ok", text: "ส่งแจ้งเตือนให้แพทย์แล้ว" });
       return { ok: true };
     } catch { return { ok: false, message: "ส่งไม่สำเร็จ" }; }
   }
@@ -192,7 +192,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
           </button>
         </div>
         <span className="block text-[11px] text-slate-400">โปรแกรมจับรายการ DF ตามกฎ (ตั้งกฎที่หน้า “ค่าตอบแทนแพทย์”) · นำเข้าซ้ำได้ ระบบอัปเดตให้เอง · นำเข้าผิดไฟล์กด “ล้างข้อมูลนำเข้าเดือนนี้” แล้วนำเข้าใหม่ได้</span>
-        <span className="block text-[11px] text-emerald-700">💬 ส่งการ์ดสรุปค่าตอบแทน (DF) ให้แพทย์ทาง LINE: การ์ดรายวัน กดปุ่ม “ส่ง LINE” ท้ายแต่ละวันได้เลย · การ์ดรายสัปดาห์ กดขยายรอบจ่าย ▸ แล้วกด “ส่ง LINE” ของแพทย์ท่านนั้น</span>
+        <span className="block text-[11px] text-emerald-700">💬 ส่งการ์ดสรุปค่าตอบแทน (DF) ให้แพทย์ทาง LINE: การ์ดรายวัน กดปุ่ม “ส่งแจ้งเตือน” ท้ายแต่ละวันได้เลย · การ์ดรายสัปดาห์ กดขยายรอบจ่าย ▸ แล้วกด “ส่งแจ้งเตือน” ของแพทย์ท่านนั้น</span>
       </div>
 
       {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.kind === "ok" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>{msg.text}</div>}
@@ -243,7 +243,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
                               guaranteeIds.has(doc.user_id)
                                 ? <span key={doc.user_id} className="text-[10px] text-violet-600 ml-2">การันตี</span>
                                 : <button key={doc.user_id} type="button" onClick={() => sendDailyRow(d, doc)}
-                                    className="text-[11px] text-emerald-700 hover:underline ml-2">ส่ง LINE{d.doctors.length > 1 ? ` · ${doc.name}` : ""}</button>
+                                    className="text-[11px] text-emerald-700 hover:underline ml-2">ส่งแจ้งเตือน{d.doctors.length > 1 ? ` · ${doc.name}` : ""}</button>
                             ))}
                           </td>
                         </tr>
@@ -404,7 +404,7 @@ function DoctorTable({ w, onSend }: { w: DfMonthWeek; onSend: (d: DfRoundDoctor)
               <td className="py-1 px-2 text-right tabular-nums text-rose-700">{d.whtAmount > 0 ? `−฿${fmtMoney(d.whtAmount)}` : "—"}</td>
               <td className="py-1 px-2 text-right tabular-nums font-semibold">฿{fmtMoney(d.netFee)}</td>
               <td className="py-1 pl-2 text-right">
-                <button type="button" onClick={() => onSend(d)} className="text-[11px] text-emerald-700 hover:underline whitespace-nowrap">ส่ง LINE</button>
+                <button type="button" onClick={() => onSend(d)} className="text-[11px] text-emerald-700 hover:underline whitespace-nowrap">ส่งแจ้งเตือน</button>
               </td>
             </tr>
             {d.isGuarantee && (
