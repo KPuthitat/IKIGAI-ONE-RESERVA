@@ -4,8 +4,8 @@ import { requirePayrollAccess } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
 import { isDfBranch, eligibleDoctors } from "@/lib/df-db";
-import { previewDfRound, dfDayDoctorSplit, mondayOf, sundayOf, getRound, listRoundLines, payMondayFor } from "@/lib/df-rounds";
-import { dfDoctorDailyFlex, dfDoctorWeeklyFlex, notifyDoctorDf } from "@/lib/df-line";
+import { previewDfRound, dfDoctorDailyCard, mondayOf, sundayOf, getRound, listRoundLines, payMondayFor } from "@/lib/df-rounds";
+import { dfDoctorDailyFlex, dfDoctorWeeklyFlex, notifyDoctorDf, type DfDailyCard } from "@/lib/df-line";
 import { nameWithPrefix } from "@/lib/name";
 
 // Send a Doctor-Fee LINE card to ONE doctor's personal LINE (owner 2026-09-13),
@@ -24,11 +24,47 @@ function weekLabel(a: string, b: string): string {
   const [, am, ad] = a.split("-").map(Number); const [by, bm, bd] = b.split("-").map(Number);
   return `${ad}${am === bm ? "" : ` ${TH_MON[am]}`}–${bd} ${TH_MON[bm]} ${by + 543}`;
 }
+function monthLabel(iso: string): string { const [y, m] = iso.split("-").map(Number); return `${TH_MON[m]} ${y + 543}`; }
 
 function ctx() {
   const user = requirePayrollAccess();
   const branchId = user.activeBranchId ?? null;
   return { user, branchId, ok: branchId != null && isDfBranch(branchId) };
+}
+
+// Assemble the daily card (per-code split + patients + running totals) for one
+// doctor+day, or null when they earned no DF that day. Shared by the send (POST)
+// and the preview (GET).
+function buildDailyCard(branchId: number, userId: number, date: string, doctorName: string, clinicName: string): DfDailyCard | null {
+  const data = dfDoctorDailyCard(branchId, date, userId);
+  if (!data || data.dayShare <= 0) return null;
+  return {
+    doctorName, clinicName, dateLabel: thDate(date),
+    perCode: data.perCode, patients: data.patients, doctorCount: data.doctorCount, dayShare: data.dayShare,
+    weekLabel: weekLabel(mondayOf(date), sundayOf(date)), weekAccum: data.weekAccum,
+    monthLabel: monthLabel(date), monthAccum: data.monthAccum
+  };
+}
+
+// GET the daily card figures for the preview (read-only, no PIN, no send).
+export function GET(req: Request) {
+  const { branchId, ok } = ctx();
+  if (!ok) return NextResponse.json({ error: "not_df_branch" }, { status: 403 });
+  const sp = new URL(req.url).searchParams;
+  const userId = Number(sp.get("userId"));
+  const date = sp.get("date") ?? "";
+  if (!Number.isInteger(userId) || userId <= 0 || !ISO.test(date)) {
+    return NextResponse.json({ error: "bad_params" }, { status: 400 });
+  }
+  const doc = eligibleDoctors().find((x) => x.user_id === userId);
+  if (!doc) return NextResponse.json({ error: "not_a_doctor" }, { status: 400 });
+  const u = getDb().prepare("SELECT display_name, title_prefix FROM users WHERE id = ?")
+    .get(userId) as { display_name: string; title_prefix: string | null } | undefined;
+  const doctorName = nameWithPrefix(u?.title_prefix ?? null, u?.display_name ?? `#${userId}`);
+  const clinicName = (getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined)?.name ?? "คลินิก";
+  const card = buildDailyCard(branchId!, userId, date, doctorName, clinicName);
+  if (!card) return NextResponse.json({ error: "no_df_that_day" }, { status: 404 });
+  return NextResponse.json({ ok: true, card });
 }
 
 const Body = z.object({
@@ -68,14 +104,11 @@ export async function POST(req: Request) {
     if (doc.guarantee_enabled) {
       return NextResponse.json({ error: "guarantee_no_daily", message: "แพทย์ระบบการันตีไม่มีการ์ด DF รายวัน — ใช้สรุปรายสัปดาห์" }, { status: 400 });
     }
-    const split = dfDayDoctorSplit(branchId!, d.date).find((x) => x.user_id === d.userId);
-    if (!split || split.share <= 0) {
+    const card = buildDailyCard(branchId!, d.userId, d.date, doctorName, clinicName);
+    if (!card) {
       return NextResponse.json({ error: "no_df_that_day", message: "ไม่มีค่าตอบแทน DF ของแพทย์ท่านนี้ในวันดังกล่าว" }, { status: 400 });
     }
-    flex = dfDoctorDailyFlex({
-      doctorName, clinicName, dateLabel: thDate(d.date),
-      dayPool: split.dayPool, doctorCount: split.doctorCount, share: split.share
-    });
+    flex = dfDoctorDailyFlex(card);
   } else {
     if (!d.week) return NextResponse.json({ error: "week_required" }, { status: 400 });
     const weekStart = mondayOf(d.week);

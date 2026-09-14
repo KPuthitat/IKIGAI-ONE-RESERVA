@@ -30,18 +30,31 @@ function Row({ label, value, bold, color }: { label: string; value: string; bold
   );
 }
 
-export type DailyPreviewData = { doctorName: string; clinicName: string; dateLabel: string; dayPool: number; doctorCount: number; share: number };
+export type DailyPreviewData = {
+  doctorName: string; clinicName: string; dateLabel: string;
+  perCode: Array<{ code: string; share: number; bills: number }>;
+  patients: number; doctorCount: number; dayShare: number;
+  weekLabel: string; weekAccum: number; monthLabel: string; monthAccum: number;
+};
 export function DfDailyPreview(d: DailyPreviewData) {
   return (
     <Shell title="สรุปค่าตอบแทนแพทย์ (DF)" subtitle={`ประจำวัน · ${d.dateLabel}`}>
       <div className="text-[15px] font-bold text-slate-800 leading-tight">{d.doctorName}</div>
       <div className="text-[10px] text-slate-400">คลินิก: {d.clinicName}</div>
       <div className="border-t border-slate-100 my-1" />
-      <Row label="ยอดค่าตรวจวันนี้ (ฐาน)" value={baht(d.dayPool)} />
-      <Row label="แพทย์ในเวรวันนี้" value={d.doctorCount > 1 ? `${d.doctorCount} ท่าน (หารเท่ากัน)` : "1 ท่าน"} />
+      <div className="text-[10px] text-slate-400">รายการค่าตอบแทน (DF) วันนี้</div>
+      {d.perCode.length === 0
+        ? <div className="text-[12px] text-slate-400">— ไม่มีรายการที่คิด DF —</div>
+        : d.perCode.map((c) => <Row key={c.code} label={`[${c.code}] · ${c.bills} บิล`} value={baht(c.share)} />)}
+      {d.doctorCount > 1 && <div className="text-[10px] text-slate-400">แบ่งกับแพทย์ {d.doctorCount} ท่านในเวรวันนี้ (หารเท่ากัน)</div>}
+      <Row label="ตรวจคนไข้วันนี้" value={`${d.patients.toLocaleString("th-TH")} คน`} />
       <div className="border-t border-slate-100 my-1" />
-      <Row label="ค่าตอบแทน (DF) ของท่านวันนี้" value={baht(d.share)} bold color="#0f6e56" />
-      <div className="text-[9px] text-slate-400 text-center pt-1">ยอดสะสมจะสรุปอีกครั้งในรอบจ่ายรายสัปดาห์</div>
+      <Row label="ค่าตอบแทน (DF) ของท่านวันนี้" value={baht(d.dayShare)} bold color="#0f6e56" />
+      <div className="border-t border-slate-100 my-1" />
+      <div className="text-[10px] text-slate-400">ยอดสะสม</div>
+      <Row label={`สัปดาห์นี้ (${d.weekLabel})`} value={baht(d.weekAccum)} bold />
+      <Row label={`เดือนนี้ (${d.monthLabel})`} value={baht(d.monthAccum)} bold />
+      <div className="text-[9px] text-slate-400 text-center pt-1">ยอดสะสมจะสรุปยอดจ่ายจริงอีกครั้งในรอบจ่ายรายสัปดาห์</div>
     </Shell>
   );
 }

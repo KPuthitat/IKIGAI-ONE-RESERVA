@@ -230,6 +230,23 @@ export function clearImportedMonth(branchId: number, year: number, month: number
   ).run(branchId, first, last).changes;
 }
 
+/**
+ * Clear imported invoice lines for a branch on ONE day (owner 2026-09-14, the
+ * per-day ลบ button like the revshare rounds page). Refuses if that day falls in
+ * a PAID round (revert it first — don't drop the source of a settled round).
+ * Returns the number of lines removed.
+ */
+export function clearImportedDay(branchId: number, date: string): number {
+  const db = getDb();
+  const paid = db.prepare(
+    "SELECT COUNT(*) AS n FROM df_rounds WHERE branch_id = ? AND status = 'paid' AND week_start <= ? AND week_end >= ?"
+  ).get(branchId, date, date) as { n: number };
+  if (paid.n > 0) throw new Error("df_day_has_paid_round");
+  return db.prepare(
+    "DELETE FROM df_invoice_lines WHERE branch_id = ? AND line_date = ?"
+  ).run(branchId, date).changes;
+}
+
 /** The imported date span for a branch (for defaulting the period picker). */
 export function importedSpan(branchId: number): { min: string | null; max: string | null; count: number } {
   return getDb().prepare(

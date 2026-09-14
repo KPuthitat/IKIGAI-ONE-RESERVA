@@ -25,12 +25,13 @@ function weekLabel(a: string, b: string): string {
 type PinAction =
   | { kind: "pay" | "revert"; week: string; label: string }
   | { kind: "set_wht"; userId: number; rate: number; label: string }
-  | { kind: "clear_month"; label: string };
+  | { kind: "clear_month"; label: string }
+  | { kind: "clear_day"; date: string; label: string };
 
 // A pending LINE-card send (owner 2026-09-13). Carries the client-built preview
 // + the request body; the server recomputes the amount before sending.
 type SendAction =
-  | { kind: "daily"; userId: number; date: string; heading: string; preview: DailyPreviewData }
+  | { kind: "daily"; userId: number; date: string; heading: string; preview: DailyPreviewData | null }
   | { kind: "weekly"; userId: number; week: string; heading: string; preview: WeeklyPreviewData };
 
 export default function DoctorFeeRoundsClient({ view: initialView, doctors: initialDoctors, clinicName }: { view: DfMonthView; doctors: DfDoctor[]; clinicName: string }) {
@@ -75,7 +76,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.ok) return { ok: false, message: j.message ?? humanizeApiError(j, "ส่งไม่สำเร็จ") };
       setSend(null);
-      setMsg({ kind: "ok", text: "ส่งการ์ด LINE ให้แพทย์แล้ว" });
+      setMsg({ kind: "ok", text: "ส่งยอด DF ให้แพทย์แล้ว" });
       return { ok: true };
     } catch { return { ok: false, message: "ส่งไม่สำเร็จ" }; }
   }
@@ -93,15 +94,18 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
       }
     });
   }
-  function sendDailyRow(day: DfDayRow, doc: DfDayDoctorMini) {
-    setSend({
-      kind: "daily", userId: doc.user_id, date: day.date,
-      heading: `ส่งสรุป DF รายวัน · ${doc.name}`,
-      preview: {
-        doctorName: doc.name, clinicName,
-        dateLabel: thDate(day.date), dayPool: day.pool, doctorCount: day.doctors.length, share: doc.share
+  async function sendDailyRow(day: DfDayRow, doc: DfDayDoctorMini) {
+    // Open the modal in a loading state, then fetch the rich card (per-code
+    // breakdown + patients + running totals) so the preview == what's sent.
+    setSend({ kind: "daily", userId: doc.user_id, date: day.date, heading: `ส่งสรุป DF รายวัน · ${doc.name}`, preview: null });
+    try {
+      const r = await fetch(apiUrl(`/api/admin/persona/doctor-fee/notify?userId=${doc.user_id}&date=${day.date}`));
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) {
+        setSend((prev) => (prev && prev.kind === "daily" && prev.userId === doc.user_id && prev.date === day.date
+          ? { ...prev, preview: j.card as DailyPreviewData } : prev));
       }
-    });
+    } catch { /* leave the loading note; the send still recomputes server-side */ }
   }
 
   async function loadMonth(year: number, month: number) {
@@ -139,6 +143,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
       const body: Record<string, unknown> = { action: pending.kind, pin, year: view.year, month: view.month };
       if (pending.kind === "set_wht") { body.userId = pending.userId; body.rate = pending.rate; }
       else if (pending.kind === "pay" || pending.kind === "revert") { body.week = pending.week; }
+      else if (pending.kind === "clear_day") { body.week = pending.date; }
       const r = await fetch(apiUrl("/api/admin/persona/doctor-fee/rounds"), {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
       });
@@ -148,6 +153,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
         pending.kind === "pay" ? "ตัดรอบ + จ่าย + ลงบัญชีแล้ว"
         : pending.kind === "revert" ? "ยกเลิกการจ่ายแล้ว"
         : pending.kind === "clear_month" ? `ล้างข้อมูลนำเข้าเดือนนี้แล้ว (${j.removed ?? 0} รายการ)`
+        : pending.kind === "clear_day" ? `ลบข้อมูลวันนี้แล้ว (${j.removed ?? 0} รายการ)`
         : "บันทึกอัตราภาษีแล้ว" });
       setPending(null); setPin("");
     } catch (e) { setMsg({ kind: "err", text: errText(e) }); }
@@ -189,7 +195,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
           </button>
         </div>
         <span className="block text-[11px] text-slate-400">โปรแกรมจับรายการ DF ตามกฎ (ตั้งกฎที่หน้า “ค่าตอบแทนแพทย์”) · นำเข้าซ้ำได้ ระบบอัปเดตให้เอง · นำเข้าผิดไฟล์กด “ล้างข้อมูลนำเข้าเดือนนี้” แล้วนำเข้าใหม่ได้</span>
-        <span className="block text-[11px] text-emerald-700">💬 ส่งการ์ดสรุปค่าตอบแทน (DF) ให้แพทย์ทาง LINE: การ์ดรายวัน กดปุ่ม “ส่ง LINE” ท้ายแต่ละวันได้เลย · การ์ดรายสัปดาห์ กดขยายรอบจ่าย ▸ แล้วกด “ส่ง LINE” ของแพทย์ท่านนั้น</span>
+        <span className="block text-[11px] text-emerald-700">💬 ส่งยอดค่าตอบแทน (DF) ให้แพทย์ทาง LINE: กดปุ่ม “ส่งยอด DF วันนี้” ท้ายแต่ละวัน · การ์ดรายสัปดาห์ กดขยายรอบจ่าย ▸ แล้วกด “ส่งยอด DF” ของแพทย์ท่านนั้น</span>
       </div>
 
       {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.kind === "ok" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>{msg.text}</div>}
@@ -240,8 +246,13 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
                               guaranteeIds.has(doc.user_id)
                                 ? <span key={doc.user_id} className="text-[10px] text-violet-600 ml-2">การันตี</span>
                                 : <button key={doc.user_id} type="button" onClick={() => sendDailyRow(d, doc)}
-                                    className="text-[11px] text-emerald-700 hover:underline ml-2">ส่ง LINE{d.doctors.length > 1 ? ` · ${doc.name}` : ""}</button>
+                                    className="text-[11px] text-emerald-700 hover:underline ml-2">ส่งยอด DF วันนี้{d.doctors.length > 1 ? ` · ${doc.name}` : ""}</button>
                             ))}
+                            {(d.pool > 0 || d.bills > 0) && (
+                              <button type="button" disabled={busy}
+                                onClick={() => setPending({ kind: "clear_day", date: d.date, label: thDate(d.date) })}
+                                className="text-[11px] text-rose-500 hover:underline ml-3 disabled:opacity-40">ลบ</button>
+                            )}
                           </td>
                         </tr>
                         {dayOpen.has(d.date) && (
@@ -285,6 +296,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
                 ? `ตั้งอัตราภาษีหัก ${(pending.rate * 100).toLocaleString("th-TH", { maximumFractionDigits: 2 })}% สำหรับ ${pending.label}`
                 : pending.kind === "pay" ? `ตัดรอบ + จ่าย + ลงบัญชี สัปดาห์ ${pending.label}`
                 : pending.kind === "clear_month" ? `ล้างข้อมูลนำเข้าทั้งหมดของเดือน ${pending.label} — ลบยอดค่าตรวจที่นำเข้าไว้ทิ้ง เพื่อนำเข้าไฟล์ใหม่ (รอบที่จ่ายแล้วต้องยกเลิกก่อน)`
+                : pending.kind === "clear_day" ? `ลบข้อมูลนำเข้าของวันที่ ${pending.label} — ลบยอดค่าตรวจ/DF ของวันนั้นทิ้ง เพื่อนำเข้าใหม่ (วันที่อยู่ในรอบที่จ่ายแล้วต้องยกเลิกรอบก่อน)`
                 : `ยกเลิกการจ่ายรอบ ${pending.label} (ลบรายการในบัญชีด้วย)`}
             </p>
             <input type="password" inputMode="numeric" autoFocus maxLength={4} className="input w-full text-center tracking-[0.5em] text-lg"
@@ -302,7 +314,9 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
       {send && (
         <DfSendModal
           heading={send.heading}
-          preview={send.kind === "daily" ? <DfDailyPreview {...send.preview} /> : <DfWeeklyPreview {...send.preview} />}
+          preview={send.kind === "daily"
+            ? (send.preview ? <DfDailyPreview {...send.preview} /> : <div className="text-sm text-slate-500 text-center py-6">กำลังโหลดข้อมูล…</div>)
+            : <DfWeeklyPreview {...send.preview} />}
           onConfirm={doSend}
           onClose={() => setSend(null)}
         />
@@ -399,7 +413,7 @@ function DoctorTable({ w, onSend }: { w: DfMonthWeek; onSend: (d: DfRoundDoctor)
               <td className="py-1 px-2 text-right tabular-nums text-rose-700">{d.whtAmount > 0 ? `−฿${fmtMoney(d.whtAmount)}` : "—"}</td>
               <td className="py-1 px-2 text-right tabular-nums font-semibold">฿{fmtMoney(d.netFee)}</td>
               <td className="py-1 pl-2 text-right">
-                <button type="button" onClick={() => onSend(d)} className="text-[11px] text-emerald-700 hover:underline whitespace-nowrap">ส่ง LINE</button>
+                <button type="button" onClick={() => onSend(d)} className="text-[11px] text-emerald-700 hover:underline whitespace-nowrap">ส่งยอด DF</button>
               </td>
             </tr>
             {d.isGuarantee && (
@@ -443,6 +457,7 @@ function errText(e: unknown): string {
     df_before_cutover: "สัปดาห์นี้อยู่ก่อนวันเริ่มจ่ายรายสัปดาห์ — ตัดรอบไม่ได้",
     df_round_paid: "รอบนี้จ่ายไปแล้ว — ต้องยกเลิกก่อนจึงจะแก้ได้",
     df_month_has_paid_round: "เดือนนี้มีรอบที่จ่ายแล้ว — ยกเลิกรอบนั้นก่อนจึงจะล้างข้อมูลได้",
+    df_day_has_paid_round: "วันนี้อยู่ในรอบที่จ่ายแล้ว — ยกเลิกรอบก่อนจึงจะลบข้อมูลได้",
     no_pin: "คุณยังไม่ได้ตั้ง PIN", wrong_pin: "PIN ไม่ถูกต้อง",
     not_df_branch: "สาขานี้ไม่ได้เปิดใช้ค่าตอบแทนแพทย์", not_a_doctor: "ผู้ใช้นี้ไม่ใช่แพทย์ที่รับค่าตอบแทน"
   };
