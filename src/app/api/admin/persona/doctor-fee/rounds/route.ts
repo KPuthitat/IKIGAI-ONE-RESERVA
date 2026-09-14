@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePayrollAccess } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
-import { isDfBranch, setDoctorWhtRate, eligibleDoctors, clearImportedMonth } from "@/lib/df-db";
+import { isDfBranch, setDoctorWhtRate, eligibleDoctors, clearImportedMonth, clearImportedDay } from "@/lib/df-db";
 import { buildDfMonthRounds, saveDfRound, payDfRound, revertDfRound, dfDayDetail, dfDayDoctorSplit } from "@/lib/df-rounds";
 
 // Weekly Doctor-Fee rounds, revshare-style month view (owner 2026-09-13). Clinic
@@ -47,7 +47,7 @@ export function GET(req: Request) {
 }
 
 const PostZ = z.object({
-  action: z.enum(["save", "pay", "revert", "set_wht", "clear_month"]),
+  action: z.enum(["save", "pay", "revert", "set_wht", "clear_month", "clear_day"]),
   week: z.string().optional(),
   year: z.number().int().optional(),
   month: z.number().int().min(1).max(12).optional(),
@@ -81,6 +81,12 @@ export async function POST(req: Request) {
     }
     if (d.action === "clear_month") {
       const removed = clearImportedMonth(branchId!, year, month);
+      return NextResponse.json({ ok: true, removed, view: buildDfMonthRounds(branchId!, year, month), doctors: eligibleDoctors() });
+    }
+    // clear_day carries the target date in `week` (an ISO YYYY-MM-DD).
+    if (d.action === "clear_day") {
+      if (!d.week || !dateRe.test(d.week)) return NextResponse.json({ error: "bad_day" }, { status: 400 });
+      const removed = clearImportedDay(branchId!, d.week);
       return NextResponse.json({ ok: true, removed, view: buildDfMonthRounds(branchId!, year, month), doctors: eligibleDoctors() });
     }
     if (!d.week || !dateRe.test(d.week)) return NextResponse.json({ error: "bad_week" }, { status: 400 });
