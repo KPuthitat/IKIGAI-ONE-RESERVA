@@ -469,6 +469,7 @@ function ClockAction({
   // OT prompt (anyone clocking out after their scheduled end — PT or FT).
   const [otStep, setOtStep] = useState<"ask" | "enter">("ask");
   const [otUntil, setOtUntil] = useState("");
+  const [otClockOut, setOtClockOut] = useState("");   // the actual clock-out time (HH:MM, BKK)
   const [otBusy, setOtBusy] = useState(false);
   const [otErr, setOtErr] = useState<string | null>(null);
 
@@ -805,8 +806,14 @@ function ClockAction({
         const [eh, em] = scheduledEnd.split(":").map(Number);
         const schedMins = (eh || 0) * 60 + (em || 0);
         if (nowMins > schedMins + 5) {
+          // Prefill the OT request with the ACTUAL clock-out time — not the
+          // scheduled end. Requesting "until the shift end" would extend the paid
+          // window by nothing, so the late minutes wouldn't be paid (owner
+          // 2026-09-14: a half-day staffer who worked on lost their extra hours).
+          const nowHHMM = `${String(bkkNow.getUTCHours()).padStart(2, "0")}:${String(bkkNow.getUTCMinutes()).padStart(2, "0")}`;
           setOtStep("ask");
-          setOtUntil("");
+          setOtClockOut(nowHHMM);
+          setOtUntil(nowHHMM);
           setOtErr(null);
           setPhase("ot_ask");
           return;
@@ -1038,18 +1045,35 @@ function ClockAction({
           {t("staff.persona.ot.askBody")}
         </div>
         {otStep === "ask" ? (
-          <div className="grid grid-cols-2 gap-2 pt-1">
+          <div className="space-y-2 pt-1">
+            {otClockOut && (
+              <div className="text-xs text-slate-600 text-center">
+                ออกงานเวลา <b className="text-slate-800">{otClockOut} น.</b>
+                {scheduledEnd && <> · เลิกกะ {scheduledEnd} น.</>}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={finishOt}
+                disabled={otBusy}
+                className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 active:scale-95 transition disabled:opacity-50"
+              >
+                {t("staff.persona.ot.no")}
+              </button>
+              <button
+                onClick={submitOt}
+                disabled={otBusy}
+                className="py-3 rounded-xl bg-brand text-white text-sm font-bold active:scale-95 transition disabled:opacity-50"
+              >
+                {otBusy ? t("common.submitting") : `ขอค่าล่วงเวลาถึง ${otClockOut || scheduledEnd || ""} น.`}
+              </button>
+            </div>
+            {otErr && <p className="text-rose-600 text-sm text-center">{otErr}</p>}
             <button
-              onClick={finishOt}
-              className="py-3 rounded-xl bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 active:scale-95 transition"
+              onClick={() => setOtStep("enter")}
+              className="w-full text-[11px] text-slate-500 underline pt-0.5"
             >
-              {t("staff.persona.ot.no")}
-            </button>
-            <button
-              onClick={() => { setOtStep("enter"); setOtUntil(scheduledEnd ?? ""); }}
-              className="py-3 rounded-xl bg-brand text-white text-sm font-bold active:scale-95 transition"
-            >
-              {t("staff.persona.ot.yes")}
+              แก้เวลาที่ทำถึง
             </button>
           </div>
         ) : (
