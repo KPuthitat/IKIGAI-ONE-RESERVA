@@ -59,18 +59,23 @@ export function generatePayrollSummaryPdf(
         .text("คอลัมน์ที่มี (หัก) แสดงเป็นค่าติดลบสีแดง · เซอร์วิสชาร์จคำนวณระดับบริษัท · เอกสารภายในสำหรับสำนักงานบัญชี", left, y + 2);
       y = doc.y + 8;
 
-      // ── Round member table (ก่อนหัก → หัก → สุทธิ) ────────────────
-      const rmNum = 95;
-      const rmName = contentW - 150 - 3 * rmNum;
+      // ── Round member table (ก่อนหัก → ประกันสังคม / ภาษี / อื่นๆ → สุทธิ) ──
+      // Owner 2026-09-14: split the deduction so the accounting office sees who
+      // had ประกันสังคม vs หัก ณ ที่จ่าย, per round.
+      const rmNum = 78;
+      const rmSang = 118;
+      const rmName = contentW - rmSang - 5 * rmNum;
       const rmCols = [
         { label: "ชื่อ-นามสกุล", w: rmName, align: "left" as const },
-        { label: "สังกัด", w: 150, align: "left" as const },
+        { label: "สังกัด", w: rmSang, align: "left" as const },
         { label: "ยอดก่อนหัก", w: rmNum, align: "right" as const },
-        { label: "ยอดหัก", w: rmNum, align: "right" as const },
+        { label: "ประกันสังคม", w: rmNum, align: "right" as const },
+        { label: "ภาษี ณ ที่จ่าย", w: rmNum, align: "right" as const },
+        { label: "หักอื่นๆ", w: rmNum, align: "right" as const },
         { label: "ยอดสุทธิ", w: rmNum, align: "right" as const }
       ];
       const rmX = (i: number) => left + rmCols.slice(0, i).reduce((s, c) => s + c.w, 0);
-      const rmHead = () => { rmCols.forEach((c, i) => cell(c.label, rmX(i), c.w, c.align, { font: "th-b", size: 8.5, color: "#555" })); y += 14; };
+      const rmHead = () => { rmCols.forEach((c, i) => cell(c.label, rmX(i), c.w, c.align, { font: "th-b", size: 7.5, color: "#555" })); y += 14; };
 
       const drawRound = (g: PayRoundGroup) => {
         ensure(60);
@@ -83,16 +88,20 @@ export function generatePayrollSummaryPdf(
           cell(m.name, rmX(0), rmCols[0].w, "left", { size: 8.5 });
           cell(m.homeBranch, rmX(1), rmCols[1].w, "left", { size: 8, color: "#888" });
           cell(baht(m.before), rmX(2), rmNum, "right", { size: 8.5 });
-          cell(deduct(m.deduction), rmX(3), rmNum, "right", { size: 8.5, color: m.deduction > 0 ? RED : "#999" });
-          cell(baht(m.net), rmX(4), rmNum, "right", { size: 8.5, color: GREEN });
+          cell(deduct(m.sso), rmX(3), rmNum, "right", { size: 8.5, color: m.sso > 0 ? RED : "#999" });
+          cell(deduct(m.tax), rmX(4), rmNum, "right", { size: 8.5, color: m.tax > 0 ? RED : "#999" });
+          cell(deduct(m.other), rmX(5), rmNum, "right", { size: 8.5, color: m.other > 0 ? RED : "#999" });
+          cell(baht(m.net), rmX(6), rmNum, "right", { size: 8.5, color: GREEN });
           y += 13;
         }
         if (g.members.length === 0) { cell("— ไม่มีรายการจ่ายในรอบนี้ —", rmX(0), contentW, "left", { size: 8, color: "#999" }); y += 13; }
         ensure(16); hr("#e5e5e5", 0.5);
         cell("รวมรอบ", rmX(0), rmCols[0].w, "left", { font: "th-b", color: INK, size: 8.5 });
         cell(baht(g.before), rmX(2), rmNum, "right", { font: "th-b", size: 8.5 });
-        cell(deduct(g.deduction), rmX(3), rmNum, "right", { font: "th-b", size: 8.5, color: RED });
-        cell(baht(g.net), rmX(4), rmNum, "right", { font: "th-b", size: 8.5, color: GREEN });
+        cell(deduct(g.sso), rmX(3), rmNum, "right", { font: "th-b", size: 8.5, color: RED });
+        cell(deduct(g.tax), rmX(4), rmNum, "right", { font: "th-b", size: 8.5, color: RED });
+        cell(deduct(g.other), rmX(5), rmNum, "right", { font: "th-b", size: 8.5, color: RED });
+        cell(baht(g.net), rmX(6), rmNum, "right", { font: "th-b", size: 8.5, color: GREEN });
         y += 16;
       };
 

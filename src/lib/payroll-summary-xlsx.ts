@@ -55,9 +55,9 @@ export function renderPayrollSummaryXlsx(
       // Per-round breakdown.
       for (const g of bl.roundGroups) {
         aoa.push([`รอบจ่าย: ${g.info.cycleLabel} · งวด ${g.info.periodStart} ถึง ${g.info.periodEnd} · จ่าย ${g.info.payDate} · ${g.info.statusLabel}`]);
-        aoa.push(["ชื่อ-นามสกุล", "สังกัด", "ยอดก่อนหัก", "ยอดหัก", "ยอดสุทธิ"]);
-        for (const m of g.members) aoa.push([m.name, m.homeBranch, m.before, m.deduction > 0 ? -m.deduction : 0, m.net]);
-        aoa.push(["รวมรอบ", "", g.before, g.deduction > 0 ? -g.deduction : 0, g.net]);
+        aoa.push(["ชื่อ-นามสกุล", "สังกัด", "ยอดก่อนหัก", "ประกันสังคม", "ภาษีหัก ณ ที่จ่าย", "หักอื่นๆ", "ยอดสุทธิ"]);
+        for (const m of g.members) aoa.push([m.name, m.homeBranch, m.before, m.sso > 0 ? -m.sso : 0, m.tax > 0 ? -m.tax : 0, m.other > 0 ? -m.other : 0, m.net]);
+        aoa.push(["รวมรอบ", "", g.before, g.sso > 0 ? -g.sso : 0, g.tax > 0 ? -g.tax : 0, g.other > 0 ? -g.other : 0, g.net]);
         aoa.push([]);
       }
       if (bl.roundGroups.length === 0) { aoa.push(["(ไม่มีรอบจ่ายในเดือนนี้ — มีเฉพาะเซอร์วิสชาร์จ)"]); aoa.push([]); }
