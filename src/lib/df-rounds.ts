@@ -74,7 +74,11 @@ export type DfRoundDoctor = {
 // One row per day of the Mon–Sun week: the day's HSC revenue pool, the DF it
 // earns, and how many bills (invoices) it came from — the revshare-style daily
 // view (owner 2026-09-13).
-export type DfDayRow = { date: string; pool: number; fee: number; bills: number; doctors: string[] };
+// Each day carries the rostered doctors who share that day's DF, with each one's
+// equal share — so the rounds page can offer a per-doctor "ส่ง LINE" inline
+// (owner 2026-09-14).
+export type DfDayDoctorMini = { user_id: number; name: string; share: number };
+export type DfDayRow = { date: string; pool: number; fee: number; bills: number; doctors: DfDayDoctorMini[] };
 
 export type DfRoundPreview = {
   branchId: number; weekStart: string; weekEnd: string;
@@ -179,21 +183,29 @@ function dailyBreakdown(branchId: number, weekStart: string): DfDayRow[] {
     if (!d) { d = { pool: 0, fee: 0, bills: new Set() }; byDay.set(l.line_date, d); }
     d.pool += l.net; d.fee += l.net * rate; d.bills.add(l.invoice_no);
   }
-  // Doctor(s) rostered each day (owner 2026-09-13: show who earned the day's DF).
-  const docByDate = doctorNamesByDate(branchId, weekStart, weekEnd);
+  // Doctor(s) rostered each day + each one's equal share of the day's DF (owner
+  // 2026-09-13/14: show who earned it + let the admin send the daily card inline).
+  const docByDate = doctorsByDateWithNames(branchId, weekStart, weekEnd);
   const out: DfDayRow[] = [];
   for (let i = 0; i < 7; i++) {
     const date = addDaysIso(weekStart, i);
     const d = byDay.get(date);
-    out.push({ date, pool: round2(d?.pool ?? 0), fee: round2(d?.fee ?? 0), bills: d?.bills.size ?? 0, doctors: docByDate.get(date) ?? [] });
+    const rawFee = d?.fee ?? 0;
+    const docs = docByDate.get(date) ?? [];
+    const share = docs.length > 0 ? round2(rawFee / docs.length) : 0;
+    out.push({
+      date, pool: round2(d?.pool ?? 0), fee: round2(rawFee), bills: d?.bills.size ?? 0,
+      doctors: docs.map((x) => ({ user_id: x.user_id, name: x.name, share }))
+    });
   }
   return out;
 }
 
-// date → rostered doctor display names (with prefix) for the branch's work shifts.
-function doctorNamesByDate(branchId: number, start: string, end: string): Map<string, string[]> {
+// date → rostered doctors (user id + display name with prefix) for the branch's
+// work shifts.
+function doctorsByDateWithNames(branchId: number, start: string, end: string): Map<string, Array<{ user_id: number; name: string }>> {
   const rows = getDb().prepare(
-    `SELECT DISTINCT ra.assignment_date AS d, u.display_name AS name, u.title_prefix AS prefix
+    `SELECT DISTINCT ra.assignment_date AS d, ra.user_id AS uid, u.display_name AS name, u.title_prefix AS prefix
      FROM roster_assignments ra
      JOIN shift_codes sc ON sc.id = ra.shift_code_id
      JOIN users u ON u.id = ra.user_id
@@ -202,11 +214,11 @@ function doctorNamesByDate(branchId: number, start: string, end: string): Map<st
        AND (u.clinical_role = 'doctor' OR u.df_started_at IS NOT NULL)
        AND u.status NOT IN ('disabled','resigned','terminated')
      ORDER BY u.display_name`
-  ).all(branchId, start, end) as Array<{ d: string; name: string; prefix: string | null }>;
-  const m = new Map<string, string[]>();
+  ).all(branchId, start, end) as Array<{ d: string; uid: number; name: string; prefix: string | null }>;
+  const m = new Map<string, Array<{ user_id: number; name: string }>>();
   for (const r of rows) {
     const a = m.get(r.d) ?? [];
-    a.push(nameWithPrefix(r.prefix, r.name));
+    a.push({ user_id: r.uid, name: nameWithPrefix(r.prefix, r.name) });
     m.set(r.d, a);
   }
   return m;
