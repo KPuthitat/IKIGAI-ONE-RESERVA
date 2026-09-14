@@ -38,7 +38,7 @@ function haversineMetersClient(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "owl" | "swap" | "coupon" | "food_warn" | "break_skip_info";
+type Phase = "idle" | "pin" | "saving" | "replace" | "success" | "error" | "ot_ask" | "ot_done" | "owl" | "swap" | "coupon" | "food_warn" | "break_skip_info";
 
 // Meal-coupon pop-up payload from the clock route (owner 2026-07-12).
 type CouponInfo = { food: boolean; drink: boolean; redeemBefore: string };
@@ -470,6 +470,7 @@ function ClockAction({
   const [otStep, setOtStep] = useState<"ask" | "enter">("ask");
   const [otUntil, setOtUntil] = useState("");
   const [otClockOut, setOtClockOut] = useState("");   // the actual clock-out time (HH:MM, BKK)
+  const [otWorkedMin, setOtWorkedMin] = useState<number | null>(null); // actual worked minutes today
   const [otBusy, setOtBusy] = useState(false);
   const [otErr, setOtErr] = useState<string | null>(null);
 
@@ -491,7 +492,7 @@ function ClockAction({
         body: JSON.stringify({ work_date: todayBkk, requested_until: otUntil })
       });
       const j = await res.json().catch(() => ({}));
-      if (res.ok && j?.ok) finishOt();
+      if (res.ok && j?.ok) setPhase("ot_done");
       else setOtErr(humanizeApiError(j, t("common.error")));
     } catch {
       setOtErr(t("common.error"));
@@ -814,6 +815,7 @@ function ClockAction({
           setOtStep("ask");
           setOtClockOut(nowHHMM);
           setOtUntil(nowHHMM);
+          setOtWorkedMin(typeof data.workedMinutesToday === "number" ? data.workedMinutesToday : null);
           setOtErr(null);
           setPhase("ot_ask");
           return;
@@ -1107,6 +1109,29 @@ function ClockAction({
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // ── OT request submitted (owner 2026-09-14) ────
+  // Confirm success; if the day's actual worked time is under 8h, reassure that
+  // the after-hours part is paid at the REGULAR rate (OT rate is only >8h/day).
+  if (phase === "ot_done") {
+    const under8h = otWorkedMin != null && otWorkedMin < 480;
+    return (
+      <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-4 space-y-3 text-left">
+        <div className="text-base font-bold text-emerald-800 text-center">✓ ขอทำงานล่วงเวลาสำเร็จ</div>
+        {under8h && (
+          <div className="text-sm text-slate-700 leading-relaxed text-center">
+            เวลาทำงานของพี่{nickname} ไม่ถึง 8 ชั่วโมง ส่วนที่เกินมาหลังเวลาทำงานปกติ จะนับเป็นชั่วโมงทำงานปกติครับ
+          </div>
+        )}
+        <button
+          onClick={onSuccess}
+          className="w-full py-3 rounded-xl bg-brand text-white text-sm font-bold active:scale-95 transition"
+        >
+          รับทราบ
+        </button>
       </div>
     );
   }

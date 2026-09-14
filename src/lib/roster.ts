@@ -272,6 +272,66 @@ export function scheduledShiftMinutesForUserDate(
   return total;
 }
 
+/**
+ * Actual worked minutes for a user on a date at a branch — paired (out−in) across
+ * the day's punches minus the scheduled break that OVERLAPS the worked window (or
+ * the standard threshold deduction when the shift has no explicit break window).
+ * Reflects the REAL time at work with NO scheduled-end cap, so it answers "did
+ * they actually work ≥ 8h today?" — used only for the clock-out OT confirmation
+ * message (owner 2026-09-14), not for pay. Returns 0 when no completed pair yet.
+ */
+export function actualWorkedMinutesForUserDate(
+  branchId: number, userId: number, dateBkk: string
+): number {
+  const db = getDb();
+  const dayStart = new Date(`${dateBkk}T00:00:00+07:00`).toISOString();
+  const dayEnd = new Date(`${dateBkk}T23:59:59+07:00`).toISOString();
+  const entries = db.prepare(
+    `SELECT ts, type FROM time_entries
+       WHERE branch_id = ? AND user_id = ? AND ts >= ? AND ts <= ? ORDER BY ts ASC`
+  ).all(branchId, userId, dayStart, dayEnd) as Array<{ ts: string; type: "in" | "out" }>;
+
+  // Worked window (BKK minute-of-day) + gross paired minutes.
+  const toBkkMin = (iso: string) => {
+    const d = new Date(new Date(iso).getTime() + 7 * 3600_000);
+    return d.getUTCHours() * 60 + d.getUTCMinutes();
+  };
+  let gross = 0, openIn: number | null = null;
+  let firstIn: number | null = null, lastOut: number | null = null;
+  for (const e of entries) {
+    const ms = new Date(e.ts).getTime();
+    if (e.type === "in") { if (openIn === null) openIn = ms; if (firstIn === null) firstIn = toBkkMin(e.ts); }
+    else { if (openIn !== null) { gross += (ms - openIn) / 60000; openIn = null; } lastOut = toBkkMin(e.ts); }
+  }
+  if (gross <= 0 || firstIn === null || lastOut === null) return 0;
+  const wStart = firstIn, wEnd = lastOut < firstIn ? lastOut + 1440 : lastOut; // overnight
+
+  // Deduct the scheduled break that overlaps the worked window.
+  const brk = db.prepare(`
+    SELECT s.break_start AS bs, s.break_end AS be
+    FROM roster_assignments a JOIN shift_codes s ON s.id = a.shift_code_id
+    WHERE a.user_id = ? AND a.branch_id = ? AND a.assignment_date = ?
+      AND s.break_start IS NOT NULL AND s.break_end IS NOT NULL
+  `).all(userId, branchId, dateBkk) as Array<{ bs: string; be: string }>;
+  let breakMin = 0;
+  if (brk.length > 0) {
+    for (const b of brk) {
+      const s = timeToMinutes(b.bs), e2 = timeToMinutes(b.be);
+      if (Number.isNaN(s) || Number.isNaN(e2) || e2 <= s) continue;
+      breakMin += Math.max(0, Math.min(e2, wEnd) - Math.max(s, wStart)); // overlap only
+    }
+  } else {
+    const st = db.prepare(`
+      SELECT break_threshold_minutes AS th, break_deduction_minutes AS ded,
+             long_shift_threshold_minutes AS lth, long_shift_break_minutes AS lb
+      FROM payroll_settings LIMIT 1
+    `).get() as { th: number; ded: number; lth: number; lb: number } | undefined;
+    const th = st?.th ?? 300, ded = st?.ded ?? 30, lth = st?.lth ?? 480, lb = st?.lb ?? 60;
+    if (gross >= lth) breakMin = lb; else if (gross >= th) breakMin = ded;
+  }
+  return Math.max(0, Math.round(gross - breakMin));
+}
+
 /** True when the user has a WORK shift assigned on the given date at the
  *  branch. A day-off assignment (shift_codes.kind='day_off') does NOT count,
  *  and neither does the absence of any assignment. Used to gate clock-in:
