@@ -13,7 +13,7 @@ import {
   detectPunchAnomaly, detectScheduleDeviation, uncertifiedPriorMissingOut,
   type OwlPrompt, type DeviationPrompt
 } from "@/lib/attendance-flags";
-import { userHasWorkShiftOn, effectiveShiftStartForUserDate, scheduledShiftMinutesForUserDate, resolveClockBranchId, openClockInBranchForUserOn } from "@/lib/roster";
+import { userHasWorkShiftOn, effectiveShiftStartForUserDate, scheduledShiftMinutesForUserDate, actualWorkedMinutesForUserDate, resolveClockBranchId, openClockInBranchForUserOn } from "@/lib/roster";
 import { verifyClockCode } from "@/lib/clock-code";
 import { saveClockSelfie } from "@/lib/clock-selfie";
 import { nowBkkMinutes } from "@/lib/time";
@@ -525,6 +525,18 @@ export async function POST(req: Request) {
     }
   }
 
+  // Actual worked minutes today (real time at work, no scheduled-end cap) — used
+  // by the client's OT-request confirmation to tell a staffer whose day is under
+  // 8h that the after-hours part is paid at the regular rate (owner 2026-09-14).
+  let workedMinutesToday: number | null = null;
+  if (action === "out" && clockBranchId) {
+    try {
+      workedMinutesToday = actualWorkedMinutesForUserDate(clockBranchId, user.id, todayBkk);
+    } catch (e) {
+      console.warn("[clock] worked-minutes calc failed:", e);
+    }
+  }
+
   // ── Fire-and-forget: ส่ง LINE flex confirmation message on clock-in ──
   // Channel: IKIGAI OS (platform-level OA, shared across all branches).
   // Branch context: ใช้แค่ดึงเวลาพักกลางวัน + ชื่อสาขามาแสดงในข้อความ.
@@ -581,6 +593,7 @@ export async function POST(req: Request) {
     ...(owl ? { owl } : {}),
     ...(swap ? { swap } : {}),
     ...(foodWarning ? { foodWarning } : {}),
-    ...(breakSkipInfo ? { breakSkipInfo } : {})
+    ...(breakSkipInfo ? { breakSkipInfo } : {}),
+    ...(workedMinutesToday != null ? { workedMinutesToday } : {})
   });
 }
