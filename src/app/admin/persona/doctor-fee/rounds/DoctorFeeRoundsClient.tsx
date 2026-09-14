@@ -4,7 +4,7 @@ import { Fragment, useRef, useState } from "react";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
-import type { DfMonthView, DfMonthWeek, DfDayLine, DfDayDoctor, DfRoundDoctor } from "@/lib/df-rounds";
+import type { DfMonthView, DfMonthWeek, DfDayLine, DfDayRow, DfDayDoctorMini, DfRoundDoctor } from "@/lib/df-rounds";
 import type { DfDoctor } from "@/lib/df-db";
 import { DfSendModal, DfDailyPreview, DfWeeklyPreview, type DailyPreviewData, type WeeklyPreviewData } from "./DfCardPreviews";
 
@@ -44,7 +44,6 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
   const [showWht, setShowWht] = useState(false);
   const [dayOpen, setDayOpen] = useState<Set<string>>(new Set());
   const [dayLines, setDayLines] = useState<Record<string, DfDayLine[]>>({});
-  const [dayDoctors, setDayDoctors] = useState<Record<string, DfDayDoctor[]>>({});
   const [send, setSend] = useState<SendAction | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -59,7 +58,6 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
         const j = await r.json();
         if (r.ok && j.ok) {
           setDayLines((p) => ({ ...p, [date]: j.lines as DfDayLine[] }));
-          setDayDoctors((p) => ({ ...p, [date]: (j.doctors ?? []) as DfDayDoctor[] }));
         }
       } catch { /* ignore — the row just shows nothing */ }
     }
@@ -95,13 +93,13 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
       }
     });
   }
-  function sendDaily(date: string, d: DfDayDoctor) {
+  function sendDailyRow(day: DfDayRow, doc: DfDayDoctorMini) {
     setSend({
-      kind: "daily", userId: d.user_id, date,
-      heading: `ส่งสรุป DF รายวัน · ${d.title_prefix ?? ""}${d.display_name}`,
+      kind: "daily", userId: doc.user_id, date: day.date,
+      heading: `ส่งสรุป DF รายวัน · ${doc.name}`,
       preview: {
-        doctorName: `${d.title_prefix ?? ""}${d.display_name}`, clinicName,
-        dateLabel: thDate(date), dayPool: d.dayPool, doctorCount: d.doctorCount, share: d.share
+        doctorName: doc.name, clinicName,
+        dateLabel: thDate(day.date), dayPool: day.pool, doctorCount: day.doctors.length, share: doc.share
       }
     });
   }
@@ -191,7 +189,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
           </button>
         </div>
         <span className="block text-[11px] text-slate-400">โปรแกรมจับรายการ DF ตามกฎ (ตั้งกฎที่หน้า “ค่าตอบแทนแพทย์”) · นำเข้าซ้ำได้ ระบบอัปเดตให้เอง · นำเข้าผิดไฟล์กด “ล้างข้อมูลนำเข้าเดือนนี้” แล้วนำเข้าใหม่ได้</span>
-        <span className="block text-[11px] text-emerald-700">💬 ส่งการ์ดสรุปค่าตอบแทน (DF) ให้แพทย์ทาง LINE: กดขยาย ▸ ที่แต่ละวัน (การ์ดรายวัน) หรือแต่ละรอบจ่าย (การ์ดรายสัปดาห์) แล้วกดปุ่ม “ส่ง LINE” ของแพทย์ท่านนั้น</span>
+        <span className="block text-[11px] text-emerald-700">💬 ส่งการ์ดสรุปค่าตอบแทน (DF) ให้แพทย์ทาง LINE: การ์ดรายวัน กดปุ่ม “ส่ง LINE” ท้ายแต่ละวันได้เลย · การ์ดรายสัปดาห์ กดขยายรอบจ่าย ▸ แล้วกด “ส่ง LINE” ของแพทย์ท่านนั้น</span>
       </div>
 
       {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.kind === "ok" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>{msg.text}</div>}
@@ -220,28 +218,35 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
                 <th className="text-right py-1.5 px-2">ยอดค่าตรวจ</th>
                 <th className="text-right py-1.5 px-2">DF</th>
                 <th className="text-left py-1.5 px-2">ที่มา</th>
-                <th></th>
+                <th className="text-right py-1.5 px-2">แจ้งเตือน</th>
               </tr></thead>
               <tbody>
                 {view.weeks.map((w) => (
                   <Fragment key={w.weekStart}>
                     {w.days.map((d) => (
                       <Fragment key={d.date}>
-                        <tr className="border-b border-slate-50 hover:bg-slate-50/50 cursor-pointer" onClick={() => toggleDay(d.date)}>
-                          <td className="py-1 px-2 text-slate-600 whitespace-nowrap">
+                        <tr className="border-b border-slate-50 hover:bg-slate-50/50">
+                          <td className="py-1 px-2 text-slate-600 whitespace-nowrap cursor-pointer" onClick={() => toggleDay(d.date)}>
                             <span className="text-slate-300 mr-1">{dayOpen.has(d.date) ? "▾" : "▸"}</span>{thDate(d.date)}
                           </td>
-                          <td className="py-1 px-2 text-right tabular-nums text-slate-500">฿{fmtMoney(d.pool)}</td>
-                          <td className="py-1 px-2 text-right tabular-nums font-medium text-slate-700">฿{fmtMoney(d.fee)}</td>
+                          <td className="py-1 px-2 text-right tabular-nums text-slate-500 cursor-pointer" onClick={() => toggleDay(d.date)}>฿{fmtMoney(d.pool)}</td>
+                          <td className="py-1 px-2 text-right tabular-nums font-medium text-slate-700 cursor-pointer" onClick={() => toggleDay(d.date)}>฿{fmtMoney(d.fee)}</td>
                           <td className="py-1 px-2 text-[11px] text-slate-400">
-                            {d.doctors.length > 0 ? <span className="text-slate-600">แพทย์: {d.doctors.join(", ")}</span> : "นำเข้าไฟล์"}
+                            {d.doctors.length > 0 ? <span className="text-slate-600">แพทย์: {d.doctors.map((x) => x.name).join(", ")}</span> : "นำเข้าไฟล์"}
                             {d.bills > 0 && <span className="text-slate-400"> · {d.bills} บิล</span>}
                           </td>
-                          <td></td>
+                          <td className="py-1 px-2 text-right whitespace-nowrap">
+                            {d.doctors.map((doc) => (
+                              guaranteeIds.has(doc.user_id)
+                                ? <span key={doc.user_id} className="text-[10px] text-violet-600 ml-2">การันตี</span>
+                                : <button key={doc.user_id} type="button" onClick={() => sendDailyRow(d, doc)}
+                                    className="text-[11px] text-emerald-700 hover:underline ml-2">ส่ง LINE{d.doctors.length > 1 ? ` · ${doc.name}` : ""}</button>
+                            ))}
+                          </td>
                         </tr>
                         {dayOpen.has(d.date) && (
                           <tr><td colSpan={5} className="bg-slate-50/60 px-2 py-2">
-                            <DayDetail lines={dayLines[d.date]} doctors={dayDoctors[d.date]} guaranteeIds={guaranteeIds} onSend={(doc) => sendDaily(d.date, doc)} />
+                            <DayDetail lines={dayLines[d.date]} />
                           </td></tr>
                         )}
                       </Fragment>
@@ -346,50 +351,27 @@ function WeekRow({ w, expanded, busy, onToggle, onPay, onRevert }: {
   );
 }
 
-function DayDetail({ lines, doctors, guaranteeIds, onSend }: {
-  lines: DfDayLine[] | undefined; doctors: DfDayDoctor[] | undefined;
-  guaranteeIds: Set<number>; onSend: (d: DfDayDoctor) => void;
-}) {
+function DayDetail({ lines }: { lines: DfDayLine[] | undefined }) {
   if (lines === undefined) return <div className="text-[11px] text-slate-400">กำลังโหลด…</div>;
   if (lines.length === 0) return <div className="text-[11px] text-slate-400">ไม่มีรายการที่คิด DF ในวันนี้</div>;
   return (
-    <div className="space-y-2">
-      <table className="w-full text-[12px]">
-        <thead><tr className="text-slate-400 text-left">
-          <th className="py-1 pr-2">ใบแจ้งหนี้</th><th className="py-1 px-2">รหัส</th><th className="py-1 px-2">รายการ</th>
-          <th className="py-1 px-2 text-right">ยอดสุทธิ</th><th className="py-1 pl-2 text-right">DF</th>
-        </tr></thead>
-        <tbody>
-          {lines.map((l, i) => (
-            <tr key={`${l.invoice_no}-${l.item_tag}-${i}`} className="border-t border-slate-100">
-              <td className="py-1 pr-2 text-slate-500 whitespace-nowrap">{l.invoice_no}</td>
-              <td className="py-1 px-2 text-slate-600 whitespace-nowrap">[{l.item_tag}]</td>
-              <td className="py-1 px-2 text-slate-500 max-w-[360px] truncate" title={l.description ?? ""}>{l.description ?? l.item_code ?? "—"}</td>
-              <td className="py-1 px-2 text-right tabular-nums text-slate-500">฿{fmtMoney(l.net)}</td>
-              <td className="py-1 pl-2 text-right tabular-nums font-medium text-slate-700">฿{fmtMoney(l.fee)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {doctors && doctors.length > 0 && (
-        <div className="border-t border-slate-100 pt-2">
-          <div className="text-[11px] text-slate-500 mb-1">ค่าตอบแทน DF รายวัน (แบ่งตามแพทย์ในเวร) · ส่งการ์ดให้เฉพาะแพทย์ท่านนั้น</div>
-          <div className="space-y-1">
-            {doctors.map((d) => (
-              <div key={d.user_id} className="flex items-center gap-2 text-[12px]">
-                <span className="text-slate-700 flex-1 min-w-0 truncate">{d.title_prefix ?? ""}{d.display_name}</span>
-                <span className="tabular-nums text-emerald-700 font-medium shrink-0">฿{fmtMoney(d.share)}</span>
-                {guaranteeIds.has(d.user_id) ? (
-                  <span className="text-[10px] text-violet-600 shrink-0">การันตี (ดูรายสัปดาห์)</span>
-                ) : (
-                  <button type="button" onClick={() => onSend(d)} className="text-[11px] text-emerald-700 hover:underline shrink-0 whitespace-nowrap">ส่ง LINE</button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+    <table className="w-full text-[12px]">
+      <thead><tr className="text-slate-400 text-left">
+        <th className="py-1 pr-2">ใบแจ้งหนี้</th><th className="py-1 px-2">รหัส</th><th className="py-1 px-2">รายการ</th>
+        <th className="py-1 px-2 text-right">ยอดสุทธิ</th><th className="py-1 pl-2 text-right">DF</th>
+      </tr></thead>
+      <tbody>
+        {lines.map((l, i) => (
+          <tr key={`${l.invoice_no}-${l.item_tag}-${i}`} className="border-t border-slate-100">
+            <td className="py-1 pr-2 text-slate-500 whitespace-nowrap">{l.invoice_no}</td>
+            <td className="py-1 px-2 text-slate-600 whitespace-nowrap">[{l.item_tag}]</td>
+            <td className="py-1 px-2 text-slate-500 max-w-[360px] truncate" title={l.description ?? ""}>{l.description ?? l.item_code ?? "—"}</td>
+            <td className="py-1 px-2 text-right tabular-nums text-slate-500">฿{fmtMoney(l.net)}</td>
+            <td className="py-1 pl-2 text-right tabular-nums font-medium text-slate-700">฿{fmtMoney(l.fee)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
