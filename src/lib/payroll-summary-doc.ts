@@ -177,20 +177,25 @@ export type PayRoundInfo = {
   net: number;
 };
 
-/** One person's line within a single pay round: ก่อนหัก → หัก → สุทธิ. */
+/** One person's line within a single pay round: ก่อนหัก → หัก → สุทธิ, with the
+ *  deduction split so the accounting office sees who had ประกันสังคม vs หัก ณ
+ *  ที่จ่าย (owner 2026-09-14). */
 export type RoundMember = {
   userId: number;
   name: string;
   homeBranch: string;
   before: number;      // ยอดก่อนหัก = gross_pay ของรอบนั้น (ตามที่บันทึกไว้)
-  deduction: number;   // ยอดหัก = gross_pay − net_pay (สะท้อนยอดที่ลงบัญชีจริง)
+  sso: number;         // ประกันสังคม (จาก sso_amount)
+  tax: number;         // ภาษีหัก ณ ที่จ่าย (จาก tax_amount)
+  other: number;       // หักอื่นๆ ในรอบ (เครื่องดื่ม/มื้ออาหาร ฯลฯ)
+  deduction: number;   // ยอดหักรวม = gross_pay − net_pay (สะท้อนยอดที่ลงบัญชีจริง)
   net: number;         // ยอดสุทธิ = net_pay
 };
 
 export type PayRoundGroup = {
   info: PayRoundInfo;
   members: RoundMember[];
-  before: number; deduction: number; net: number;
+  before: number; sso: number; tax: number; other: number; deduction: number; net: number;
 };
 
 /** A branch heading inside a company: its pay rounds + its people's rollup. */
@@ -375,25 +380,33 @@ function buildRoundGroups(
   for (const p of periods) {
     const lines = db.prepare(`
       SELECT pl.user_id, pl.display_name, u.title_prefix, pl.employment_type,
-             pl.gross_pay, pl.net_pay
+             pl.gross_pay, pl.net_pay, pl.sso_amount, pl.tax_amount
       FROM payroll_lines pl LEFT JOIN users u ON u.id = pl.user_id
       WHERE pl.period_id = ?
       ORDER BY (pl.employment_type = 'ft') DESC, pl.display_name
     `).all(p.id) as Array<{
       user_id: number; display_name: string; title_prefix: string | null;
       employment_type: string | null; gross_pay: number | null; net_pay: number | null;
+      sso_amount: number | null; tax_amount: number | null;
     }>;
     const members: RoundMember[] = [];
-    let before = 0, deduction = 0, net = 0;
+    let before = 0, sso = 0, tax = 0, other = 0, deduction = 0, net = 0;
     for (const l of lines) {
       const b = round2(l.gross_pay ?? 0), n = round2(l.net_pay ?? 0);
       if (b === 0 && n === 0) continue; // skip zero-noise rows (e.g. FT at a non-home branch)
       const d = round2(b - n);
+      const mSso = round2(l.sso_amount ?? 0);
+      const mTax = round2(l.tax_amount ?? 0);
+      // อื่นๆ = whatever the round withheld beyond ประกันสังคม + ภาษี (drink/meal/…),
+      // derived from the stored net so the three columns always reconcile to หักรวม.
+      const mOther = round2(Math.max(0, d - mSso - mTax));
       members.push({
         userId: l.user_id, name: nameWithPrefix(l.title_prefix, l.display_name),
-        homeBranch: homeByUser.get(l.user_id) ?? "—", before: b, deduction: d, net: n
+        homeBranch: homeByUser.get(l.user_id) ?? "—",
+        before: b, sso: mSso, tax: mTax, other: mOther, deduction: d, net: n
       });
-      before = round2(before + b); deduction = round2(deduction + d); net = round2(net + n);
+      before = round2(before + b); sso = round2(sso + mSso); tax = round2(tax + mTax);
+      other = round2(other + mOther); deduction = round2(deduction + d); net = round2(net + n);
     }
     groups.push({
       info: {
@@ -401,7 +414,7 @@ function buildRoundGroups(
         periodStart: p.period_start, periodEnd: p.period_end, payDate: p.pay_date,
         statusLabel: statusLabel(p.status), branchName: p.branch_name, gross: before, net
       },
-      members, before, deduction, net
+      members, before, sso, tax, other, deduction, net
     });
   }
   return groups;
@@ -527,6 +540,10 @@ function csvEsc(v: string | number): string {
   const s = String(v ?? "");
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
+/** A deduction cell: shown as a negative when > 0, else "0.00". */
+function negCell(n: number): string {
+  return n > 0 ? (-n).toFixed(2) : "0.00";
+}
 function rollupCell(r: EmpDocRow, col: DocColumn): string {
   const v = r[col.key];
   if (col.kind === "text") return String(v ?? "");
@@ -563,11 +580,11 @@ export function renderPayrollSummaryCsv(
       // Per-round breakdown.
       for (const g of bl.roundGroups) {
         push(`  รอบจ่าย: ${g.info.cycleLabel} · งวด ${g.info.periodStart} ถึง ${g.info.periodEnd} · จ่าย ${g.info.payDate} · ${g.info.statusLabel}`);
-        push("  ชื่อ-นามสกุล", "สังกัด", "ยอดก่อนหัก", "ยอดหัก", "ยอดสุทธิ");
+        push("  ชื่อ-นามสกุล", "สังกัด", "ยอดก่อนหัก", "ประกันสังคม", "ภาษีหัก ณ ที่จ่าย", "หักอื่นๆ", "ยอดสุทธิ");
         for (const m of g.members) {
-          push("  " + m.name, m.homeBranch, m.before.toFixed(2), m.deduction > 0 ? (-m.deduction).toFixed(2) : "0.00", m.net.toFixed(2));
+          push("  " + m.name, m.homeBranch, m.before.toFixed(2), negCell(m.sso), negCell(m.tax), negCell(m.other), m.net.toFixed(2));
         }
-        push("  รวมรอบ", "", g.before.toFixed(2), g.deduction > 0 ? (-g.deduction).toFixed(2) : "0.00", g.net.toFixed(2));
+        push("  รวมรอบ", "", g.before.toFixed(2), negCell(g.sso), negCell(g.tax), negCell(g.other), g.net.toFixed(2));
         lines.push("");
       }
       if (bl.roundGroups.length === 0) { push("  (ไม่มีรอบจ่ายในเดือนนี้ — มีเฉพาะเซอร์วิสชาร์จ)"); lines.push(""); }
