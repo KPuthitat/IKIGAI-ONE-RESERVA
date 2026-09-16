@@ -1930,6 +1930,68 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // ── SALESA — daily POS sales analytics (owner 2026-09-16) ────────────────
+  // Staff import the FeedMe "Close up" (KPI) + "Overview" (menu-revenue) exports
+  // every day; the system tracks daily sales, ranks best/worst-earning menus,
+  // and pushes a summary card to the HOD LINE group (daily) + a weekly summary
+  // every Monday. All CREATE-only (no regex ALTER) — safe migration path.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS salesa_daily (
+      branch_id            INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      sale_date            TEXT NOT NULL,             -- YYYY-MM-DD (report day)
+      merchant             TEXT,
+      nett                 REAL NOT NULL DEFAULT 0,   -- Total Sales
+      gross                REAL NOT NULL DEFAULT 0,
+      gross_before_charges REAL NOT NULL DEFAULT 0,
+      discount             REAL NOT NULL DEFAULT 0,   -- negative
+      service_charge       REAL NOT NULL DEFAULT 0,
+      vat                  REAL NOT NULL DEFAULT 0,
+      rounding             REAL NOT NULL DEFAULT 0,
+      delivery_fee         REAL NOT NULL DEFAULT 0,
+      other_charge         REAL NOT NULL DEFAULT 0,
+      bill_count           INTEGER NOT NULL DEFAULT 0,
+      pax                  INTEGER NOT NULL DEFAULT 0,
+      void_amount          REAL NOT NULL DEFAULT 0,
+      void_bill_count      INTEGER NOT NULL DEFAULT 0,
+      refund               REAL NOT NULL DEFAULT 0,
+      avg_sales            REAL NOT NULL DEFAULT 0,   -- per bill
+      avg_pax              REAL NOT NULL DEFAULT 0,   -- heads per bill
+      avg_sales_pax        REAL NOT NULL DEFAULT 0,   -- per head
+      payments_json        TEXT NOT NULL DEFAULT '[]',
+      types_json           TEXT NOT NULL DEFAULT '[]',
+      sources_json         TEXT NOT NULL DEFAULT '[]',
+      has_sales            INTEGER NOT NULL DEFAULT 0,  -- close_up imported
+      has_menu             INTEGER NOT NULL DEFAULT 0,  -- overview imported
+      imported_by          INTEGER REFERENCES users(id),
+      imported_at          TEXT NOT NULL DEFAULT (datetime('now')),
+      daily_sent_at        TEXT,
+      daily_sent_by        INTEGER REFERENCES users(id),
+      PRIMARY KEY (branch_id, sale_date)
+    );
+    CREATE TABLE IF NOT EXISTS salesa_menu (
+      branch_id  INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      sale_date  TEXT NOT NULL,
+      kind       TEXT NOT NULL,   -- 'item' | 'category'
+      name       TEXT NOT NULL,
+      nett       REAL NOT NULL DEFAULT 0,
+      rank       INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (branch_id, sale_date, kind, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_salesa_menu_day ON salesa_menu(branch_id, sale_date, kind, rank);
+    CREATE TABLE IF NOT EXISTS salesa_weekly_sent (
+      branch_id  INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      week_start TEXT NOT NULL,   -- Monday YYYY-MM-DD
+      sent_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      sent_by    INTEGER REFERENCES users(id),
+      PRIMARY KEY (branch_id, week_start)
+    );
+    CREATE TABLE IF NOT EXISTS salesa_settings (
+      branch_id      INTEGER PRIMARY KEY REFERENCES branches(id) ON DELETE CASCADE,
+      line_group_id  TEXT,          -- HOD LINE group (platform OA must be a member)
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   // line_group_id (owner 2026-06-23): the partner's LINE group — the IKIGAI OS
   // platform OA is added to it so weekly-transfer / monthly-GP cards can be
   // pushed there. NULL = no group set (the send button is disabled).
@@ -5367,7 +5429,7 @@ function runMigrations(db: Database.Database): void {
     "SELECT id FROM rbac_roles WHERE key = 'legacy_admin'"
   ).get() as { id: number } | undefined;
   if (legacyRoleForBackfill) {
-    for (const perm of ["accounta.manage", "ir.manage"]) {
+    for (const perm of ["accounta.manage", "ir.manage", "salesa.manage"]) {
       const already = db.prepare(
         "SELECT 1 FROM rbac_perm_backfills WHERE permission_key = ?"
       ).get(perm);

@@ -20,6 +20,7 @@ export type RbacPermissionKey =
   | "insigna.view"
   | "ascenda.view"
   | "accounta.manage"
+  | "salesa.manage"
   | "delivera.manage"
   | "ir.manage"
   | "quality.manage"
@@ -71,6 +72,12 @@ export const RBAC_PERMISSIONS: RbacPermissionDef[] = [
     module: "ACCOUNTA",
     labelTh: "ACCOUNTA — บัญชี/ความเป็นไปได้",
     descTh: "ลงบัญชีรายรับ-รายจ่าย ภาษี และประเมินความเป็นไปได้ของโปรเจคลงทุน (FEASIBILITY)"
+  },
+  {
+    key: "salesa.manage",
+    module: "SALESA",
+    labelTh: "SALESA — วิเคราะห์ยอดขายรายวัน",
+    descTh: "นำเข้าไฟล์ยอดขายรายวันจาก POS วิเคราะห์ยอดขาย/เมนูทำรายได้สูงสุด และส่งการ์ดสรุปเข้ากลุ่ม LINE หัวหน้างาน (รายวัน/รายสัปดาห์) — จำกัดเฉพาะแอดมินและหัวหน้างาน"
   },
   {
     key: "delivera.manage",

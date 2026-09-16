@@ -1,0 +1,39 @@
+"use client";
+
+import { useState } from "react";
+
+// SALESA settings — bind the HOD LINE group id the daily/weekly cards push to
+// (owner 2026-09-16). The IKIGAI OS platform OA must be a member of that group.
+
+export default function SalesaSettingsClient({ initialGroupId }: { initialGroupId: string | null }) {
+  const [groupId, setGroupId] = useState(initialGroupId ?? "");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    try {
+      const r = await fetch("/api/admin/salesa/settings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lineGroupId: groupId.trim() || null })
+      }).then((x) => x.json());
+      if (r.ok) setMsg({ kind: "ok", text: r.lineGroupId ? "บันทึกกลุ่ม LINE แล้ว" : "ล้างค่ากลุ่ม LINE แล้ว" });
+      else setMsg({ kind: "err", text: r.error ?? "บันทึกไม่สำเร็จ" });
+    } catch { setMsg({ kind: "err", text: "บันทึกผิดพลาด" }); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="card space-y-3">
+      {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.kind === "ok" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-700"}`}>{msg.text}</div>}
+      <div>
+        <label className="label">LINE Group ID ของกลุ่มหัวหน้างาน (HOD)</label>
+        <input value={groupId} onChange={(e) => setGroupId(e.target.value)} placeholder="เช่น Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" className="input" />
+        <p className="text-xs text-slate-500 mt-1.5">
+          เพิ่มบัญชี IKIGAI OS (platform OA) เข้ากลุ่มก่อน แล้วนำ Group ID มาใส่ · เว้นว่างเพื่อปิดการส่ง
+        </p>
+      </div>
+      <button onClick={save} disabled={saving} className="btn-primary text-sm disabled:opacity-50">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
+    </div>
+  );
+}
