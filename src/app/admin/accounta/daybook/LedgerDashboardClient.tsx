@@ -1536,25 +1536,28 @@ export default function LedgerDashboardClient({
             <div className="flex items-center gap-4">
               {chartsReady ? <Donut items={expenseTop} /> : <div style={{ width: 132, height: 132 }} className="shrink-0" />}
               <div className="flex-1 space-y-1 min-w-0">
+                {/* Secondary, muted %: this category as a share of SALES. Use the
+                    actual month-to-date sales (same denominator as the COG card
+                    above) when available, so the goods (GD) row ties out to
+                    "COG ตอนนี้" — owner 2026-09-16 ("% ยังไม่ตรงกับ COG ข้างบน").
+                    Falls back to the whole-month sales target when a branch has
+                    no month-to-date sales figure. */}
                 {expenseTop.map((c, i) => {
                   const pct = dash.expense > 0 ? Math.round((c.amount / dash.expense) * 100) : 0;
-                  // Secondary, muted %: this category vs the whole-month projected
-                  // sales target (owner 2026-07-14). Shown faintly under the main %
-                  // so it doesn't compete with the share-of-expenses figure. 1dp
-                  // under 10% so small categories don't round to 0.
-                  const pctSales = projectedMonthlySales > 0
-                    ? (c.amount / projectedMonthlySales) * 100
-                    : null;
+                  const salesToDate = materialQuota && materialQuota.salesToDate > 0 ? materialQuota.salesToDate : null;
+                  const salesBase = salesToDate ?? (projectedMonthlySales > 0 ? projectedMonthlySales : null);
+                  const pctSales = salesBase != null ? (c.amount / salesBase) * 100 : null;
+                  const pctLabel = salesToDate != null ? "ต่อยอดขาย" : "คาดการณ์";
                   return (
                     <div key={c.label} className="flex items-center gap-2 text-xs">
                       <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
                       <span className="text-slate-600 truncate flex-1">{c.label}</span>
                       <span className="font-mono text-slate-800 shrink-0">฿{fmtMoney(c.amount)}</span>
-                      <span className="w-12 text-right shrink-0 leading-tight">
+                      <span className="w-14 text-right shrink-0 leading-tight">
                         <span className="block font-mono text-slate-400">{pct}%</span>
                         {pctSales != null && (
                           <span className="block font-mono text-[9px] text-slate-300">
-                            คาดการณ์ {pctSales < 10 ? pctSales.toFixed(1) : Math.round(pctSales)}%
+                            {pctLabel} {pctSales < 10 ? pctSales.toFixed(1) : Math.round(pctSales)}%
                           </span>
                         )}
                       </span>
