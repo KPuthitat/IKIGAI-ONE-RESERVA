@@ -140,6 +140,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // only admins granted accounta.manage (and super_admin / roleless
         // full-admins) see it. FEASIBILITY lives inside it.
         ...(canModule(user, "accounta.manage") ? [{ href: gate("/admin/accounta"), label: "ACCOUNTA" }] : []),
+        // SALESA — daily POS sales analytics (owner 2026-09-16). RBAC-gated to
+        // admins + supervisors (หัวหน้างาน) granted salesa.manage.
+        ...(canModule(user, "salesa.manage") ? [{ href: gate("/admin/salesa"), label: "SALESA" }] : []),
         // DELIVERA — self-run delivery (owner 2026-07). RBAC-gated; ships dark per
         // branch (delivera_enabled) so the link is harmless until a branch opts in.
         ...(canModule(user, "delivera.manage") ? [{ href: gate("/admin/delivera/kitchen"), label: "DELIVERA" }] : []),
