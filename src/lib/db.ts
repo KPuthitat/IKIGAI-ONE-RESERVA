@@ -1987,12 +1987,28 @@ function runMigrations(db: Database.Database): void {
       sent_by    INTEGER REFERENCES users(id),
       PRIMARY KEY (branch_id, week_start)
     );
+    CREATE TABLE IF NOT EXISTS salesa_monthly_sent (
+      branch_id  INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      ym         TEXT NOT NULL,   -- 'YYYY-MM'
+      sent_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      sent_by    INTEGER REFERENCES users(id),
+      PRIMARY KEY (branch_id, ym)
+    );
     CREATE TABLE IF NOT EXISTS salesa_settings (
       branch_id      INTEGER PRIMARY KEY REFERENCES branches(id) ON DELETE CASCADE,
       line_group_id  TEXT,          -- HOD LINE group (platform OA must be a member)
+      monthly_target REAL,          -- monthly sales goal (owner C); NULL = unset
       updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  // monthly_target added after salesa_settings first shipped — ALTER for
+  // existing installs (owner 2026-09-17, C). Idempotent.
+  {
+    const ssCols = db.prepare("PRAGMA table_info(salesa_settings)").all() as Array<{ name: string }>;
+    if (!ssCols.some((c) => c.name === "monthly_target")) {
+      db.exec("ALTER TABLE salesa_settings ADD COLUMN monthly_target REAL");
+    }
+  }
 
   // line_group_id (owner 2026-06-23): the partner's LINE group — the IKIGAI OS
   // platform OA is added to it so weekly-transfer / monthly-GP cards can be

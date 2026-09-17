@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
-import { isSalesaBranch, getLineGroupId, setLineGroupId } from "@/lib/salesa-db";
+import { isSalesaBranch, getLineGroupId, setLineGroupId, getMonthlyTarget, setMonthlyTarget } from "@/lib/salesa-db";
 
 // REPORTA settings — the HOD LINE group id the daily/weekly cards are pushed to
 // (per branch). The IKIGAI OS platform OA must be a member of that group.
@@ -18,16 +18,20 @@ function ctx() {
 export function GET() {
   const { branchId, ok } = ctx();
   if (!ok) return NextResponse.json({ error: "no_branch" }, { status: 403 });
-  return NextResponse.json({ ok: true, lineGroupId: getLineGroupId(branchId!) });
+  return NextResponse.json({ ok: true, lineGroupId: getLineGroupId(branchId!), monthlyTarget: getMonthlyTarget(branchId!) });
 }
 
-const Body = z.object({ lineGroupId: z.string().max(200).nullable() });
+const Body = z.object({
+  lineGroupId: z.string().max(200).nullable().optional(),
+  monthlyTarget: z.number().min(0).max(1_000_000_000).nullable().optional()
+});
 
 export async function POST(req: Request) {
   const { branchId, ok } = ctx();
   if (!ok) return NextResponse.json({ error: "no_branch" }, { status: 403 });
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
-  setLineGroupId(branchId!, parsed.data.lineGroupId);
-  return NextResponse.json({ ok: true, lineGroupId: getLineGroupId(branchId!) });
+  if (parsed.data.lineGroupId !== undefined) setLineGroupId(branchId!, parsed.data.lineGroupId);
+  if (parsed.data.monthlyTarget !== undefined) setMonthlyTarget(branchId!, parsed.data.monthlyTarget);
+  return NextResponse.json({ ok: true, lineGroupId: getLineGroupId(branchId!), monthlyTarget: getMonthlyTarget(branchId!) });
 }

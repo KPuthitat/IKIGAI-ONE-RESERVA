@@ -210,3 +210,36 @@ export function setLineGroupId(branchId: number, groupId: string | null): void {
      ON CONFLICT(branch_id) DO UPDATE SET line_group_id = excluded.line_group_id, updated_at = datetime('now')`
   ).run(branchId, clean);
 }
+
+// ── Monthly sales target (owner C) ──────────────────────────────────────────
+
+export function getMonthlyTarget(branchId: number): number | null {
+  const r = getDb().prepare("SELECT monthly_target FROM salesa_settings WHERE branch_id = ?")
+    .get(branchId) as { monthly_target: number | null } | undefined;
+  return r?.monthly_target ?? null;
+}
+
+export function setMonthlyTarget(branchId: number, target: number | null): void {
+  const clean = target != null && target > 0 ? target : null;
+  getDb().prepare(
+    `INSERT INTO salesa_settings (branch_id, monthly_target, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(branch_id) DO UPDATE SET monthly_target = excluded.monthly_target, updated_at = datetime('now')`
+  ).run(branchId, clean);
+}
+
+// ── Monthly card sent-tracking (owner F) ────────────────────────────────────
+
+export function markMonthlySent(branchId: number, ym: string, userId: number): void {
+  getDb().prepare(
+    `INSERT INTO salesa_monthly_sent (branch_id, ym, sent_at, sent_by)
+     VALUES (?, ?, datetime('now'), ?)
+     ON CONFLICT(branch_id, ym) DO UPDATE SET sent_at = datetime('now'), sent_by = excluded.sent_by`
+  ).run(branchId, ym, userId);
+}
+
+export function monthlySentAt(branchId: number, ym: string): string | null {
+  const r = getDb().prepare("SELECT sent_at FROM salesa_monthly_sent WHERE branch_id = ? AND ym = ?")
+    .get(branchId, ym) as { sent_at: string } | undefined;
+  return r?.sent_at ?? null;
+}

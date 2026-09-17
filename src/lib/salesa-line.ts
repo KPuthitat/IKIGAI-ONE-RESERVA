@@ -5,7 +5,7 @@
 
 import { sendLinePush } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
-import type { DailyAnalytics, WeeklyAnalytics } from "./salesa-analytics";
+import type { DailyAnalytics, WeeklyAnalytics, MonthlyAnalytics } from "./salesa-analytics";
 
 type FlexMsg = { type: "flex"; altText: string; contents: unknown };
 
@@ -173,6 +173,43 @@ export function salesaWeeklyFlex(w: WeeklyAnalytics, meta: DailyCardMeta): FlexM
       header: header("สรุปยอดขายประจำสัปดาห์", `${w.label} · ${meta.branchName}`),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("สรุปโดยระบบ IKIGAI OS · รอบจันทร์–อาทิตย์")
+    }
+  };
+}
+
+// ── F · monthly summary card (sent on the 1st for the previous month) ───────
+export function salesaMonthlyFlex(m: MonthlyAnalytics, meta: DailyCardMeta): FlexMsg {
+  const yoy = (label: string, base: number | null, pctVal: number | null): unknown =>
+    base == null
+      ? { type: "text", text: `${label}: ยังไม่มีข้อมูลเทียบ`, size: "xxs", color: "#bbbbbb", wrap: true }
+      : { type: "text", size: "xxs", wrap: true, contents: [{ type: "span", text: `${label} `, color: "#999999" }, pctSpan(pctVal), { type: "span", text: `  (${baht(base)})`, color: "#bbbbbb" }] };
+
+  const body: unknown[] = [
+    { type: "text", text: meta.branchName, weight: "bold", size: "lg", wrap: true },
+    { type: "text", text: `สรุปโดย: ${meta.operator} · รวม ${m.dayCount} วัน`, size: "xxs", color: "#999999", wrap: true },
+    sep,
+    kv("ยอดขายรวมทั้งเดือน", baht(m.totalNett), { bold: true, color: "#0f7a4f", size: "md" }),
+    yoy("เทียบเดือนก่อน", m.prevMonthNett, m.prevMonthPct),
+    yoy("เทียบปีก่อน", m.lastYearNett, m.lastYearPct),
+    kv("จำนวนบิลรวม", `${intTh(m.totalBills)} บิล`, { size: "xs" }),
+    kv("ลูกค้ารวม", `${intTh(m.totalPax)} คน`, { size: "xs" }),
+    ...(m.avgPerDay != null ? [kv("เฉลี่ยต่อวัน", baht(m.avgPerDay), { size: "xs" })] : []),
+    ...(m.avgPerBill != null ? [kv("เฉลี่ยต่อบิล", baht(m.avgPerBill), { size: "xs" })] : []),
+    kv("ส่วนลดรวม", baht(Math.abs(m.totalDiscount)), { size: "xs", color: "#b0392f" }),
+    ...(m.bestDate ? [kv("วันขายดีสุด", `${m.bestDate} · ${baht(m.bestNett ?? 0)}`, { size: "xs" })] : [])
+  ];
+  if (m.topItems.length || m.topCategories.length) body.push(sep);
+  body.push(...menuBlock("🍽️ เมนูทำรายได้สูงสุดประจำเดือน", m.topItems));
+  body.push(...menuBlock("หมวดทำรายได้สูงสุดประจำเดือน", m.topCategories));
+
+  return {
+    type: "flex",
+    altText: `สรุปยอดขายประจำเดือน ${m.label} · ${meta.branchName} · ${baht(m.totalNett)}`,
+    contents: {
+      type: "bubble", size: "giga",
+      header: header("สรุปยอดขายประจำเดือน", `${m.label} · ${meta.branchName}`),
+      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
+      footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายเดือน")
     }
   };
 }

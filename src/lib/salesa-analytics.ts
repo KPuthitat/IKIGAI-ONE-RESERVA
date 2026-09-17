@@ -251,6 +251,96 @@ export function weeklyAnalytics(branchId: number, weekStart: string, topN = 5): 
   };
 }
 
+// ── F · monthly summary (for the LINE card sent on the 1st) ─────────────────
+
+export type MonthlyAnalytics = {
+  year: number;
+  month: number;
+  ym: string;
+  label: string;               // "กันยายน 2569"
+  dayCount: number;
+  totalNett: number;
+  totalBills: number;
+  totalPax: number;
+  totalDiscount: number;
+  avgPerDay: number | null;
+  avgPerBill: number | null;
+  bestDate: string | null;
+  bestNett: number | null;
+  prevMonthNett: number | null;
+  prevMonthPct: number | null;
+  lastYearNett: number | null;
+  lastYearPct: number | null;
+  topItems: MenuRank[];
+  topCategories: MenuRank[];
+};
+
+const TH_MONTHS_LOCAL = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+
+/** Whole-month rollup + MoM/YoY (full month) + top menus (owner F). */
+export function monthlyAnalytics(branchId: number, year: number, month: number, topN = 5): MonthlyAnalytics {
+  const mm = String(month).padStart(2, "0");
+  const end = `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`;
+  const rows = listRange(branchId, `${year}-${mm}-01`, end).filter((d) => d.has_sales);
+  const totalNett = round2(rows.reduce((s, d) => s + d.nett, 0));
+  const totalBills = rows.reduce((s, d) => s + d.bill_count, 0);
+  const totalPax = rows.reduce((s, d) => s + d.pax, 0);
+  const totalDiscount = round2(rows.reduce((s, d) => s + d.discount, 0));
+  const best = rows.reduce<DailyRow | null>((b, d) => (b == null || d.nett > b.nett ? d : b), null);
+  const full = daysInMonth(year, month);
+  const pm = month === 1 ? 12 : month - 1;
+  const pmY = month === 1 ? year - 1 : year;
+  const prevMonthNett = sumNett(branchId, pmY, pm, full);
+  const lastYearNett = sumNett(branchId, year - 1, month, full);
+  const items = menuRange(branchId, `${year}-${mm}-01`, end, "item").map((m, i) => ({ ...m, rank: i + 1 }));
+  const cats = menuRange(branchId, `${year}-${mm}-01`, end, "category").map((m, i) => ({ ...m, rank: i + 1 }));
+
+  return {
+    year, month, ym: `${year}-${mm}`,
+    label: `${TH_MONTHS_LOCAL[month]} ${year + 543}`,
+    dayCount: rows.length,
+    totalNett, totalBills, totalPax, totalDiscount,
+    avgPerDay: rows.length ? round2(totalNett / rows.length) : null,
+    avgPerBill: totalBills > 0 ? round2(totalNett / totalBills) : null,
+    bestDate: best?.sale_date ?? null,
+    bestNett: best?.nett ?? null,
+    prevMonthNett, prevMonthPct: relPct(totalNett, prevMonthNett),
+    lastYearNett, lastYearPct: relPct(totalNett, lastYearNett),
+    topItems: items.slice(0, topN),
+    topCategories: cats.slice(0, topN)
+  };
+}
+
+// ── C · monthly target progress ─────────────────────────────────────────────
+
+export type TargetProgress = {
+  target: number;
+  mtdNett: number;
+  throughDay: number;
+  daysInMonth: number;
+  pctOfTarget: number;         // MTD / target
+  projectedNett: number;       // linear pace to month end
+  projectedPct: number;        // projected / target
+  onTrack: boolean;
+};
+
+/** Progress toward a monthly sales target given MTD (owner C). */
+export function targetProgress(target: number, mtdNett: number, throughDay: number, year: number, month: number): TargetProgress | null {
+  if (!(target > 0)) return null;
+  const dim = daysInMonth(year, month);
+  const projectedNett = throughDay > 0 ? round2((mtdNett / throughDay) * dim) : 0;
+  return {
+    target,
+    mtdNett,
+    throughDay,
+    daysInMonth: dim,
+    pctOfTarget: round2((mtdNett / target) * 100),
+    projectedNett,
+    projectedPct: round2((projectedNett / target) * 100),
+    onTrack: projectedNett >= target
+  };
+}
+
 // ── A · weekday performance, D · discount insight, E · channel mix ──────────
 
 export type WeekdayStat = { dow: number; label: string; avgNett: number; days: number; avgBills: number };

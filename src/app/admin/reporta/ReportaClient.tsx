@@ -61,6 +61,7 @@ type WeekdayStat = { dow: number; label: string; avgNett: number; days: number; 
 type DiscountInsight = { avgDiscountPct: number | null; totalDiscount: number; highDiscAvgNett: number | null; lowDiscAvgNett: number | null; days: number };
 type ChannelSlice = { name: string; sales: number; qty: number; pct: number };
 type ChannelMix = { types: ChannelSlice[]; payments: ChannelSlice[]; sources: ChannelSlice[] };
+type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
 
 function MenuList({ title, list, muted }: { title: string; list: MenuRank[]; muted?: boolean }) {
   if (!list.length) return null;
@@ -122,6 +123,8 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
   const [weekdays, setWeekdays] = useState<WeekdayStat[]>([]);
   const [discount, setDiscount] = useState<DiscountInsight | null>(null);
   const [channels, setChannels] = useState<ChannelMix | null>(null);
+  const [monthTarget, setMonthTarget] = useState<MonthTarget | null>(null);
+  const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [hasLineGroup, setHasLineGroup] = useState(true);
   const [selDate, setSelDate] = useState<string | null>(null);
   const [daily, setDaily] = useState<DailyAnalytics | null>(null);
@@ -146,6 +149,7 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
     if (r.ok) {
       setDays(r.view.days); setHasLineGroup(r.hasLineGroup); setMonthCompare(r.monthCompare ?? null);
       setWeekdays(r.weekdays ?? []); setDiscount(r.discount ?? null); setChannels(r.channels ?? null);
+      setMonthTarget(r.monthTarget ?? null); setMonthSentAt(r.monthSentAt ?? null);
     }
   }, [year, month]);
 
@@ -208,6 +212,15 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
     run: async (p) => {
       const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "weekly", week: ws, pin: p }) }).then((x) => x.json());
       if (r.ok) { setMsg({ kind: "ok", text: "ส่งสรุปรายสัปดาห์เข้ากลุ่ม HOD แล้ว" }); await loadWeek(ws); }
+      return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
+    }
+  });
+
+  const sendMonthly = (y: number, m: number) => setPin({
+    title: `ส่งสรุปเดือน ${TH_MONTHS[m]} ${y + 543}`,
+    run: async (p) => {
+      const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "monthly", year: y, month: m, pin: p }) }).then((x) => x.json());
+      if (r.ok) { setMsg({ kind: "ok", text: "ส่งสรุปรายเดือนเข้ากลุ่ม HOD แล้ว" }); await loadMonth(); }
       return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
     }
   });
@@ -295,6 +308,36 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
               <span>เทียบเดือนก่อน (ช่วงเดียวกัน) <PctChip pct={monthCompare.prevMonthPct} /></span>
               <span>เทียบปีก่อน (เดือนเดียวกัน) <PctChip pct={monthCompare.lastYearPct} /></span>
             </div>
+
+            {/* Monthly target progress (owner C) */}
+            {monthTarget && (
+              <div className="pt-2 mt-1 border-t border-slate-200 space-y-1">
+                <div className="flex items-baseline justify-between gap-2 text-[11px]">
+                  <span className="text-slate-500">เป้าเดือนนี้ {baht(monthTarget.target)}</span>
+                  <span className={`font-bold ${monthTarget.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{monthTarget.pctOfTarget.toFixed(0)}% ของเป้า</span>
+                </div>
+                <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
+                  <div className={`h-full ${monthTarget.pctOfTarget >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, monthTarget.pctOfTarget)}%` }} />
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  คาดการณ์สิ้นเดือน <b className={monthTarget.onTrack ? "text-emerald-600" : "text-amber-600"}>{baht(monthTarget.projectedNett)}</b> ({monthTarget.projectedPct.toFixed(0)}% ของเป้า) · {monthTarget.onTrack ? "มีแนวโน้มถึงเป้า ✓" : "ต่ำกว่าเป้า ต้องเร่ง"}
+                </div>
+              </div>
+            )}
+            {!monthTarget && (
+              <div className="text-[11px] text-slate-400 pt-1">ยังไม่ได้ตั้งเป้ายอดขาย — ตั้งได้ที่ ⚙️ ตั้งค่ากลุ่ม LINE</div>
+            )}
+          </div>
+        )}
+
+        {/* Monthly summary send button (owner F) */}
+        {days.length > 0 && (
+          <div className="flex items-center justify-end gap-2">
+            {monthSentAt && <span className="text-xs text-emerald-600">✓ ส่งสรุปเดือนแล้ว</span>}
+            <button onClick={() => sendMonthly(year, month)} disabled={!hasLineGroup}
+              className="btn-success text-sm px-4 py-2 disabled:opacity-50">
+              {monthSentAt ? "ส่งซ้ำสรุปเดือนเข้ากลุ่ม HOD" : "ส่งสรุปเดือนเข้ากลุ่ม HOD"}
+            </button>
           </div>
         )}
 
