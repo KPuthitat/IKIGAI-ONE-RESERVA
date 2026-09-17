@@ -133,8 +133,17 @@ export function salesaWeeklyFlex(w: WeeklyAnalytics, meta: DailyCardMeta): FlexM
     { type: "text", text: `สรุปโดย: ${meta.operator} · รวม ${w.dayCount} วัน`, size: "xxs", color: "#999999", wrap: true },
     sep,
     kv("ยอดขายรวมสัปดาห์", baht(w.totalNett), { bold: true, color: "#0f7a4f", size: "md" }),
+    // Week-over-week comparison (owner 2026-09-17).
+    (w.wowNettPct == null
+      ? { type: "text", text: "เทียบสัปดาห์ก่อน: ยังไม่มีข้อมูลเทียบ", size: "xxs", color: "#bbbbbb", wrap: true }
+      : { type: "text", size: "xxs", wrap: true, contents: [
+          { type: "span", text: "เทียบสัปดาห์ก่อน ", color: "#999999" }, pctSpan(w.wowNettPct),
+          { type: "span", text: `  (${baht(w.prevWeekNett ?? 0)})`, color: "#bbbbbb" }
+        ] }),
     kv("จำนวนบิลรวม", `${intTh(w.totalBills)} บิล`, { size: "xs" }),
+    ...(w.wowBillsPct != null ? [{ type: "text", size: "xxs", wrap: true, contents: [{ type: "span", text: "เทียบสัปดาห์ก่อน ", color: "#999999" }, pctSpan(w.wowBillsPct)] }] : []),
     kv("ลูกค้ารวม", `${intTh(w.totalPax)} คน`, { size: "xs" }),
+    ...(w.wowPaxPct != null ? [{ type: "text", size: "xxs", wrap: true, contents: [{ type: "span", text: "เทียบสัปดาห์ก่อน ", color: "#999999" }, pctSpan(w.wowPaxPct)] }] : []),
     ...(w.avgPerDay != null ? [kv("เฉลี่ยต่อวัน", baht(w.avgPerDay), { size: "xs" })] : []),
     ...(w.avgPerBill != null ? [kv("เฉลี่ยต่อบิล", baht(w.avgPerBill), { size: "xs" })] : []),
     kv("ส่วนลดรวม", baht(Math.abs(w.totalDiscount)), { size: "xs", color: "#b0392f" }),

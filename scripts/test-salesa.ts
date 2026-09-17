@@ -153,6 +153,15 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("weekly bills summed", wk.totalBills === 20 + 22 + 23 + 18 + 30);
   ok("weekly menu aggregated across days (คอหมูย่าง 1200+800)", wk.topItems.find((i) => i.name === "คอหมูย่าง")?.nett === 2000);
   ok("weekly avgPerBill = total/bills", near(wk.avgPerBill ?? 0, wk.totalNett / wk.totalBills));
+  ok("weekly WoW null with no prior week (this dataset)", wk.prevWeekNett === null && wk.wowNettPct === null);
+  // Fresh branch: clean two adjacent ISO weeks for a WoW check.
+  const bid3 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('r3','REST3')").run().lastInsertRowid);
+  const put3 = (d: string, nett: number, bills: number, pax: number) => sdb.upsertDaily(bid3, uid, { date: d, dateEnd: d, merchant: "R3", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: bills, pax, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / bills, avgPax: pax / bills, avgSalesPax: nett / pax, payments: [], types: [], sources: [] });
+  put3("2026-09-08", 100000, 100, 150);  // prev week (09-07..13)
+  put3("2026-09-15", 120000, 110, 160);  // this week (09-14..20)
+  const wkc = analytics.weeklyAnalytics(bid3, "2026-09-15");
+  ok("weekly WoW nett (120000 vs 100000 = +20%)", near(wkc.wowNettPct ?? 0, 20) && wkc.prevWeekNett === 100000);
+  ok("weekly WoW bills (110 vs 100 = +10%)", near(wkc.wowBillsPct ?? 0, 10));
 
   // ── 4) clearDay ──
   ok("clearDay removes the day", (() => {
