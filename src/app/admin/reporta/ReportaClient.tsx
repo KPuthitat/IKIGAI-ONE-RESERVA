@@ -43,8 +43,10 @@ type DailyAnalytics = {
   discountPct: number | null; voidPct: number | null;
   prevDate: string | null; nettVsPrevPct: number | null;
   avg7Nett: number | null; avg7Days: number; nettVs7Pct: number | null;
+  metrics: MetricCompare[];
   topItems: MenuRank[]; bottomItems: MenuRank[]; topCategories: MenuRank[];
 };
+type MetricCompare = { key: string; label: string; value: number; kind: "baht" | "int"; prevPct: number | null; avgPct: number | null };
 type WeeklyAnalytics = {
   weekStart: string; weekEnd: string; label: string;
   days: Array<{ date: string; dateLabel: string; nett: number; billCount: number; pax: number }>;
@@ -52,12 +54,6 @@ type WeeklyAnalytics = {
   avgPerDay: number | null; avgPerBill: number | null; bestDate: string | null; bestNett: number | null;
   topItems: MenuRank[]; topCategories: MenuRank[];
 };
-
-function Trend({ label, pct }: { label: string; pct: number | null }) {
-  if (pct == null) return <span className="text-xs text-slate-400">{label}: ไม่มีข้อมูลเทียบ</span>;
-  const up = pct >= 0;
-  return <span className={`text-xs font-semibold ${up ? "text-emerald-600" : "text-rose-600"}`}>{label}: {up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%</span>;
-}
 
 function MenuList({ title, list, muted }: { title: string; list: MenuRank[]; muted?: boolean }) {
   if (!list.length) return null;
@@ -125,6 +121,14 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [pin, setPin] = useState<null | { title: string; run: (pin: string) => Promise<{ ok: boolean; message?: string }> }>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [picked, setPicked] = useState<File[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+
+  const addFiles = (list: FileList | null) => {
+    if (!list) return;
+    const xlsx = Array.from(list).filter((f) => /\.xlsx?$/i.test(f.name));
+    if (xlsx.length) setPicked((prev) => [...prev, ...xlsx].filter((f, i, a) => a.findIndex((g) => g.name === f.name && g.size === f.size) === i));
+  };
 
   const loadMonth = useCallback(async () => {
     const r = await fetch(`/api/admin/reporta/view?year=${year}&month=${month}`).then((x) => x.json());
@@ -146,17 +150,17 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
   useEffect(() => { loadWeek(weekStart); }, [weekStart, loadWeek]);
 
   const upload = async () => {
-    const files = fileRef.current?.files;
-    if (!files || !files.length) { setMsg({ kind: "err", text: "เลือกไฟล์ก่อน" }); return; }
+    if (!picked.length) { setMsg({ kind: "err", text: "เลือกไฟล์ก่อน" }); return; }
     setBusy(true); setMsg(null);
     const fd = new FormData();
-    Array.from(files).forEach((f) => fd.append("file", f));
+    picked.forEach((f) => fd.append("file", f));
     try {
       const r = await fetch("/api/admin/reporta/import", { method: "POST", body: fd }).then((x) => x.json());
       if (!r.ok) { setMsg({ kind: "err", text: r.message ?? r.error ?? "นำเข้าไม่สำเร็จ" }); }
       else {
         const lines = r.imported.map((i: { kind: string; date: string; note: string }) => `${i.kind === "close_up" ? "ยอดขาย" : "เมนู"} · ${thaiDate(i.date)} · ${i.note}`);
         setMsg({ kind: "ok", text: `นำเข้าสำเร็จ: ${lines.join(" / ")}` });
+        setPicked([]);
         if (fileRef.current) fileRef.current.value = "";
         await loadMonth();
         await loadWeek(weekStart);
@@ -211,13 +215,50 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
         <div className={`card text-sm ${msg.kind === "ok" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-rose-50 border-rose-200 text-rose-700"}`}>{msg.text}</div>
       )}
 
-      {/* Import */}
+      {/* Import — modern drop zone */}
       <div className="card space-y-3">
-        <h2 className="font-bold text-slate-800">นำเข้าไฟล์จาก POS</h2>
-        <p className="text-sm text-slate-500">เลือกได้ทั้งไฟล์ <b>Close up</b> (ยอดขาย) และ <b>Overview</b> (เมนู) พร้อมกัน — ระบบแยกประเภทและวันที่ให้เอง</p>
-        <div className="flex items-center gap-2 flex-wrap">
-          <input ref={fileRef} type="file" accept=".xlsx" multiple className="text-sm" />
-          <button onClick={upload} disabled={busy} className="btn-primary text-sm disabled:opacity-50">{busy ? "กำลังนำเข้า…" : "นำเข้า"}</button>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="font-bold text-slate-800">นำเข้าไฟล์จาก POS</h2>
+          <span className="text-[11px] text-slate-400">รองรับ .xlsx · เลือกหลายไฟล์ได้</span>
+        </div>
+        <input ref={fileRef} type="file" accept=".xlsx" multiple className="hidden"
+          onChange={(e) => addFiles(e.target.files)} />
+        <div
+          onClick={() => fileRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
+          className={`cursor-pointer rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-colors ${
+            dragOver ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-slate-50/60 hover:border-emerald-300 hover:bg-emerald-50/40"
+          }`}
+        >
+          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0L8 8m4-4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+            </svg>
+          </div>
+          <div className="text-sm font-semibold text-slate-700">ลากไฟล์มาวางที่นี่ หรือ <span className="text-emerald-600 underline">เลือกไฟล์</span></div>
+          <div className="mt-1 text-xs text-slate-400">ไฟล์ <b>Close up</b> (ยอดขาย) และ <b>Overview</b> (เมนู) พร้อมกันได้ — ระบบแยกประเภทและวันที่ให้เอง</div>
+        </div>
+
+        {picked.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {picked.map((f, i) => (
+              <span key={f.name + i} className="inline-flex items-center gap-1.5 rounded-full bg-white border border-slate-200 pl-3 pr-1.5 py-1 text-xs text-slate-600 shadow-sm">
+                <span className="truncate max-w-[220px]">📄 {f.name}</span>
+                <button type="button" onClick={() => setPicked((prev) => prev.filter((_, j) => j !== i))}
+                  className="flex h-4 w-4 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700">✕</button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <button onClick={upload} disabled={busy || picked.length === 0}
+            className="btn-primary text-sm disabled:opacity-50">{busy ? "กำลังนำเข้า…" : `นำเข้า${picked.length ? ` (${picked.length})` : ""}`}</button>
+          {picked.length > 0 && !busy && (
+            <button onClick={() => setPicked([])} className="text-xs text-slate-400 hover:text-slate-600">ล้างรายการ</button>
+          )}
         </div>
       </div>
 
@@ -268,19 +309,17 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
 
           {daily.row.has_sales === 1 ? (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Kpi label="ยอดขายสุทธิ" value={baht(daily.row.nett)} accent />
-                <Kpi label="จำนวนบิล" value={`${intTh(daily.row.bill_count)} บิล`} />
-                <Kpi label="ลูกค้า" value={`${intTh(daily.row.pax)} คน`} />
-                <Kpi label="เฉลี่ยต่อบิล" value={baht(daily.row.avg_sales)} />
-                <Kpi label="เฉลี่ยต่อหัว" value={baht(daily.row.avg_sales_pax)} />
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {daily.metrics.map((m) => (
+                  <Kpi key={m.key}
+                    label={m.label}
+                    value={m.kind === "baht" ? baht(m.value) : m.key === "bills" ? `${intTh(m.value)} บิล` : m.key === "pax" ? `${intTh(m.value)} คน` : intTh(m.value)}
+                    accent={m.key === "nett"}
+                    prevPct={m.prevPct} avgPct={m.avgPct} avgDays={daily.avg7Days} />
+                ))}
                 <Kpi label="ส่วนลด" value={`${baht(Math.abs(daily.row.discount))}${daily.discountPct != null ? ` (${daily.discountPct.toFixed(1)}%)` : ""}`} />
                 <Kpi label="ยกเลิกบิล (Void)" value={`${baht(daily.row.void_amount)} · ${intTh(daily.row.void_bill_count)}`} />
                 <Kpi label="VAT / Service" value={`${baht(daily.row.vat)} / ${baht(daily.row.service_charge)}`} />
-              </div>
-              <div className="flex gap-4 flex-wrap">
-                <Trend label="เทียบวันก่อน" pct={daily.nettVsPrevPct} />
-                <Trend label={`เทียบเฉลี่ย ${daily.avg7Days} วัน`} pct={daily.nettVs7Pct} />
               </div>
 
               {(daily.row.payments.length > 0 || daily.row.types.length > 0) && (
@@ -370,11 +409,30 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
   );
 }
 
-function Kpi({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function PctChip({ pct }: { pct: number | null }) {
+  if (pct == null) return <span className="text-slate-300">—</span>;
+  const up = pct >= 0;
+  return <span className={up ? "text-emerald-600" : "text-rose-600"}>{up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%</span>;
+}
+
+function Kpi({ label, value, accent, prevPct, avgPct, avgDays }: {
+  label: string; value: string; accent?: boolean;
+  prevPct?: number | null; avgPct?: number | null; avgDays?: number;
+}) {
+  const hasCompare = prevPct !== undefined || avgPct !== undefined;
   return (
     <div className={`rounded-xl p-3 ${accent ? "bg-emerald-50" : "bg-slate-50"}`}>
       <div className="text-[11px] text-slate-500">{label}</div>
       <div className={`text-base font-bold ${accent ? "text-emerald-700" : "text-slate-800"}`}>{value}</div>
+      {hasCompare && (
+        <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+          {(prevPct == null && avgPct == null) ? (
+            "ยังไม่มีข้อมูลเทียบ"
+          ) : (
+            <>วันก่อน <PctChip pct={prevPct ?? null} /> · เฉลี่ย {avgDays} วัน <PctChip pct={avgPct ?? null} /></>
+          )}
+        </div>
+      )}
     </div>
   );
 }

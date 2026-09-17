@@ -143,6 +143,12 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("daily prev day = 09-15", a16.prevDate === "2026-09-15");
   ok("daily vs prev = (14658−12000)/12000", near(a16.nettVsPrevPct ?? 0, ((14658 - 12000) / 12000) * 100));
   ok("daily 7-day avg over 2 prior days", a16.avg7Days === 2 && near(a16.avg7Nett ?? 0, (10000 + 12000) / 2));
+  ok("daily metrics has 5 headings", a16.metrics.length === 5 && a16.metrics.map((m) => m.key).join(",") === "nett,bills,pax,avgBill,avgHead");
+  const bills = a16.metrics.find((m) => m.key === "bills")!;
+  ok("bills prevPct = (23−22)/22", near(bills.prevPct ?? 0, ((23 - 22) / 22) * 100));
+  ok("bills avgPct vs 2-day avg (20,22)→21", near(bills.avgPct ?? 0, ((23 - 21) / 21) * 100));
+  const pax = a16.metrics.find((m) => m.key === "pax")!;
+  ok("pax prevPct = (43−35)/35", near(pax.prevPct ?? 0, ((43 - 35) / 35) * 100));
   ok("daily top item = คอหมูย่าง", a16.topItems[0]?.name === "คอหมูย่าง");
   ok("daily bottom item = ข้าวเหนียว (lowest)", a16.bottomItems[0]?.name === "ข้าวเหนียว");
 
