@@ -48,6 +48,12 @@ export default function AdminHomePage() {
       sub: "บัญชีรายรับ-รายจ่าย · ภาษีซื้อ-ขาย · บัญชีรายวัน · ประเมินความเป็นไปได้ (FEASIBILITY)",
       cta: openBackend, badge: { label: "NEW", tone: "emerald" },
     } : null,
+    canModule(user, "reporta.manage") ? {
+      href: "/admin/reporta", icon: "chart", tone: "emerald", eyebrow: moduleEyebrow,
+      title: "REPORTA",
+      sub: "วิเคราะห์ยอดขายรายวัน · นำเข้าไฟล์ POS · เมนูทำรายได้สูงสุด · การ์ด LINE หัวหน้างาน",
+      cta: openBackend, badge: { label: "NEW", tone: "emerald" },
+    } : null,
     canModule(user, "ascenda.view") ? {
       href: "/admin/ascenda", icon: "ascenda", tone: "slate", eyebrow: moduleEyebrow,
       title: t(lang, "portal.ascenda.title"), sub: t(lang, "portal.ascenda.adminDesc"),
