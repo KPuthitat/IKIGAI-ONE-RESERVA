@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-// SALESA dashboard (owner 2026-09-16): import the POS files, review the day's
+// REPORTA dashboard (owner 2026-09-16): import the POS files, review the day's
 // deep analytics + menu ranking, and push the summary card to the HOD LINE group
 // (daily) or the weekly rollup (Mon–Sun). Send is PIN-gated.
 
@@ -110,7 +110,7 @@ function PinModal({ title, onConfirm, onClose }: { title: string; onConfirm: (pi
   );
 }
 
-export default function SalesaClient({ branchName }: { branchName: string }) {
+export default function ReportaClient({ branchName }: { branchName: string }) {
   const initial = todayBkk();
   const [year, setYear] = useState(Number(initial.slice(0, 4)));
   const [month, setMonth] = useState(Number(initial.slice(5, 7)));
@@ -127,18 +127,18 @@ export default function SalesaClient({ branchName }: { branchName: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadMonth = useCallback(async () => {
-    const r = await fetch(`/api/admin/salesa/view?year=${year}&month=${month}`).then((x) => x.json());
+    const r = await fetch(`/api/admin/reporta/view?year=${year}&month=${month}`).then((x) => x.json());
     if (r.ok) { setDays(r.view.days); setHasLineGroup(r.hasLineGroup); }
   }, [year, month]);
 
   const loadDay = useCallback(async (date: string) => {
     setSelDate(date); setDaily(null);
-    const r = await fetch(`/api/admin/salesa/view?date=${date}`).then((x) => x.json());
+    const r = await fetch(`/api/admin/reporta/view?date=${date}`).then((x) => x.json());
     if (r.ok) setDaily(r.daily); else setMsg({ kind: "err", text: r.message ?? "โหลดข้อมูลวันไม่สำเร็จ" });
   }, []);
 
   const loadWeek = useCallback(async (ws: string) => {
-    const r = await fetch(`/api/admin/salesa/view?week=${ws}`).then((x) => x.json());
+    const r = await fetch(`/api/admin/reporta/view?week=${ws}`).then((x) => x.json());
     if (r.ok) { setWeekly(r.weekly); setWeeklySentAt(r.weeklySentAt); }
   }, []);
 
@@ -152,7 +152,7 @@ export default function SalesaClient({ branchName }: { branchName: string }) {
     const fd = new FormData();
     Array.from(files).forEach((f) => fd.append("file", f));
     try {
-      const r = await fetch("/api/admin/salesa/import", { method: "POST", body: fd }).then((x) => x.json());
+      const r = await fetch("/api/admin/reporta/import", { method: "POST", body: fd }).then((x) => x.json());
       if (!r.ok) { setMsg({ kind: "err", text: r.message ?? r.error ?? "นำเข้าไม่สำเร็จ" }); }
       else {
         const lines = r.imported.map((i: { kind: string; date: string; note: string }) => `${i.kind === "close_up" ? "ยอดขาย" : "เมนู"} · ${thaiDate(i.date)} · ${i.note}`);
@@ -170,7 +170,7 @@ export default function SalesaClient({ branchName }: { branchName: string }) {
   const del = async (date: string) => {
     if (!confirm(`ลบข้อมูลยอดขาย + เมนูของวันที่ ${thaiDate(date)} ?`)) return;
     setBusy(true);
-    const r = await fetch("/api/admin/salesa/clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date }) }).then((x) => x.json());
+    const r = await fetch("/api/admin/reporta/clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date }) }).then((x) => x.json());
     setBusy(false);
     if (r.ok) { setMsg({ kind: "ok", text: `ลบข้อมูลวันที่ ${thaiDate(date)} แล้ว` }); if (selDate === date) { setSelDate(null); setDaily(null); } await loadMonth(); await loadWeek(weekStart); }
     else setMsg({ kind: "err", text: r.message ?? "ลบไม่สำเร็จ" });
@@ -179,7 +179,7 @@ export default function SalesaClient({ branchName }: { branchName: string }) {
   const sendDaily = (date: string) => setPin({
     title: `ส่งสรุปยอดขายวันที่ ${thaiDate(date)}`,
     run: async (p) => {
-      const r = await fetch("/api/admin/salesa/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "daily", date, pin: p }) }).then((x) => x.json());
+      const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "daily", date, pin: p }) }).then((x) => x.json());
       if (r.ok) { setMsg({ kind: "ok", text: "ส่งสรุปรายวันเข้ากลุ่ม HOD แล้ว" }); await loadMonth(); if (selDate === date) await loadDay(date); }
       return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
     }
@@ -188,7 +188,7 @@ export default function SalesaClient({ branchName }: { branchName: string }) {
   const sendWeekly = (ws: string) => setPin({
     title: `ส่งสรุปสัปดาห์ ${weekly?.label ?? ""}`,
     run: async (p) => {
-      const r = await fetch("/api/admin/salesa/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "weekly", week: ws, pin: p }) }).then((x) => x.json());
+      const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "weekly", week: ws, pin: p }) }).then((x) => x.json());
       if (r.ok) { setMsg({ kind: "ok", text: "ส่งสรุปรายสัปดาห์เข้ากลุ่ม HOD แล้ว" }); await loadWeek(ws); }
       return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
     }
@@ -204,7 +204,7 @@ export default function SalesaClient({ branchName }: { branchName: string }) {
     <div className="space-y-4">
       {!hasLineGroup && (
         <div className="card bg-amber-50 border-amber-200 text-sm text-amber-800">
-          ⚠️ ยังไม่ได้ตั้งกลุ่ม LINE หัวหน้างาน — ปุ่มส่งสรุปจะยังใช้ไม่ได้ · <a href="/admin/salesa/settings" className="underline font-semibold">ไปตั้งค่า</a>
+          ⚠️ ยังไม่ได้ตั้งกลุ่ม LINE หัวหน้างาน — ปุ่มส่งสรุปจะยังใช้ไม่ได้ · <a href="/admin/reporta/settings" className="underline font-semibold">ไปตั้งค่า</a>
         </div>
       )}
       {msg && (

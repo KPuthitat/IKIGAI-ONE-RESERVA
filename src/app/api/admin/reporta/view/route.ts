@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt } from "@/lib/salesa-db";
 import { dailyAnalytics, weeklyAnalytics } from "@/lib/salesa-analytics";
 
-// SALESA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
+// REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
 // day's full analytics + menu ranking. ?week=YYYY-MM-DD (a Monday): the weekly
 // rollup. Owner 2026-09-16.
 
@@ -21,7 +21,7 @@ function bkkNow(): { year: number; month: number } {
 }
 
 export function GET(req: Request) {
-  const user = requirePermission("salesa.manage");
+  const user = requirePermission("reporta.manage");
   const branchId = user.activeBranchId ?? null;
   if (branchId == null || !isSalesaBranch(branchId)) {
     return NextResponse.json({ error: "no_branch" }, { status: 403 });

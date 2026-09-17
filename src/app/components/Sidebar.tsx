@@ -219,7 +219,9 @@ export default function Sidebar({
           {brand}
         </div>
 
-        <nav className="p-3 space-y-5 flex-1">
+        {/* pb-8: breathing room so the last item isn't flush against the
+            sidebar's bottom edge (owner 2026-09-17). */}
+        <nav className="px-3 pt-3 pb-8 space-y-5 flex-1">
           {visibleSections.map((s, i) => (
             <div key={i}>
               {s.label && (

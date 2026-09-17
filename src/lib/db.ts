@@ -1930,7 +1930,9 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
-  // ── SALESA — daily POS sales analytics (owner 2026-09-16) ────────────────
+  // ── REPORTA — daily POS sales analytics (owner 2026-09-16) ───────────────
+  // (internal code + table prefix is "salesa"; the user-facing module was
+  // renamed to REPORTA on 2026-09-17 — same feature, display name only)
   // Staff import the FeedMe "Close up" (KPI) + "Overview" (menu-revenue) exports
   // every day; the system tracks daily sales, ranks best/worst-earning menus,
   // and pushes a summary card to the HOD LINE group (daily) + a weekly summary
@@ -5429,7 +5431,7 @@ function runMigrations(db: Database.Database): void {
     "SELECT id FROM rbac_roles WHERE key = 'legacy_admin'"
   ).get() as { id: number } | undefined;
   if (legacyRoleForBackfill) {
-    for (const perm of ["accounta.manage", "ir.manage", "salesa.manage"]) {
+    for (const perm of ["accounta.manage", "ir.manage", "reporta.manage"]) {
       const already = db.prepare(
         "SELECT 1 FROM rbac_perm_backfills WHERE permission_key = ?"
       ).get(perm);

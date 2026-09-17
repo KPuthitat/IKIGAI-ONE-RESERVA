@@ -7,7 +7,7 @@ import { isSalesaBranch, getLineGroupId, markDailySent, markWeeklySent } from "@
 import { dailyAnalytics, weeklyAnalytics } from "@/lib/salesa-analytics";
 import { salesaDailyFlex, salesaWeeklyFlex, notifySalesaHod } from "@/lib/salesa-line";
 
-// Push a SALESA summary to the branch's HOD LINE group. PIN-gated (owner
+// Push a REPORTA summary to the branch's HOD LINE group. PIN-gated (owner
 // 2026-09-16: ตรวจยอดแล้วกด PIN ก่อนส่ง). Kinds: daily (one day) or weekly
 // (Mon–Sun, sent the following Monday). Owner 2026-09-16.
 
@@ -26,7 +26,7 @@ function branchName(branchId: number): string {
 }
 
 export async function POST(req: Request) {
-  const user = requirePermission("salesa.manage");
+  const user = requirePermission("reporta.manage");
   const branchId = user.activeBranchId ?? null;
   if (branchId == null || !isSalesaBranch(branchId)) {
     return NextResponse.json({ error: "no_branch" }, { status: 403 });
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
 
   const groupId = getLineGroupId(branchId);
   if (!groupId) {
-    return NextResponse.json({ error: "no_group", message: "ยังไม่ได้ตั้งกลุ่ม LINE หัวหน้างาน (ตั้งที่หน้าตั้งค่า SALESA)" }, { status: 400 });
+    return NextResponse.json({ error: "no_group", message: "ยังไม่ได้ตั้งกลุ่ม LINE หัวหน้างาน (ตั้งที่หน้าตั้งค่า REPORTA)" }, { status: 400 });
   }
   const meta = { branchName: branchName(branchId), operator: user.display_name };
 
