@@ -3,7 +3,7 @@ import { requirePermission } from "@/lib/auth";
 import { isSalesaBranch, upsertDaily, upsertMenu } from "@/lib/salesa-db";
 import { parseSalesFile } from "@/lib/salesa-parse";
 
-// SALESA import — staff (admin / หัวหน้างาน with salesa.manage) upload the POS
+// REPORTA import — staff (admin / หัวหน้างาน with reporta.manage) upload the POS
 // "Close up" (ยอดขาย) and/or "Overview" (เมนู) .xlsx exports. Each file is
 // sniffed + parsed + saved under the active branch, keyed by the file's own
 // report date. One or several files per request. Owner 2026-09-16.
@@ -11,7 +11,7 @@ import { parseSalesFile } from "@/lib/salesa-parse";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  const user = requirePermission("salesa.manage");
+  const user = requirePermission("reporta.manage");
   const branchId = user.activeBranchId ?? null;
   if (branchId == null || !isSalesaBranch(branchId)) {
     return NextResponse.json({ error: "no_branch" }, { status: 403 });

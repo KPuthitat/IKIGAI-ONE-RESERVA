@@ -3,14 +3,14 @@ import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { isSalesaBranch, getLineGroupId, setLineGroupId } from "@/lib/salesa-db";
 
-// SALESA settings — the HOD LINE group id the daily/weekly cards are pushed to
+// REPORTA settings — the HOD LINE group id the daily/weekly cards are pushed to
 // (per branch). The IKIGAI OS platform OA must be a member of that group.
 // Owner 2026-09-16.
 
 export const dynamic = "force-dynamic";
 
 function ctx() {
-  const user = requirePermission("salesa.manage");
+  const user = requirePermission("reporta.manage");
   const branchId = user.activeBranchId ?? null;
   return { user, branchId, ok: branchId != null && isSalesaBranch(branchId) };
 }

@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 
-// SALESA settings — bind the HOD LINE group id the daily/weekly cards push to
+// REPORTA settings — bind the HOD LINE group id the daily/weekly cards push to
 // (owner 2026-09-16). The IKIGAI OS platform OA must be a member of that group.
 
-export default function SalesaSettingsClient({ initialGroupId }: { initialGroupId: string | null }) {
+export default function ReportaSettingsClient({ initialGroupId }: { initialGroupId: string | null }) {
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -13,7 +13,7 @@ export default function SalesaSettingsClient({ initialGroupId }: { initialGroupI
   const save = async () => {
     setSaving(true); setMsg(null);
     try {
-      const r = await fetch("/api/admin/salesa/settings", {
+      const r = await fetch("/api/admin/reporta/settings", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lineGroupId: groupId.trim() || null })
       }).then((x) => x.json());
