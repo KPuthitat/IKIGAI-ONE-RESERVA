@@ -109,7 +109,7 @@ export function salesaDailyFlex(a: DailyAnalytics, meta: DailyCardMeta): FlexMsg
   }
 
   if (a.topItems.length || a.topCategories.length) body.push(sep);
-  body.push(...menuBlock("🍽️ เมนูทำรายได้สูงสุด", a.topItems));
+  body.push(...menuBlock("เมนูทำรายได้สูงสุด", a.topItems));
   body.push(...menuBlock("หมวดทำรายได้สูงสุด", a.topCategories));
   if (a.bottomItems.length) body.push(...menuBlock("เมนูทำรายได้น้อยสุด (ในรายการที่มี)", a.bottomItems));
 
@@ -146,7 +146,7 @@ export function salesaWeeklyFlex(w: WeeklyAnalytics, meta: DailyCardMeta): FlexM
   }
 
   if (w.topItems.length || w.topCategories.length) body.push(sep);
-  body.push(...menuBlock("🍽️ เมนูทำรายได้สูงสุดประจำสัปดาห์", w.topItems));
+  body.push(...menuBlock("เมนูทำรายได้สูงสุดประจำสัปดาห์", w.topItems));
   body.push(...menuBlock("หมวดทำรายได้สูงสุดประจำสัปดาห์", w.topCategories));
 
   // Menu momentum vs last week (owner B).
@@ -157,11 +157,11 @@ export function salesaWeeklyFlex(w: WeeklyAnalytics, meta: DailyCardMeta): FlexM
     ]
   });
   if (w.menuRisers.length) {
-    body.push({ type: "text", text: "🔥 เมนูมาแรง (เทียบสัปดาห์ก่อน)", size: "xs", weight: "bold", color: "#0f7a4f", margin: "md" });
+    body.push({ type: "text", text: "เมนูมาแรง (เทียบสัปดาห์ก่อน)", size: "xs", weight: "bold", color: "#0f7a4f", margin: "md" });
     w.menuRisers.forEach((m) => body.push(momoLine(m, true)));
   }
   if (w.menuFallers.length) {
-    body.push({ type: "text", text: "📉 เมนูร่วง (เทียบสัปดาห์ก่อน)", size: "xs", weight: "bold", color: "#b0392f", margin: "md" });
+    body.push({ type: "text", text: "เมนูร่วง (เทียบสัปดาห์ก่อน)", size: "xs", weight: "bold", color: "#b0392f", margin: "md" });
     w.menuFallers.forEach((m) => body.push(momoLine(m, false)));
   }
 
@@ -199,7 +199,7 @@ export function salesaMonthlyFlex(m: MonthlyAnalytics, meta: DailyCardMeta): Fle
     ...(m.bestDate ? [kv("วันขายดีสุด", `${m.bestDate} · ${baht(m.bestNett ?? 0)}`, { size: "xs" })] : [])
   ];
   if (m.topItems.length || m.topCategories.length) body.push(sep);
-  body.push(...menuBlock("🍽️ เมนูทำรายได้สูงสุดประจำเดือน", m.topItems));
+  body.push(...menuBlock("เมนูทำรายได้สูงสุดประจำเดือน", m.topItems));
   body.push(...menuBlock("หมวดทำรายได้สูงสุดประจำเดือน", m.topCategories));
 
   return {

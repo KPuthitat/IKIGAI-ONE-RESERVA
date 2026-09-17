@@ -211,6 +211,23 @@ export function setLineGroupId(branchId: number, groupId: string | null): void {
   ).run(branchId, clean);
 }
 
+// ── Expected POS merchant (owner 2026-09-17: reject wrong-branch files) ──────
+
+export function getMerchantName(branchId: number): string | null {
+  const r = getDb().prepare("SELECT merchant_name FROM salesa_settings WHERE branch_id = ?")
+    .get(branchId) as { merchant_name: string | null } | undefined;
+  return r?.merchant_name ?? null;
+}
+
+export function setMerchantName(branchId: number, name: string | null): void {
+  const clean = name && name.trim() ? name.trim() : null;
+  getDb().prepare(
+    `INSERT INTO salesa_settings (branch_id, merchant_name, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(branch_id) DO UPDATE SET merchant_name = excluded.merchant_name, updated_at = datetime('now')`
+  ).run(branchId, clean);
+}
+
 // ── Monthly sales target (owner C) ──────────────────────────────────────────
 
 export function getMonthlyTarget(branchId: number): number | null {
