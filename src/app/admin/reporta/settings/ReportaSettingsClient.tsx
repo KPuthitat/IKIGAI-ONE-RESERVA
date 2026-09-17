@@ -47,9 +47,9 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget, i
       </div>
       <div>
         <label className="label">ชื่อร้านใน POS (Merchant) — กันไฟล์ผิดสาขา</label>
-        <input value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="เช่น HYPOPLARAEMIA" className="input" />
+        <input value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="ปกติเว้นว่าง (ใช้ชื่อสาขา)" className="input" />
         <p className="text-xs text-slate-500 mt-1.5">
-          ระบบจะจดจำชื่อร้านจากไฟล์แรกที่นำเข้าโดยอัตโนมัติ · ถ้านำเข้าไฟล์ที่ชื่อร้านไม่ตรง จะถูกปฏิเสธทั้งชุด · เว้นว่างเพื่อล้างและให้ระบบเรียนรู้ใหม่
+          ปกติระบบเทียบกับ<b>ชื่อสาขา</b>ให้อัตโนมัติ — ถ้านำเข้าไฟล์ที่ชื่อร้านไม่ตรง จะถูกปฏิเสธทั้งชุด · กรอกที่นี่<b>เฉพาะเมื่อ</b>ชื่อร้านใน POS ต่างจากชื่อสาขา · เว้นว่าง = ใช้ชื่อสาขา
         </p>
       </div>
       <button onClick={save} disabled={saving} className="btn-primary text-sm disabled:opacity-50">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>

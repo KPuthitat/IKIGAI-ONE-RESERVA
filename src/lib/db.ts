@@ -2013,6 +2013,18 @@ function runMigrations(db: Database.Database): void {
       db.exec("ALTER TABLE salesa_settings ADD COLUMN merchant_name TEXT");
     }
   }
+  // One-time (owner 2026-09-17): the first merchant guard AUTO-LEARNED the shop
+  // name from a branch's first import — which recorded the WRONG shop when a
+  // mis-branch file was imported (then rejected the branch's own correct file).
+  // The guard now matches the branch's display name, so clear those learned
+  // values once; they default back to the branch name. Guarded by a marker so a
+  // later intentional override in settings sticks.
+  db.exec(`CREATE TABLE IF NOT EXISTS salesa_migrations (
+      key TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')));`);
+  if (!db.prepare("SELECT 1 FROM salesa_migrations WHERE key = ?").get("clear_learned_merchant_20260917")) {
+    db.prepare("UPDATE salesa_settings SET merchant_name = NULL").run();
+    db.prepare("INSERT OR IGNORE INTO salesa_migrations (key) VALUES (?)").run("clear_learned_merchant_20260917");
+  }
 
   // line_group_id (owner 2026-06-23): the partner's LINE group — the IKIGAI OS
   // platform OA is added to it so weekly-transfer / monthly-GP cards can be
