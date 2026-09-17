@@ -245,6 +245,10 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     sdb.setMerchantName(bid2, "");
     return got && sdb.getMerchantName(bid2) === null;
   })());
+  ok("listDayMerchants returns per-day merchant (for wrong-shop cleanup)", (() => {
+    const rows = sdb.listDayMerchants(bid2);
+    return rows.length > 0 && rows.every((r) => r.merchant === "R2");
+  })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();

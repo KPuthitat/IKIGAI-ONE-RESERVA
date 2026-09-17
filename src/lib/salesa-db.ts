@@ -173,6 +173,13 @@ export function clearDay(branchId: number, date: string): number {
   return tx() as number;
 }
 
+/** Every imported day's (date, merchant) — for the wrong-shop cleanup. */
+export function listDayMerchants(branchId: number): Array<{ date: string; merchant: string | null }> {
+  return (getDb().prepare(
+    "SELECT sale_date AS date, merchant FROM salesa_daily WHERE branch_id = ? ORDER BY sale_date"
+  ).all(branchId) as Array<{ date: string; merchant: string | null }>);
+}
+
 export function markDailySent(branchId: number, date: string, userId: number): void {
   getDb().prepare(
     "UPDATE salesa_daily SET daily_sent_at = datetime('now'), daily_sent_by = ? WHERE branch_id = ? AND sale_date = ?"

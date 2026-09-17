@@ -199,6 +199,17 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
     else setMsg({ kind: "err", text: r.message ?? "ลบไม่สำเร็จ" });
   };
 
+  const clearMismatched = async () => {
+    if (!confirm("ลบทุกวันที่ชื่อร้านในไฟล์ไม่ตรงกับสาขานี้ (ข้อมูลที่นำเข้าผิดสาขา) ?")) return;
+    setBusy(true); setMsg(null);
+    const r = await fetch("/api/admin/reporta/clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "mismatched" }) }).then((x) => x.json());
+    setBusy(false);
+    if (r.ok) {
+      setMsg({ kind: "ok", text: r.removed > 0 ? `ลบข้อมูลที่ร้านไม่ตรงกับสาขาแล้ว ${r.removed} วัน` : "ไม่พบข้อมูลที่ร้านไม่ตรงกับสาขา" });
+      setSelDate(null); setDaily(null); await loadMonth(); await loadWeek(weekStart);
+    } else setMsg({ kind: "err", text: r.message ?? "ลบไม่สำเร็จ" });
+  };
+
   const sendDaily = (date: string) => setPin({
     title: `ส่งสรุปยอดขายวันที่ ${thaiDate(date)}`,
     run: async (p) => {
@@ -281,12 +292,14 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={upload} disabled={busy || picked.length === 0}
             className="btn-primary text-sm disabled:opacity-50">{busy ? "กำลังนำเข้า…" : `นำเข้า${picked.length ? ` (${picked.length})` : ""}`}</button>
           {picked.length > 0 && !busy && (
             <button onClick={() => setPicked([])} className="text-xs text-slate-400 hover:text-slate-600">ล้างรายการ</button>
           )}
+          <span className="flex-1" />
+          <button onClick={clearMismatched} disabled={busy} className="text-xs text-rose-500 hover:text-rose-700 disabled:opacity-50">ลบข้อมูลที่ร้านไม่ตรงกับสาขา</button>
         </div>
       </div>
 
