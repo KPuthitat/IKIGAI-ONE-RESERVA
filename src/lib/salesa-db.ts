@@ -235,6 +235,27 @@ export function setMerchantName(branchId: number, name: string | null): void {
   ).run(branchId, clean);
 }
 
+// ── Per-branch LINE card colour (owner 2026-09-17) ──────────────────────────
+
+/** Default LINE card header colour (teal). */
+export const SALESA_DEFAULT_CARD_COLOR = "#0e2724";
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+
+export function getCardColor(branchId: number): string | null {
+  const r = getDb().prepare("SELECT card_color FROM salesa_settings WHERE branch_id = ?")
+    .get(branchId) as { card_color: string | null } | undefined;
+  return r?.card_color ?? null;
+}
+
+export function setCardColor(branchId: number, color: string | null): void {
+  const clean = color && HEX6.test(color.trim()) ? color.trim().toLowerCase() : null;
+  getDb().prepare(
+    `INSERT INTO salesa_settings (branch_id, card_color, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(branch_id) DO UPDATE SET card_color = excluded.card_color, updated_at = datetime('now')`
+  ).run(branchId, clean);
+}
+
 // ── Monthly sales target (owner C) ──────────────────────────────────────────
 
 export function getMonthlyTarget(branchId: number): number | null {

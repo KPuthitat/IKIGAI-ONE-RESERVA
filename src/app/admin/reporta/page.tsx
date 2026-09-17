@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { isSalesaBranch } from "@/lib/salesa-db";
+import { isSalesaBranch, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import ReportaClient from "./ReportaClient";
 
 export const dynamic = "force-dynamic";
@@ -21,12 +21,16 @@ export default function ReportaPage() {
     );
   }
   const branch = getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
+  const cardColor = getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">REPORTA · วิเคราะห์ยอดขายรายวัน</h1>
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <span className="inline-block h-4 w-4 rounded-full shrink-0" style={{ backgroundColor: cardColor }} title={`สีสาขา ${branch?.name ?? ""}`} />
+            REPORTA · วิเคราะห์ยอดขายรายวัน
+          </h1>
           <p className="text-sm text-slate-500 mt-1">
             นำเข้าไฟล์ยอดขายจาก POS ทุกวัน · ระบบวิเคราะห์ยอดขาย/เมนูทำรายได้สูงสุด · ส่งการ์ดสรุปเข้ากลุ่ม LINE หัวหน้างาน (รายวัน) และสรุปรายสัปดาห์ทุกวันจันทร์
           </p>

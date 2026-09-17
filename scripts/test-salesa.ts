@@ -249,6 +249,13 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     const rows = sdb.listDayMerchants(bid2);
     return rows.length > 0 && rows.every((r) => r.merchant === "R2");
   })());
+  ok("card colour: valid hex stored, invalid rejected", (() => {
+    sdb.setCardColor(bid2, "#1E3A5F");
+    const good = sdb.getCardColor(bid2) === "#1e3a5f";
+    sdb.setCardColor(bid2, "not-a-color");
+    const rejected = sdb.getCardColor(bid2) === null;
+    return good && rejected;
+  })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
