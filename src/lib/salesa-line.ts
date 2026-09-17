@@ -39,17 +39,6 @@ function footer(note: string): unknown {
   };
 }
 
-/** "▲ 12.3% เทียบ..." with colour, or a neutral note when no baseline. */
-function trendLine(label: string, pctVal: number | null): unknown {
-  if (pctVal == null) {
-    return { type: "text", text: `${label}: ไม่มีข้อมูลเทียบ`, size: "xxs", color: "#aaaaaa", wrap: true };
-  }
-  const up = pctVal >= 0;
-  const arrow = up ? "▲" : "▼";
-  const color = up ? "#0f7a4f" : "#b0392f";
-  return { type: "text", text: `${label}: ${arrow} ${Math.abs(pctVal).toFixed(1)}%`, size: "xxs", color, wrap: true };
-}
-
 /** A ranked menu list (name → revenue). */
 function menuBlock(title: string, list: Array<{ name: string; nett: number }>): unknown[] {
   if (!list.length) return [];
@@ -66,21 +55,43 @@ function menuBlock(title: string, list: Array<{ name: string; nett: number }>): 
 
 export type DailyCardMeta = { branchName: string; operator: string };
 
+// A metric's value + a two-part comparison line (vs prev day · vs avg), each %
+// coloured green/red via spans (owner 2026-09-17: % on every heading).
+function pctSpan(p: number | null) {
+  if (p == null) return { type: "span", text: "—", color: "#bbbbbb" };
+  const up = p >= 0;
+  return { type: "span", text: `${up ? "▲" : "▼"} ${Math.abs(p).toFixed(1)}%`, color: up ? "#0f7a4f" : "#b0392f" };
+}
+function metricCompareLine(m: { prevPct: number | null; avgPct: number | null }, avgDays: number): unknown {
+  if (m.prevPct == null && m.avgPct == null) {
+    return { type: "text", text: "ยังไม่มีข้อมูลเทียบ", size: "xxs", color: "#bbbbbb", wrap: true };
+  }
+  return {
+    type: "text", size: "xxs", wrap: true, contents: [
+      { type: "span", text: "เทียบวันก่อน ", color: "#999999" }, pctSpan(m.prevPct),
+      { type: "span", text: `   เฉลี่ย ${avgDays} วัน `, color: "#999999" }, pctSpan(m.avgPct)
+    ]
+  };
+}
+
 export function salesaDailyFlex(a: DailyAnalytics, meta: DailyCardMeta): FlexMsg {
   const r = a.row;
   const body: unknown[] = [
     { type: "text", text: meta.branchName, weight: "bold", size: "lg", wrap: true },
     { type: "text", text: `บันทึกโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true },
-    sep,
-    kv("ยอดขายสุทธิ", baht(r.nett), { bold: true, color: "#0f7a4f", size: "md" }),
-    trendLine("เทียบวันก่อน", a.nettVsPrevPct),
-    trendLine(`เทียบเฉลี่ย ${a.avg7Days} วัน`, a.nettVs7Pct),
-    kv("จำนวนบิล", `${intTh(r.bill_count)} บิล`, { size: "xs" }),
-    kv("ลูกค้า", `${intTh(r.pax)} คน`, { size: "xs" }),
-    kv("เฉลี่ยต่อบิล", baht(r.avg_sales), { size: "xs" }),
-    kv("เฉลี่ยต่อหัว", baht(r.avg_sales_pax), { size: "xs" }),
-    kv("ส่วนลด", `${baht(Math.abs(r.discount))}${a.discountPct != null ? ` (${a.discountPct.toFixed(1)}%)` : ""}`, { size: "xs", color: "#b0392f" })
+    sep
   ];
+  // Every headline metric with its own comparison % (owner 2026-09-17).
+  a.metrics.forEach((m) => {
+    const value = m.kind === "baht" ? baht(m.value)
+      : m.key === "bills" ? `${intTh(m.value)} บิล`
+      : m.key === "pax" ? `${intTh(m.value)} คน`
+      : intTh(m.value);
+    const isNett = m.key === "nett";
+    body.push(kv(m.label, value, isNett ? { bold: true, color: "#0f7a4f", size: "md" } : { size: "xs" }));
+    body.push(metricCompareLine(m, a.avg7Days));
+  });
+  body.push(kv("ส่วนลด", `${baht(Math.abs(r.discount))}${a.discountPct != null ? ` (${a.discountPct.toFixed(1)}%)` : ""}`, { size: "xs", color: "#b0392f" }));
   if (r.void_amount > 0) body.push(kv("ยกเลิกบิล (Void)", `${baht(r.void_amount)} · ${intTh(r.void_bill_count)} บิล`, { size: "xs", color: "#b0392f" }));
   if (r.refund > 0) body.push(kv("คืนเงิน (Refund)", baht(r.refund), { size: "xs", color: "#b0392f" }));
 

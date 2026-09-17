@@ -17,6 +17,17 @@ function pct(part: number, whole: number): number | null {
 
 export type MenuRank = MenuEntry & { rank: number };
 
+/** One KPI with its comparison % vs the previous day and vs the trailing
+ *  average (owner 2026-09-17: show the % on every heading, not just น</. */
+export type MetricCompare = {
+  key: string;
+  label: string;
+  value: number;
+  kind: "baht" | "int";
+  prevPct: number | null;   // vs previous day with sales
+  avgPct: number | null;    // vs trailing avg (avg7Days days)
+};
+
 export type DailyAnalytics = {
   date: string;
   dateLabel: string;
@@ -25,10 +36,11 @@ export type DailyAnalytics = {
   voidPct: number | null;
   prevDate: string | null;
   prevNett: number | null;
-  nettVsPrevPct: number | null;
+  nettVsPrevPct: number | null; // kept for back-compat (= metrics[0].prevPct)
   avg7Nett: number | null;      // trailing up-to-7 days present (excl. today)
   avg7Days: number;
-  nettVs7Pct: number | null;
+  nettVs7Pct: number | null;    // kept for back-compat (= metrics[0].avgPct)
+  metrics: MetricCompare[];     // nett, bills, pax, avg/bill, avg/head
   topItems: MenuRank[];
   bottomItems: MenuRank[];      // lowest-earning among the ranked menus present
   topCategories: MenuRank[];
@@ -45,7 +57,27 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
 
   // Trailing 7 calendar days before `date` that have sales.
   const window7 = listRange(branchId, addDaysIso(date, -7), addDaysIso(date, -1)).filter((d) => d.has_sales);
-  const avg7Nett = window7.length ? round2(window7.reduce((s, d) => s + d.nett, 0) / window7.length) : null;
+  const avgOf = (get: (d: DailyRow) => number): number | null =>
+    window7.length ? round2(window7.reduce((s, d) => s + get(d), 0) / window7.length) : null;
+  const relPct = (today: number, base: number | null): number | null =>
+    base != null && base > 0 ? round2(((today - base) / base) * 100) : null;
+
+  // Comparison % on EVERY headline metric (owner 2026-09-17).
+  const defs: Array<{ key: string; label: string; kind: "baht" | "int"; get: (d: DailyRow) => number }> = [
+    { key: "nett", label: "ยอดขายสุทธิ", kind: "baht", get: (d) => d.nett },
+    { key: "bills", label: "จำนวนบิล", kind: "int", get: (d) => d.bill_count },
+    { key: "pax", label: "ลูกค้า", kind: "int", get: (d) => d.pax },
+    { key: "avgBill", label: "เฉลี่ยต่อบิล", kind: "baht", get: (d) => d.avg_sales },
+    { key: "avgHead", label: "เฉลี่ยต่อหัว", kind: "baht", get: (d) => d.avg_sales_pax }
+  ];
+  const metrics: MetricCompare[] = defs.map((m) => {
+    const value = m.get(row);
+    return {
+      key: m.key, label: m.label, value, kind: m.kind,
+      prevPct: prev ? relPct(value, m.get(prev)) : null,
+      avgPct: relPct(value, avgOf(m.get))
+    };
+  });
 
   const menu = getMenu(branchId, date);
   const items = menu.items.map((m, i) => ({ ...m, rank: i + 1 }));
@@ -59,10 +91,11 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
     voidPct: pct(row.void_amount, row.gross),
     prevDate: prev?.sale_date ?? null,
     prevNett: prev?.nett ?? null,
-    nettVsPrevPct: prev && prev.nett > 0 ? round2(((row.nett - prev.nett) / prev.nett) * 100) : null,
-    avg7Nett,
+    nettVsPrevPct: metrics[0].prevPct,
+    avg7Nett: avgOf((d) => d.nett),
     avg7Days: window7.length,
-    nettVs7Pct: avg7Nett && avg7Nett > 0 ? round2(((row.nett - avg7Nett) / avg7Nett) * 100) : null,
+    nettVs7Pct: metrics[0].avgPct,
+    metrics,
     topItems: items.slice(0, topN),
     // lowest-earning end of the ranked list (owner: เมนูขายน้อยสุด) — only
     // meaningful within the menus the POS export actually lists.
