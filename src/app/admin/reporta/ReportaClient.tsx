@@ -41,12 +41,13 @@ type DailyAnalytics = {
     has_sales: number; has_menu: number; daily_sent_at: string | null;
   };
   discountPct: number | null; voidPct: number | null;
-  prevDate: string | null; nettVsPrevPct: number | null;
-  avg7Nett: number | null; avg7Days: number; nettVs7Pct: number | null;
+  weekdayTh: string; dom: number; wowLabel: string; momLabel: string;
+  wowHasData: boolean; momHasData: boolean;
   metrics: MetricCompare[];
   topItems: MenuRank[]; bottomItems: MenuRank[]; topCategories: MenuRank[];
 };
-type MetricCompare = { key: string; label: string; value: number; kind: "baht" | "int"; prevPct: number | null; avgPct: number | null };
+type MetricCompare = { key: string; label: string; value: number; kind: "baht" | "int"; wowPct: number | null; momPct: number | null };
+type MonthCompare = { throughDay: number; mtdNett: number; prevMonthNett: number | null; prevMonthPct: number | null; lastYearNett: number | null; lastYearPct: number | null };
 type WeeklyAnalytics = {
   weekStart: string; weekEnd: string; label: string;
   days: Array<{ date: string; dateLabel: string; nett: number; billCount: number; pax: number }>;
@@ -111,6 +112,7 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
   const [year, setYear] = useState(Number(initial.slice(0, 4)));
   const [month, setMonth] = useState(Number(initial.slice(5, 7)));
   const [days, setDays] = useState<MonthDay[]>([]);
+  const [monthCompare, setMonthCompare] = useState<MonthCompare | null>(null);
   const [hasLineGroup, setHasLineGroup] = useState(true);
   const [selDate, setSelDate] = useState<string | null>(null);
   const [daily, setDaily] = useState<DailyAnalytics | null>(null);
@@ -132,7 +134,7 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
 
   const loadMonth = useCallback(async () => {
     const r = await fetch(`/api/admin/reporta/view?year=${year}&month=${month}`).then((x) => x.json());
-    if (r.ok) { setDays(r.view.days); setHasLineGroup(r.hasLineGroup); }
+    if (r.ok) { setDays(r.view.days); setHasLineGroup(r.hasLineGroup); setMonthCompare(r.monthCompare ?? null); }
   }, [year, month]);
 
   const loadDay = useCallback(async (date: string) => {
@@ -269,6 +271,21 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
           <h2 className="font-bold text-slate-800">{TH_MONTHS[month]} {year + 543}</h2>
           <button onClick={() => shiftMonth(1)} className="btn-secondary text-sm px-3 py-1.5">→</button>
         </div>
+
+        {/* Month-level cumulative comparisons (owner 2026-09-17). */}
+        {monthCompare && monthCompare.throughDay > 0 && (
+          <div className="rounded-xl bg-slate-50 p-3 space-y-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[11px] text-slate-500">ยอดสะสมต้นเดือน (ถึงวันที่ {monthCompare.throughDay})</span>
+              <span className="text-lg font-bold text-emerald-700">{baht(monthCompare.mtdNett)}</span>
+            </div>
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
+              <span>เทียบเดือนก่อน (ช่วงเดียวกัน) <PctChip pct={monthCompare.prevMonthPct} /></span>
+              <span>เทียบปีก่อน (เดือนเดียวกัน) <PctChip pct={monthCompare.lastYearPct} /></span>
+            </div>
+          </div>
+        )}
+
         {days.length === 0 ? (
           <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลในเดือนนี้ — นำเข้าไฟล์ด้านบน</p>
         ) : (
@@ -315,7 +332,7 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
                     label={m.label}
                     value={m.kind === "baht" ? baht(m.value) : m.key === "bills" ? `${intTh(m.value)} บิล` : m.key === "pax" ? `${intTh(m.value)} คน` : intTh(m.value)}
                     accent={m.key === "nett"}
-                    prevPct={m.prevPct} avgPct={m.avgPct} avgDays={daily.avg7Days} />
+                    wowPct={m.wowPct} momPct={m.momPct} wowLabel={daily.wowLabel} momLabel={daily.momLabel} />
                 ))}
                 <Kpi label="ส่วนลด" value={`${baht(Math.abs(daily.row.discount))}${daily.discountPct != null ? ` (${daily.discountPct.toFixed(1)}%)` : ""}`} />
                 <Kpi label="ยกเลิกบิล (Void)" value={`${baht(daily.row.void_amount)} · ${intTh(daily.row.void_bill_count)}`} />
@@ -415,21 +432,21 @@ function PctChip({ pct }: { pct: number | null }) {
   return <span className={up ? "text-emerald-600" : "text-rose-600"}>{up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%</span>;
 }
 
-function Kpi({ label, value, accent, prevPct, avgPct, avgDays }: {
+function Kpi({ label, value, accent, wowPct, momPct, wowLabel, momLabel }: {
   label: string; value: string; accent?: boolean;
-  prevPct?: number | null; avgPct?: number | null; avgDays?: number;
+  wowPct?: number | null; momPct?: number | null; wowLabel?: string; momLabel?: string;
 }) {
-  const hasCompare = prevPct !== undefined || avgPct !== undefined;
+  const hasCompare = wowPct !== undefined || momPct !== undefined;
   return (
     <div className={`rounded-xl p-3 ${accent ? "bg-emerald-50" : "bg-slate-50"}`}>
       <div className="text-[11px] text-slate-500">{label}</div>
       <div className={`text-base font-bold ${accent ? "text-emerald-700" : "text-slate-800"}`}>{value}</div>
       {hasCompare && (
         <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
-          {(prevPct == null && avgPct == null) ? (
+          {(wowPct == null && momPct == null) ? (
             "ยังไม่มีข้อมูลเทียบ"
           ) : (
-            <>วันก่อน <PctChip pct={prevPct ?? null} /> · เฉลี่ย {avgDays} วัน <PctChip pct={avgPct ?? null} /></>
+            <>{wowLabel} <PctChip pct={wowPct ?? null} /> · {momLabel} <PctChip pct={momPct ?? null} /></>
           )}
         </div>
       )}

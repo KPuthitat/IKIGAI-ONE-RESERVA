@@ -10,22 +10,41 @@ function addDaysIso(iso: string, n: number): string {
   const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 }
+function daysInMonth(y: number, m: number): number {
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+/** Same day-of-month, previous month. Null when that day doesn't exist there
+ *  (e.g. the 31st has no counterpart in a 30-day month). */
+function sameDayLastMonthIso(iso: string): string | null {
+  const [y, m, d] = iso.split("-").map(Number);
+  const pm = m === 1 ? 12 : m - 1;
+  const py = m === 1 ? y - 1 : y;
+  if (d > daysInMonth(py, pm)) return null;
+  return `${py}-${String(pm).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+const TH_WEEKDAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+function thaiWeekday(iso: string): string {
+  return TH_WEEKDAYS[new Date(`${iso}T00:00:00Z`).getUTCDay()];
+}
 function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
 function pct(part: number, whole: number): number | null {
   return whole > 0 ? round2((part / whole) * 100) : null;
 }
+function relPct(today: number, base: number | null | undefined): number | null {
+  return base != null && base > 0 ? round2(((today - base) / base) * 100) : null;
+}
 
 export type MenuRank = MenuEntry & { rank: number };
 
-/** One KPI with its comparison % vs the previous day and vs the trailing
- *  average (owner 2026-09-17: show the % on every heading, not just น</. */
+/** One KPI with two business-meaningful comparisons (owner 2026-09-17):
+ *  the same weekday last week, and the same day-of-month last month. */
 export type MetricCompare = {
   key: string;
   label: string;
   value: number;
   kind: "baht" | "int";
-  prevPct: number | null;   // vs previous day with sales
-  avgPct: number | null;    // vs trailing avg (avg7Days days)
+  wowPct: number | null;    // vs same weekday last week (−7 days)
+  momPct: number | null;    // vs same day-of-month last month
 };
 
 export type DailyAnalytics = {
@@ -34,12 +53,12 @@ export type DailyAnalytics = {
   row: DailyRow;
   discountPct: number | null;   // |discount| / gross
   voidPct: number | null;
-  prevDate: string | null;
-  prevNett: number | null;
-  nettVsPrevPct: number | null; // kept for back-compat (= metrics[0].prevPct)
-  avg7Nett: number | null;      // trailing up-to-7 days present (excl. today)
-  avg7Days: number;
-  nettVs7Pct: number | null;    // kept for back-compat (= metrics[0].avgPct)
+  weekdayTh: string;            // this day's Thai weekday (for the WoW label)
+  dom: number;                  // this day's day-of-month (for the MoM label)
+  wowLabel: string;             // e.g. "จันทร์ที่แล้ว"
+  momLabel: string;             // e.g. "วันที่ 1 เดือนก่อน"
+  wowHasData: boolean;          // same weekday last week was imported
+  momHasData: boolean;          // same day last month was imported
   metrics: MetricCompare[];     // nett, bills, pax, avg/bill, avg/head
   topItems: MenuRank[];
   bottomItems: MenuRank[];      // lowest-earning among the ranked menus present
@@ -51,18 +70,13 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
   const row = getDaily(branchId, date);
   if (!row) return null;
 
-  // Previous day with imported sales (looks back up to 14 days).
-  const back = listRange(branchId, addDaysIso(date, -14), addDaysIso(date, -1)).filter((d) => d.has_sales);
-  const prev = back.length ? back[back.length - 1] : null;
+  // Same weekday last week (−7d) and same day-of-month last month.
+  const wowRow = getDaily(branchId, addDaysIso(date, -7));
+  const momIso = sameDayLastMonthIso(date);
+  const momRow = momIso ? getDaily(branchId, momIso) : null;
+  const wowHasData = !!wowRow && wowRow.has_sales === 1;
+  const momHasData = !!momRow && momRow.has_sales === 1;
 
-  // Trailing 7 calendar days before `date` that have sales.
-  const window7 = listRange(branchId, addDaysIso(date, -7), addDaysIso(date, -1)).filter((d) => d.has_sales);
-  const avgOf = (get: (d: DailyRow) => number): number | null =>
-    window7.length ? round2(window7.reduce((s, d) => s + get(d), 0) / window7.length) : null;
-  const relPct = (today: number, base: number | null): number | null =>
-    base != null && base > 0 ? round2(((today - base) / base) * 100) : null;
-
-  // Comparison % on EVERY headline metric (owner 2026-09-17).
   const defs: Array<{ key: string; label: string; kind: "baht" | "int"; get: (d: DailyRow) => number }> = [
     { key: "nett", label: "ยอดขายสุทธิ", kind: "baht", get: (d) => d.nett },
     { key: "bills", label: "จำนวนบิล", kind: "int", get: (d) => d.bill_count },
@@ -74,14 +88,16 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
     const value = m.get(row);
     return {
       key: m.key, label: m.label, value, kind: m.kind,
-      prevPct: prev ? relPct(value, m.get(prev)) : null,
-      avgPct: relPct(value, avgOf(m.get))
+      wowPct: wowHasData ? relPct(value, m.get(wowRow!)) : null,
+      momPct: momHasData ? relPct(value, m.get(momRow!)) : null
     };
   });
 
   const menu = getMenu(branchId, date);
   const items = menu.items.map((m, i) => ({ ...m, rank: i + 1 }));
   const cats = menu.categories.map((m, i) => ({ ...m, rank: i + 1 }));
+  const dom = Number(date.slice(8, 10));
+  const weekdayTh = thaiWeekday(date);
 
   return {
     date,
@@ -89,18 +105,68 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
     row,
     discountPct: pct(Math.abs(row.discount), row.gross),
     voidPct: pct(row.void_amount, row.gross),
-    prevDate: prev?.sale_date ?? null,
-    prevNett: prev?.nett ?? null,
-    nettVsPrevPct: metrics[0].prevPct,
-    avg7Nett: avgOf((d) => d.nett),
-    avg7Days: window7.length,
-    nettVs7Pct: metrics[0].avgPct,
+    weekdayTh,
+    dom,
+    wowLabel: `${weekdayTh}ที่แล้ว`,
+    momLabel: `วันที่ ${dom} เดือนก่อน`,
+    wowHasData,
+    momHasData,
     metrics,
     topItems: items.slice(0, topN),
     // lowest-earning end of the ranked list (owner: เมนูขายน้อยสุด) — only
     // meaningful within the menus the POS export actually lists.
     bottomItems: items.length > topN ? items.slice(-topN).reverse() : [],
     topCategories: cats.slice(0, topN)
+  };
+}
+
+/** Month-level cumulative comparisons (owner 2026-09-17): month-to-date this
+ *  month vs the same day-count last month, and vs the same month last year.
+ *  `throughDay` is the last day-of-month covered — today for the current month,
+ *  else the latest imported day. Null pcts when there's no baseline to compare. */
+export type MonthComparison = {
+  year: number;
+  month: number;
+  throughDay: number;          // 0 = no data this month
+  mtdNett: number;             // Σ nett, day 1..throughDay this month
+  prevMonthNett: number | null;
+  prevMonthPct: number | null; // bullet 4: MTD this vs last month
+  lastYearNett: number | null;
+  lastYearPct: number | null;  // bullet 3: this month vs same month last year (same day-count)
+};
+
+function sumNett(branchId: number, year: number, month: number, throughDay: number): number | null {
+  if (throughDay < 1) return null;
+  const mm = String(month).padStart(2, "0");
+  const last = Math.min(throughDay, daysInMonth(year, month));
+  const rows = listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(last).padStart(2, "0")}`)
+    .filter((d) => d.has_sales);
+  if (!rows.length) return null;
+  return round2(rows.reduce((s, d) => s + d.nett, 0));
+}
+
+export function monthComparison(branchId: number, year: number, month: number, todayIso: string): MonthComparison {
+  const rows = listRange(branchId, `${year}-${String(month).padStart(2, "0")}-01`,
+    `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth(year, month)).padStart(2, "0")}`)
+    .filter((d) => d.has_sales);
+  const isCurrentMonth = todayIso.startsWith(`${year}-${String(month).padStart(2, "0")}`);
+  // Cover through today (current month) or through the latest imported day.
+  const maxImported = rows.reduce((mx, d) => Math.max(mx, Number(d.sale_date.slice(8, 10))), 0);
+  const throughDay = isCurrentMonth ? Number(todayIso.slice(8, 10)) : maxImported;
+
+  const mtdNett = sumNett(branchId, year, month, throughDay) ?? 0;
+  const pm = month === 1 ? 12 : month - 1;
+  const pmY = month === 1 ? year - 1 : year;
+  const prevMonthNett = sumNett(branchId, pmY, pm, throughDay);
+  const lastYearNett = sumNett(branchId, year - 1, month, throughDay);
+
+  return {
+    year, month, throughDay,
+    mtdNett,
+    prevMonthNett,
+    prevMonthPct: relPct(mtdNett, prevMonthNett),
+    lastYearNett,
+    lastYearPct: relPct(mtdNett, lastYearNett)
   };
 }
 

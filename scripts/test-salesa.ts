@@ -140,15 +140,9 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
 
   const a16 = analytics.dailyAnalytics(bid, "2026-09-16")!;
   ok("daily discountPct = |−2105|/15201", near(a16.discountPct ?? 0, (2105 / 15201) * 100));
-  ok("daily prev day = 09-15", a16.prevDate === "2026-09-15");
-  ok("daily vs prev = (14658−12000)/12000", near(a16.nettVsPrevPct ?? 0, ((14658 - 12000) / 12000) * 100));
-  ok("daily 7-day avg over 2 prior days", a16.avg7Days === 2 && near(a16.avg7Nett ?? 0, (10000 + 12000) / 2));
   ok("daily metrics has 5 headings", a16.metrics.length === 5 && a16.metrics.map((m) => m.key).join(",") === "nett,bills,pax,avgBill,avgHead");
-  const bills = a16.metrics.find((m) => m.key === "bills")!;
-  ok("bills prevPct = (23−22)/22", near(bills.prevPct ?? 0, ((23 - 22) / 22) * 100));
-  ok("bills avgPct vs 2-day avg (20,22)→21", near(bills.avgPct ?? 0, ((23 - 21) / 21) * 100));
-  const pax = a16.metrics.find((m) => m.key === "pax")!;
-  ok("pax prevPct = (43−35)/35", near(pax.prevPct ?? 0, ((43 - 35) / 35) * 100));
+  ok("no WoW/MoM baseline → null (this dataset)", a16.metrics.every((m) => m.wowPct === null && m.momPct === null));
+  ok("weekday/dom labels", a16.weekdayTh === "พุธ" && a16.wowLabel === "พุธที่แล้ว" && a16.momLabel === "วันที่ 16 เดือนก่อน");
   ok("daily top item = คอหมูย่าง", a16.topItems[0]?.name === "คอหมูย่าง");
   ok("daily bottom item = ข้าวเหนียว (lowest)", a16.bottomItems[0]?.name === "ข้าวเหนียว");
 
@@ -168,6 +162,39 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("settings round-trip", (() => {
     sdb.setLineGroupId(bid, "  Cabc123  ");
     return sdb.getLineGroupId(bid) === "Cabc123";
+  })());
+
+  // ── 5) WoW / MoM / month comparisons on an isolated branch ──
+  const bid2 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('r2','REST2')").run().lastInsertRowid);
+  const put = (d: string, nett: number, bills: number, pax: number) => sdb.upsertDaily(bid2, uid, {
+    date: d, dateEnd: d, merchant: "R2", nett, gross: nett, grossBeforeCharges: nett, discount: 0,
+    serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: bills, pax,
+    voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / bills, avgPax: pax / bills,
+    avgSalesPax: nett / pax, payments: [], types: [], sources: []
+  });
+  put("2026-09-16", 14658, 23, 43);   // target (Wed)
+  put("2026-09-09", 13000, 21, 40);   // same weekday last week
+  put("2026-08-16", 14000, 24, 45);   // same day-of-month last month
+  put("2025-09-05", 50000, 80, 150);  // last year, same month (for YoY MTD)
+
+  const a2 = analytics.dailyAnalytics(bid2, "2026-09-16")!;
+  const bills2 = a2.metrics.find((m) => m.key === "bills")!;
+  const pax2 = a2.metrics.find((m) => m.key === "pax")!;
+  ok("WoW bills vs พุธที่แล้ว (23 vs 21)", near(bills2.wowPct ?? 0, ((23 - 21) / 21) * 100));
+  ok("MoM bills vs วันที่16เดือนก่อน (23 vs 24)", near(bills2.momPct ?? 0, ((23 - 24) / 24) * 100));
+  ok("WoW pax (43 vs 40)", near(pax2.wowPct ?? 0, ((43 - 40) / 40) * 100));
+  ok("MoM pax (43 vs 45)", near(pax2.momPct ?? 0, ((43 - 45) / 45) * 100));
+
+  const mc = analytics.monthComparison(bid2, 2026, 9, "2026-09-30");
+  const mtd = 14658 + 13000; // Sept days ≤30 with sales
+  ok("month MTD nett", mc.mtdNett === mtd && mc.throughDay === 30);
+  ok("month vs prev month (Aug 14000)", near(mc.prevMonthPct ?? 0, ((mtd - 14000) / 14000) * 100));
+  ok("month vs last year (Sep2025 50000)", near(mc.lastYearPct ?? 0, ((mtd - 50000) / 50000) * 100));
+  ok("MoM null when target day absent last month", (() => {
+    // 2026-03-31 has no 2026-02-31 counterpart → momPct must be null.
+    put("2026-03-31", 9000, 10, 12);
+    const a3 = analytics.dailyAnalytics(bid2, "2026-03-31")!;
+    return a3.metrics.every((m) => m.momPct === null);
   })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
