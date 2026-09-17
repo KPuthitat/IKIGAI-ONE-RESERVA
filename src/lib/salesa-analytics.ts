@@ -186,6 +186,17 @@ export type WeeklyAnalytics = {
   bestNett: number | null;
   topItems: MenuRank[];
   topCategories: MenuRank[];
+  menuRisers: MenuMomentum[];   // biggest revenue gains vs last week (owner B)
+  menuFallers: MenuMomentum[];  // biggest revenue drops vs last week
+};
+
+/** A menu's week-over-week revenue change (owner 2026-09-17, B). */
+export type MenuMomentum = {
+  name: string;
+  thisNett: number;
+  prevNett: number;
+  deltaPct: number | null;   // null when it's brand-new this week (no prior)
+  isNew: boolean;
 };
 
 /** Weekly rollup for the ISO week starting `weekStart` (a Monday). */
@@ -206,6 +217,19 @@ export function weeklyAnalytics(branchId: number, weekStart: string, topN = 5): 
   const items = menuRange(branchId, start, end, "item").map((m, i) => ({ ...m, rank: i + 1 }));
   const cats = menuRange(branchId, start, end, "category").map((m, i) => ({ ...m, rank: i + 1 }));
 
+  // Menu momentum: this week's item revenue vs the previous week's (owner B).
+  const prevStart = addDaysIso(start, -7);
+  const prevItems = new Map(menuRange(branchId, prevStart, addDaysIso(start, -1), "item").map((m) => [m.name, m.nett]));
+  const momentum: MenuMomentum[] = items.map((m) => {
+    const prevNett = prevItems.get(m.name) ?? 0;
+    const isNew = !prevItems.has(m.name);
+    return { name: m.name, thisNett: m.nett, prevNett, isNew, deltaPct: relPct(m.nett, prevNett) };
+  });
+  // Risers: biggest positive delta% (established menus), then new menus by size.
+  const withPrev = momentum.filter((m) => !m.isNew && m.deltaPct != null);
+  const menuRisers = [...withPrev].filter((m) => (m.deltaPct ?? 0) > 0).sort((a, b) => (b.deltaPct ?? 0) - (a.deltaPct ?? 0)).slice(0, topN);
+  const menuFallers = [...withPrev].filter((m) => (m.deltaPct ?? 0) < 0).sort((a, b) => (a.deltaPct ?? 0) - (b.deltaPct ?? 0)).slice(0, topN);
+
   return {
     weekStart: start,
     weekEnd: end,
@@ -221,6 +245,89 @@ export function weeklyAnalytics(branchId: number, weekStart: string, topN = 5): 
     bestDate: best?.sale_date ?? null,
     bestNett: best?.nett ?? null,
     topItems: items.slice(0, topN),
-    topCategories: cats.slice(0, topN)
+    topCategories: cats.slice(0, topN),
+    menuRisers,
+    menuFallers
+  };
+}
+
+// ── A · weekday performance, D · discount insight, E · channel mix ──────────
+
+export type WeekdayStat = { dow: number; label: string; avgNett: number; days: number; avgBills: number };
+
+/** Average sales per weekday over a trailing window (default 8 weeks) ending at
+ *  `refIso` (owner A: หาว่าวันไหนขายดี/ร้าง). */
+export function weekdayStats(branchId: number, refIso: string, lookbackDays = 56): WeekdayStat[] {
+  const rows = listRange(branchId, addDaysIso(refIso, -lookbackDays + 1), refIso).filter((d) => d.has_sales);
+  const buckets = new Map<number, { nett: number; bills: number; n: number }>();
+  for (const d of rows) {
+    const dow = new Date(`${d.sale_date}T00:00:00Z`).getUTCDay();
+    const b = buckets.get(dow) ?? { nett: 0, bills: 0, n: 0 };
+    b.nett += d.nett; b.bills += d.bill_count; b.n += 1;
+    buckets.set(dow, b);
+  }
+  // Mon-first ordering (1..6,0).
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  return order.map((dow) => {
+    const b = buckets.get(dow);
+    return {
+      dow, label: TH_WEEKDAYS[dow],
+      avgNett: b && b.n ? round2(b.nett / b.n) : 0,
+      days: b?.n ?? 0,
+      avgBills: b && b.n ? Math.round(b.bills / b.n) : 0
+    };
+  });
+}
+
+export type DiscountInsight = {
+  avgDiscountPct: number | null;   // month avg |discount|/gross
+  totalDiscount: number;
+  highDiscAvgNett: number | null;  // avg nett on above-median-discount days
+  lowDiscAvgNett: number | null;   // avg nett on at-or-below-median days
+  days: number;
+};
+
+/** Discount ROI signal for a month (owner D): does heavier discounting move
+ *  sales? Split days by median discount% and compare average nett. */
+export function discountInsight(branchId: number, year: number, month: number): DiscountInsight {
+  const mm = String(month).padStart(2, "0");
+  const rows = listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`)
+    .filter((d) => d.has_sales && d.gross > 0);
+  if (!rows.length) return { avgDiscountPct: null, totalDiscount: 0, highDiscAvgNett: null, lowDiscAvgNett: null, days: 0 };
+  const withPct = rows.map((d) => ({ nett: d.nett, dpct: Math.abs(d.discount) / d.gross }));
+  const totalDiscount = round2(rows.reduce((s, d) => s + Math.abs(d.discount), 0));
+  const avgDiscountPct = round2((withPct.reduce((s, d) => s + d.dpct, 0) / withPct.length) * 100);
+  const sorted = [...withPct].sort((a, b) => a.dpct - b.dpct);
+  const median = sorted[Math.floor(sorted.length / 2)].dpct;
+  const high = withPct.filter((d) => d.dpct > median);
+  const low = withPct.filter((d) => d.dpct <= median);
+  const avg = (arr: { nett: number }[]) => (arr.length ? round2(arr.reduce((s, d) => s + d.nett, 0) / arr.length) : null);
+  return { avgDiscountPct, totalDiscount, highDiscAvgNett: avg(high), lowDiscAvgNett: avg(low), days: rows.length };
+}
+
+export type ChannelSlice = { name: string; sales: number; qty: number; pct: number };
+export type ChannelMix = { types: ChannelSlice[]; payments: ChannelSlice[]; sources: ChannelSlice[] };
+
+/** Aggregate order types / payment methods / sources over a month, with each
+ *  slice's share of the total (owner E). */
+export function monthChannelMix(branchId: number, year: number, month: number): ChannelMix {
+  const mm = String(month).padStart(2, "0");
+  const rows = listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`)
+    .filter((d) => d.has_sales);
+  const acc = (pick: (d: DailyRow) => Array<{ name: string; sales: number; qty: number }>): ChannelSlice[] => {
+    const map = new Map<string, { sales: number; qty: number }>();
+    for (const d of rows) for (const e of pick(d)) {
+      const m = map.get(e.name) ?? { sales: 0, qty: 0 };
+      m.sales += e.sales; m.qty += e.qty; map.set(e.name, m);
+    }
+    const total = [...map.values()].reduce((s, m) => s + m.sales, 0);
+    return [...map.entries()]
+      .map(([name, m]) => ({ name, sales: round2(m.sales), qty: m.qty, pct: total > 0 ? round2((m.sales / total) * 100) : 0 }))
+      .sort((a, b) => b.sales - a.sales);
+  };
+  return {
+    types: acc((d) => d.types.map((t) => ({ name: t.name, sales: t.sales, qty: t.qty }))),
+    payments: acc((d) => d.payments.map((p) => ({ name: p.name, sales: p.total, qty: p.qty }))),
+    sources: acc((d) => d.sources.map((s) => ({ name: s.name, sales: s.sales, qty: s.qty })))
   };
 }

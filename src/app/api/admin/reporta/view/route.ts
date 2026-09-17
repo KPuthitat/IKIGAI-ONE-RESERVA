@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt } from "@/lib/salesa-db";
-import { dailyAnalytics, weeklyAnalytics, monthComparison } from "@/lib/salesa-analytics";
+import { dailyAnalytics, weeklyAnalytics, monthComparison, weekdayStats, discountInsight, monthChannelMix } from "@/lib/salesa-analytics";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
 // day's full analytics + menu ranking. ?week=YYYY-MM-DD (a Monday): the weekly
@@ -48,6 +48,13 @@ export function GET(req: Request) {
   const month = Number(sp.get("month")) || now.month;
   const todayIso = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
   const monthCompare = monthComparison(branchId, year, month, todayIso);
+  // Weekday pattern reflects data up to the viewed month (today for the current
+  // month, else that month's end).
+  const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, "0")}`;
+  const refIso = todayIso < monthEnd ? todayIso : monthEnd;
+  const weekdays = weekdayStats(branchId, refIso);
+  const discount = discountInsight(branchId, year, month);
+  const channels = monthChannelMix(branchId, year, month);
   const days = listMonth(branchId, year, month).map((d) => ({
     date: d.sale_date,
     nett: d.nett,
@@ -57,5 +64,5 @@ export function GET(req: Request) {
     hasMenu: d.has_menu === 1,
     dailySentAt: d.daily_sent_at
   }));
-  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, view: { year, month, days }, monthCompare });
+  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, view: { year, month, days }, monthCompare, weekdays, discount, channels });
 }

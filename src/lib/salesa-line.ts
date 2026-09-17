@@ -149,6 +149,22 @@ export function salesaWeeklyFlex(w: WeeklyAnalytics, meta: DailyCardMeta): FlexM
   body.push(...menuBlock("🍽️ เมนูทำรายได้สูงสุดประจำสัปดาห์", w.topItems));
   body.push(...menuBlock("หมวดทำรายได้สูงสุดประจำสัปดาห์", w.topCategories));
 
+  // Menu momentum vs last week (owner B).
+  const momoLine = (m: { name: string; deltaPct: number | null }, up: boolean) => ({
+    type: "box", layout: "horizontal", contents: [
+      { type: "text", text: m.name, size: "xs", color: "#333333", flex: 6, wrap: true },
+      { type: "text", text: m.deltaPct == null ? "ใหม่" : `${m.deltaPct >= 0 ? "▲" : "▼"} ${Math.abs(m.deltaPct).toFixed(0)}%`, size: "xs", align: "end", flex: 2, color: up ? "#0f7a4f" : "#b0392f" }
+    ]
+  });
+  if (w.menuRisers.length) {
+    body.push({ type: "text", text: "🔥 เมนูมาแรง (เทียบสัปดาห์ก่อน)", size: "xs", weight: "bold", color: "#0f7a4f", margin: "md" });
+    w.menuRisers.forEach((m) => body.push(momoLine(m, true)));
+  }
+  if (w.menuFallers.length) {
+    body.push({ type: "text", text: "📉 เมนูร่วง (เทียบสัปดาห์ก่อน)", size: "xs", weight: "bold", color: "#b0392f", margin: "md" });
+    w.menuFallers.forEach((m) => body.push(momoLine(m, false)));
+  }
+
   return {
     type: "flex",
     altText: `สรุปยอดขายประจำสัปดาห์ ${w.label} · ${meta.branchName} · ${baht(w.totalNett)}`,
