@@ -184,6 +184,12 @@ export type WeeklyAnalytics = {
   avgPerBill: number | null;
   bestDate: string | null;
   bestNett: number | null;
+  // Week-over-week comparison vs the previous ISO week (owner 2026-09-17).
+  prevWeekDays: number;
+  prevWeekNett: number | null;
+  wowNettPct: number | null;
+  wowBillsPct: number | null;
+  wowPaxPct: number | null;
   topItems: MenuRank[];
   topCategories: MenuRank[];
   menuRisers: MenuMomentum[];   // biggest revenue gains vs last week (owner B)
@@ -217,9 +223,16 @@ export function weeklyAnalytics(branchId: number, weekStart: string, topN = 5): 
   const items = menuRange(branchId, start, end, "item").map((m, i) => ({ ...m, rank: i + 1 }));
   const cats = menuRange(branchId, start, end, "category").map((m, i) => ({ ...m, rank: i + 1 }));
 
-  // Menu momentum: this week's item revenue vs the previous week's (owner B).
+  // Previous ISO week totals (owner 2026-09-17: เทียบสัปดาห์ก่อน).
   const prevStart = addDaysIso(start, -7);
-  const prevItems = new Map(menuRange(branchId, prevStart, addDaysIso(start, -1), "item").map((m) => [m.name, m.nett]));
+  const prevEnd = addDaysIso(start, -1);
+  const prevRows = listRange(branchId, prevStart, prevEnd).filter((d) => d.has_sales);
+  const prevNett = prevRows.length ? round2(prevRows.reduce((s, d) => s + d.nett, 0)) : null;
+  const prevBills = prevRows.reduce((s, d) => s + d.bill_count, 0);
+  const prevPax = prevRows.reduce((s, d) => s + d.pax, 0);
+
+  // Menu momentum: this week's item revenue vs the previous week's (owner B).
+  const prevItems = new Map(menuRange(branchId, prevStart, prevEnd, "item").map((m) => [m.name, m.nett]));
   const momentum: MenuMomentum[] = items.map((m) => {
     const prevNett = prevItems.get(m.name) ?? 0;
     const isNew = !prevItems.has(m.name);
@@ -244,6 +257,11 @@ export function weeklyAnalytics(branchId: number, weekStart: string, topN = 5): 
     avgPerBill: totalBills > 0 ? round2(totalNett / totalBills) : null,
     bestDate: best?.sale_date ?? null,
     bestNett: best?.nett ?? null,
+    prevWeekDays: prevRows.length,
+    prevWeekNett: prevNett,
+    wowNettPct: relPct(totalNett, prevNett),
+    wowBillsPct: prevBills > 0 ? relPct(totalBills, prevBills) : null,
+    wowPaxPct: prevPax > 0 ? relPct(totalPax, prevPax) : null,
     topItems: items.slice(0, topN),
     topCategories: cats.slice(0, topN),
     menuRisers,

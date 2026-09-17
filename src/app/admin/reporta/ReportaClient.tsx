@@ -54,6 +54,7 @@ type WeeklyAnalytics = {
   days: Array<{ date: string; dateLabel: string; nett: number; billCount: number; pax: number }>;
   dayCount: number; totalNett: number; totalBills: number; totalPax: number; totalDiscount: number;
   avgPerDay: number | null; avgPerBill: number | null; bestDate: string | null; bestNett: number | null;
+  prevWeekDays: number; prevWeekNett: number | null; wowNettPct: number | null; wowBillsPct: number | null; wowPaxPct: number | null;
   topItems: MenuRank[]; topCategories: MenuRank[];
   menuRisers: MenuMomentum[]; menuFallers: MenuMomentum[];
 };
@@ -511,6 +512,18 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
                   <Kpi label="จำนวนบิลรวม" value={`${intTh(weekly.totalBills)} บิล`} />
                   <Kpi label="ลูกค้ารวม" value={`${intTh(weekly.totalPax)} คน`} />
                   <Kpi label="เฉลี่ยต่อวัน" value={weekly.avgPerDay != null ? baht(weekly.avgPerDay) : "—"} />
+                </div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 flex flex-wrap gap-x-6 gap-y-1">
+                  <span className="font-semibold text-slate-700">เทียบสัปดาห์ก่อน:</span>
+                  {weekly.wowNettPct == null ? (
+                    <span className="text-slate-400">ยังไม่มีข้อมูลสัปดาห์ก่อน</span>
+                  ) : (
+                    <>
+                      <span>ยอดขาย <PctChip pct={weekly.wowNettPct} /> {weekly.prevWeekNett != null && <span className="text-slate-400">({baht(weekly.prevWeekNett)})</span>}</span>
+                      <span>บิล <PctChip pct={weekly.wowBillsPct} /></span>
+                      <span>ลูกค้า <PctChip pct={weekly.wowPaxPct} /></span>
+                    </>
+                  )}
                 </div>
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
