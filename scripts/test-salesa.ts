@@ -217,6 +217,29 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const cm = analytics.monthChannelMix(bid2, 2026, 9);
   ok("channel mix empty types when none", cm.types.length === 0);
 
+  // ── 7) C target progress · F monthly card ──
+  const mo = analytics.monthlyAnalytics(bid2, 2026, 9);
+  ok("monthly total (14658+13000)", mo.totalNett === 27658 && mo.dayCount === 2);
+  ok("monthly vs prev month (Aug 14000)", near(mo.prevMonthPct ?? 0, ((27658 - 14000) / 14000) * 100));
+  ok("monthly vs last year (2025-09 50000)", near(mo.lastYearPct ?? 0, ((27658 - 50000) / 50000) * 100));
+  ok("monthly label full Thai", mo.label === "กันยายน 2569" && mo.ym === "2026-09");
+
+  const tp = analytics.targetProgress(60000, 30000, 15, 2026, 9)!;
+  ok("target pctOfTarget 50%", near(tp.pctOfTarget, 50));
+  ok("target projection 30000/15*30=60000", near(tp.projectedNett, 60000) && tp.onTrack === true);
+  ok("targetProgress null when target<=0", analytics.targetProgress(0, 100, 5, 2026, 9) === null);
+
+  ok("monthly target setting round-trip", (() => {
+    sdb.setMonthlyTarget(bid2, 500000);
+    const got = sdb.getMonthlyTarget(bid2) === 500000;
+    sdb.setMonthlyTarget(bid2, null);
+    return got && sdb.getMonthlyTarget(bid2) === null;
+  })());
+  ok("monthly sent round-trip", (() => {
+    sdb.markMonthlySent(bid2, "2026-09", uid);
+    return sdb.monthlySentAt(bid2, "2026-09") != null;
+  })());
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
