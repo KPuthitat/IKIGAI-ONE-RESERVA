@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt } from "@/lib/salesa-db";
-import { dailyAnalytics, weeklyAnalytics } from "@/lib/salesa-analytics";
+import { dailyAnalytics, weeklyAnalytics, monthComparison } from "@/lib/salesa-analytics";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
 // day's full analytics + menu ranking. ?week=YYYY-MM-DD (a Monday): the weekly
@@ -46,6 +46,8 @@ export function GET(req: Request) {
   const now = bkkNow();
   const year = Number(sp.get("year")) || now.year;
   const month = Number(sp.get("month")) || now.month;
+  const todayIso = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const monthCompare = monthComparison(branchId, year, month, todayIso);
   const days = listMonth(branchId, year, month).map((d) => ({
     date: d.sale_date,
     nett: d.nett,
@@ -55,5 +57,5 @@ export function GET(req: Request) {
     hasMenu: d.has_menu === 1,
     dailySentAt: d.daily_sent_at
   }));
-  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, view: { year, month, days } });
+  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, view: { year, month, days }, monthCompare });
 }
