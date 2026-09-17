@@ -239,6 +239,12 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     sdb.markMonthlySent(bid2, "2026-09", uid);
     return sdb.monthlySentAt(bid2, "2026-09") != null;
   })());
+  ok("merchant name round-trip + clear", (() => {
+    sdb.setMerchantName(bid2, "  HYPOPLARAEMIA  ");
+    const got = sdb.getMerchantName(bid2) === "HYPOPLARAEMIA";
+    sdb.setMerchantName(bid2, "");
+    return got && sdb.getMerchantName(bid2) === null;
+  })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();

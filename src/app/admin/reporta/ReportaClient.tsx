@@ -99,10 +99,11 @@ function PinModal({ title, onConfirm, onClose }: { title: string; onConfirm: (pi
         <h3 className="font-bold text-slate-800">{title}</h3>
         <p className="text-sm text-slate-500">การ์ดสรุปจะถูกส่งเข้ากลุ่ม LINE หัวหน้างาน (HOD) — ยืนยันด้วย PIN</p>
         <div>
-          <label className="label">PIN (4 หลัก)</label>
+          <label className="label text-center">PIN (4 หลัก)</label>
           <input type="password" inputMode="numeric" autoComplete="off" autoFocus maxLength={4} value={pin}
             onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 4)); setErr(null); }}
-            className="input" />
+            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+            className="input text-center tracking-[0.6em] text-lg" />
         </div>
         {err && <p className="text-rose-600 text-xs font-medium">✗ {err === "wrong_pin" || err === "pin_invalid" ? "PIN ไม่ถูกต้อง" : err === "no_pin" ? "ยังไม่ได้ตั้ง PIN (ตั้งที่หน้าโปรไฟล์)" : err}</p>}
         <div className="flex gap-2 pt-1">
@@ -460,7 +461,7 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
 
           {(daily.topItems.length > 0 || daily.topCategories.length > 0) ? (
             <div className="grid sm:grid-cols-2 gap-4 pt-1">
-              <MenuList title="🍽️ เมนูทำรายได้สูงสุด" list={daily.topItems} />
+              <MenuList title="เมนูทำรายได้สูงสุด" list={daily.topItems} />
               <MenuList title="หมวดทำรายได้สูงสุด" list={daily.topCategories} />
               <MenuList title="เมนูทำรายได้น้อยสุด (ในรายการที่มี)" list={daily.bottomItems} muted />
             </div>
@@ -475,8 +476,8 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h2 className="font-bold text-slate-800">สรุปรายสัปดาห์ (จันทร์–อาทิตย์)</h2>
           <div className="flex items-center gap-2">
-            <button onClick={() => setWeekStart(addDays(weekStart, -7))} className="btn-secondary text-sm px-3 py-1.5">← สัปดาห์ก่อน</button>
-            <button onClick={() => setWeekStart(mondayOf(addDays(todayBkk(), -7)))} className="btn-secondary text-sm px-3 py-1.5">สัปดาห์ที่แล้ว</button>
+            <button onClick={() => setWeekStart(addDays(weekStart, -7))} className="btn-secondary text-sm px-3 py-1.5">← สัปดาห์ก่อนหน้า</button>
+            <button onClick={() => setWeekStart(mondayOf(todayBkk()))} className="btn-secondary text-sm px-3 py-1.5">สัปดาห์นี้</button>
             <button onClick={() => setWeekStart(addDays(weekStart, 7))} className="btn-secondary text-sm px-3 py-1.5">สัปดาห์ถัดไป →</button>
           </div>
         </div>
@@ -503,16 +504,16 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
                     <div className="text-xs font-bold text-slate-600 mb-1">ยอดขายรายวัน</div>
                     {weekly.days.map((d) => (
                       <div key={d.date} className={`flex justify-between text-sm ${d.date === weekly.bestDate ? "font-bold text-emerald-700" : ""}`}>
-                        <span className="text-slate-600">{d.dateLabel}{d.date === weekly.bestDate ? " ⭐" : ""}</span><span>{baht(d.nett)}</span>
+                        <span className="text-slate-600">{d.dateLabel}{d.date === weekly.bestDate ? "" : ""}</span><span>{baht(d.nett)}</span>
                       </div>
                     ))}
                   </div>
-                  <MenuList title="🍽️ เมนูทำรายได้สูงสุดประจำสัปดาห์" list={weekly.topItems} />
+                  <MenuList title="เมนูทำรายได้สูงสุดประจำสัปดาห์" list={weekly.topItems} />
                 </div>
                 {(weekly.menuRisers.length > 0 || weekly.menuFallers.length > 0) && (
                   <div className="grid sm:grid-cols-2 gap-4">
-                    <MomentumList title="🔥 เมนูมาแรง (เทียบสัปดาห์ก่อน)" list={weekly.menuRisers} up />
-                    <MomentumList title="📉 เมนูร่วง (เทียบสัปดาห์ก่อน)" list={weekly.menuFallers} />
+                    <MomentumList title="เมนูมาแรง (เทียบสัปดาห์ก่อน)" list={weekly.menuRisers} up />
+                    <MomentumList title="เมนูร่วง (เทียบสัปดาห์ก่อน)" list={weekly.menuFallers} />
                   </div>
                 )}
               </>

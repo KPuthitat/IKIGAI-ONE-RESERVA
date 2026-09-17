@@ -5,9 +5,10 @@ import { useState } from "react";
 // REPORTA settings — bind the HOD LINE group id the daily/weekly cards push to
 // (owner 2026-09-16). The IKIGAI OS platform OA must be a member of that group.
 
-export default function ReportaSettingsClient({ initialGroupId, initialTarget }: { initialGroupId: string | null; initialTarget: number | null }) {
+export default function ReportaSettingsClient({ initialGroupId, initialTarget, initialMerchant }: { initialGroupId: string | null; initialTarget: number | null; initialMerchant: string | null }) {
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
   const [target, setTarget] = useState(initialTarget != null ? String(initialTarget) : "");
+  const [merchant, setMerchant] = useState(initialMerchant ?? "");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -19,7 +20,7 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget }:
     try {
       const r = await fetch("/api/admin/reporta/settings", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineGroupId: groupId.trim() || null, monthlyTarget: targetNum })
+        body: JSON.stringify({ lineGroupId: groupId.trim() || null, monthlyTarget: targetNum, merchantName: merchant.trim() || null })
       }).then((x) => x.json());
       if (r.ok) setMsg({ kind: "ok", text: "บันทึกแล้ว" });
       else setMsg({ kind: "err", text: r.error ?? "บันทึกไม่สำเร็จ" });
@@ -42,6 +43,13 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget }:
         <input value={target} onChange={(e) => setTarget(e.target.value)} inputMode="numeric" placeholder="เช่น 500000" className="input !w-48" />
         <p className="text-xs text-slate-500 mt-1.5">
           ใช้แสดงแถบความคืบหน้า + คาดการณ์สิ้นเดือนในหน้าวิเคราะห์ · เว้นว่างเพื่อไม่ตั้งเป้า
+        </p>
+      </div>
+      <div>
+        <label className="label">ชื่อร้านใน POS (Merchant) — กันไฟล์ผิดสาขา</label>
+        <input value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="เช่น HYPOPLARAEMIA" className="input" />
+        <p className="text-xs text-slate-500 mt-1.5">
+          ระบบจะจดจำชื่อร้านจากไฟล์แรกที่นำเข้าโดยอัตโนมัติ · ถ้านำเข้าไฟล์ที่ชื่อร้านไม่ตรง จะถูกปฏิเสธทั้งชุด · เว้นว่างเพื่อล้างและให้ระบบเรียนรู้ใหม่
         </p>
       </div>
       <button onClick={save} disabled={saving} className="btn-primary text-sm disabled:opacity-50">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>

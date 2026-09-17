@@ -1998,15 +1998,19 @@ function runMigrations(db: Database.Database): void {
       branch_id      INTEGER PRIMARY KEY REFERENCES branches(id) ON DELETE CASCADE,
       line_group_id  TEXT,          -- HOD LINE group (platform OA must be a member)
       monthly_target REAL,          -- monthly sales goal (owner C); NULL = unset
+      merchant_name  TEXT,          -- expected POS merchant; reject mismatched files (owner 2026-09-17)
       updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
-  // monthly_target added after salesa_settings first shipped — ALTER for
-  // existing installs (owner 2026-09-17, C). Idempotent.
+  // Columns added after salesa_settings first shipped — ALTER for existing
+  // installs (owner 2026-09-17). Idempotent.
   {
     const ssCols = db.prepare("PRAGMA table_info(salesa_settings)").all() as Array<{ name: string }>;
     if (!ssCols.some((c) => c.name === "monthly_target")) {
       db.exec("ALTER TABLE salesa_settings ADD COLUMN monthly_target REAL");
+    }
+    if (!ssCols.some((c) => c.name === "merchant_name")) {
+      db.exec("ALTER TABLE salesa_settings ADD COLUMN merchant_name TEXT");
     }
   }
 
