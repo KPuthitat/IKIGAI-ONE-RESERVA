@@ -48,13 +48,19 @@ type DailyAnalytics = {
 };
 type MetricCompare = { key: string; label: string; value: number; kind: "baht" | "int"; wowPct: number | null; momPct: number | null };
 type MonthCompare = { throughDay: number; mtdNett: number; prevMonthNett: number | null; prevMonthPct: number | null; lastYearNett: number | null; lastYearPct: number | null };
+type MenuMomentum = { name: string; thisNett: number; prevNett: number; deltaPct: number | null; isNew: boolean };
 type WeeklyAnalytics = {
   weekStart: string; weekEnd: string; label: string;
   days: Array<{ date: string; dateLabel: string; nett: number; billCount: number; pax: number }>;
   dayCount: number; totalNett: number; totalBills: number; totalPax: number; totalDiscount: number;
   avgPerDay: number | null; avgPerBill: number | null; bestDate: string | null; bestNett: number | null;
   topItems: MenuRank[]; topCategories: MenuRank[];
+  menuRisers: MenuMomentum[]; menuFallers: MenuMomentum[];
 };
+type WeekdayStat = { dow: number; label: string; avgNett: number; days: number; avgBills: number };
+type DiscountInsight = { avgDiscountPct: number | null; totalDiscount: number; highDiscAvgNett: number | null; lowDiscAvgNett: number | null; days: number };
+type ChannelSlice = { name: string; sales: number; qty: number; pct: number };
+type ChannelMix = { types: ChannelSlice[]; payments: ChannelSlice[]; sources: ChannelSlice[] };
 
 function MenuList({ title, list, muted }: { title: string; list: MenuRank[]; muted?: boolean }) {
   if (!list.length) return null;
@@ -113,6 +119,9 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
   const [month, setMonth] = useState(Number(initial.slice(5, 7)));
   const [days, setDays] = useState<MonthDay[]>([]);
   const [monthCompare, setMonthCompare] = useState<MonthCompare | null>(null);
+  const [weekdays, setWeekdays] = useState<WeekdayStat[]>([]);
+  const [discount, setDiscount] = useState<DiscountInsight | null>(null);
+  const [channels, setChannels] = useState<ChannelMix | null>(null);
   const [hasLineGroup, setHasLineGroup] = useState(true);
   const [selDate, setSelDate] = useState<string | null>(null);
   const [daily, setDaily] = useState<DailyAnalytics | null>(null);
@@ -134,7 +143,10 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
 
   const loadMonth = useCallback(async () => {
     const r = await fetch(`/api/admin/reporta/view?year=${year}&month=${month}`).then((x) => x.json());
-    if (r.ok) { setDays(r.view.days); setHasLineGroup(r.hasLineGroup); setMonthCompare(r.monthCompare ?? null); }
+    if (r.ok) {
+      setDays(r.view.days); setHasLineGroup(r.hasLineGroup); setMonthCompare(r.monthCompare ?? null);
+      setWeekdays(r.weekdays ?? []); setDiscount(r.discount ?? null); setChannels(r.channels ?? null);
+    }
   }, [year, month]);
 
   const loadDay = useCallback(async (date: string) => {
@@ -309,6 +321,45 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
         )}
       </div>
 
+      {/* Insights: weekday pattern (A) + channel mix (E) + discount ROI (D) */}
+      {days.length > 0 && (
+        <div className="grid lg:grid-cols-2 gap-4">
+          {weekdays.some((w) => w.days > 0) && (
+            <div className="card space-y-2">
+              <h2 className="font-bold text-slate-800">ยอดขายเฉลี่ยตามวัน (8 สัปดาห์ล่าสุด)</h2>
+              <WeekdayBars stats={weekdays} />
+            </div>
+          )}
+          {channels && (channels.types.length > 0 || channels.payments.length > 0) && (
+            <div className="card space-y-3">
+              <h2 className="font-bold text-slate-800">ช่องทางการขายเดือนนี้</h2>
+              {channels.types.length > 0 && <ChannelBlock title="ประเภทออเดอร์" slices={channels.types} />}
+              {channels.payments.length > 0 && <ChannelBlock title="ช่องทางชำระเงิน" slices={channels.payments} />}
+              {channels.sources.length > 1 && <ChannelBlock title="แหล่งที่มา" slices={channels.sources} />}
+            </div>
+          )}
+          {discount && discount.days > 0 && (
+            <div className="card space-y-2 lg:col-span-2">
+              <h2 className="font-bold text-slate-800">ประสิทธิภาพส่วนลดเดือนนี้</h2>
+              <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+                <div><span className="text-slate-500">ส่วนลดรวม</span> <b className="text-rose-600">{baht(discount.totalDiscount)}</b></div>
+                <div><span className="text-slate-500">เฉลี่ย</span> <b>{discount.avgDiscountPct?.toFixed(1)}%</b> ของยอดก่อนลด</div>
+              </div>
+              {discount.highDiscAvgNett != null && discount.lowDiscAvgNett != null && (
+                <div className="text-sm rounded-lg bg-slate-50 p-3">
+                  วันที่ <b>ลดเยอะ</b> ยอดเฉลี่ย <b className="text-slate-800">{baht(discount.highDiscAvgNett)}</b> · วันที่ <b>ลดน้อย</b> ยอดเฉลี่ย <b className="text-slate-800">{baht(discount.lowDiscAvgNett)}</b>
+                  <div className="text-xs text-slate-500 mt-1">
+                    {discount.highDiscAvgNett > discount.lowDiscAvgNett
+                      ? "→ วันที่ลดเยอะยอดสูงกว่า ส่วนลดช่วยกระตุ้นยอดได้"
+                      : "→ วันที่ลดเยอะยอดไม่ได้สูงกว่า ลองปรับความลึกของโปรให้คุ้มขึ้น"}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Day detail */}
       {selDate && daily && (
         <div className="card space-y-4">
@@ -415,6 +466,12 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
                   </div>
                   <MenuList title="🍽️ เมนูทำรายได้สูงสุดประจำสัปดาห์" list={weekly.topItems} />
                 </div>
+                {(weekly.menuRisers.length > 0 || weekly.menuFallers.length > 0) && (
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <MomentumList title="🔥 เมนูมาแรง (เทียบสัปดาห์ก่อน)" list={weekly.menuRisers} up />
+                    <MomentumList title="📉 เมนูร่วง (เทียบสัปดาห์ก่อน)" list={weekly.menuFallers} />
+                  </div>
+                )}
               </>
             )}
           </>
@@ -422,6 +479,70 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
       </div>
 
       {pin && <PinModal title={pin.title} onConfirm={pin.run} onClose={() => setPin(null)} />}
+    </div>
+  );
+}
+
+function MomentumList({ title, list, up }: { title: string; list: MenuMomentum[]; up?: boolean }) {
+  if (!list.length) return null;
+  return (
+    <div>
+      <div className={`text-xs font-bold mb-1 ${up ? "text-emerald-700" : "text-rose-700"}`}>{title}</div>
+      <ol className="space-y-1">
+        {list.map((m) => (
+          <li key={m.name} className="flex items-center justify-between gap-2 text-sm">
+            <span className="text-slate-700 truncate">{m.name}</span>
+            <span className={`whitespace-nowrap font-semibold ${up ? "text-emerald-600" : "text-rose-600"}`}>
+              {m.deltaPct == null ? "ใหม่" : `${m.deltaPct >= 0 ? "▲" : "▼"} ${Math.abs(m.deltaPct).toFixed(0)}%`}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function WeekdayBars({ stats }: { stats: WeekdayStat[] }) {
+  const active = stats.filter((s) => s.days > 0);
+  const max = Math.max(1, ...active.map((s) => s.avgNett));
+  const best = active.reduce<WeekdayStat | null>((b, s) => (b == null || s.avgNett > b.avgNett ? s : b), null);
+  const worst = active.reduce<WeekdayStat | null>((b, s) => (b == null || s.avgNett < b.avgNett ? s : b), null);
+  return (
+    <div className="space-y-1.5">
+      {stats.map((s) => {
+        const tone = s.days === 0 ? "bg-slate-200" : s.dow === best?.dow ? "bg-emerald-500" : s.dow === worst?.dow ? "bg-amber-400" : "bg-emerald-300";
+        return (
+          <div key={s.dow} className="flex items-center gap-2">
+            <span className="w-14 text-xs text-slate-500 shrink-0">{s.label}</span>
+            <div className="flex-1 h-4 rounded bg-slate-100 overflow-hidden">
+              <div className={`h-full ${tone}`} style={{ width: `${s.days === 0 ? 0 : Math.max(4, (s.avgNett / max) * 100)}%` }} />
+            </div>
+            <span className="w-24 text-right text-xs font-medium text-slate-700 shrink-0">{s.days === 0 ? "—" : baht(s.avgNett)}</span>
+          </div>
+        );
+      })}
+      {best && worst && best.dow !== worst.dow && (
+        <div className="text-xs text-slate-500 pt-1">ขายดีสุด <b className="text-emerald-600">{best.label}</b> · ร้างสุด <b className="text-amber-600">{worst.label}</b></div>
+      )}
+    </div>
+  );
+}
+
+function ChannelBlock({ title, slices }: { title: string; slices: ChannelSlice[] }) {
+  return (
+    <div>
+      <div className="text-xs font-bold text-slate-600 mb-1">{title}</div>
+      <div className="space-y-1">
+        {slices.map((s) => (
+          <div key={s.name} className="flex items-center gap-2">
+            <span className="w-28 text-xs text-slate-600 truncate shrink-0">{s.name}</span>
+            <div className="flex-1 h-3 rounded bg-slate-100 overflow-hidden">
+              <div className="h-full bg-sky-400" style={{ width: `${Math.max(2, s.pct)}%` }} />
+            </div>
+            <span className="w-28 text-right text-xs text-slate-700 shrink-0">{baht(s.sales)} · {s.pct.toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

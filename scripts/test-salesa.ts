@@ -197,6 +197,26 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     return a3.metrics.every((m) => m.momPct === null);
   })());
 
+  // ── 6) A weekday · B momentum · D discount · E channels ──
+  // Menu momentum: bid week 09-14..20 vs prev week (09-07..13). Add prev-week
+  // menu for คอหมูย่าง so it shows as a faller/riser.
+  sdb.upsertMenu(bid, uid, { date: "2026-09-10", dateEnd: "2026-09-10", merchant: "REST",
+    categories: [], items: [{ name: "คอหมูย่าง", nett: 4000 }, { name: "ปีกไก่", nett: 100 }] });
+  const wk2 = analytics.weeklyAnalytics(bid, "2026-09-16");
+  // this week คอหมูย่าง = 2000 (16:1200 + 18:800), prev = 4000 → −50% faller.
+  ok("momentum faller คอหมูย่าง −50%", !!wk2.menuFallers.find((m) => m.name === "คอหมูย่าง" && near(m.deltaPct ?? 0, -50)));
+  ok("momentum riser ปีกไก่ (1500 vs 100 = +1400%)", !!wk2.menuRisers.find((m) => m.name === "ปีกไก่" && near(m.deltaPct ?? 0, 1400)));
+
+  const wd = analytics.weekdayStats(bid, "2026-09-20", 56);
+  ok("weekday stats Mon-first, 7 entries", wd.length === 7 && wd[0].label === "จันทร์");
+  ok("weekday Monday avg = 10000 (only 09-14)", near(wd[0].avgNett, 10000) && wd[0].days === 1);
+
+  const di = analytics.discountInsight(bid, 2026, 9);
+  ok("discount insight has days", di.days === 4 && di.totalDiscount > 0);
+
+  const cm = analytics.monthChannelMix(bid2, 2026, 9);
+  ok("channel mix empty types when none", cm.types.length === 0);
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
