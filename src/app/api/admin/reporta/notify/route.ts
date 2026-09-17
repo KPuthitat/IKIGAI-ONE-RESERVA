@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
-import { isSalesaBranch, getLineGroupId, markDailySent, markWeeklySent, markMonthlySent } from "@/lib/salesa-db";
+import { isSalesaBranch, getLineGroupId, markDailySent, markWeeklySent, markMonthlySent, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics } from "@/lib/salesa-analytics";
 import { salesaDailyFlex, salesaWeeklyFlex, salesaMonthlyFlex, notifySalesaHod } from "@/lib/salesa-line";
 
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   if (!groupId) {
     return NextResponse.json({ error: "no_group", message: "ยังไม่ได้ตั้งกลุ่ม LINE หัวหน้างาน (ตั้งที่หน้าตั้งค่า REPORTA)" }, { status: 400 });
   }
-  const meta = { branchName: branchName(branchId), operator: user.display_name };
+  const meta = { branchName: branchName(branchId), operator: user.display_name, color: getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR };
 
   let flex;
   if (kind === "daily") {

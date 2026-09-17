@@ -1999,6 +1999,7 @@ function runMigrations(db: Database.Database): void {
       line_group_id  TEXT,          -- HOD LINE group (platform OA must be a member)
       monthly_target REAL,          -- monthly sales goal (owner C); NULL = unset
       merchant_name  TEXT,          -- expected POS merchant; reject mismatched files (owner 2026-09-17)
+      card_color     TEXT,          -- per-branch LINE card header colour (owner 2026-09-17); NULL = default
       updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
@@ -2011,6 +2012,9 @@ function runMigrations(db: Database.Database): void {
     }
     if (!ssCols.some((c) => c.name === "merchant_name")) {
       db.exec("ALTER TABLE salesa_settings ADD COLUMN merchant_name TEXT");
+    }
+    if (!ssCols.some((c) => c.name === "card_color")) {
+      db.exec("ALTER TABLE salesa_settings ADD COLUMN card_color TEXT");
     }
   }
   // One-time (owner 2026-09-17): the first merchant guard AUTO-LEARNED the shop

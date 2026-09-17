@@ -5,10 +5,14 @@ import { useState } from "react";
 // REPORTA settings — bind the HOD LINE group id the daily/weekly cards push to
 // (owner 2026-09-16). The IKIGAI OS platform OA must be a member of that group.
 
-export default function ReportaSettingsClient({ initialGroupId, initialTarget, initialMerchant }: { initialGroupId: string | null; initialTarget: number | null; initialMerchant: string | null }) {
+const DEFAULT_COLOR = "#0e2724";
+const PRESETS = ["#0e2724", "#1e3a5f", "#5b21b6", "#9d174d", "#b45309", "#334155", "#166534", "#7c2d12"];
+
+export default function ReportaSettingsClient({ initialGroupId, initialTarget, initialMerchant, initialColor }: { initialGroupId: string | null; initialTarget: number | null; initialMerchant: string | null; initialColor: string | null }) {
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
   const [target, setTarget] = useState(initialTarget != null ? String(initialTarget) : "");
   const [merchant, setMerchant] = useState(initialMerchant ?? "");
+  const [color, setColor] = useState(initialColor ?? DEFAULT_COLOR);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -20,7 +24,7 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget, i
     try {
       const r = await fetch("/api/admin/reporta/settings", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineGroupId: groupId.trim() || null, monthlyTarget: targetNum, merchantName: merchant.trim() || null })
+        body: JSON.stringify({ lineGroupId: groupId.trim() || null, monthlyTarget: targetNum, merchantName: merchant.trim() || null, cardColor: color })
       }).then((x) => x.json());
       if (r.ok) setMsg({ kind: "ok", text: "บันทึกแล้ว" });
       else setMsg({ kind: "err", text: r.error ?? "บันทึกไม่สำเร็จ" });
@@ -51,6 +55,26 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget, i
         <p className="text-xs text-slate-500 mt-1.5">
           ปกติระบบเทียบกับ<b>ชื่อสาขา</b>ให้อัตโนมัติ — ถ้านำเข้าไฟล์ที่ชื่อร้านไม่ตรง จะถูกปฏิเสธทั้งชุด · กรอกที่นี่<b>เฉพาะเมื่อ</b>ชื่อร้านใน POS ต่างจากชื่อสาขา · เว้นว่าง = ใช้ชื่อสาขา
         </p>
+      </div>
+      <div>
+        <label className="label">สีการ์ดของสาขานี้ (หัวการ์ด LINE)</label>
+        <div className="flex items-center gap-2 flex-wrap">
+          {PRESETS.map((c) => (
+            <button key={c} type="button" onClick={() => setColor(c)}
+              className={`h-8 w-8 rounded-full border-2 ${color.toLowerCase() === c ? "border-slate-800 ring-2 ring-offset-1 ring-slate-300" : "border-white shadow"}`}
+              style={{ backgroundColor: c }} aria-label={c} />
+          ))}
+          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-8 w-10 rounded border border-slate-200 bg-white p-0.5" />
+        </div>
+        {/* Live preview of the LINE card header */}
+        <div className="mt-2 rounded-xl overflow-hidden max-w-xs shadow-sm">
+          <div style={{ backgroundColor: color }} className="px-4 py-3">
+            <div className="text-[10px]" style={{ color: "#ffffff99" }}>IKIGAI OS · ยอดขายรายวัน</div>
+            <div className="text-white font-bold">สรุปยอดขายประจำวัน</div>
+            <div className="text-xs" style={{ color: "#ffffffcc" }}>ตัวอย่างหัวการ์ดของสาขานี้</div>
+          </div>
+        </div>
+        <p className="text-xs text-slate-500 mt-1.5">แนะนำสีเข้มเพื่อให้ตัวอักษรสีขาวอ่านง่าย · แต่ละสาขาตั้งคนละสีได้ ระบบจำไว้ให้</p>
       </div>
       <button onClick={save} disabled={saving} className="btn-primary text-sm disabled:opacity-50">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
     </div>

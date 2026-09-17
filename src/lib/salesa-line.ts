@@ -22,13 +22,15 @@ function kv(label: string, value: string, opts?: { color?: string; bold?: boolea
 }
 const sep = { type: "separator", margin: "md", color: "#eeeeee" };
 
-function header(title: string, subtitle: string): unknown {
+// Per-branch header colour (owner 2026-09-17) — passed via meta.color; white
+// tints on the eyebrow/subtitle keep it legible on any dark brand colour.
+function header(title: string, subtitle: string, color: string): unknown {
   return {
-    type: "box", layout: "vertical", backgroundColor: "#0e2724", paddingAll: "16px", spacing: "xs",
+    type: "box", layout: "vertical", backgroundColor: color, paddingAll: "16px", spacing: "xs",
     contents: [
-      { type: "text", text: "IKIGAI OS · ยอดขายรายวัน", size: "xxs", color: "#7fd6b3" },
+      { type: "text", text: "IKIGAI OS · ยอดขายรายวัน", size: "xxs", color: "#ffffff99" },
       { type: "text", text: title, size: "lg", weight: "bold", color: "#ffffff" },
-      { type: "text", text: subtitle, size: "xs", color: "#a9cfc2", wrap: true }
+      { type: "text", text: subtitle, size: "xs", color: "#ffffffcc", wrap: true }
     ]
   };
 }
@@ -53,7 +55,7 @@ function menuBlock(title: string, list: Array<{ name: string; nett: number }>): 
   ];
 }
 
-export type DailyCardMeta = { branchName: string; operator: string };
+export type DailyCardMeta = { branchName: string; operator: string; color: string };
 
 // A metric's value + a two-part comparison line — same weekday last week ·
 // same day last month — each % coloured green/red via spans (owner 2026-09-17).
@@ -118,7 +120,7 @@ export function salesaDailyFlex(a: DailyAnalytics, meta: DailyCardMeta): FlexMsg
     altText: `สรุปยอดขายประจำวัน ${a.dateLabel} · ${meta.branchName} · ${baht(r.nett)}`,
     contents: {
       type: "bubble", size: "giga",
-      header: header("สรุปยอดขายประจำวัน", `${a.dateLabel} · ${meta.branchName}`),
+      header: header("สรุปยอดขายประจำวัน", `${a.dateLabel} · ${meta.branchName}`, meta.color),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("สรุปโดยระบบ IKIGAI OS · ยอดสะสมสรุปอีกครั้งในรอบสัปดาห์")
     }
@@ -170,7 +172,7 @@ export function salesaWeeklyFlex(w: WeeklyAnalytics, meta: DailyCardMeta): FlexM
     altText: `สรุปยอดขายประจำสัปดาห์ ${w.label} · ${meta.branchName} · ${baht(w.totalNett)}`,
     contents: {
       type: "bubble", size: "giga",
-      header: header("สรุปยอดขายประจำสัปดาห์", `${w.label} · ${meta.branchName}`),
+      header: header("สรุปยอดขายประจำสัปดาห์", `${w.label} · ${meta.branchName}`, meta.color),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("สรุปโดยระบบ IKIGAI OS · รอบจันทร์–อาทิตย์")
     }
@@ -207,7 +209,7 @@ export function salesaMonthlyFlex(m: MonthlyAnalytics, meta: DailyCardMeta): Fle
     altText: `สรุปยอดขายประจำเดือน ${m.label} · ${meta.branchName} · ${baht(m.totalNett)}`,
     contents: {
       type: "bubble", size: "giga",
-      header: header("สรุปยอดขายประจำเดือน", `${m.label} · ${meta.branchName}`),
+      header: header("สรุปยอดขายประจำเดือน", `${m.label} · ${meta.branchName}`, meta.color),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายเดือน")
     }
