@@ -62,10 +62,9 @@ export async function POST(req: Request) {
   const expected = getMerchantName(branchId) ?? branchName;
   const bad = parsedFiles.find((f) => f.merchant && !matches(f.merchant, expected));
   if (bad) {
-    const override = getMerchantName(branchId);
     return NextResponse.json({
       error: "merchant_mismatch",
-      message: `ไฟล์ "${bad.name}" เป็นของร้าน "${bad.merchant}" ไม่ตรงกับสาขา ${branchName}${override ? ` (ตั้งชื่อร้านไว้เป็น "${override}")` : ""} — ยกเลิกการนำเข้าทั้งหมด${override ? " · ถ้าตั้งชื่อร้านผิด แก้ได้ที่หน้าตั้งค่า" : ""}`
+      message: "ไฟล์ที่นำเข้าไม่ตรงกับสาขาที่ใช้งานอยู่"
     }, { status: 422 });
   }
 

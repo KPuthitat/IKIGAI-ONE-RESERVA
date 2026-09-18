@@ -167,6 +167,11 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("weekday/dom labels", a16.weekdayTh === "พุธ" && a16.wowLabel === "พุธที่แล้ว" && a16.momLabel === "วันที่ 16 เดือนก่อน");
   ok("daily top item = คอหมูย่าง", a16.topItems[0]?.name === "คอหมูย่าง");
   ok("daily bottom item = ข้าวเหนียว (lowest)", a16.bottomItems[0]?.name === "ข้าวเหนียว");
+  // advice: discount ~13.8% (≥8 → warning) + top-earning menu highlight; no
+  // WoW/MoM baseline in this dataset so no trend headline.
+  ok("advice flags high discount", a16.advice.some((l) => l.includes("ส่วนลดสูง")));
+  ok("advice highlights top menu", a16.advice.some((l) => l.includes("คอหมูย่าง")));
+  ok("advice capped at 4 lines", a16.advice.length <= 4);
 
   const wk = analytics.weeklyAnalytics(bid, "2026-09-16");
   ok("weekly Monday anchor", wk.weekStart === "2026-09-14" && wk.weekEnd === "2026-09-20");
@@ -215,6 +220,8 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("MoM bills vs วันที่16เดือนก่อน (23 vs 24)", near(bills2.momPct ?? 0, ((23 - 24) / 24) * 100));
   ok("WoW pax (43 vs 40)", near(pax2.wowPct ?? 0, ((43 - 40) / 40) * 100));
   ok("MoM pax (43 vs 45)", near(pax2.momPct ?? 0, ((43 - 45) / 45) * 100));
+  // nett 14658 vs พุธที่แล้ว 13000 = +12.8% → positive trend headline first.
+  ok("advice trend headline WoW-up", a2.advice[0]?.startsWith("ยอดขายสูงกว่าพุธที่แล้ว"));
 
   const mc = analytics.monthComparison(bid2, 2026, 9, "2026-09-30");
   const mtd = 14658 + 13000; // Sept days ≤30 with sales
