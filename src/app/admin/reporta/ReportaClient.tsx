@@ -329,10 +329,10 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const sendPush = () => {
     if (!plan) return;
     setPin({
-      title: `ส่งแผนดันยอด ${plan.days} วัน เข้ากลุ่ม HOD`,
+      title: `ส่งรายงานผู้บริหาร (แผนผลักดันยอดขาย ${plan.days} วัน)`,
       run: async (p) => {
         const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "push", days: plan.days, target: plan.targetBaht, pin: p }) }).then((x) => x.json());
-        if (r.ok) setMsg({ kind: "ok", text: "ส่งแผนดันยอดเข้ากลุ่ม HOD แล้ว" });
+        if (r.ok) setMsg({ kind: "ok", text: "ส่งรายงานผู้บริหารแล้ว" });
         return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
       }
     });
@@ -417,8 +417,8 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         <div className="flex items-start gap-3">
           <OwlMascot size={44} mood="thinking" className="shrink-0" ariaLabel="น้องฮูก" />
           <div>
-            <h2 className="font-bold text-slate-800">แผนดันยอด · น้องฮูกแนะนำ</h2>
-            <p className="text-xs text-slate-500 mt-0.5">อยากได้ยอดเท่าไหร่ในกี่วัน? น้องฮูกจะดูข้อมูลย้อนหลังแล้วบอกว่าต้องดันขายอะไร ให้ HOD เอาไปบรีฟทีมได้เลย</p>
+            <h2 className="font-bold text-slate-800">แผนผลักดันยอดขาย · คำแนะนำจากน้องฮูก</h2>
+            <p className="text-xs text-slate-500 mt-0.5">ระบุยอดเป้าหมายและจำนวนวัน น้องฮูกจะวิเคราะห์ข้อมูลย้อนหลังและสรุปแนวทางผลักดันยอดขายให้ สำหรับ HOD นำไปบรีฟทีม</p>
           </div>
         </div>
         <div className="flex flex-wrap items-end gap-3">
@@ -436,7 +436,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               className="w-40 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
           </label>
           <button onClick={runPush} disabled={planBusy} className="btn-primary text-sm disabled:opacity-50">
-            {planBusy ? "กำลังคิด…" : "ให้น้องฮูกแนะนำ"}
+            {planBusy ? "กำลังวิเคราะห์…" : "ขอคำแนะนำจากน้องฮูก"}
           </button>
         </div>
 
@@ -459,14 +459,14 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Kpi label="ต้องได้เฉลี่ย/วัน" value={baht(plan.requiredPerDay)} accent />
                 <Kpi label="คาดการณ์ตามปกติ/วัน" value={baht(plan.baselinePerDay)} />
-                <Kpi label="ส่วนต่างที่ต้องดัน" value={plan.gap > 0 ? `+${baht(plan.gap)}` : "ถึงแล้ว"} />
+                <Kpi label="ส่วนต่างที่ต้องเพิ่ม" value={plan.gap > 0 ? `+${baht(plan.gap)}` : "บรรลุแล้ว"} />
                 <Kpi label="เทียบยอดปกติ" value={plan.liftPct != null ? `${plan.liftPct > 0 ? "+" : ""}${plan.liftPct.toFixed(0)}%` : "—"} />
               </div>
             )}
 
             {plan.advice.length > 0 && (
               <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-                <div className="text-xs font-bold mb-1" style={{ color: cardColor }}>บรีฟดันยอด (อ่านให้ทีม)</div>
+                <div className="text-xs font-bold mb-1" style={{ color: cardColor }}>สรุปประเด็นสำหรับบรีฟทีม</div>
                 <ul className="space-y-1">
                   {plan.advice.map((line, i) => (
                     <li key={i} className="flex gap-2 text-sm text-slate-700">
@@ -479,7 +479,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
 
             <div className="flex items-center gap-2 flex-wrap">
               <button onClick={sendPush} disabled={!hasLineGroup || !plan.hasBaseline}
-                className="btn-success text-sm px-4 py-2 disabled:opacity-50">ส่งบรีฟเข้ากลุ่ม HOD</button>
+                className="btn-success text-sm px-4 py-2 disabled:opacity-50">ส่งรายงานผู้บริหาร</button>
               {!hasLineGroup && <span className="text-[11px] text-slate-400">ตั้งกลุ่ม LINE ก่อนถึงจะส่งได้</span>}
             </div>
           </div>

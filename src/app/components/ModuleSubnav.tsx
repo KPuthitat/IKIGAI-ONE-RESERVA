@@ -86,12 +86,27 @@ export default function ModuleSubnav({
 
   if (mode === "chips") {
     // Mobile: a dropdown instead of a horizontal slider (owner 2026-09-18:
-    // "สไลด์ดูยาก → ดรอปดาวน์ดีกว่า"). The trigger shows the current sub-page;
-    // tapping reveals every item in one vertical list, so nothing is hidden
-    // off-screen. Section headings dropped — the tab bar already names the
-    // module.
-    const activeItem = items.find((it) => isActive(it.href)) ?? null;
-    const totalBadge = items.reduce((n, it) => n + (typeof it.badge === "number" ? it.badge : 0), 0);
+    // "สไลด์ดูยาก → ดรอปดาวน์ดีกว่า"). It lists ONLY the active module's own
+    // sub-menu (owner 2026-09-18: "เฉพาะเมนูย่อยของโมดูลนั้นเท่านั้น") — the
+    // global module/settings section (no pathPrefix) is shown only when the
+    // user isn't inside any module (e.g. the admin home), so those pages stay
+    // reachable on mobile.
+    const moduleSections = visible.filter((s) => s.pathPrefix);
+    const chipItems = (moduleSections.length ? moduleSections : visible).flatMap((s) => s.items);
+    // A page can live in the global (no-pathPrefix) section yet sit under a
+    // module path (e.g. messaging quota under /admin/persona). If the current
+    // page isn't already listed, surface its own entry so it stays reachable
+    // and the trigger can label it (review 2026-09-18).
+    if (moduleSections.length && !chipItems.some((it) => it.href.split("?")[0] === pathname)) {
+      const here = items.find((it) => it.href.split("?")[0] === pathname);
+      if (here) chipItems.push(here);
+    }
+    if (chipItems.length === 0) return null;
+    // Prefer an exact path match (so a nested page labels itself instead of the
+    // module dashboard, which prefix-matches every sub-path).
+    const activeItem = chipItems.find((it) => it.href.split("?")[0] === pathname)
+      ?? chipItems.find((it) => isActive(it.href)) ?? null;
+    const totalBadge = chipItems.reduce((n, it) => n + (typeof it.badge === "number" ? it.badge : 0), 0);
     return (
       <div className="relative" aria-label="เมนูย่อย">
         <button
@@ -118,7 +133,7 @@ export default function ModuleSubnav({
             {/* tap-away backdrop */}
             <button type="button" aria-hidden tabIndex={-1} onClick={() => setOpen(false)} className="fixed inset-0 z-20 cursor-default" />
             <div role="menu" className="absolute left-0 right-0 z-30 mt-1.5 max-h-[65vh] overflow-y-auto rounded-2xl border border-[#EFE4D3] bg-white p-1.5 shadow-lg">
-              {items.map((item) => {
+              {chipItems.map((item) => {
                 const active = isActive(item.href);
                 return (
                   <Link
