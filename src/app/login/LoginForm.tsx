@@ -85,17 +85,14 @@ export default function LoginForm({
         setErr(data.error || t("login.error.generic"));
         return;
       }
-      // Landing by role (owner 2026-06-11): super_admin's home is the Admin
-      // Console, so they go through the ADMIN branch picker → /admin. Admins
-      // and staff are employees first → STAFF branch picker → /staff. Both
-      // pickers auto-skip straight through when there's only one eligible
-      // branch, so single-branch users feel no extra step.
-      // Always route through the branch picker so an active branch is set
-      // (it auto-skips for single-branch users). When a deep-link target is
-      // present (a tapped LINE card → /login?next=…), pass it through the
-      // picker so it forwards there after the branch is chosen — instead of
-      // jumping straight to a page that would then demand a branch.
-      const pickerBase = data.is_super_admin
+      // Landing (owner 2026-09-18): anyone with admin-console access — super_admin,
+      // branch-admins, RBAC module holders — goes through the ADMIN branch picker
+      // → /admin, the page with all their modules. Plain staff → STAFF picker →
+      // /staff. Both pickers auto-skip when there's a single eligible branch, so
+      // single-branch users feel no extra step. A deep-link target (a tapped LINE
+      // card → /login?next=…) is passed through the picker so it forwards there
+      // after the branch is chosen, instead of demanding a branch mid-jump.
+      const pickerBase = data.lands_on_admin
         ? "/admin/branch-picker"
         : (data.branchCount ?? 0) >= 1
           ? "/staff/branch-picker"

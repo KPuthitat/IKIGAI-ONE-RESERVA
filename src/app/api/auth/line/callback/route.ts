@@ -37,7 +37,7 @@ export async function GET(req: Request) {
   const gate = accountStateError(user.id);
   if (gate) return fail(gate.error_code);
 
-  const { branchCount, isSuperAdmin } = finalizeLogin(user.id, user.role);
-  const dest = loginLandingPath(isSuperAdmin, branchCount, savedNext || null);
+  const { branchCount, landsOnAdmin } = finalizeLogin(user.id, user.role);
+  const dest = loginLandingPath(landsOnAdmin, branchCount, savedNext || null);
   return NextResponse.redirect(`${base}${dest}`);
 }
