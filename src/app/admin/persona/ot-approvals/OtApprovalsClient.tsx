@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { nameWithPrefix } from "@/lib/name";
 import { thMonthLabel, thDayLabel, groupByMonthDay } from "@/lib/th-month";
+import { snapTo15 } from "@/lib/time";
 import PinPromptModal from "@/app/components/PinPromptModal";
 
 type SegStatus = "pending" | "approved" | "rejected";
@@ -152,8 +153,8 @@ function AddOtForm({ staff, onAdded }: { staff: OtStaff[]; onAdded: () => void }
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: Number(userId), work_date: date,
-          ...(validUntil ? { requested_until: until } : {}),
-          ...(validFrom ? { requested_from: from } : {}),
+          ...(validUntil ? { requested_until: snapTo15(until, "nearest") } : {}),
+          ...(validFrom ? { requested_from: snapTo15(from, "nearest") } : {}),
           pin
         })
       });
@@ -205,12 +206,12 @@ function AddOtForm({ staff, onAdded }: { staff: OtStaff[]; onAdded: () => void }
         </div>
         <div>
           <label className="text-[11px] text-slate-500 block">เข้าก่อนเวลา</label>
-          <input type="time" className="input !w-auto !py-1 text-sm" value={from}
+          <input type="time" step={900} className="input !w-auto !py-1 text-sm" value={from}
             onChange={(e) => setFrom(e.target.value)} />
         </div>
         <div>
           <label className="text-[11px] text-slate-500 block">ทำถึงเวลา</label>
-          <input type="time" className="input !w-auto !py-1 text-sm" value={until}
+          <input type="time" step={900} className="input !w-auto !py-1 text-sm" value={until}
             onChange={(e) => setUntil(e.target.value)} />
         </div>
         <button type="button" disabled={busy || !ready} onClick={() => setPinOpen(true)}
@@ -281,7 +282,7 @@ function SegmentEditor({
     setErr(null);
     try {
       const body: Record<string, unknown> = { action, segment };
-      if (action === "approve" && changed) { body[timeField] = time; if (pin) body.pin = pin; }
+      if (action === "approve" && changed) { body[timeField] = snapTo15(time, "nearest"); if (pin) body.pin = pin; }
       const res = await fetch(apiUrl(`/api/admin/persona/ot-requests/${row.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -311,7 +312,7 @@ function SegmentEditor({
           {segment === "early" ? "เข้าก่อนเวลา (OT)" : "อยู่เกินเวลา (OT)"}
         </span>
         <label className="text-xs text-slate-500">{label}</label>
-        <input type="time" className="input !w-auto !py-1 text-sm" value={time}
+        <input type="time" step={900} className="input !w-auto !py-1 text-sm" value={time}
           onChange={(e) => setTime(e.target.value)} />
         {changed && <span className="text-[11px] text-amber-700">แก้เวลา — ต้องใส่ PIN</span>}
         <div className="flex gap-2 ml-auto">

@@ -29,6 +29,16 @@ export function minutesToTime(mins: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+/** Snap an HH:MM time onto the 15-minute grid (owner 2026-09-18: OT requests
+ *  choose minutes 00/15/30/45 only). Clamped to 23:45 so a ceil never wraps
+ *  past midnight. Non-HH:MM input is returned unchanged. */
+export function snapTo15(hhmm: string, mode: "floor" | "nearest" | "ceil" = "nearest"): string {
+  if (!/^\d{1,2}:[0-5]\d$/.test(hhmm)) return hhmm;
+  const mins = timeToMinutes(hhmm);
+  const q = mode === "floor" ? Math.floor(mins / 15) : mode === "ceil" ? Math.ceil(mins / 15) : Math.round(mins / 15);
+  return minutesToTime(Math.min(q * 15, 23 * 60 + 45));
+}
+
 export function bookingStartMs(date: string, time: string): number {
   // Returns the UTC ms for a booking date+time interpreted as Bangkok local
   const [y, mo, d] = date.split("-").map(Number);

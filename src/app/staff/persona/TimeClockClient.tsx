@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
 import { useLang } from "@/lib/LangProvider";
-import { bkkHHMM, bkkDateIso } from "@/lib/time";
+import { bkkHHMM, bkkDateIso, snapTo15 } from "@/lib/time";
 
 type TimeEntry = { id: number; type: "in" | "out"; ts: string; branch?: string | null };
 
@@ -483,13 +483,14 @@ function ClockAction({
       setOtErr(t("staff.persona.ot.needTime"));
       return;
     }
+    const until = snapTo15(otUntil, "nearest");   // enforce the 15-min grid
     setOtBusy(true);
     setOtErr(null);
     try {
       const res = await fetch(apiUrl("/api/persona/ot-requests"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ work_date: todayBkk, requested_until: otUntil })
+        body: JSON.stringify({ work_date: todayBkk, requested_until: until })
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) setPhase("ot_done");
@@ -814,7 +815,9 @@ function ClockAction({
           const nowHHMM = `${String(bkkNow.getUTCHours()).padStart(2, "0")}:${String(bkkNow.getUTCMinutes()).padStart(2, "0")}`;
           setOtStep("ask");
           setOtClockOut(nowHHMM);
-          setOtUntil(nowHHMM);
+          // OT is requested on a 15-min grid (owner 2026-09-18). Floor the default
+          // to the completed quarter — exactly what the pay engine credits.
+          setOtUntil(snapTo15(nowHHMM, "floor"));
           setOtWorkedMin(typeof data.workedMinutesToday === "number" ? data.workedMinutesToday : null);
           setOtErr(null);
           setPhase("ot_ask");
@@ -1067,7 +1070,7 @@ function ClockAction({
                 disabled={otBusy}
                 className="py-3 rounded-xl bg-brand text-white text-sm font-bold active:scale-95 transition disabled:opacity-50"
               >
-                {otBusy ? t("common.submitting") : `ขอค่าล่วงเวลาถึง ${otClockOut || scheduledEnd || ""} น.`}
+                {otBusy ? t("common.submitting") : `ขอค่าล่วงเวลาถึง ${otUntil || scheduledEnd || ""} น.`}
               </button>
             </div>
             {otErr && <p className="text-rose-600 text-sm text-center">{otErr}</p>}
@@ -1083,6 +1086,7 @@ function ClockAction({
             <label className="text-xs text-slate-600">{t("staff.persona.ot.untilLabel")}</label>
             <input
               type="time"
+              step={900}
               value={otUntil}
               onChange={(e) => setOtUntil(e.target.value)}
               className="input text-center text-lg"
