@@ -106,16 +106,15 @@ export async function POST(req: Request) {
   const tabRole: "admin" | "staff" =
     authedRole === "super_admin" || authedRole === "admin" ? "admin" : "staff";
 
-  const { branchCount } = finalizeLogin(authedUserId, authedRole);
+  const { branchCount, landsOnAdmin } = finalizeLogin(authedUserId, authedRole);
 
-  // `is_super_admin` lets the client route super_admin straight to the
-  // /admin console (its dedicated entry, unchanged) while every other
-  // role — including plain admin — lands on the module picker first
-  // (admin is an employee first; management is an opt-in toggle).
+  // `lands_on_admin` routes super_admin and branch-admins straight to /admin —
+  // the page with all their modules (owner 2026-09-18) — while everyone else
+  // lands on the staff picker.
   return NextResponse.json({
     ok: true,
     role: tabRole,
-    is_super_admin: authedRole === "super_admin",
+    lands_on_admin: landsOnAdmin,
     branchCount
   });
 }
