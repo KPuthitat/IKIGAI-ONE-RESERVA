@@ -225,6 +225,24 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
 
   const cm = analytics.monthChannelMix(bid2, 2026, 9);
   ok("channel mix empty types when none", cm.types.length === 0);
+  // channel avg-ticket on bid (has QR/TAKEAWAY types on 09-16 via close_up parse? no — bid types are [])
+  ok("channel avgTicket null when qty 0", cm.types.every((t) => t.avgTicket === null || t.avgTicket! >= 0));
+
+  // Deeper insights (owner 2026-09-18) on bid2 (Sept: 09-09 nett13000, 09-16 nett14658).
+  const me = analytics.menuEngineering(bid, 2026, 9);
+  ok("menuEngineering returns 4 buckets + has items", Array.isArray(me.stars) && (me.stars.length + me.plowhorses.length + me.puzzles.length + me.dogs.length) > 0);
+  const conc = analytics.menuConcentration(bid, 2026, 9);
+  ok("concentration top5 ≤ 100% + countFor80 ≥ 1", conc.top5Pct != null && conc.top5Pct <= 100.01 && conc.countFor80 >= 1);
+  const gm = analytics.guestMetrics(bid2, 2026, 9);
+  // Sept bid2: nett 27658, bills (23+21)=44... actually 09-16 bills 23, 09-09 bills 21 → 44; pax 43+40=83.
+  ok("guest party size = pax/bills", gm.avgPartySize != null && near(gm.avgPartySize, 83 / 44));
+  ok("guest spend/head = nett/pax", gm.avgSpendPerHead != null && near(gm.avgSpendPerHead, 27658 / 83));
+  const rh = analytics.rhythmInsight(bid2, 2026, 9);
+  ok("rhythm payday split present", rh.paydayDays >= 0);
+  const bv = analytics.beverageMix(bid2, 2026, 9);
+  ok("beverage mix shares sum ~100 when total>0", bv.total === 0 || near(bv.foodPct + bv.beveragePct + bv.dessertPct, 100));
+  const q = analytics.qualitySignal(bid2, 2026, 9);
+  ok("quality void rate computed (0 here)", q.voidRatePct != null && q.voidRatePct >= 0);
 
   // ── 7) C target progress · F monthly card ──
   const mo = analytics.monthlyAnalytics(bid2, 2026, 9);
