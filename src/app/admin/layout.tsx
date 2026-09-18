@@ -10,6 +10,7 @@ import HeaderBrand from "../HeaderBrand";
 import LangToggle from "../LangToggle";
 import Footer from "../Footer";
 import { type SidebarSection } from "../components/Sidebar";
+import { ADMIN_MODULES } from "@/lib/admin-modules";
 import ModuleTabs, { type ModuleTab } from "../components/ModuleTabs";
 import ModuleSubnav from "../components/ModuleSubnav";
 import { ActionBarProvider } from "../components/ActionBar";
@@ -122,33 +123,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       label: t(lang, "sidebar.section.modules"),
       items: [
         { href: "/admin", label: t(lang, "sidebar.modulePicker") },
-        // Module links are filtered by RBAC (2026-06-04): each appears
-        // only when the user's roles grant that module. super_admin and
-        // roleless full branch-admins see them all (see canModule).
-        ...(canModule(user, "persona.manage") ? [{ href: gate("/admin/persona"), label: "PERSONA" }] : []),
-        ...(canModule(user, "reserva.manage") ? [{ href: gate("/admin/reserva"), label: "RESERVA" }] : []),
-        // INVENTA lives under /staff (clinic staff tool; admins are
-        // employees too). Always shown — it's a staff-level tool, not
-        // gated by the admin-module RBAC. The INVENTA settings page is
-        // reached from inside INVENTA itself (its own sidebar section +
-        // the toolbar) — not duplicated at module level here.
-        { href: gate("/staff/inventa"), label: "INVENTA" },
-        ...(canModule(user, "ascenda.view") ? [{ href: gate("/admin/ascenda"), label: "ASCENDA" }] : []),
-        ...(canModule(user, "insigna.view") ? [{ href: gate("/admin/insigna"), label: "INSIGNA" }] : []),
-        ...(canModule(user, "recruita.access") ? [{ href: gate("/admin/recruita"), label: "RECRUITA" }] : []),
-        // ACCOUNTA — accounting + feasibility (owner 2026-06-16). RBAC-gated:
-        // only admins granted accounta.manage (and super_admin / roleless
-        // full-admins) see it. FEASIBILITY lives inside it.
-        ...(canModule(user, "accounta.manage") ? [{ href: gate("/admin/accounta"), label: "ACCOUNTA" }] : []),
-        // REPORTA — daily POS sales analytics (owner 2026-09-16). RBAC-gated to
-        // admins + supervisors (หัวหน้างาน) granted reporta.manage.
-        ...(canModule(user, "reporta.manage") ? [{ href: gate("/admin/reporta"), label: "REPORTA" }] : []),
-        // DELIVERA — self-run delivery (owner 2026-07). RBAC-gated; ships dark per
-        // branch (delivera_enabled) so the link is harmless until a branch opts in.
-        ...(canModule(user, "delivera.manage") ? [{ href: gate("/admin/delivera/kitchen"), label: "DELIVERA" }] : []),
-        // IR — incident report / risk management (owner 2026-08). RBAC-gated;
-        // every branch runs it (no per-branch opt-in), so the link is plain.
-        ...(canModule(user, "ir.manage") ? [{ href: gate("/admin/ir"), label: "IR" }] : []),
+        // Module links come from the shared ADMIN_MODULES registry (owner
+        // 2026-09-18) so this list, the top tab bar, and the landing cards
+        // are always identical, in the same order. RBAC-gated per module.
+        ...ADMIN_MODULES
+          .filter((m) => m.perm == null || canModule(user, m.perm))
+          .map((m) => ({ href: gate(m.href), label: m.label })),
         // System-wide entries — only super_admin can manage these,
         // so hide them from regular admins to keep the sidebar clean.
         // The pages still enforce requireSuperAdmin() server-side as
@@ -395,15 +375,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // remaining pathPrefix-scoped sections become the contextual sub-nav.
   const moduleTabs: ModuleTab[] = [
     { key: "home", label: t(lang, "sidebar.modulePicker"), href: "/admin", base: "/admin", exact: true },
-    ...(canModule(user, "persona.manage") ? [{ key: "persona", label: "PERSONA", href: gate("/admin/persona"), base: "/admin/persona" }] : []),
-    ...(canModule(user, "reserva.manage") ? [{ key: "reserva", label: "RESERVA", href: gate("/admin/reserva"), base: "/admin/reserva" }] : []),
-    { key: "inventa", label: "INVENTA", href: gate("/staff/inventa"), base: "/staff/inventa" },
-    ...(canModule(user, "ascenda.view") ? [{ key: "ascenda", label: "ASCENDA", href: gate("/admin/ascenda"), base: "/admin/ascenda" }] : []),
-    ...(canModule(user, "insigna.view") ? [{ key: "insigna", label: "INSIGNA", href: gate("/admin/insigna"), base: "/admin/insigna" }] : []),
-    ...(canModule(user, "recruita.access") ? [{ key: "recruita", label: "RECRUITA", href: gate("/admin/recruita"), base: "/admin/recruita" }] : []),
-    ...(canModule(user, "accounta.manage") ? [{ key: "accounta", label: "ACCOUNTA", href: gate("/admin/accounta"), base: "/admin/accounta" }] : []),
-    ...(canModule(user, "delivera.manage") ? [{ key: "delivera", label: "DELIVERA", href: gate("/admin/delivera/kitchen"), base: "/admin/delivera" }] : []),
-    ...(canModule(user, "ir.manage") ? [{ key: "ir", label: "IR", href: gate("/admin/ir"), base: "/admin/ir" }] : []),
+    // Module tabs derive from the shared ADMIN_MODULES registry so this bar and
+    // the landing cards stay identical (owner 2026-09-18).
+    ...ADMIN_MODULES
+      .filter((m) => m.perm == null || canModule(user, m.perm))
+      .map((m) => ({ key: m.key, label: m.label, href: gate(m.href), base: m.base })),
     ...(isSuperAdmin ? [
       { key: "roles", label: "บทบาทและสิทธิ์", href: "/admin/roles", base: "/admin/roles" },
       { key: "settings", label: t(lang, "admin.systemSettings.title"), href: "/admin/system-settings", base: "/admin/system-settings" },

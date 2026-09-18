@@ -3,64 +3,26 @@ import type { Metadata } from "next";
 import { requireAdmin, canModule } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import { HubCard, type HubCardProps } from "@/components/HubCard";
+import { HubCard } from "@/components/HubCard";
 import { Icon } from "@/components/Icon";
+import { ADMIN_MODULES } from "@/lib/admin-modules";
 
 export const metadata: Metadata = { title: "ADMIN" };
 
 export default function AdminHomePage() {
   const user = requireAdmin();
   const lang = getLang();
-  const moduleEyebrow = t(lang, "portal.label.module");
-  const openBackend = t(lang, "portal.openBackend");
 
-  // RBAC (2026-06-04): module cards mirror the sidebar — each shows only when
-  // the user's roles grant that module. INVENTA is a staff-level tool, always
-  // shown. Icon-card look shared with every hub landing (owner 2026-08-02).
-  const cards: (HubCardProps | null)[] = [
-    canModule(user, "persona.manage") ? {
-      href: "/admin/persona", icon: "persona", tone: "brand", eyebrow: moduleEyebrow,
-      title: t(lang, "portal.persona.title"), sub: t(lang, "portal.persona.adminDesc"), cta: openBackend,
-    } : null,
-    canModule(user, "reserva.manage") ? {
-      href: "/admin/reserva", icon: "reserva", tone: "sky", eyebrow: moduleEyebrow,
-      title: t(lang, "portal.reserva.title"), sub: t(lang, "portal.reserva.adminDesc"), cta: openBackend,
-    } : null,
-    {
-      href: "/staff/inventa", icon: "inventa", tone: "emerald", eyebrow: moduleEyebrow,
-      title: "INVENTA", sub: t(lang, "inv.module.desc"), cta: t(lang, "portal.openModule"),
-    },
-    canModule(user, "insigna.view") ? {
-      href: "/admin/insigna", icon: "insigna", tone: "violet", eyebrow: moduleEyebrow,
-      title: "INSIGNA",
-      sub: "ระบบวิเคราะห์ลูกค้า · persona · churn · attribution · privacy-first",
-      cta: openBackend, badge: { label: "NEW", tone: "emerald" },
-    } : null,
-    canModule(user, "recruita.access") ? {
-      href: "/admin/recruita", icon: "recruita", tone: "amber", eyebrow: moduleEyebrow,
-      title: "RECRUITA",
-      sub: "ระบบรับสมัครงาน · ตำแหน่ง · ใบสมัคร · pipeline → bridge เข้า PERSONA",
-      cta: openBackend, badge: { label: "NEW", tone: "emerald" },
-    } : null,
-    canModule(user, "accounta.manage") ? {
-      href: "/admin/accounta", icon: "accounta", tone: "rose", eyebrow: moduleEyebrow,
-      title: "ACCOUNTA",
-      sub: "บัญชีรายรับ-รายจ่าย · ภาษีซื้อ-ขาย · บัญชีรายวัน · ประเมินความเป็นไปได้ (FEASIBILITY)",
-      cta: openBackend, badge: { label: "NEW", tone: "emerald" },
-    } : null,
-    canModule(user, "reporta.manage") ? {
-      href: "/admin/reporta", icon: "chart", tone: "emerald", eyebrow: moduleEyebrow,
-      title: "REPORTA",
-      sub: "วิเคราะห์ยอดขายรายวัน · นำเข้าไฟล์ POS · เมนูทำรายได้สูงสุด · การ์ด LINE หัวหน้างาน",
-      cta: openBackend, badge: { label: "NEW", tone: "emerald" },
-    } : null,
-    canModule(user, "ascenda.view") ? {
-      href: "/admin/ascenda", icon: "ascenda", tone: "slate", eyebrow: moduleEyebrow,
-      title: t(lang, "portal.ascenda.title"), sub: t(lang, "portal.ascenda.adminDesc"),
-      cta: t(lang, "portal.previewModule"), muted: true,
-      badge: { label: t(lang, "portal.label.comingSoon"), tone: "amber" },
-    } : null,
-  ];
+  // Same branch-gate as the tab bar: with no active branch, route through the
+  // picker first (it auto-skips for single-branch users) so a card and its tab
+  // behave identically (review 2026-09-18).
+  const needBranch = !user.activeBranchId;
+  const gate = (href: string) => (needBranch ? `/admin/branch-picker?next=${encodeURIComponent(href)}` : href);
+
+  // Cards derive from the shared ADMIN_MODULES registry, in the same order as
+  // the top tab bar, so the two can never diverge (owner 2026-09-18). Compact
+  // single-row layout — smaller, less text.
+  const cards = ADMIN_MODULES.filter((m) => m.perm == null || canModule(user, m.perm));
 
   return (
     <div className="space-y-6">
@@ -69,9 +31,10 @@ export default function AdminHomePage() {
         <p className="text-sm text-slate-500 mt-1">{t(lang, "portal.adminSubtitle")}</p>
       </div>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {cards.filter((c): c is HubCardProps => c !== null).map((c) => (
-          <HubCard key={c.href} {...c} />
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {cards.map((m) => (
+          <HubCard key={m.key} compact href={gate(m.href)} icon={m.icon} tone={m.tone}
+            title={m.label} sub={t(lang, m.subKey)} badge={m.badge} muted={m.comingSoon} />
         ))}
       </div>
 
