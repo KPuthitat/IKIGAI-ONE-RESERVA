@@ -430,8 +430,9 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           </label>
           <label className="text-sm">
             <span className="block text-[11px] text-slate-500 mb-0.5">ยอดเป้าหมาย (บาท)</span>
-            <input type="text" inputMode="numeric" value={pushTarget} placeholder="เช่น 100,000"
-              onChange={(e) => setPushTarget(e.target.value)}
+            <input type="text" inputMode="numeric" placeholder="เช่น 100,000"
+              value={pushTarget ? Number(pushTarget).toLocaleString("th-TH") : ""}
+              onChange={(e) => setPushTarget(e.target.value.replace(/\D/g, ""))}
               onKeyDown={(e) => { if (e.key === "Enter") runPush(); }}
               className="w-40 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
           </label>
