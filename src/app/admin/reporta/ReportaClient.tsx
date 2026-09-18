@@ -238,8 +238,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       const r = await fetch("/api/admin/reporta/import", { method: "POST", body: fd }).then((x) => x.json());
       if (!r.ok) { setMsg({ kind: "err", text: r.message ?? r.error ?? "นำเข้าไม่สำเร็จ" }); }
       else {
-        const lines = r.imported.map((i: { kind: string; date: string; note: string }) => `${i.kind === "close_up" ? "ยอดขาย" : i.kind === "overview" ? "เมนู" : "ใบเสร็จ"} · ${thaiDate(i.date)} · ${i.note}`);
-        setMsg({ kind: "ok", text: `นำเข้าสำเร็จ: ${lines.join(" / ")}` });
+        setMsg({ kind: "ok", text: "นำเข้าไฟล์สำเร็จ" });
         setPicked([]);
         if (fileRef.current) fileRef.current.value = "";
         await loadMonth();

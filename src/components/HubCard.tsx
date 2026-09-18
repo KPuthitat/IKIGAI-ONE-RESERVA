@@ -22,6 +22,8 @@ export type HubCardProps = {
   muted?: boolean;
   /** Accent colour of the icon tile. Defaults to brand. */
   tone?: "brand" | "emerald" | "sky" | "violet" | "amber" | "rose" | "slate";
+  /** Compact single-row layout — smaller, less text (owner 2026-09-18). */
+  compact?: boolean;
 };
 
 const TONE_TILE: Record<NonNullable<HubCardProps["tone"]>, string> = {
@@ -42,8 +44,32 @@ const BADGE_TONE: Record<NonNullable<HubCardProps["badge"]>["tone"] & string, st
 };
 
 export function HubCard({
-  href, icon, title, sub, eyebrow, badge, cta, muted, tone = "brand",
+  href, icon, title, sub, eyebrow, badge, cta, muted, tone = "brand", compact,
 }: HubCardProps) {
+  if (compact) {
+    return (
+      <Link
+        href={href}
+        className={`card group flex items-center gap-3 !p-3 transition hover:shadow-lg hover:-translate-y-0.5 ${muted ? "opacity-80" : ""}`}
+      >
+        <span className={`inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${TONE_TILE[tone]} transition group-hover:scale-105`}>
+          <Icon name={icon} className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h2 className="truncate text-sm font-bold text-slate-800 group-hover:text-brand transition-colors">{title}</h2>
+            {badge && (
+              <span className={`flex-shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${BADGE_TONE[badge.tone ?? "emerald"]}`}>
+                {badge.label}
+              </span>
+            )}
+          </div>
+          {sub && <p className="truncate text-xs text-slate-400">{sub}</p>}
+        </div>
+        <Icon name="arrowRight" className={`h-4 w-4 flex-shrink-0 ${muted ? "text-slate-300" : "text-slate-300 group-hover:text-brand"}`} strokeWidth={2.25} />
+      </Link>
+    );
+  }
   return (
     <Link
       href={href}
