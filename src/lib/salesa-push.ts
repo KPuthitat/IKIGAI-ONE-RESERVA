@@ -132,44 +132,44 @@ export function salesPushPlan(branchId: number, targetBaht: number, days: number
   let verdictText: string;
   if (!hasBaseline) {
     verdict = "no_data";
-    verdictText = "ยังไม่มีข้อมูลยอดขายย้อนหลังพอจะประเมิน — นำเข้าไฟล์ให้ครบก่อน แล้วน้องฮูกจะช่วยวางแผนได้แม่นขึ้น";
+    verdictText = "ยังไม่มีข้อมูลยอดขายย้อนหลังเพียงพอสำหรับการประเมิน — กรุณานำเข้าไฟล์ให้ครบก่อน แล้วน้องฮูกจะช่วยวางแผนได้แม่นยำขึ้น";
   } else if (liftPct == null || liftPct <= 0) {
     verdict = "easy";
-    verdictText = `เป้านี้ต่ำกว่ายอดปกติของช่วงนี้ (คาดได้ราว ${baht0(baselineProjected)} บาท) — รักษาระดับการขายไว้ก็ถึงสบายๆ`;
+    verdictText = `เป้าหมายนี้ต่ำกว่ายอดขายปกติของช่วงเวลานี้ (คาดการณ์ประมาณ ${baht0(baselineProjected)} บาท) — เพียงรักษาระดับการขายไว้ก็บรรลุเป้าหมายได้`;
   } else if (liftPct <= 15) {
     verdict = "ontrack";
-    verdictText = `ท้าทายกำลังดี ต้องดันเพิ่มจากปกติราว ${liftPct}% — ทำตามแผนด้านล่างมีลุ้นถึงแน่`;
+    verdictText = `ท้าทายในระดับที่เหมาะสม ต้องเพิ่มยอดจากปกติประมาณ ${liftPct}% — หากดำเนินการตามแผนด้านล่างมีโอกาสบรรลุเป้าหมายสูง`;
   } else if (liftPct <= 35) {
     verdict = "stretch";
-    verdictText = `ต้องเร่งพอสมควร สูงกว่าปกติ ~${liftPct}% — ต้องอัปเซล/ครอสเซลเต็มที่ทุกโต๊ะ + ดันเมนูทำเงิน`;
+    verdictText = `ต้องเร่งพอสมควร สูงกว่ายอดขายปกติประมาณ ${liftPct}% — ควรใช้ upsell และ cross-sell อย่างเต็มที่ทุกโต๊ะ ควบคู่กับการผลักดันเมนูที่ทำรายได้หลัก`;
   } else if (liftPct <= 70) {
     verdict = "hard";
-    verdictText = `ยากมาก ต้องทำให้ได้สูงกว่าปกติ ~${liftPct}% ใน ${X} วัน — ต้องมีแคมเปญแรง (โปร/ยิงแอด/ลูกค้าเก่า) ไม่งั้นพลาดสูง`;
+    verdictText = `ยากมาก ต้องทำยอดขายสูงกว่าปกติประมาณ ${liftPct}% ภายใน ${X} วัน — จำเป็นต้องมี campaign กระตุ้นยอด (promotion / online ads / ลูกค้าเดิม) มิฉะนั้นมีโอกาสพลาดเป้าหมายสูง`;
   } else {
     verdict = "unrealistic";
-    verdictText = `ตรงๆ นะครับ เป้านี้สูงกว่ายอดปกติ ~${liftPct}% ในเวลาแค่ ${X} วัน โอกาสถึงยากมาก — แนะนำปรับเป้าลง หรือขยายจำนวนวัน แล้วค่อยลุยตามแผน`;
+    verdictText = `ขอเรียนตามตรง เป้าหมายนี้สูงกว่ายอดขายปกติประมาณ ${liftPct}% ในเวลาเพียง ${X} วัน โอกาสบรรลุเป้าหมายค่อนข้างต่ำ — แนะนำให้ปรับลดเป้าหมาย หรือขยายจำนวนวัน แล้วจึงดำเนินการตามแผน`;
   }
 
-  // The brief — HOD reads these out to the team.
+  // The brief — the HOD reads these out to the team.
   const advice: string[] = [];
   if (hasBaseline) {
     if (gap > 0) {
-      advice.push(`เป้า ${X} วัน = ${baht0(targetBaht)} บาท → ต้องได้เฉลี่ยวันละ ${baht0(requiredPerDay)} บาท (ปกติทำได้ราว ${baht0(baselinePerDay)} บาท/วัน ต้องเพิ่มอีก ${liftPct ?? 0}%)`);
+      advice.push(`เป้าหมาย ${X} วัน รวม ${baht0(targetBaht)} บาท ต้องทำยอดเฉลี่ยวันละ ${baht0(requiredPerDay)} บาท (ปกติทำได้ประมาณ ${baht0(baselinePerDay)} บาท/วัน จึงต้องเพิ่มอีกประมาณ ${liftPct ?? 0}%)`);
       const ways: string[] = [];
-      if (extraBillsPerDay != null) ways.push(`เพิ่มลูกค้าอีก ~${baht0(extraBillsPerDay)} บิล/วัน`);
-      if (extraTicketBaht != null) ways.push(`หรือดันยอดต่อบิลอีก ~${baht0(extraTicketBaht)} บาท/บิล`);
-      if (ways.length) advice.push(`วิธีปิดส่วนต่าง: ${ways.join(" ")}`);
+      if (extraBillsPerDay != null) ways.push(`เพิ่มจำนวนลูกค้าประมาณ ${baht0(extraBillsPerDay)} บิล/วัน`);
+      if (extraTicketBaht != null) ways.push(`หรือเพิ่มยอดขายต่อบิลประมาณ ${baht0(extraTicketBaht)} บาท/บิล`);
+      if (ways.length) advice.push(`แนวทางปิดส่วนต่าง: ${ways.join(" ")}`);
     } else {
-      advice.push(`เป้า ${X} วัน = ${baht0(targetBaht)} บาท → เฉลี่ยวันละ ${baht0(requiredPerDay)} บาท ซึ่งต่ำกว่ายอดปกติ (~${baht0(baselinePerDay)} บาท/วัน) รักษาระดับไว้ก็ถึง`);
+      advice.push(`เป้าหมาย ${X} วัน รวม ${baht0(targetBaht)} บาท เฉลี่ยวันละ ${baht0(requiredPerDay)} บาท ซึ่งต่ำกว่ายอดขายปกติ (ประมาณ ${baht0(baselinePerDay)} บาท/วัน) เพียงรักษาระดับการขายไว้ก็บรรลุเป้าหมาย`);
     }
   }
-  if (topEarners.length) advice.push(`ดันเมนูทำเงินหลัก: ${topEarners.slice(0, 3).map((m) => m.name).join(" · ")}`);
-  if (risers.length) advice.push(`เมนูมาแรง ดันต่อ: ${risers.map((m) => m.name).join(" · ")}`);
-  if (bevToFoodPct != null && bevToFoodPct < 25) advice.push(`เครื่องดื่ม/ของหวานยังน้อย (${bevToFoodPct}% ของยอดอาหาร) → อัปเซลเครื่องดื่มทุกโต๊ะ เป็นวิธีดันยอดต่อหัวที่เร็วสุด`);
-  if (crossSell.length) advice.push(`ขายพ่วง: ลูกค้าสั่ง "${crossSell[0].a}" มักสั่ง "${crossSell[0].b}" ด้วย → ให้พนักงานเสนอคู่นี้`);
+  if (topEarners.length) advice.push(`เมนูที่ทำรายได้หลัก ควรผลักดันเป็นลำดับแรก: ${topEarners.slice(0, 3).map((m) => m.name).join(" · ")}`);
+  if (risers.length) advice.push(`เมนูที่กำลังเติบโต (rising) ควรผลักดันต่อเนื่อง: ${risers.map((m) => m.name).join(" · ")}`);
+  if (bevToFoodPct != null && bevToFoodPct < 25) advice.push(`สัดส่วนเครื่องดื่มและของหวานยังต่ำ (${bevToFoodPct}% ของยอดอาหาร) — แนะนำ upsell เครื่องดื่มทุกโต๊ะ เป็นวิธีเพิ่มยอดขายต่อหัวได้เร็วที่สุด`);
+  if (crossSell.length) advice.push(`Cross-sell: ลูกค้าที่สั่ง "${crossSell[0].a}" มักสั่ง "${crossSell[0].b}" ด้วย — แนะนำให้พนักงานเสนอทั้งคู่`);
   if (strongestDate) {
     const sd = upcoming.find((d) => d.date === strongestDate)!;
-    advice.push(`วันแรงสุดในช่วงนี้: ${sd.weekdayTh} (${sd.label}) — จัดคน/สต๊อก/โปรเน้นวันนั้นเป็นพิเศษ`);
+    advice.push(`วันที่คาดว่ายอดขายสูงสุดในช่วงนี้: ${sd.weekdayTh} (${sd.label}) — ควรจัดกำลังคน เตรียม stock และเน้น promotion เป็นพิเศษ`);
   }
   if (verdict === "unrealistic" || verdict === "hard") advice.push(verdictText);
 

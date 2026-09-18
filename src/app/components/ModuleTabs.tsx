@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 // Top module-tab bar (redesign 2026-08). Replaces the module-switcher
 // section that used to live at the top of the dark left sidebar. Renders
@@ -52,34 +53,64 @@ export default function ModuleTabs({ tabs }: { tabs: ModuleTab[] }) {
   const isActive = (t: ModuleTab) =>
     t.exact ? pathname === t.base : pathname === t.base || pathname.startsWith(t.base + "/");
 
+  // Show the right-edge fade only while the row actually overflows and isn't
+  // scrolled to the end — so it never dims the last tab on a wide screen or a
+  // short list (review 2026-09-18).
+  const navRef = useRef<HTMLElement>(null);
+  const [showFade, setShowFade] = useState(false);
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const update = () => {
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+      setShowFade(el.scrollWidth > el.clientWidth + 1 && !atEnd);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [tabs.length]);
+
+  // Horizontal slider (owner 2026-09-18: keep the left/right swipe row). A soft
+  // fade on the right edge signals there are more modules to scroll to, so none
+  // ever look "dropped".
   return (
-    <nav
-      className="flex flex-wrap gap-1 rounded-2xl border border-[#EFE4D3] bg-white p-1.5 shadow-card"
-      aria-label="โมดูล"
-    >
-      {tabs.map((t) => {
-        const active = isActive(t);
-        return (
-          <Link
-            key={t.key}
-            href={t.href}
-            aria-current={active ? "page" : undefined}
-            className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-[13.5px] font-normal transition-colors ${
-              active
-                ? "bg-brand/10 text-brand-dark"
-                : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-            }`}
-          >
-            <Icon k={t.key} />
-            {t.label}
-            {t.badge ? (
-              <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold leading-none text-white">
-                {t.badge}
-              </span>
-            ) : null}
-          </Link>
-        );
-      })}
-    </nav>
+    <div className="relative">
+      <nav
+        ref={navRef}
+        className="flex gap-1 overflow-x-auto no-scrollbar rounded-2xl border border-[#EFE4D3] bg-white p-1.5 shadow-card"
+        aria-label="โมดูล"
+      >
+        {tabs.map((t) => {
+          const active = isActive(t);
+          return (
+            <Link
+              key={t.key}
+              href={t.href}
+              aria-current={active ? "page" : undefined}
+              className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-[13.5px] font-normal transition-colors ${
+                active
+                  ? "bg-brand/10 text-brand-dark"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+              }`}
+            >
+              <Icon k={t.key} />
+              {t.label}
+              {t.badge ? (
+                <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold leading-none text-white">
+                  {t.badge}
+                </span>
+              ) : null}
+            </Link>
+          );
+        })}
+      </nav>
+      {showFade && (
+        <div className="pointer-events-none absolute inset-y-1.5 right-1.5 w-8 rounded-r-2xl bg-gradient-to-l from-white to-transparent" aria-hidden />
+      )}
+    </div>
   );
 }

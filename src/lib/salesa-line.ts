@@ -266,7 +266,7 @@ export function salesaPushFlex(p: SalesPushPlan, meta: DailyCardMeta): FlexMsg {
     contents: [{ type: "text", text: p.verdictText, size: "xs", color: vColor, wrap: true }] });
   if (p.advice.length) {
     body.push(sep);
-    body.push({ type: "text", text: "บรีฟดันยอด (อ่านให้ทีม)", size: "xs", weight: "bold", color: meta.color });
+    body.push({ type: "text", text: "สรุปประเด็นสำหรับบรีฟทีม", size: "xs", weight: "bold", color: meta.color });
     p.advice.forEach((line) => body.push({
       type: "box", layout: "horizontal", spacing: "sm", contents: [
         { type: "text", text: "•", size: "sm", color: meta.color, flex: 0 },
@@ -276,14 +276,14 @@ export function salesaPushFlex(p: SalesPushPlan, meta: DailyCardMeta): FlexMsg {
   }
   if (p.topEarners.length) {
     body.push(sep);
-    body.push(...menuBlock("เมนูทำเงินหลัก (ช่วง 4 สัปดาห์)", p.topEarners));
+    body.push(...menuBlock("เมนูที่ทำรายได้หลัก (ช่วง 4 สัปดาห์)", p.topEarners));
   }
   return {
     type: "flex",
-    altText: `แผนดันยอด ${p.days} วัน ${baht(p.targetBaht)} · ${meta.branchName}`,
+    altText: `แผนผลักดันยอดขาย ${p.days} วัน ${baht(p.targetBaht)} · ${meta.branchName}`,
     contents: {
       type: "bubble", size: "giga",
-      header: header("แผนดันยอด · น้องฮูกแนะนำ", `${p.days} วัน · ${meta.branchName}`, meta.color),
+      header: header("แผนผลักดันยอดขาย · คำแนะนำจากน้องฮูก", `${p.days} วัน · ${meta.branchName}`, meta.color),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("สรุปโดยระบบ IKIGAI OS · แผนดันยอดระยะสั้น")
     }

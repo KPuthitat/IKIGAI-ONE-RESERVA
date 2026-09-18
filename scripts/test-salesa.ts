@@ -253,7 +253,7 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("push horizon 3 days 09-20..09-22", pHard.days === 3 && pHard.fromDate === "2026-09-20" && pHard.toDate === "2026-09-22");
   ok("push requiredPerDay = 100000/3", near(pHard.requiredPerDay, 100000 / 3));
   ok("push baseline = Sun weekday avg + 2×trailing avg", near(pHard.baselineProjected, 14000 + 2 * trailAvg));
-  ok("push target far above → unrealistic + honest verdict", pHard.verdict === "unrealistic" && pHard.gap > 0 && pHard.advice.some((l) => l.includes("สูงกว่ายอดปกติ")));
+  ok("push target far above → unrealistic + honest verdict", pHard.verdict === "unrealistic" && pHard.gap > 0 && pHard.advice.some((l) => l.includes("สูงกว่ายอดขายปกติ")));
   // Modest target below the normal run-rate → easy.
   const pEasy = push.salesPushPlan(bid2, 30000, 3, "2026-09-20");
   ok("push target below normal → easy + negative gap", pEasy.verdict === "easy" && pEasy.gap < 0);
