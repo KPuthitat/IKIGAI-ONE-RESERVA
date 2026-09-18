@@ -416,24 +416,43 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         {days.length === 0 ? (
           <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลในเดือนนี้ — นำเข้าไฟล์ด้านบน</p>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {days.map((d) => (
-              <div key={d.date} className={`flex items-center justify-between gap-2 py-2 cursor-pointer ${selDate === d.date ? "bg-emerald-50 -mx-2 px-2 rounded" : ""}`} onClick={() => loadDay(d.date)}>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-slate-800">{thaiDate(d.date)}</div>
-                  <div className="text-xs text-slate-500">
-                    {d.hasSales ? `${intTh(d.billCount)} บิล · ${intTh(d.pax)} คน` : "ยังไม่มียอดขาย"}
-                    {d.hasMenu ? " · มีเมนู" : ""}
-                    {d.hasReceipt ? " · มีใบเสร็จ" : ""}
-                    {d.dailySentAt ? " · ✓ ส่งแล้ว" : ""}
+          <>
+            {/* Missing-file summary for the month (owner 2026-09-18). */}
+            {(() => {
+              const inc = days.filter((d) => !(d.hasSales && d.hasMenu && d.hasReceipt));
+              if (!inc.length) return <div className="text-xs text-emerald-600">✓ ทุกวันในเดือนนี้ลงไฟล์ครบทั้ง 3 ชนิดแล้ว</div>;
+              const miss = (pred: (d: MonthDay) => boolean) => days.filter(pred).length;
+              return (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                  มี <b>{inc.length}</b> วันที่ลงไฟล์ไม่ครบ —
+                  {miss((d) => !d.hasSales) > 0 && <> ขาดยอดขาย {miss((d) => !d.hasSales)} วัน</>}
+                  {miss((d) => !d.hasMenu) > 0 && <> · ขาดเมนู {miss((d) => !d.hasMenu)} วัน</>}
+                  {miss((d) => !d.hasReceipt) > 0 && <> · ขาดใบเสร็จ {miss((d) => !d.hasReceipt)} วัน</>}
+                </div>
+              );
+            })()}
+            <div className="divide-y divide-slate-100">
+              {days.map((d) => (
+                <div key={d.date} className={`flex items-center justify-between gap-2 py-2 cursor-pointer ${selDate === d.date ? "bg-emerald-50 -mx-2 px-2 rounded" : ""}`} onClick={() => loadDay(d.date)}>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-800">{thaiDate(d.date)}</div>
+                    <div className="text-xs text-slate-500">
+                      {d.hasSales ? `${intTh(d.billCount)} บิล · ${intTh(d.pax)} คน` : "ยังไม่มียอดขาย"}
+                      {d.dailySentAt ? " · ✓ ส่งแล้ว" : ""}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      <FileChip label="ยอดขาย" present={d.hasSales} />
+                      <FileChip label="เมนู" present={d.hasMenu} />
+                      <FileChip label="ใบเสร็จ" present={d.hasReceipt} />
+                    </div>
+                  </div>
+                  <div className="text-right whitespace-nowrap">
+                    <div className="text-sm font-bold text-slate-900">{d.hasSales ? baht(d.nett) : "—"}</div>
                   </div>
                 </div>
-                <div className="text-right whitespace-nowrap">
-                  <div className="text-sm font-bold text-slate-900">{d.hasSales ? baht(d.nett) : "—"}</div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -784,6 +803,12 @@ function MomentumList({ title, list, up }: { title: string; list: MenuMomentum[]
       </ol>
     </div>
   );
+}
+
+function FileChip({ label, present }: { label: string; present?: boolean }) {
+  return present
+    ? <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 text-[10px] font-medium">✓ {label}</span>
+    : <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 border border-amber-300 px-2 py-0.5 text-[10px] font-medium">ขาด{label}</span>;
 }
 
 function HourBars({ hours, peak }: { hours: Array<{ hour: number; bills: number; nett: number }>; peak: number | null }) {
