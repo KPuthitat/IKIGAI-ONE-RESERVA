@@ -446,12 +446,26 @@ export type DiscountInsight = {
   days: number;
 };
 
-/** Discount ROI signal for a month (owner D): does heavier discounting move
- *  sales? Split days by median discount% and compare average nett. */
-export function discountInsight(branchId: number, year: number, month: number): DiscountInsight {
+// ── Range helpers (owner 2026-09-18): the same insights over a month OR an ISO
+// week. Public month wrappers stay; a range core does the work so the dashboard
+// can toggle สัปดาห์/เดือน. ────────────────────────────────────────────────────
+function monthRange(year: number, month: number): [string, string] {
   const mm = String(month).padStart(2, "0");
-  const rows = listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`)
-    .filter((d) => d.has_sales && d.gross > 0);
+  return [`${year}-${mm}-01`, `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`];
+}
+function prevMonthRange(year: number, month: number): [string, string] {
+  const pm = month === 1 ? 12 : month - 1;
+  const pmY = month === 1 ? year - 1 : year;
+  return monthRange(pmY, pm);
+}
+function salesRows(branchId: number, start: string, end: string): DailyRow[] {
+  return listRange(branchId, start, end).filter((d) => d.has_sales);
+}
+
+/** Discount ROI signal (owner D): does heavier discounting move sales? Split
+ *  days by median discount% and compare average nett. */
+function rangeDiscountInsight(branchId: number, start: string, end: string): DiscountInsight {
+  const rows = salesRows(branchId, start, end).filter((d) => d.gross > 0);
   if (!rows.length) return { avgDiscountPct: null, totalDiscount: 0, highDiscAvgNett: null, lowDiscAvgNett: null, days: 0 };
   const withPct = rows.map((d) => ({ nett: d.nett, dpct: Math.abs(d.discount) / d.gross }));
   const totalDiscount = round2(rows.reduce((s, d) => s + Math.abs(d.discount), 0));
@@ -463,16 +477,18 @@ export function discountInsight(branchId: number, year: number, month: number): 
   const avg = (arr: { nett: number }[]) => (arr.length ? round2(arr.reduce((s, d) => s + d.nett, 0) / arr.length) : null);
   return { avgDiscountPct, totalDiscount, highDiscAvgNett: avg(high), lowDiscAvgNett: avg(low), days: rows.length };
 }
+export function discountInsight(branchId: number, year: number, month: number): DiscountInsight {
+  const [s, e] = monthRange(year, month);
+  return rangeDiscountInsight(branchId, s, e);
+}
 
 export type ChannelSlice = { name: string; sales: number; qty: number; pct: number; avgTicket: number | null };
 export type ChannelMix = { types: ChannelSlice[]; payments: ChannelSlice[]; sources: ChannelSlice[] };
 
-/** Aggregate order types / payment methods / sources over a month, with each
+/** Aggregate order types / payment methods / sources over a range, with each
  *  slice's share of the total (owner E). */
-export function monthChannelMix(branchId: number, year: number, month: number): ChannelMix {
-  const mm = String(month).padStart(2, "0");
-  const rows = listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`)
-    .filter((d) => d.has_sales);
+function rangeChannelMix(branchId: number, start: string, end: string): ChannelMix {
+  const rows = salesRows(branchId, start, end);
   const acc = (pick: (d: DailyRow) => Array<{ name: string; sales: number; qty: number }>): ChannelSlice[] => {
     const map = new Map<string, { sales: number; qty: number }>();
     for (const d of rows) for (const e of pick(d)) {
@@ -490,16 +506,15 @@ export function monthChannelMix(branchId: number, year: number, month: number): 
     sources: acc((d) => d.sources.map((s) => ({ name: s.name, sales: s.sales, qty: s.qty })))
   };
 }
+export function monthChannelMix(branchId: number, year: number, month: number): ChannelMix {
+  const [s, e] = monthRange(year, month);
+  return rangeChannelMix(branchId, s, e);
+}
 
 // ── Deeper marketing insights (owner 2026-09-18: เอาหมดเลย) ──────────────────
 
-function monthMenu(branchId: number, year: number, month: number, kind: "item" | "category"): MenuEntry[] {
-  const mm = String(month).padStart(2, "0");
-  return menuRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`, kind);
-}
-
 // #1 Menu engineering — classify menus by revenue (high/low vs median) × momentum
-// (rising/falling vs last month). Star / Plowhorse / Puzzle / Dog.
+// (rising/falling vs the previous period). Star / Plowhorse / Puzzle / Dog.
 export type MenuClass = { name: string; nett: number; deltaPct: number | null; isNew: boolean };
 export type MenuEngineering = {
   stars: MenuClass[];        // high revenue + rising
@@ -508,11 +523,9 @@ export type MenuEngineering = {
   dogs: MenuClass[];         // low revenue + falling
   medianNett: number;
 };
-export function menuEngineering(branchId: number, year: number, month: number, topN = 6): MenuEngineering {
-  const items = monthMenu(branchId, year, month, "item");
-  const pm = month === 1 ? 12 : month - 1;
-  const pmY = month === 1 ? year - 1 : year;
-  const prev = new Map(monthMenu(branchId, pmY, pm, "item").map((m) => [m.name, m.nett]));
+function rangeMenuEngineering(branchId: number, start: string, end: string, prevStart: string, prevEnd: string, topN = 6): MenuEngineering {
+  const items = menuRange(branchId, start, end, "item");
+  const prev = new Map(menuRange(branchId, prevStart, prevEnd, "item").map((m) => [m.name, m.nett]));
   if (!items.length) return { stars: [], plowhorses: [], puzzles: [], dogs: [], medianNett: 0 };
   const sorted = [...items].map((m) => m.nett).sort((a, b) => a - b);
   const medianNett = sorted[Math.floor(sorted.length / 2)];
@@ -531,6 +544,11 @@ export function menuEngineering(branchId: number, year: number, month: number, t
     medianNett: round2(medianNett)
   };
 }
+export function menuEngineering(branchId: number, year: number, month: number, topN = 6): MenuEngineering {
+  const [s, e] = monthRange(year, month);
+  const [ps, pe] = prevMonthRange(year, month);
+  return rangeMenuEngineering(branchId, s, e, ps, pe, topN);
+}
 
 // #2 Beverage / dessert attach — classify categories by name (auto; adjustable).
 const BEV_RE = /wine|beer|เบียร์|soft\s*drink|ซอฟ|ดริ่ง|drink|coffee|กาแฟ|matcha|มัจฉะ|tea|ชา|juice|น้ำผลไม้|soda|โซดา|น้ำอัดลม|refreshing|tropical|non-coffee|mocktail|cocktail|เครื่องดื่ม|beverage|smoothie|latte|americano|espresso/i;
@@ -542,8 +560,8 @@ export type BeverageMix = {
   foodNett: number; foodPct: number;
   bevToFoodPct: number | null;   // beverage as % of food (attach signal)
 };
-export function beverageMix(branchId: number, year: number, month: number): BeverageMix {
-  const cats = monthMenu(branchId, year, month, "category");
+function rangeBeverageMix(branchId: number, start: string, end: string): BeverageMix {
+  const cats = menuRange(branchId, start, end, "category");
   let bev = 0, dessert = 0, food = 0;
   for (const c of cats) {
     if (BEV_RE.test(c.name)) bev += c.nett;
@@ -560,11 +578,15 @@ export function beverageMix(branchId: number, year: number, month: number): Beve
     bevToFoodPct: food > 0 ? round2((bev / food) * 100) : null
   };
 }
+export function beverageMix(branchId: number, year: number, month: number): BeverageMix {
+  const [s, e] = monthRange(year, month);
+  return rangeBeverageMix(branchId, s, e);
+}
 
-// #7 Revenue concentration (80/20) over the month's menus.
+// #7 Revenue concentration (80/20) over the range's menus.
 export type MenuConcentration = { itemCount: number; total: number; top5Pct: number | null; countFor80: number };
-export function menuConcentration(branchId: number, year: number, month: number): MenuConcentration {
-  const items = monthMenu(branchId, year, month, "item"); // already sorted desc
+function rangeMenuConcentration(branchId: number, start: string, end: string): MenuConcentration {
+  const items = menuRange(branchId, start, end, "item"); // already sorted desc
   const total = round2(items.reduce((s, m) => s + m.nett, 0));
   if (!items.length || total <= 0) return { itemCount: items.length, total, top5Pct: null, countFor80: 0 };
   const top5 = items.slice(0, 5).reduce((s, m) => s + m.nett, 0);
@@ -572,23 +594,24 @@ export function menuConcentration(branchId: number, year: number, month: number)
   for (const m of items) { cum += m.nett; countFor80++; if (cum / total >= 0.8) break; }
   return { itemCount: items.length, total, top5Pct: round2((top5 / total) * 100), countFor80 };
 }
+export function menuConcentration(branchId: number, year: number, month: number): MenuConcentration {
+  const [s, e] = monthRange(year, month);
+  return rangeMenuConcentration(branchId, s, e);
+}
 
-// #3 Guest metrics — party size (heads/bill) + spend per head, with MoM.
+// #3 Guest metrics — party size (heads/bill) + spend per head, vs prev period.
 export type GuestMetrics = {
   avgPartySize: number | null; avgSpendPerHead: number | null;
   prevPartySize: number | null; partyMomPct: number | null;
   prevSpendPerHead: number | null; spendMomPct: number | null;
 };
-function monthTotals(branchId: number, year: number, month: number): { nett: number; bills: number; pax: number; days: number } {
-  const mm = String(month).padStart(2, "0");
-  const rows = listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`).filter((d) => d.has_sales);
+function rangeTotals(branchId: number, start: string, end: string): { nett: number; bills: number; pax: number; days: number } {
+  const rows = salesRows(branchId, start, end);
   return { nett: rows.reduce((s, d) => s + d.nett, 0), bills: rows.reduce((s, d) => s + d.bill_count, 0), pax: rows.reduce((s, d) => s + d.pax, 0), days: rows.length };
 }
-export function guestMetrics(branchId: number, year: number, month: number): GuestMetrics {
-  const t = monthTotals(branchId, year, month);
-  const pm = month === 1 ? 12 : month - 1;
-  const pmY = month === 1 ? year - 1 : year;
-  const p = monthTotals(branchId, pmY, pm);
+function rangeGuestMetrics(branchId: number, start: string, end: string, prevStart: string, prevEnd: string): GuestMetrics {
+  const t = rangeTotals(branchId, start, end);
+  const p = rangeTotals(branchId, prevStart, prevEnd);
   const party = t.bills > 0 ? round2(t.pax / t.bills) : null;
   const spend = t.pax > 0 ? round2(t.nett / t.pax) : null;
   const prevParty = p.bills > 0 ? round2(p.pax / p.bills) : null;
@@ -599,15 +622,19 @@ export function guestMetrics(branchId: number, year: number, month: number): Gue
     prevSpendPerHead: prevSpend, spendMomPct: relPct(spend ?? 0, prevSpend)
   };
 }
+export function guestMetrics(branchId: number, year: number, month: number): GuestMetrics {
+  const [s, e] = monthRange(year, month);
+  const [ps, pe] = prevMonthRange(year, month);
+  return rangeGuestMetrics(branchId, s, e, ps, pe);
+}
 
-// #5 Payday / weekend effect within the month.
+// #5 Payday / weekend effect within the range.
 export type RhythmInsight = {
   paydayAvgNett: number | null; otherAvgNett: number | null; paydayLiftPct: number | null; paydayDays: number;
   weekendAvgNett: number | null; weekdayAvgNett: number | null; weekendLiftPct: number | null;
 };
-export function rhythmInsight(branchId: number, year: number, month: number): RhythmInsight {
-  const mm = String(month).padStart(2, "0");
-  const rows = listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`).filter((d) => d.has_sales);
+function rangeRhythm(branchId: number, start: string, end: string): RhythmInsight {
+  const rows = salesRows(branchId, start, end);
   const avg = (arr: DailyRow[]) => (arr.length ? round2(arr.reduce((s, d) => s + d.nett, 0) / arr.length) : null);
   const isPayday = (iso: string) => { const dd = Number(iso.slice(8, 10)); return dd === 15 || dd === 16 || dd >= 25; };
   const isWeekend = (iso: string) => { const w = new Date(`${iso}T00:00:00Z`).getUTCDay(); return w === 0 || w === 6; };
@@ -621,8 +648,12 @@ export function rhythmInsight(branchId: number, year: number, month: number): Rh
     weekendAvgNett: wkndAvg, weekdayAvgNett: wkdyAvg, weekendLiftPct: relPct(wkndAvg ?? 0, wkdyAvg)
   };
 }
+export function rhythmInsight(branchId: number, year: number, month: number): RhythmInsight {
+  const [s, e] = monthRange(year, month);
+  return rangeRhythm(branchId, s, e);
+}
 
-// #6 Void / refund quality signal (month), with MoM on the void rate.
+// #6 Void / refund quality signal, with the prev period's void rate.
 export type QualitySignal = {
   voidAmount: number; voidBillCount: number; refund: number;
   voidRatePct: number | null;      // void amount / gross
@@ -630,18 +661,14 @@ export type QualitySignal = {
   prevVoidRatePct: number | null;
   flag: boolean;                   // void rate above threshold
 };
-export function qualitySignal(branchId: number, year: number, month: number): QualitySignal {
-  const mm = String(month).padStart(2, "0");
-  const rows = listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`).filter((d) => d.has_sales);
+function rangeQualitySignal(branchId: number, start: string, end: string, prevStart: string, prevEnd: string): QualitySignal {
+  const rows = salesRows(branchId, start, end);
   const sum = (get: (d: DailyRow) => number, arr: DailyRow[]) => arr.reduce((s, d) => s + get(d), 0);
   const gross = sum((d) => d.gross, rows);
   const bills = sum((d) => d.bill_count, rows);
   const voidAmount = round2(sum((d) => d.void_amount, rows));
   const voidRate = gross > 0 ? round2((voidAmount / gross) * 100) : null;
-  const pm = month === 1 ? 12 : month - 1;
-  const pmY = month === 1 ? year - 1 : year;
-  const prm = String(pm).padStart(2, "0");
-  const prevRows = listRange(branchId, `${pmY}-${prm}-01`, `${pmY}-${prm}-${String(daysInMonth(pmY, pm)).padStart(2, "0")}`).filter((d) => d.has_sales);
+  const prevRows = salesRows(branchId, prevStart, prevEnd);
   const prevGross = sum((d) => d.gross, prevRows);
   const prevVoid = sum((d) => d.void_amount, prevRows);
   const prevVoidRate = prevGross > 0 ? round2((prevVoid / prevGross) * 100) : null;
@@ -652,6 +679,11 @@ export function qualitySignal(branchId: number, year: number, month: number): Qu
     prevVoidRatePct: prevVoidRate,
     flag: (voidRate ?? 0) > 2
   };
+}
+export function qualitySignal(branchId: number, year: number, month: number): QualitySignal {
+  const [s, e] = monthRange(year, month);
+  const [ps, pe] = prevMonthRange(year, month);
+  return rangeQualitySignal(branchId, s, e, ps, pe);
 }
 
 // ── Receipt insights (owner 2026-09-18): peak hour + basket + units ─────────
@@ -668,13 +700,7 @@ export type ReceiptInsights = {
   basket: BasketPair[];      // menus most often bought together
 };
 
-function monthRange(year: number, month: number): [string, string] {
-  const mm = String(month).padStart(2, "0");
-  return [`${year}-${mm}-01`, `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`];
-}
-
-export function receiptInsights(branchId: number, year: number, month: number, topN = 8): ReceiptInsights {
-  const [start, end] = monthRange(year, month);
+function rangeReceiptInsights(branchId: number, start: string, end: string, topN = 8): ReceiptInsights {
   if (!hasReceiptData(branchId, start, end)) {
     return { hasData: false, hourly: [], peakHour: null, topUnits: [], bottomUnits: [], basket: [] };
   }
@@ -701,4 +727,65 @@ export function receiptInsights(branchId: number, year: number, month: number, t
     .slice(0, topN);
 
   return { hasData: true, hourly, peakHour: peak?.hour ?? null, topUnits, bottomUnits, basket };
+}
+export function receiptInsights(branchId: number, year: number, month: number, topN = 8): ReceiptInsights {
+  const [s, e] = monthRange(year, month);
+  return rangeReceiptInsights(branchId, s, e, topN);
+}
+
+// ── Period bundle (owner 2026-09-18): all range-based insight panels for one
+// period (this month or the current ISO week), so the dashboard can toggle. ──
+export type InsightPeriod = "month" | "week";
+export type InsightRange = {
+  period: InsightPeriod;
+  start: string; end: string;
+  prevStart: string; prevEnd: string;
+  rangeLabel: string;   // e.g. "15 กันยายน 2569 – 21 กันยายน 2569"
+  prevLabel: string;    // "เทียบเดือนก่อน" | "เทียบสัปดาห์ก่อน"
+  nowLabel: string;     // "เดือนนี้" | "สัปดาห์นี้"
+};
+export type InsightBundle = {
+  range: InsightRange;
+  channels: ChannelMix;
+  discount: DiscountInsight;
+  menuEngineering: MenuEngineering;
+  beverage: BeverageMix;
+  concentration: MenuConcentration;
+  guests: GuestMetrics;
+  rhythm: RhythmInsight;
+  quality: QualitySignal;
+  receipt: ReceiptInsights;
+};
+
+/** Resolve the date range for a period. `todayIso` anchors the current ISO week;
+ *  for month, `year`/`month` name the viewed month. */
+export function insightRangeFor(period: InsightPeriod, year: number, month: number, todayIso: string): InsightRange {
+  if (period === "week") {
+    const monday = mondayOf(todayIso);
+    const sunday = addDaysIso(monday, 6);
+    return {
+      period, start: monday, end: sunday,
+      prevStart: addDaysIso(monday, -7), prevEnd: addDaysIso(monday, -1),
+      rangeLabel: `${thaiDate(monday)} – ${thaiDate(sunday)}`,
+      prevLabel: "เทียบสัปดาห์ก่อน", nowLabel: "สัปดาห์นี้"
+    };
+  }
+  const [s, e] = monthRange(year, month);
+  const [ps, pe] = prevMonthRange(year, month);
+  return { period, start: s, end: e, prevStart: ps, prevEnd: pe, rangeLabel: roundLabel(s, e), prevLabel: "เทียบเดือนก่อน", nowLabel: "เดือนนี้" };
+}
+
+export function insightBundle(branchId: number, r: InsightRange): InsightBundle {
+  return {
+    range: r,
+    channels: rangeChannelMix(branchId, r.start, r.end),
+    discount: rangeDiscountInsight(branchId, r.start, r.end),
+    menuEngineering: rangeMenuEngineering(branchId, r.start, r.end, r.prevStart, r.prevEnd),
+    beverage: rangeBeverageMix(branchId, r.start, r.end),
+    concentration: rangeMenuConcentration(branchId, r.start, r.end),
+    guests: rangeGuestMetrics(branchId, r.start, r.end, r.prevStart, r.prevEnd),
+    rhythm: rangeRhythm(branchId, r.start, r.end),
+    quality: rangeQualitySignal(branchId, r.start, r.end, r.prevStart, r.prevEnd),
+    receipt: rangeReceiptInsights(branchId, r.start, r.end)
+  };
 }

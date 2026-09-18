@@ -228,6 +228,21 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("month MTD nett", mc.mtdNett === mtd && mc.throughDay === 30);
   ok("month vs prev month (Aug 14000)", near(mc.prevMonthPct ?? 0, ((mtd - 14000) / 14000) * 100));
   ok("month vs last year (Sep2025 50000)", near(mc.lastYearPct ?? 0, ((mtd - 50000) / 50000) * 100));
+
+  // Period toggle (owner 2026-09-18): month vs current ISO week ranges + bundle.
+  const rMonth = analytics.insightRangeFor("month", 2026, 9, "2026-09-16");
+  ok("range month = 09-01..09-30", rMonth.start === "2026-09-01" && rMonth.end === "2026-09-30" && rMonth.nowLabel === "เดือนนี้" && rMonth.prevLabel === "เทียบเดือนก่อน");
+  const rWeek = analytics.insightRangeFor("week", 2026, 9, "2026-09-16");
+  ok("range week Mon–Sun of 09-16", rWeek.start === "2026-09-14" && rWeek.end === "2026-09-20" && rWeek.prevStart === "2026-09-07" && rWeek.prevEnd === "2026-09-13");
+  ok("range week labels", rWeek.nowLabel === "สัปดาห์นี้" && rWeek.prevLabel === "เทียบสัปดาห์ก่อน");
+  // Week bundle over bid2: only 09-16 falls in this week; guests computed from it.
+  const wkBundle = analytics.insightBundle(bid2, rWeek);
+  ok("week bundle discount days = 1 (only 09-16)", wkBundle.discount.days === 1);
+  ok("week bundle guests party = 43/23", near(wkBundle.guests.avgPartySize ?? 0, 43 / 23));
+  // Month bundle sees both Sept days (09-16 + 09-09).
+  const moBundle = analytics.insightBundle(bid2, rMonth);
+  ok("month bundle discount days = 2", moBundle.discount.days === 2);
+
   ok("MoM null when target day absent last month", (() => {
     // 2026-03-31 has no 2026-02-31 counterpart → momPct must be null.
     put("2026-03-31", 9000, 10, 12);

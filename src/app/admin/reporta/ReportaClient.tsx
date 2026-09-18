@@ -79,6 +79,7 @@ type Insights = {
     basket: Array<{ a: string; b: string; count: number }>;
   };
 };
+type InsightRange = { period: "month" | "week"; start: string; end: string; rangeLabel: string; prevLabel: string; nowLabel: string };
 type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
 type MonthlyAnalytics = {
   year: number; month: number; ym: string; label: string; dayCount: number;
@@ -156,6 +157,8 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [discount, setDiscount] = useState<DiscountInsight | null>(null);
   const [channels, setChannels] = useState<ChannelMix | null>(null);
   const [insights, setInsights] = useState<Insights | null>(null);
+  const [panelPeriod, setPanelPeriod] = useState<"month" | "week">("month");
+  const [insightRange, setInsightRange] = useState<InsightRange | null>(null);
   const [monthTarget, setMonthTarget] = useState<MonthTarget | null>(null);
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [hasLineGroup, setHasLineGroup] = useState(true);
@@ -179,14 +182,15 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   };
 
   const loadMonth = useCallback(async () => {
-    const r = await fetch(`/api/admin/reporta/view?year=${year}&month=${month}`).then((x) => x.json());
+    const r = await fetch(`/api/admin/reporta/view?year=${year}&month=${month}&period=${panelPeriod}`).then((x) => x.json());
     if (r.ok) {
       setDays(r.view.days); setHasLineGroup(r.hasLineGroup); setMonthCompare(r.monthCompare ?? null);
       setWeekdays(r.weekdays ?? []); setDiscount(r.discount ?? null); setChannels(r.channels ?? null);
       setMonthTarget(r.monthTarget ?? null); setMonthSentAt(r.monthSentAt ?? null); setInsights(r.insights ?? null);
+      setInsightRange(r.insightRange ?? null);
       if (r.cardColor) setCardColor(r.cardColor);
     }
-  }, [year, month]);
+  }, [year, month, panelPeriod]);
 
   const loadDay = useCallback(async (date: string) => {
     setSelDate(date); setDaily(null);
@@ -201,6 +205,11 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
 
   useEffect(() => { loadMonth(); }, [loadMonth]);
   useEffect(() => { loadWeek(weekStart); }, [weekStart, loadWeek]);
+
+  // Period-aware labels for the insight panels (owner 2026-09-18 สัปดาห์/เดือน).
+  const nowLabel = insightRange?.nowLabel ?? "เดือนนี้";
+  const prevLabel = insightRange?.prevLabel ?? "เทียบเดือนก่อน";
+  const prevWord = insightRange?.period === "week" ? "สัปดาห์ก่อน" : "เดือนก่อน";
 
   const sendImport = async (files: File[]) => {
     if (!files.length) { setMsg({ kind: "err", text: "เลือกไฟล์ก่อน" }); return; }
@@ -457,7 +466,26 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         )}
       </div>
 
-      {/* Insights: weekday pattern (A) + channel mix (E) + discount ROI (D) */}
+      {/* Analytics period toggle (owner 2026-09-18): view the insight panels for
+          this month or the current ISO week. */}
+      {days.length > 0 && (
+        <div className="flex items-end justify-between gap-2 flex-wrap pt-1">
+          <div>
+            <h2 className="font-bold text-slate-800">การวิเคราะห์เชิงลึก</h2>
+            {insightRange && <p className="text-xs text-slate-500 mt-0.5">ช่วง{nowLabel}: {insightRange.rangeLabel}</p>}
+          </div>
+          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-sm">
+            {(["month", "week"] as const).map((p) => (
+              <button key={p} type="button" onClick={() => setPanelPeriod(p)}
+                className={`px-3 py-1 rounded-md transition ${panelPeriod === p ? "bg-white shadow-sm font-semibold text-slate-800" : "text-slate-500 hover:text-slate-700"}`}>
+                {p === "month" ? "เดือนนี้" : "สัปดาห์นี้"}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Insights: weekday pattern (A, rolling 8w) + channel mix (E) + discount ROI (D) */}
       {days.length > 0 && (
         <div className="grid lg:grid-cols-2 gap-4">
           {weekdays.some((w) => w.days > 0) && (
@@ -468,7 +496,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           )}
           {channels && (channels.types.length > 0 || channels.payments.length > 0) && (
             <div className="card space-y-3">
-              <h2 className="font-bold text-slate-800">ช่องทางการขายเดือนนี้</h2>
+              <h2 className="font-bold text-slate-800">ช่องทางการขาย{nowLabel}</h2>
               {channels.types.length > 0 && <ChannelBlock title="ประเภทออเดอร์" slices={channels.types} />}
               {channels.payments.length > 0 && <ChannelBlock title="ช่องทางชำระเงิน" slices={channels.payments} />}
               {channels.sources.length > 1 && <ChannelBlock title="แหล่งที่มา" slices={channels.sources} />}
@@ -476,7 +504,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           )}
           {discount && discount.days > 0 && (
             <div className="card space-y-2 lg:col-span-2">
-              <h2 className="font-bold text-slate-800">ประสิทธิภาพส่วนลดเดือนนี้</h2>
+              <h2 className="font-bold text-slate-800">ประสิทธิภาพส่วนลด{nowLabel}</h2>
               <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
                 <div><span className="text-slate-500">ส่วนลดรวม</span> <b className="text-rose-600">{baht(discount.totalDiscount)}</b></div>
                 <div><span className="text-slate-500">เฉลี่ย</span> <b>{discount.avgDiscountPct?.toFixed(1)}%</b> ของยอดก่อนลด</div>
@@ -503,7 +531,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           <div className="card space-y-3">
             <div>
               <h2 className="font-bold text-slate-800">วิเคราะห์เมนู (Menu Engineering)</h2>
-              <p className="text-xs text-slate-500 mt-0.5">แบ่งเมนูตามรายได้ (สูง/ต่ำ) × แนวโน้มเทียบเดือนก่อน (โต/ร่วง) เพื่อวางแผน ดัน/ปรับ/ตัด</p>
+              <p className="text-xs text-slate-500 mt-0.5">แบ่งเมนูตามรายได้ (สูง/ต่ำ) × แนวโน้ม{prevLabel} (โต/ร่วง) เพื่อวางแผน ดัน/ปรับ/ตัด</p>
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <QuadCard title="ดาวเด่น — ขายดี + กำลังโต" hint="ดันต่อ: โฆษณา / เมนูแนะนำ" list={insights.menuEngineering.stars} tone="emerald" />
@@ -561,12 +589,12 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                   <div className="rounded-xl bg-slate-50 p-3">
                     <div className="text-[11px] text-slate-500">ลูกค้าเฉลี่ยต่อบิล (ขนาดกลุ่ม)</div>
                     <div className="text-base font-bold text-slate-800">{insights.guests.avgPartySize?.toFixed(2) ?? "—"} คน</div>
-                    <div className="text-[10px] text-slate-400">เทียบเดือนก่อน <PctChip pct={insights.guests.partyMomPct} /></div>
+                    <div className="text-[10px] text-slate-400">{prevLabel} <PctChip pct={insights.guests.partyMomPct} /></div>
                   </div>
                   <div className="rounded-xl bg-emerald-50 p-3">
                     <div className="text-[11px] text-slate-500">ยอดใช้จ่ายต่อหัว</div>
                     <div className="text-base font-bold text-emerald-700">{insights.guests.avgSpendPerHead != null ? baht(insights.guests.avgSpendPerHead) : "—"}</div>
-                    <div className="text-[10px] text-slate-400">เทียบเดือนก่อน <PctChip pct={insights.guests.spendMomPct} /></div>
+                    <div className="text-[10px] text-slate-400">{prevLabel} <PctChip pct={insights.guests.spendMomPct} /></div>
                   </div>
                 </div>
                 <div className="text-xs text-slate-500">
@@ -597,7 +625,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               <div className={`card space-y-2 ${insights.quality.flag ? "border-amber-300 bg-amber-50" : ""}`}>
                 <h2 className="font-bold text-slate-800">สัญญาณคุณภาพ (Void / Refund)</h2>
                 <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-                  <div><span className="text-slate-500">อัตรา Void</span> <b className={insights.quality.flag ? "text-amber-700" : "text-slate-800"}>{insights.quality.voidRatePct.toFixed(2)}%</b> ของยอดก่อนลด {insights.quality.prevVoidRatePct != null && <span className="text-slate-400">(เดือนก่อน {insights.quality.prevVoidRatePct.toFixed(2)}%)</span>}</div>
+                  <div><span className="text-slate-500">อัตรา Void</span> <b className={insights.quality.flag ? "text-amber-700" : "text-slate-800"}>{insights.quality.voidRatePct.toFixed(2)}%</b> ของยอดก่อนลด {insights.quality.prevVoidRatePct != null && <span className="text-slate-400">({prevWord} {insights.quality.prevVoidRatePct.toFixed(2)}%)</span>}</div>
                   <div><span className="text-slate-500">บิลยกเลิก</span> <b>{intTh(insights.quality.voidBillCount)}</b> บิล</div>
                   {insights.quality.refund > 0 && <div><span className="text-slate-500">คืนเงิน</span> <b className="text-rose-600">{baht(insights.quality.refund)}</b></div>}
                 </div>
