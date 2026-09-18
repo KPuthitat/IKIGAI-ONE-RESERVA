@@ -57,6 +57,24 @@ function menuBlock(title: string, list: Array<{ name: string; nett: number }>): 
 
 export type DailyCardMeta = { branchName: string; operator: string; color: string };
 
+/** Auto summary + short recommendations block (owner 2026-09-18). Rendered as a
+ *  soft-tinted callout near the top so executives read the takeaways first. */
+function adviceBlock(advice: string[], color: string): unknown[] {
+  if (!advice.length) return [];
+  return [{
+    type: "box", layout: "vertical", backgroundColor: "#f4f7f6", cornerRadius: "md", paddingAll: "12px", spacing: "sm", margin: "sm",
+    contents: [
+      { type: "text", text: "สรุป & คำแนะนำ", size: "xs", weight: "bold", color },
+      ...advice.map((line) => ({
+        type: "box", layout: "horizontal", spacing: "sm", contents: [
+          { type: "text", text: "•", size: "sm", color, flex: 0 },
+          { type: "text", text: line, size: "xs", color: "#333333", wrap: true, flex: 1 }
+        ]
+      }))
+    ]
+  }];
+}
+
 // A metric's value + a two-part comparison line — same weekday last week ·
 // same day last month — each % coloured green/red via spans (owner 2026-09-17).
 function pctSpan(p: number | null) {
@@ -81,6 +99,7 @@ export function salesaDailyFlex(a: DailyAnalytics, meta: DailyCardMeta): FlexMsg
   const body: unknown[] = [
     { type: "text", text: meta.branchName, weight: "bold", size: "lg", wrap: true },
     { type: "text", text: `บันทึกโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true },
+    ...adviceBlock(a.advice, meta.color),
     sep
   ];
   // Every headline metric with its own comparison % (owner 2026-09-17).

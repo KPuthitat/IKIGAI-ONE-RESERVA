@@ -45,6 +45,7 @@ type DailyAnalytics = {
   wowHasData: boolean; momHasData: boolean;
   metrics: MetricCompare[];
   topItems: MenuRank[]; bottomItems: MenuRank[]; topCategories: MenuRank[];
+  peakHour: number | null; advice: string[];
 };
 type MetricCompare = { key: string; label: string; value: number; kind: "baht" | "int"; wowPct: number | null; momPct: number | null };
 type MonthCompare = { throughDay: number; mtdNett: number; prevMonthNett: number | null; prevMonthPct: number | null; lastYearNett: number | null; lastYearPct: number | null };
@@ -666,6 +667,19 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
             </div>
           </div>
 
+          {daily.advice.length > 0 && (
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+              <div className="text-xs font-bold mb-1" style={{ color: cardColor }}>สรุป &amp; คำแนะนำ</div>
+              <ul className="space-y-1">
+                {daily.advice.map((line, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-slate-700">
+                    <span style={{ color: cardColor }}>•</span><span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {daily.row.has_sales === 1 ? (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -955,6 +969,16 @@ function DailyPreview({ a, branchName, operator, color }: { a: DailyAnalytics; b
     <CardShell color={color} title="สรุปยอดขายประจำวัน" subtitle={`${a.dateLabel} · ${branchName}`}>
       <div className="font-bold text-slate-800">{branchName}</div>
       <div className="text-[11px] text-slate-400">บันทึกโดย: {operator}</div>
+      {a.advice.length > 0 && (
+        <div className="rounded-md bg-slate-50 p-2 my-1">
+          <div className="text-[11px] font-bold" style={{ color }}>สรุป &amp; คำแนะนำ</div>
+          {a.advice.map((line, i) => (
+            <div key={i} className="flex gap-1.5 text-[11px] text-slate-600 leading-snug">
+              <span style={{ color }}>•</span><span>{line}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {sepline}
       {a.metrics.map((m) => (
         <div key={m.key}>

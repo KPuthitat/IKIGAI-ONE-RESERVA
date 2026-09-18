@@ -63,7 +63,52 @@ export type DailyAnalytics = {
   topItems: MenuRank[];
   bottomItems: MenuRank[];      // lowest-earning among the ranked menus present
   topCategories: MenuRank[];
+  peakHour: number | null;      // busiest hour by nett (receipt data), else null
+  advice: string[];             // auto summary + short recommendations (2–4 lines)
 };
+
+/** Auto-generated executive summary + short recommendations for one day
+ *  (owner 2026-09-18: "มี section ของการสรุป และคำแนะนำสั้นๆ"). Pure — reads
+ *  only the already-computed daily figures. Headline first, then the most
+ *  actionable notes; capped at 4 lines so the card stays skimmable. */
+function dailyAdvice(a: {
+  metrics: MetricCompare[];
+  wowHasData: boolean; wowLabel: string;
+  momHasData: boolean; momLabel: string;
+  discountPct: number | null;
+  voidPct: number | null;
+  topItems: MenuRank[];
+  peakHour: number | null;
+}): string[] {
+  const out: string[] = [];
+  const nett = a.metrics[0];
+  // 1) Headline: how today's sales compare (prefer same weekday last week).
+  const trend = (pctv: number | null, label: string): string | null => {
+    if (pctv == null) return null;
+    if (pctv >= 5) return `ยอดขายสูงกว่า${label} +${pctv}% — โมเมนตัมดี รักษาจังหวะไว้`;
+    if (pctv <= -5) return `ยอดขายต่ำกว่า${label} ${pctv}% — ทบทวนช่วงเวลา/โปรโมชัน`;
+    return `ยอดขายใกล้เคียง${label} (${pctv >= 0 ? "+" : ""}${pctv}%)`;
+  };
+  const head = (a.wowHasData ? trend(nett.wowPct, a.wowLabel) : null)
+    ?? (a.momHasData ? trend(nett.momPct, a.momLabel) : null);
+  if (head) out.push(head);
+  // 2) Warnings — most actionable, so ahead of the nicety below.
+  if (a.discountPct != null && a.discountPct >= 8) out.push(`ส่วนลดสูง ${a.discountPct}% ของยอดรวม — ตรวจสอบการให้ส่วนลด`);
+  if (a.voidPct != null && a.voidPct >= 3) out.push(`ยอดยกเลิก (void) ${a.voidPct}% — ตรวจสอบการกดยกเลิกบิล`);
+  // 3) Operational tip: staff/stock the busiest hour.
+  if (a.peakHour != null) out.push(`ช่วงขายดีสุด ${String(a.peakHour).padStart(2, "0")}:00 — จัดคน/สต๊อกให้พอ`);
+  // 4) Positive highlight: the top-earning menu.
+  if (a.topItems.length) out.push(`เมนูทำเงินสูงสุด: ${a.topItems[0].name}`);
+  return out.slice(0, 4);
+}
+
+/** Busiest hour of a single day by nett (receipt data), or null. */
+function dayPeakHour(branchId: number, date: string): number | null {
+  if (!hasReceiptData(branchId, date, date)) return null;
+  const hours = hourlyReceipts(branchId, date, date);
+  if (!hours.length) return null;
+  return hours.reduce((best, h) => (h.nett > best.nett ? h : best)).hour;
+}
 
 /** Full analytics for one day. topN caps each menu list. */
 export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyAnalytics | null {
@@ -98,13 +143,17 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
   const cats = menu.categories.map((m, i) => ({ ...m, rank: i + 1 }));
   const dom = Number(date.slice(8, 10));
   const weekdayTh = thaiWeekday(date);
+  const discountPct = pct(Math.abs(row.discount), row.gross);
+  const voidPct = pct(row.void_amount, row.gross);
+  const peakHour = dayPeakHour(branchId, date);
+  const topItems = items.slice(0, topN);
 
   return {
     date,
     dateLabel: thaiDate(date),
     row,
-    discountPct: pct(Math.abs(row.discount), row.gross),
-    voidPct: pct(row.void_amount, row.gross),
+    discountPct,
+    voidPct,
     weekdayTh,
     dom,
     wowLabel: `${weekdayTh}ที่แล้ว`,
@@ -112,11 +161,13 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
     wowHasData,
     momHasData,
     metrics,
-    topItems: items.slice(0, topN),
+    topItems,
     // lowest-earning end of the ranked list (owner: เมนูขายน้อยสุด) — only
     // meaningful within the menus the POS export actually lists.
     bottomItems: items.length > topN ? items.slice(-topN).reverse() : [],
-    topCategories: cats.slice(0, topN)
+    topCategories: cats.slice(0, topN),
+    peakHour,
+    advice: dailyAdvice({ metrics, wowHasData, wowLabel: `${weekdayTh}ที่แล้ว`, momHasData, momLabel: `วันที่ ${dom} เดือนก่อน`, discountPct, voidPct, topItems, peakHour })
   };
 }
 
