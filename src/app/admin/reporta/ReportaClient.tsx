@@ -201,11 +201,11 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   useEffect(() => { loadMonth(); }, [loadMonth]);
   useEffect(() => { loadWeek(weekStart); }, [weekStart, loadWeek]);
 
-  const upload = async () => {
-    if (!picked.length) { setMsg({ kind: "err", text: "เลือกไฟล์ก่อน" }); return; }
+  const sendImport = async (files: File[]) => {
+    if (!files.length) { setMsg({ kind: "err", text: "เลือกไฟล์ก่อน" }); return; }
     setBusy(true); setMsg(null);
     const fd = new FormData();
-    picked.forEach((f) => fd.append("file", f));
+    files.forEach((f) => fd.append("file", f));
     try {
       const r = await fetch("/api/admin/reporta/import", { method: "POST", body: fd }).then((x) => x.json());
       if (!r.ok) { setMsg({ kind: "err", text: r.message ?? r.error ?? "นำเข้าไม่สำเร็จ" }); }
@@ -221,6 +221,14 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       }
     } catch { setMsg({ kind: "err", text: "อัปโหลดผิดพลาด" }); }
     setBusy(false);
+  };
+  const upload = () => sendImport(picked);
+  // One-at-a-time import: pick a single .xlsx and import it immediately.
+  const oneRef = useRef<HTMLInputElement>(null);
+  const quickOne = (list: FileList | null) => {
+    const f = list && list[0];
+    if (oneRef.current) oneRef.current.value = "";
+    if (f) sendImport([f]);
   };
 
   const del = async (date: string) => {
@@ -300,10 +308,12 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       <div className="card space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h2 className="font-bold text-slate-800">นำเข้าไฟล์จาก POS</h2>
-          <span className="text-[11px] text-slate-400">รองรับ .xlsx · เลือกหลายไฟล์ได้</span>
+          <span className="text-[11px] text-slate-400">รองรับ .xlsx · นำเข้าทีละไฟล์ หรือหลายไฟล์พร้อมกันก็ได้</span>
         </div>
         <input ref={fileRef} type="file" accept=".xlsx" multiple className="hidden"
           onChange={(e) => addFiles(e.target.files)} />
+        <input ref={oneRef} type="file" accept=".xlsx" className="hidden"
+          onChange={(e) => quickOne(e.target.files)} />
         <div
           onClick={() => fileRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -319,8 +329,14 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
             </svg>
           </div>
           <div className="text-sm font-semibold text-slate-700">ลากไฟล์มาวางที่นี่ หรือ <span className="text-emerald-600 underline">เลือกไฟล์</span></div>
-          <div className="mt-1 text-xs text-slate-400">ไฟล์ <b>Close up</b> (ยอดขาย) · <b>Overview</b> (เมนู) · <b>Receipt</b> (ใบเสร็จ) พร้อมกันได้ — ระบบแยกประเภทและวันที่ให้เอง</div>
+          <div className="mt-1 text-xs text-slate-400">ไฟล์ <b>Close up</b> (ยอดขาย) · <b>Overview</b> (เมนู) · <b>Receipt</b> (ใบเสร็จ) — ระบบแยกประเภทและวันที่ให้เอง จะนำเข้าทีละไฟล์หรือพร้อมกันก็ได้</div>
         </div>
+
+        {/* One-at-a-time: pick a single file and import it immediately. */}
+        <button type="button" onClick={() => oneRef.current?.click()} disabled={busy}
+          className="w-full rounded-xl border border-emerald-200 bg-emerald-50/60 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
+          {busy ? "กำลังนำเข้า…" : "＋ นำเข้าทีละไฟล์ (เลือก 1 ไฟล์ นำเข้าทันที)"}
+        </button>
 
         {picked.length > 0 && (
           <div className="flex flex-wrap gap-2">
