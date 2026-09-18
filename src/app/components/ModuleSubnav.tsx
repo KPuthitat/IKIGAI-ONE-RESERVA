@@ -29,6 +29,10 @@ export default function ModuleSubnav({
 }) {
   const pathname = usePathname() || "";
   const [currentQuery, setCurrentQuery] = useState<string>("");
+  const [open, setOpen] = useState(false);   // mobile dropdown (chips mode)
+
+  // Close the dropdown whenever the route (path or ?type=) changes.
+  useEffect(() => { setOpen(false); }, [pathname, currentQuery]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -81,38 +85,65 @@ export default function ModuleSubnav({
     b !== undefined && b !== 0 && b !== "0" && b !== "";
 
   if (mode === "chips") {
-    // Mobile: a scrollable pill row inside a white card — same shell + pill
-    // style as the main module tab bar (owner 2026-08: sub-nav should read
-    // like the primary nav). Section headings dropped; the tab bar already
-    // names the module.
+    // Mobile: a dropdown instead of a horizontal slider (owner 2026-09-18:
+    // "สไลด์ดูยาก → ดรอปดาวน์ดีกว่า"). The trigger shows the current sub-page;
+    // tapping reveals every item in one vertical list, so nothing is hidden
+    // off-screen. Section headings dropped — the tab bar already names the
+    // module.
+    const activeItem = items.find((it) => isActive(it.href)) ?? null;
+    const totalBadge = items.reduce((n, it) => n + (typeof it.badge === "number" ? it.badge : 0), 0);
     return (
-      <nav
-        className="flex gap-1 overflow-x-auto no-scrollbar rounded-2xl border border-[#EFE4D3] bg-white p-1.5 shadow-card"
-        aria-label="เมนูย่อย"
-      >
-        {items.map((item) => {
-          const active = isActive(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3.5 py-2 text-[13.5px] font-normal transition-colors ${
-                active
-                  ? "bg-brand/10 text-brand-dark"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-              }`}
-            >
-              {item.label}
-              {showBadge(item.badge) && (
-                <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold leading-none text-white">
-                  {item.badge}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
+      <div className="relative" aria-label="เมนูย่อย">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          className="flex w-full items-center justify-between gap-2 rounded-2xl border border-[#EFE4D3] bg-white px-4 py-2.5 text-[13.5px] shadow-card"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-semibold text-slate-800">{activeItem?.label ?? "เมนูย่อย"}</span>
+            {!open && totalBadge > 0 && (
+              <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold leading-none text-white">
+                {totalBadge}
+              </span>
+            )}
+          </span>
+          <svg viewBox="0 0 24 24" className={`h-4 w-4 flex-shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+        {open && (
+          <>
+            {/* tap-away backdrop */}
+            <button type="button" aria-hidden tabIndex={-1} onClick={() => setOpen(false)} className="fixed inset-0 z-20 cursor-default" />
+            <div role="menu" className="absolute left-0 right-0 z-30 mt-1.5 max-h-[65vh] overflow-y-auto rounded-2xl border border-[#EFE4D3] bg-white p-1.5 shadow-lg">
+              {items.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    role="menuitem"
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => setOpen(false)}
+                    className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-[13.5px] transition-colors ${
+                      active ? "bg-brand/10 text-brand-dark font-semibold" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                    }`}
+                  >
+                    <span className="flex-1 truncate">{item.label}</span>
+                    {showBadge(item.badge) && (
+                      <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold leading-none text-white">
+                        {item.badge}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
     );
   }
 

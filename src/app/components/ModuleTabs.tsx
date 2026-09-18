@@ -54,7 +54,7 @@ export default function ModuleTabs({ tabs }: { tabs: ModuleTab[] }) {
 
   return (
     <nav
-      className="flex gap-1 overflow-x-auto no-scrollbar rounded-2xl border border-[#EFE4D3] bg-white p-1.5 shadow-card"
+      className="flex flex-wrap gap-1 rounded-2xl border border-[#EFE4D3] bg-white p-1.5 shadow-card"
       aria-label="โมดูล"
     >
       {tabs.map((t) => {
