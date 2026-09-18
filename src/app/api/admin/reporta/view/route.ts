@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
-import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, discountInsight, monthChannelMix, targetProgress, menuEngineering, beverageMix, menuConcentration, guestMetrics, rhythmInsight, qualitySignal, receiptInsights } from "@/lib/salesa-analytics";
+import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle } from "@/lib/salesa-analytics";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
 // day's full analytics + menu ranking. ?week=YYYY-MM-DD (a Monday): the weekly
@@ -61,20 +61,17 @@ export function GET(req: Request) {
   const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, "0")}`;
   const refIso = todayIso < monthEnd ? todayIso : monthEnd;
   const weekdays = weekdayStats(branchId, refIso);
-  const discount = discountInsight(branchId, year, month);
-  const channels = monthChannelMix(branchId, year, month);
   const target = getMonthlyTarget(branchId);
   const monthTarget = target != null ? targetProgress(target, monthCompare.mtdNett, monthCompare.throughDay, year, month) : null;
   const monthSentAt = monthlySentAt(branchId, `${year}-${String(month).padStart(2, "0")}`);
-  const insights = {
-    menuEngineering: menuEngineering(branchId, year, month),
-    beverage: beverageMix(branchId, year, month),
-    concentration: menuConcentration(branchId, year, month),
-    guests: guestMetrics(branchId, year, month),
-    rhythm: rhythmInsight(branchId, year, month),
-    quality: qualitySignal(branchId, year, month),
-    receipt: receiptInsights(branchId, year, month)
-  };
+  // Insight panels (channels / discount / marketing / receipt) can be viewed for
+  // this month or the current ISO week (owner 2026-09-18). The top MTD/target/
+  // weekday cards stay month-level.
+  const period = sp.get("period") === "week" ? "week" : "month";
+  const range = insightRangeFor(period, year, month, todayIso);
+  const bundle = insightBundle(branchId, range);
+  const { range: _range, channels, discount, ...insights } = bundle;
+  void _range;
   const days = listMonth(branchId, year, month).map((d) => ({
     date: d.sale_date,
     nett: d.nett,
@@ -85,5 +82,5 @@ export function GET(req: Request) {
     hasReceipt: d.has_receipt === 1,
     dailySentAt: d.daily_sent_at
   }));
-  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, insights });
+  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, insights, insightRange: range });
 }
