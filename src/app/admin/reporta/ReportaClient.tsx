@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import OwlMascot from "@/app/components/OwlMascot";
 
 // REPORTA dashboard (owner 2026-09-16): import the POS files, review the day's
 // deep analytics + menu ranking, and push the summary card to the HOD LINE group
@@ -80,6 +81,19 @@ type Insights = {
   };
 };
 type InsightRange = { period: "month" | "week"; start: string; end: string; rangeLabel: string; prevLabel: string; nowLabel: string };
+type PushMenu = { name: string; nett: number };
+type PushDay = { date: string; label: string; weekdayTh: string; expectedNett: number | null };
+type SalesPushPlan = {
+  targetBaht: number; days: number; fromDate: string; toDate: string;
+  requiredPerDay: number; baselineProjected: number; baselinePerDay: number; recentAvgPerDay: number;
+  gap: number; liftPct: number | null; hasBaseline: boolean;
+  avgTicket: number | null; avgBillsPerDay: number | null; extraBillsPerDay: number | null; extraTicketBaht: number | null;
+  topEarners: PushMenu[]; risers: PushMenu[]; bevPct: number | null; bevToFoodPct: number | null;
+  crossSell: Array<{ a: string; b: string; count: number }>;
+  upcoming: PushDay[]; strongestDate: string | null;
+  verdict: "no_data" | "easy" | "ontrack" | "stretch" | "hard" | "unrealistic";
+  verdictText: string; advice: string[];
+};
 type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
 type MonthlyAnalytics = {
   year: number; month: number; ym: string; label: string; dayCount: number;
@@ -161,6 +175,10 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [insightRange, setInsightRange] = useState<InsightRange | null>(null);
   const [monthTarget, setMonthTarget] = useState<MonthTarget | null>(null);
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
+  const [pushDays, setPushDays] = useState(3);
+  const [pushTarget, setPushTarget] = useState("");
+  const [plan, setPlan] = useState<SalesPushPlan | null>(null);
+  const [planBusy, setPlanBusy] = useState(false);
   const [hasLineGroup, setHasLineGroup] = useState(true);
   const [selDate, setSelDate] = useState<string | null>(null);
   const [daily, setDaily] = useState<DailyAnalytics | null>(null);
@@ -297,6 +315,29 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     });
   };
 
+  // แผนดันยอด — น้องฮูกแนะนำ (owner 2026-09-18).
+  const runPush = async () => {
+    const target = Math.floor(Number(pushTarget.replace(/[, ]/g, "")) || 0);
+    if (!pushDays || !target) { setMsg({ kind: "err", text: "กรอกจำนวนวันและยอดเป้าหมายก่อน" }); return; }
+    setPlanBusy(true); setMsg(null);
+    const r = await fetch(`/api/admin/reporta/view?push=1&days=${pushDays}&target=${target}`).then((x) => x.json()).catch(() => null);
+    setPlanBusy(false);
+    if (r?.ok) setPlan(r.plan);
+    else setMsg({ kind: "err", text: r?.message ?? "วางแผนไม่สำเร็จ" });
+  };
+
+  const sendPush = () => {
+    if (!plan) return;
+    setPin({
+      title: `ส่งแผนดันยอด ${plan.days} วัน เข้ากลุ่ม HOD`,
+      run: async (p) => {
+        const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "push", days: plan.days, target: plan.targetBaht, pin: p }) }).then((x) => x.json());
+        if (r.ok) setMsg({ kind: "ok", text: "ส่งแผนดันยอดเข้ากลุ่ม HOD แล้ว" });
+        return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
+      }
+    });
+  };
+
   const shiftMonth = (delta: number) => {
     let y = year, m = month + delta;
     if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
@@ -369,6 +410,80 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           <span className="flex-1" />
           <button onClick={clearMismatched} disabled={busy} className="text-xs text-rose-500 hover:text-rose-700 disabled:opacity-50">ลบข้อมูลที่ร้านไม่ตรงกับสาขา</button>
         </div>
+      </div>
+
+      {/* แผนดันยอด — น้องฮูกแนะนำ (owner 2026-09-18) */}
+      <div className="card space-y-3">
+        <div className="flex items-start gap-3">
+          <OwlMascot size={44} mood="thinking" className="shrink-0" ariaLabel="น้องฮูก" />
+          <div>
+            <h2 className="font-bold text-slate-800">แผนดันยอด · น้องฮูกแนะนำ</h2>
+            <p className="text-xs text-slate-500 mt-0.5">อยากได้ยอดเท่าไหร่ในกี่วัน? น้องฮูกจะดูข้อมูลย้อนหลังแล้วบอกว่าต้องดันขายอะไร ให้ HOD เอาไปบรีฟทีมได้เลย</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-sm">
+            <span className="block text-[11px] text-slate-500 mb-0.5">ภายในกี่วัน</span>
+            <input type="number" min={1} max={31} value={pushDays}
+              onChange={(e) => setPushDays(Math.min(31, Math.max(1, Math.floor(Number(e.target.value) || 1))))}
+              className="w-24 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+          </label>
+          <label className="text-sm">
+            <span className="block text-[11px] text-slate-500 mb-0.5">ยอดเป้าหมาย (บาท)</span>
+            <input type="text" inputMode="numeric" value={pushTarget} placeholder="เช่น 100,000"
+              onChange={(e) => setPushTarget(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") runPush(); }}
+              className="w-40 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+          </label>
+          <button onClick={runPush} disabled={planBusy} className="btn-primary text-sm disabled:opacity-50">
+            {planBusy ? "กำลังคิด…" : "ให้น้องฮูกแนะนำ"}
+          </button>
+        </div>
+
+        {plan && (
+          <div className="space-y-3 pt-1">
+            {(() => {
+              const tone = plan.verdict === "easy" || plan.verdict === "ontrack" ? "emerald"
+                : plan.verdict === "stretch" ? "amber"
+                : plan.verdict === "no_data" ? "slate" : "rose";
+              const cls: Record<string, string> = {
+                emerald: "bg-emerald-50 border-emerald-200 text-emerald-800",
+                amber: "bg-amber-50 border-amber-200 text-amber-800",
+                rose: "bg-rose-50 border-rose-200 text-rose-800",
+                slate: "bg-slate-50 border-slate-200 text-slate-700",
+              };
+              return <div className={`rounded-lg border p-3 text-sm ${cls[tone]}`}>{plan.verdictText}</div>;
+            })()}
+
+            {plan.hasBaseline && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <Kpi label="ต้องได้เฉลี่ย/วัน" value={baht(plan.requiredPerDay)} accent />
+                <Kpi label="คาดการณ์ตามปกติ/วัน" value={baht(plan.baselinePerDay)} />
+                <Kpi label="ส่วนต่างที่ต้องดัน" value={plan.gap > 0 ? `+${baht(plan.gap)}` : "ถึงแล้ว"} />
+                <Kpi label="เทียบยอดปกติ" value={plan.liftPct != null ? `${plan.liftPct > 0 ? "+" : ""}${plan.liftPct.toFixed(0)}%` : "—"} />
+              </div>
+            )}
+
+            {plan.advice.length > 0 && (
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                <div className="text-xs font-bold mb-1" style={{ color: cardColor }}>บรีฟดันยอด (อ่านให้ทีม)</div>
+                <ul className="space-y-1">
+                  {plan.advice.map((line, i) => (
+                    <li key={i} className="flex gap-2 text-sm text-slate-700">
+                      <span style={{ color: cardColor }}>•</span><span>{line}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={sendPush} disabled={!hasLineGroup || !plan.hasBaseline}
+                className="btn-success text-sm px-4 py-2 disabled:opacity-50">ส่งบรีฟเข้ากลุ่ม HOD</button>
+              {!hasLineGroup && <span className="text-[11px] text-slate-400">ตั้งกลุ่ม LINE ก่อนถึงจะส่งได้</span>}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Month list */}

@@ -76,6 +76,7 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const { getDb } = await import("../src/lib/db");
   const sdb = await import("../src/lib/salesa-db");
   const analytics = await import("../src/lib/salesa-analytics");
+  const push = await import("../src/lib/salesa-push");
 
   let passed = 0, failed = 0;
   const ok = (name: string, cond: boolean) => {
@@ -242,6 +243,24 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   // Month bundle sees both Sept days (09-16 + 09-09).
   const moBundle = analytics.insightBundle(bid2, rMonth);
   ok("month bundle discount days = 2", moBundle.discount.days === 2);
+
+  // แผนดันยอด (owner 2026-09-18). Anchor 2026-09-20 (Sun): trailing 28d =
+  // 08-23..09-19 captures 09-16 (14658) + 09-09 (13000) → avg 13829/day. The 3
+  // upcoming days are Sun/Mon/Tue; Sunday has weekday history (08-16 = 14000, a
+  // Sunday), Mon/Tue fall back to the trailing avg → baseline 14000 + 2×13829.
+  const pHard = push.salesPushPlan(bid2, 100000, 3, "2026-09-20");
+  const trailAvg = (14658 + 13000) / 2;
+  ok("push horizon 3 days 09-20..09-22", pHard.days === 3 && pHard.fromDate === "2026-09-20" && pHard.toDate === "2026-09-22");
+  ok("push requiredPerDay = 100000/3", near(pHard.requiredPerDay, 100000 / 3));
+  ok("push baseline = Sun weekday avg + 2×trailing avg", near(pHard.baselineProjected, 14000 + 2 * trailAvg));
+  ok("push target far above → unrealistic + honest verdict", pHard.verdict === "unrealistic" && pHard.gap > 0 && pHard.advice.some((l) => l.includes("สูงกว่ายอดปกติ")));
+  // Modest target below the normal run-rate → easy.
+  const pEasy = push.salesPushPlan(bid2, 30000, 3, "2026-09-20");
+  ok("push target below normal → easy + negative gap", pEasy.verdict === "easy" && pEasy.gap < 0);
+  // No history at all → no_data verdict, no baseline.
+  const bidEmpty = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('rE','RESTE')").run().lastInsertRowid);
+  const pEmpty = push.salesPushPlan(bidEmpty, 50000, 5, "2026-09-20");
+  ok("push no history → no_data", pEmpty.verdict === "no_data" && !pEmpty.hasBaseline);
 
   ok("MoM null when target day absent last month", (() => {
     // 2026-03-31 has no 2026-02-31 counterpart → momPct must be null.
