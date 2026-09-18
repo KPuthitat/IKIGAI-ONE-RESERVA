@@ -34,9 +34,14 @@ for (const ext of ["-wal", "-shm"]) {
 }
 process.env.DATABASE_PATH = TMP;
 
+// The modules legacy_admin holds = the initial seed (6) + every key added by
+// the one-time backfill in db.ts (ir.manage, reporta.manage). Keep this in sync
+// with that seed+backfill set, NOT the whole permission catalog — newer modules
+// that aren't backfilled (delivera/quality/partner) are intentionally excluded.
 const MODULES = [
   "persona.manage", "reserva.manage", "recruita.access",
-  "insigna.view", "ascenda.view", "accounta.manage"
+  "insigna.view", "ascenda.view", "accounta.manage",
+  "ir.manage", "reporta.manage"
 ];
 
 (async () => {
@@ -88,7 +93,7 @@ const MODULES = [
   ok("legacy_admin system role seeded", !!legacy);
   ok("legacy_admin is_system = 1", legacy?.is_system === 1);
   ok(
-    "legacy_admin grants exactly the 6 modules",
+    "legacy_admin grants exactly the 8 modules",
     !!legacy &&
       legacy.permissions.length === MODULES.length &&
       MODULES.every((m) => legacy.permissions.includes(m))
