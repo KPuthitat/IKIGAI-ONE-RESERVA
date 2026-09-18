@@ -242,13 +242,96 @@ export function parseOverview(buf: Buffer | ArrayBuffer): SalesOverview {
   return { date: pre.date, dateEnd: pre.dateEnd ?? pre.date, merchant: pre.merchant, categories, items };
 }
 
+// ── receipt (per-bill with time + items — owner 2026-09-18) ─────────────────
+
+export type ReceiptItem = { name: string; qty: number };
+export type ReceiptBill = {
+  hour: number;            // 0–23 (from the Time column)
+  billNo: string;
+  table: string;
+  gross: number;
+  discount: number;
+  nett: number;
+  payment: string;
+  isStaff: boolean;        // STAFF table / 100%-discount → exclude from analytics
+  isTakeaway: boolean;     // table starts with "TA"
+  items: ReceiptItem[];    // aggregated per name (qty summed)
+};
+export type SalesReceipt = { date: string; dateEnd: string; merchant: string | null; bills: ReceiptBill[] };
+
+/** Recognise a receipt workbook (A1 == "Receipt", or a Time/Items header). */
+export function isReceipt(buf: Buffer | ArrayBuffer): boolean {
+  const s = sheetsByName(buf);
+  const first = s.get(() => true);
+  if (!first) return false;
+  if (cell(first[0] ?? [], 0).toLowerCase() === "receipt") return true;
+  return first.some((r) => r.some((c) => String(c).trim() === "Time") && r.some((c) => String(c).trim() === "Items"));
+}
+
+/** Clean a menu name: strip tabs / collapse whitespace / trim. */
+function cleanName(s: string): string {
+  return s.replace(/\s+/g, " ").trim();
+}
+
+export function parseReceipt(buf: Buffer | ArrayBuffer): SalesReceipt {
+  const s = sheetsByName(buf);
+  const rows = s.get(() => true);
+  if (!rows) throw new Error("receipt: ไฟล์ว่าง");
+  const pre = readPreamble(rows);
+  if (!pre.date) throw new Error("receipt: ไม่พบวันที่ในไฟล์ (Date:)");
+
+  // Header row: the one whose first cell is "Time".
+  const hdrIdx = rows.findIndex((r) => cell(r, 0).toLowerCase() === "time");
+  if (hdrIdx < 0) throw new Error("receipt: ไม่พบหัวตาราง (Time)");
+  const header = rows[hdrIdx].map((c) => String(c).trim().toLowerCase());
+  const col = (name: string) => header.indexOf(name);
+  const ci = {
+    time: col("time"), no: col("no."), table: col("table"), gross: col("gross"),
+    discount: col("discount"), nett: col("nett"), payment: col("payment"), items: col("items")
+  };
+
+  const bills: ReceiptBill[] = [];
+  for (const r of rows.slice(hdrIdx + 1)) {
+    const timeStr = cell(r, ci.time);
+    if (!timeStr) continue;
+    // "17/09/2026 12:07:20" → hour.
+    const hm = timeStr.match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
+    const hour = hm ? Number(hm[1]) : -1;
+    if (hour < 0 || hour > 23) continue;
+    const table = cell(r, ci.table);
+    const gross = num(r[ci.gross]);
+    const discount = num(r[ci.discount]);
+    const nett = num(r[ci.nett]);
+    const isStaff = table.toUpperCase() === "STAFF" || (nett === 0 && gross > 0 && discount < 0);
+    // Items: "1x name,2x name, …" → aggregate qty per cleaned name.
+    const itemMap = new Map<string, number>();
+    for (const part of cell(r, ci.items).split(",")) {
+      const m = part.match(/^\s*(\d+)\s*x\s*(.+)$/i);
+      if (!m) continue;
+      const name = cleanName(m[2]);
+      if (!name) continue;
+      itemMap.set(name, (itemMap.get(name) ?? 0) + Number(m[1]));
+    }
+    bills.push({
+      hour, billNo: cell(r, ci.no), table,
+      gross: round2(gross), discount: round2(discount), nett: round2(nett),
+      payment: cell(r, ci.payment),
+      isStaff, isTakeaway: /^ta/i.test(table),
+      items: [...itemMap.entries()].map(([name, qty]) => ({ name, qty }))
+    });
+  }
+  return { date: pre.date, dateEnd: pre.dateEnd ?? pre.date, merchant: pre.merchant, bills };
+}
+
 /** Dispatcher: sniff a buffer and parse whichever kind it is. */
 export type SalesFileParse =
   | { kind: "close_up"; closeUp: SalesCloseUp }
-  | { kind: "overview"; overview: SalesOverview };
+  | { kind: "overview"; overview: SalesOverview }
+  | { kind: "receipt"; receipt: SalesReceipt };
 
 export function parseSalesFile(buf: Buffer | ArrayBuffer): SalesFileParse {
   if (isCloseUp(buf)) return { kind: "close_up", closeUp: parseCloseUp(buf) };
   if (isOverview(buf)) return { kind: "overview", overview: parseOverview(buf) };
-  throw new Error("ไม่รู้จักรูปแบบไฟล์ — ต้องเป็นรายงาน Close up (ยอดขาย) หรือ Overview (เมนู) จาก POS");
+  if (isReceipt(buf)) return { kind: "receipt", receipt: parseReceipt(buf) };
+  throw new Error("ไม่รู้จักรูปแบบไฟล์ — ต้องเป็นรายงาน Close up (ยอดขาย) / Overview (เมนู) / Receipt (ใบเสร็จ) จาก POS");
 }

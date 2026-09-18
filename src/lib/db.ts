@@ -1964,6 +1964,7 @@ function runMigrations(db: Database.Database): void {
       sources_json         TEXT NOT NULL DEFAULT '[]',
       has_sales            INTEGER NOT NULL DEFAULT 0,  -- close_up imported
       has_menu             INTEGER NOT NULL DEFAULT 0,  -- overview imported
+      has_receipt          INTEGER NOT NULL DEFAULT 0,  -- receipt (per-bill) imported
       imported_by          INTEGER REFERENCES users(id),
       imported_at          TEXT NOT NULL DEFAULT (datetime('now')),
       daily_sent_at        TEXT,
@@ -1994,6 +1995,31 @@ function runMigrations(db: Database.Database): void {
       sent_by    INTEGER REFERENCES users(id),
       PRIMARY KEY (branch_id, ym)
     );
+    -- Per-bill receipts + items (owner 2026-09-18): time-of-day + basket.
+    CREATE TABLE IF NOT EXISTS salesa_receipts (
+      branch_id  INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      sale_date  TEXT NOT NULL,
+      bill_no    TEXT NOT NULL,
+      hour       INTEGER NOT NULL DEFAULT 0,   -- 0..23
+      table_name TEXT,
+      gross      REAL NOT NULL DEFAULT 0,
+      discount   REAL NOT NULL DEFAULT 0,
+      nett       REAL NOT NULL DEFAULT 0,
+      payment    TEXT,
+      is_staff   INTEGER NOT NULL DEFAULT 0,
+      is_takeaway INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (branch_id, sale_date, bill_no)
+    );
+    CREATE INDEX IF NOT EXISTS idx_salesa_receipts_day ON salesa_receipts(branch_id, sale_date, hour);
+    CREATE TABLE IF NOT EXISTS salesa_receipt_items (
+      branch_id  INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      sale_date  TEXT NOT NULL,
+      bill_no    TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      qty        INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (branch_id, sale_date, bill_no, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_salesa_ritems_day ON salesa_receipt_items(branch_id, sale_date);
     CREATE TABLE IF NOT EXISTS salesa_settings (
       branch_id      INTEGER PRIMARY KEY REFERENCES branches(id) ON DELETE CASCADE,
       line_group_id  TEXT,          -- HOD LINE group (platform OA must be a member)
@@ -2015,6 +2041,10 @@ function runMigrations(db: Database.Database): void {
     }
     if (!ssCols.some((c) => c.name === "card_color")) {
       db.exec("ALTER TABLE salesa_settings ADD COLUMN card_color TEXT");
+    }
+    const sdCols = db.prepare("PRAGMA table_info(salesa_daily)").all() as Array<{ name: string }>;
+    if (!sdCols.some((c) => c.name === "has_receipt")) {
+      db.exec("ALTER TABLE salesa_daily ADD COLUMN has_receipt INTEGER NOT NULL DEFAULT 0");
     }
   }
   // One-time (owner 2026-09-17): the first merchant guard AUTO-LEARNED the shop

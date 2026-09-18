@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
-import { isSalesaBranch, upsertDaily, upsertMenu, getMerchantName } from "@/lib/salesa-db";
+import { isSalesaBranch, upsertDaily, upsertMenu, upsertReceipts, getMerchantName } from "@/lib/salesa-db";
 import { parseSalesFile, type SalesFileParse } from "@/lib/salesa-parse";
 import { getDb } from "@/lib/db";
 
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     } catch (e) {
       return NextResponse.json({ error: "parse_failed", message: `${file.name}: ${(e as Error).message}` }, { status: 422 });
     }
-    const merchant = parsed.kind === "close_up" ? parsed.closeUp.merchant : parsed.overview.merchant;
+    const merchant = parsed.kind === "close_up" ? parsed.closeUp.merchant : parsed.kind === "overview" ? parsed.overview.merchant : parsed.receipt.merchant;
     parsedFiles.push({ name: file.name, parsed, merchant });
   }
 
@@ -76,10 +76,15 @@ export async function POST(req: Request) {
       const c = f.parsed.closeUp;
       upsertDaily(branchId, user.id, c);
       results.push({ filename: f.name, kind: "close_up", date: c.date, merchant: c.merchant, note: `ยอดสุทธิ ${c.nett.toLocaleString("th-TH")} · ${c.billCount} บิล` });
-    } else {
+    } else if (f.parsed.kind === "overview") {
       const o = f.parsed.overview;
       upsertMenu(branchId, user.id, o);
       results.push({ filename: f.name, kind: "overview", date: o.date, merchant: o.merchant, note: `เมนู ${o.items.length} รายการ · หมวด ${o.categories.length}` });
+    } else {
+      const rc = f.parsed.receipt;
+      upsertReceipts(branchId, user.id, rc);
+      const staff = rc.bills.filter((b) => b.isStaff).length;
+      results.push({ filename: f.name, kind: "receipt", date: rc.date, merchant: rc.merchant, note: `ใบเสร็จ ${rc.bills.length} บิล${staff ? ` (พนักงาน ${staff})` : ""}` });
     }
   }
 
