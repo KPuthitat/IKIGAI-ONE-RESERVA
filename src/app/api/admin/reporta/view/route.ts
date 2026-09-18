@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
-import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, discountInsight, monthChannelMix, targetProgress } from "@/lib/salesa-analytics";
+import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, discountInsight, monthChannelMix, targetProgress, menuEngineering, beverageMix, menuConcentration, guestMetrics, rhythmInsight, qualitySignal } from "@/lib/salesa-analytics";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
 // day's full analytics + menu ranking. ?week=YYYY-MM-DD (a Monday): the weekly
@@ -66,6 +66,14 @@ export function GET(req: Request) {
   const target = getMonthlyTarget(branchId);
   const monthTarget = target != null ? targetProgress(target, monthCompare.mtdNett, monthCompare.throughDay, year, month) : null;
   const monthSentAt = monthlySentAt(branchId, `${year}-${String(month).padStart(2, "0")}`);
+  const insights = {
+    menuEngineering: menuEngineering(branchId, year, month),
+    beverage: beverageMix(branchId, year, month),
+    concentration: menuConcentration(branchId, year, month),
+    guests: guestMetrics(branchId, year, month),
+    rhythm: rhythmInsight(branchId, year, month),
+    quality: qualitySignal(branchId, year, month)
+  };
   const days = listMonth(branchId, year, month).map((d) => ({
     date: d.sale_date,
     nett: d.nett,
@@ -75,5 +83,5 @@ export function GET(req: Request) {
     hasMenu: d.has_menu === 1,
     dailySentAt: d.daily_sent_at
   }));
-  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt });
+  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, insights });
 }

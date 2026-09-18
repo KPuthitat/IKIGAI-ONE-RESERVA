@@ -60,8 +60,17 @@ type WeeklyAnalytics = {
 };
 type WeekdayStat = { dow: number; label: string; avgNett: number; days: number; avgBills: number };
 type DiscountInsight = { avgDiscountPct: number | null; totalDiscount: number; highDiscAvgNett: number | null; lowDiscAvgNett: number | null; days: number };
-type ChannelSlice = { name: string; sales: number; qty: number; pct: number };
+type ChannelSlice = { name: string; sales: number; qty: number; pct: number; avgTicket: number | null };
 type ChannelMix = { types: ChannelSlice[]; payments: ChannelSlice[]; sources: ChannelSlice[] };
+type MenuClass = { name: string; nett: number; deltaPct: number | null; isNew: boolean };
+type Insights = {
+  menuEngineering: { stars: MenuClass[]; plowhorses: MenuClass[]; puzzles: MenuClass[]; dogs: MenuClass[]; medianNett: number };
+  beverage: { total: number; beverageNett: number; beveragePct: number; dessertNett: number; dessertPct: number; foodNett: number; foodPct: number; bevToFoodPct: number | null };
+  concentration: { itemCount: number; total: number; top5Pct: number | null; countFor80: number };
+  guests: { avgPartySize: number | null; avgSpendPerHead: number | null; prevPartySize: number | null; partyMomPct: number | null; prevSpendPerHead: number | null; spendMomPct: number | null };
+  rhythm: { paydayAvgNett: number | null; otherAvgNett: number | null; paydayLiftPct: number | null; paydayDays: number; weekendAvgNett: number | null; weekdayAvgNett: number | null; weekendLiftPct: number | null };
+  quality: { voidAmount: number; voidBillCount: number; refund: number; voidRatePct: number | null; voidBillRatePct: number | null; prevVoidRatePct: number | null; flag: boolean };
+};
 type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
 type MonthlyAnalytics = {
   year: number; month: number; ym: string; label: string; dayCount: number;
@@ -138,6 +147,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [weekdays, setWeekdays] = useState<WeekdayStat[]>([]);
   const [discount, setDiscount] = useState<DiscountInsight | null>(null);
   const [channels, setChannels] = useState<ChannelMix | null>(null);
+  const [insights, setInsights] = useState<Insights | null>(null);
   const [monthTarget, setMonthTarget] = useState<MonthTarget | null>(null);
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [hasLineGroup, setHasLineGroup] = useState(true);
@@ -165,7 +175,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     if (r.ok) {
       setDays(r.view.days); setHasLineGroup(r.hasLineGroup); setMonthCompare(r.monthCompare ?? null);
       setWeekdays(r.weekdays ?? []); setDiscount(r.discount ?? null); setChannels(r.channels ?? null);
-      setMonthTarget(r.monthTarget ?? null); setMonthSentAt(r.monthSentAt ?? null);
+      setMonthTarget(r.monthTarget ?? null); setMonthSentAt(r.monthSentAt ?? null); setInsights(r.insights ?? null);
       if (r.cardColor) setCardColor(r.cardColor);
     }
   }, [year, month]);
@@ -442,6 +452,118 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         </div>
       )}
 
+      {/* Deeper marketing insights (owner 2026-09-18) */}
+      {insights && days.length > 0 && (
+        <div className="space-y-4">
+          {/* #1 Menu engineering */}
+          <div className="card space-y-3">
+            <div>
+              <h2 className="font-bold text-slate-800">วิเคราะห์เมนู (Menu Engineering)</h2>
+              <p className="text-xs text-slate-500 mt-0.5">แบ่งเมนูตามรายได้ (สูง/ต่ำ) × แนวโน้มเทียบเดือนก่อน (โต/ร่วง) เพื่อวางแผน ดัน/ปรับ/ตัด</p>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <QuadCard title="ดาวเด่น — ขายดี + กำลังโต" hint="ดันต่อ: โฆษณา / เมนูแนะนำ" list={insights.menuEngineering.stars} tone="emerald" />
+              <QuadCard title="ม้างาน — ขายดีแต่นิ่ง/ร่วง" hint="รักษาไว้: ปรับราคา / ถ่ายรูปใหม่ / รีแบรนด์" list={insights.menuEngineering.plowhorses} tone="sky" />
+              <QuadCard title="ปริศนา — ขายน้อยแต่กำลังโต" hint="ลองดัน: โปรกระตุ้น / วางตำแหน่งให้เด่น" list={insights.menuEngineering.puzzles} tone="amber" />
+              <QuadCard title="ตัวถ่วง — ขายน้อย + ร่วง" hint="พิจารณา: ตัดออก / ปรับสูตร" list={insights.menuEngineering.dogs} tone="rose" />
+            </div>
+          </div>
+
+          <div className="grid lg:grid-cols-2 gap-4">
+            {/* #2 Beverage attach */}
+            {insights.beverage.total > 0 && (
+              <div className="card space-y-2">
+                <h2 className="font-bold text-slate-800">สัดส่วนเครื่องดื่ม / ของหวาน</h2>
+                <div className="space-y-1">
+                  <ChannelBlock title="" slices={[
+                    { name: "อาหาร", sales: insights.beverage.foodNett, qty: 0, pct: insights.beverage.foodPct, avgTicket: null },
+                    { name: "เครื่องดื่ม", sales: insights.beverage.beverageNett, qty: 0, pct: insights.beverage.beveragePct, avgTicket: null },
+                    { name: "ของหวาน", sales: insights.beverage.dessertNett, qty: 0, pct: insights.beverage.dessertPct, avgTicket: null }
+                  ]} />
+                </div>
+                <div className="text-sm rounded-lg bg-slate-50 p-2.5">
+                  เครื่องดื่มคิดเป็น <b>{insights.beverage.bevToFoodPct?.toFixed(0) ?? "—"}%</b> ของยอดอาหาร
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {(insights.beverage.bevToFoodPct ?? 0) < 20
+                      ? "→ ค่อนข้างต่ำ — โอกาสอัปเซล จัดเซ็ตจานหลัก+เครื่องดื่ม / ไวน์แพร์ริ่ง (มาร์จิ้นสูง)"
+                      : "→ อยู่ในเกณฑ์ดี — รักษาการอัปเซลเครื่องดื่มต่อไป"}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-1">* แยกหมวดอัตโนมัติจากชื่อเมนู</div>
+                </div>
+              </div>
+            )}
+
+            {/* #7 Concentration */}
+            {insights.concentration.top5Pct != null && (
+              <div className="card space-y-2">
+                <h2 className="font-bold text-slate-800">ความกระจุกตัวของรายได้ (80/20)</h2>
+                <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+                  <div><span className="text-slate-500">Top 5 เมนู</span> <b>{insights.concentration.top5Pct.toFixed(0)}%</b> ของยอดเมนู</div>
+                  <div><span className="text-slate-500">เมนูที่ทำ 80% ของยอด</span> <b>{insights.concentration.countFor80}</b> จาก {insights.concentration.itemCount} เมนู</div>
+                </div>
+                <div className="text-xs text-slate-500 rounded-lg bg-slate-50 p-2.5">
+                  {insights.concentration.top5Pct >= 50
+                    ? "→ รายได้กระจุกในไม่กี่เมนู เสี่ยงถ้าของหมด/ลูกค้าเบื่อ — ครอสเซลกระจายไปเมนูอื่น + ป้องกันสต็อกตัวหลัก"
+                    : "→ รายได้กระจายดี ความเสี่ยงต่ำ"}
+                </div>
+              </div>
+            )}
+
+            {/* #3 Guest metrics */}
+            {(insights.guests.avgPartySize != null || insights.guests.avgSpendPerHead != null) && (
+              <div className="card space-y-2">
+                <h2 className="font-bold text-slate-800">พฤติกรรมลูกค้า</h2>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <div className="text-[11px] text-slate-500">ลูกค้าเฉลี่ยต่อบิล (ขนาดกลุ่ม)</div>
+                    <div className="text-base font-bold text-slate-800">{insights.guests.avgPartySize?.toFixed(2) ?? "—"} คน</div>
+                    <div className="text-[10px] text-slate-400">เทียบเดือนก่อน <PctChip pct={insights.guests.partyMomPct} /></div>
+                  </div>
+                  <div className="rounded-xl bg-emerald-50 p-3">
+                    <div className="text-[11px] text-slate-500">ยอดใช้จ่ายต่อหัว</div>
+                    <div className="text-base font-bold text-emerald-700">{insights.guests.avgSpendPerHead != null ? baht(insights.guests.avgSpendPerHead) : "—"}</div>
+                    <div className="text-[10px] text-slate-400">เทียบเดือนก่อน <PctChip pct={insights.guests.spendMomPct} /></div>
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500">
+                  {(insights.guests.spendMomPct ?? 0) < 0 ? "→ ยอดต่อหัวลด — เร่งอัปเซล/เซ็ตเมนู" : "→ ยอดต่อหัวเพิ่ม — การอัปเซลได้ผล"}
+                  {(insights.guests.avgPartySize ?? 0) >= 2.5 ? " · ลูกค้ามาเป็นกลุ่ม → จัดเซ็ตแบ่งกันกิน/โปรโต๊ะใหญ่" : ""}
+                </div>
+              </div>
+            )}
+
+            {/* #5 Rhythm: payday + weekend */}
+            {(insights.rhythm.paydayLiftPct != null || insights.rhythm.weekendLiftPct != null) && (
+              <div className="card space-y-2">
+                <h2 className="font-bold text-slate-800">จังหวะยอดขาย (เงินเดือน / สุดสัปดาห์)</h2>
+                <div className="space-y-1 text-sm">
+                  {insights.rhythm.paydayLiftPct != null && (
+                    <div>ช่วงเงินเดือนออก (กลาง/สิ้นเดือน) ยอดเฉลี่ย/วัน <b>{baht(insights.rhythm.paydayAvgNett ?? 0)}</b> · เทียบวันอื่น <PctChip pct={insights.rhythm.paydayLiftPct} /></div>
+                  )}
+                  {insights.rhythm.weekendLiftPct != null && (
+                    <div>เสาร์–อาทิตย์ ยอดเฉลี่ย/วัน <b>{baht(insights.rhythm.weekendAvgNett ?? 0)}</b> · เทียบวันธรรมดา <PctChip pct={insights.rhythm.weekendLiftPct} /></div>
+                  )}
+                </div>
+                <div className="text-xs text-slate-500 rounded-lg bg-slate-50 p-2.5">→ ตั้งเวลาโปร/แคมเปญให้ตรงจังหวะเงินสะพัด · วันธรรมดาที่ยอดต่ำจัดโปรกระตุ้น</div>
+              </div>
+            )}
+
+            {/* #6 Quality */}
+            {insights.quality.voidRatePct != null && (
+              <div className={`card space-y-2 ${insights.quality.flag ? "border-amber-300 bg-amber-50" : ""}`}>
+                <h2 className="font-bold text-slate-800">สัญญาณคุณภาพ (Void / Refund)</h2>
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                  <div><span className="text-slate-500">อัตรา Void</span> <b className={insights.quality.flag ? "text-amber-700" : "text-slate-800"}>{insights.quality.voidRatePct.toFixed(2)}%</b> ของยอดก่อนลด {insights.quality.prevVoidRatePct != null && <span className="text-slate-400">(เดือนก่อน {insights.quality.prevVoidRatePct.toFixed(2)}%)</span>}</div>
+                  <div><span className="text-slate-500">บิลยกเลิก</span> <b>{intTh(insights.quality.voidBillCount)}</b> บิล</div>
+                  {insights.quality.refund > 0 && <div><span className="text-slate-500">คืนเงิน</span> <b className="text-rose-600">{baht(insights.quality.refund)}</b></div>}
+                </div>
+                {insights.quality.flag && <div className="text-xs text-amber-700">→ อัตรา Void สูงกว่าปกติ — ตรวจสอบครัว/เมนูที่สับสน ก่อนกระทบลูกค้ากลับมาซ้ำ</div>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Day detail */}
       {selDate && daily && (
         <div className="card space-y-4">
@@ -596,6 +718,31 @@ function MomentumList({ title, list, up }: { title: string; list: MenuMomentum[]
   );
 }
 
+function QuadCard({ title, hint, list, tone }: { title: string; hint: string; list: MenuClass[]; tone: "emerald" | "sky" | "amber" | "rose" }) {
+  const bar = { emerald: "border-emerald-400 bg-emerald-50", sky: "border-sky-400 bg-sky-50", amber: "border-amber-400 bg-amber-50", rose: "border-rose-400 bg-rose-50" }[tone];
+  const head = { emerald: "text-emerald-700", sky: "text-sky-700", amber: "text-amber-700", rose: "text-rose-700" }[tone];
+  return (
+    <div className={`rounded-xl border-l-4 ${bar} p-3`}>
+      <div className={`text-sm font-bold ${head}`}>{title}</div>
+      <div className="text-[11px] text-slate-500 mb-1.5">{hint}</div>
+      {list.length === 0 ? (
+        <div className="text-xs text-slate-400">—</div>
+      ) : (
+        <ol className="space-y-0.5">
+          {list.map((m) => (
+            <li key={m.name} className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-slate-700 truncate">{m.name}</span>
+              <span className="whitespace-nowrap text-slate-500">
+                {baht(m.nett)}{m.isNew ? " · ใหม่" : m.deltaPct != null ? <> · <PctChip pct={m.deltaPct} /></> : ""}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 function WeekdayBars({ stats }: { stats: WeekdayStat[] }) {
   const active = stats.filter((s) => s.days > 0);
   const max = Math.max(1, ...active.map((s) => s.avgNett));
@@ -633,7 +780,7 @@ function ChannelBlock({ title, slices }: { title: string; slices: ChannelSlice[]
             <div className="flex-1 h-3 rounded bg-slate-100 overflow-hidden">
               <div className="h-full bg-sky-400" style={{ width: `${Math.max(2, s.pct)}%` }} />
             </div>
-            <span className="w-28 text-right text-xs text-slate-700 shrink-0">{baht(s.sales)} · {s.pct.toFixed(0)}%</span>
+            <span className="w-40 text-right text-xs text-slate-700 shrink-0">{baht(s.sales)} · {s.pct.toFixed(0)}%{s.avgTicket != null ? ` · เฉลี่ย/บิล ${baht(s.avgTicket)}` : ""}</span>
           </div>
         ))}
       </div>
