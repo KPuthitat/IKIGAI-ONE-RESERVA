@@ -1,9 +1,9 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { nameWithPrefix } from "@/lib/name";
+import { HubCard, type HubCardProps } from "@/components/HubCard";
 import { getMyEnrollment, type MjActor } from "@/lib/mounjaro-db";
 
 export const dynamic = "force-dynamic";
@@ -16,18 +16,45 @@ export default function StaffHomePage({
   const user = requireUser();
   const lang = getLang();
   const showForbidden = searchParams.error === "forbidden";
+  const moduleEyebrow = t(lang, "portal.label.module");
+  const openModule = t(lang, "portal.openModule");
 
-  // Invite non-enrolled staff to the Mounjaro program (the menu is hidden
-  // until they have an enrollment, so the banner is the entry point).
+  // Wellness (Mounjaro) appears ONLY for enrolled staff — same rule as the
+  // nav (privacy: non-enrolled employees never see it). Surfacing it here
+  // fixes the landing being incomplete for enrolled staff (owner 2026-09-18).
   let mjEnrolled = false;
   try { mjEnrolled = !!getMyEnrollment(user as MjActor); } catch { mjEnrolled = false; }
 
+  // Cards mirror the staff nav + the modern icon-card look shared with the
+  // admin landing (HubCard, owner 2026-08-02). Only modules this employee can
+  // actually open are shown; ASCENDA is a preview.
+  const cards: (HubCardProps | null)[] = [
+    {
+      href: "/staff/persona", icon: "persona", tone: "brand", eyebrow: moduleEyebrow,
+      title: t(lang, "portal.persona.title"), sub: t(lang, "portal.persona.staffDesc"), cta: openModule,
+    },
+    {
+      href: "/staff/reserva", icon: "reserva", tone: "sky", eyebrow: moduleEyebrow,
+      title: t(lang, "portal.reserva.title"), sub: t(lang, "portal.reserva.staffDesc"), cta: openModule,
+    },
+    {
+      href: "/staff/inventa", icon: "inventa", tone: "emerald", eyebrow: moduleEyebrow,
+      title: "INVENTA", sub: t(lang, "inv.module.desc"), cta: openModule,
+    },
+    mjEnrolled ? {
+      href: "/staff/health/exams", icon: "shield", tone: "rose", eyebrow: moduleEyebrow,
+      title: t(lang, "portal.wellness.title"), sub: t(lang, "portal.wellness.staffDesc"), cta: openModule,
+    } : null,
+    {
+      href: "/staff/ascenda", icon: "ascenda", tone: "slate", eyebrow: moduleEyebrow,
+      title: t(lang, "portal.ascenda.title"), sub: t(lang, "portal.ascenda.staffDesc"),
+      cta: t(lang, "portal.previewModule"), muted: true,
+      badge: { label: t(lang, "portal.label.comingSoon"), tone: "amber" },
+    },
+  ];
+
   return (
     <div className="space-y-6">
-      {/* Banner removed 2026-06-06: enrollment is now doctor-initiated.
-          Staff who are invited will see the health menu and can confirm
-          from /staff/health/mounjaro directly after receiving a LINE
-          notification from the doctor. */}
       <div>
         <h1 className="text-2xl font-bold text-slate-800">{t(lang, "portal.chooseModule")}</h1>
         <p className="text-sm text-slate-500 mt-1">
@@ -40,47 +67,10 @@ export default function StaffHomePage({
         )}
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-4">
-        <Link href="/staff/persona" className="card hover:shadow-2xl transition group block">
-          <div className="text-[11px] tracking-[1px] text-slate-400 mb-1">{t(lang, "portal.label.module")}</div>
-          <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
-            {t(lang, "portal.persona.title")}
-          </h2>
-          <p className="text-slate-500 text-sm mt-1">{t(lang, "portal.persona.staffDesc")}</p>
-          <p className="mt-4 text-brand font-bold text-sm">{t(lang, "portal.openModule")}</p>
-        </Link>
-
-        <Link href="/staff/reserva" className="card hover:shadow-2xl transition group block">
-          <div className="text-[11px] tracking-[1px] text-slate-400 mb-1">{t(lang, "portal.label.module")}</div>
-          <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
-            {t(lang, "portal.reserva.title")}
-          </h2>
-          <p className="text-slate-500 text-sm mt-1">{t(lang, "portal.reserva.staffDesc")}</p>
-          <p className="mt-4 text-brand font-bold text-sm">{t(lang, "portal.openModule")}</p>
-        </Link>
-
-        <Link href="/staff/inventa" className="card hover:shadow-2xl transition group block">
-          <div className="text-[11px] tracking-[1px] text-slate-400 mb-1">{t(lang, "portal.label.module")}</div>
-          <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
-            INVENTA
-          </h2>
-          <p className="text-slate-500 text-sm mt-1">{t(lang, "inv.module.desc")}</p>
-          <p className="mt-4 text-brand font-bold text-sm">{t(lang, "portal.openModule")}</p>
-        </Link>
-
-        <Link href="/staff/ascenda" className="card hover:shadow-2xl transition group block opacity-80">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="text-[11px] tracking-[1px] text-slate-400">{t(lang, "portal.label.module")}</div>
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700">
-              {t(lang, "portal.label.comingSoon")}
-            </span>
-          </div>
-          <h2 className="text-2xl font-bold text-slate-800 group-hover:text-brand transition-colors">
-            {t(lang, "portal.ascenda.title")}
-          </h2>
-          <p className="text-slate-500 text-sm mt-1">{t(lang, "portal.ascenda.staffDesc")}</p>
-          <p className="mt-4 text-slate-400 font-bold text-sm">{t(lang, "portal.previewModule")}</p>
-        </Link>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {cards.filter((c): c is HubCardProps => c !== null).map((c) => (
+          <HubCard key={c.href} {...c} />
+        ))}
       </div>
     </div>
   );
