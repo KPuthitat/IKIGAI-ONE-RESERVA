@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt } from "@/lib/salesa-db";
-import { dailyAnalytics, weeklyAnalytics, monthComparison, weekdayStats, discountInsight, monthChannelMix, targetProgress } from "@/lib/salesa-analytics";
+import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
+import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, discountInsight, monthChannelMix, targetProgress } from "@/lib/salesa-analytics";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
 // day's full analytics + menu ranking. ?week=YYYY-MM-DD (a Monday): the weekly
-// rollup. Owner 2026-09-16.
+// rollup. ?monthly=YYYY-MM: the whole-month rollup (card preview). Owner 2026-09.
 
 export const dynamic = "force-dynamic";
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const YM = /^\d{4}-\d{2}$/;
 
 function branchName(branchId: number): string {
   const r = getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
@@ -29,18 +30,25 @@ export function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const name = branchName(branchId);
   const hasLineGroup = !!getLineGroupId(branchId);
+  const cardColor = getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR;
 
   const date = sp.get("date") ?? "";
   if (ISO.test(date)) {
     const daily = dailyAnalytics(branchId, date);
     if (!daily) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    return NextResponse.json({ ok: true, branchName: name, hasLineGroup, daily });
+    return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, daily });
   }
 
   const week = sp.get("week") ?? "";
   if (ISO.test(week)) {
     const weekly = weeklyAnalytics(branchId, week);
-    return NextResponse.json({ ok: true, branchName: name, hasLineGroup, weekly, weeklySentAt: weeklySentAt(branchId, weekly.weekStart) });
+    return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, weekly, weeklySentAt: weeklySentAt(branchId, weekly.weekStart) });
+  }
+
+  const monthly = sp.get("monthly") ?? "";
+  if (YM.test(monthly)) {
+    const [my, mm] = monthly.split("-").map(Number);
+    return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, monthly: monthlyAnalytics(branchId, my, mm) });
   }
 
   const now = bkkNow();

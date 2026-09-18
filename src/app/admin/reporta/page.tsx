@@ -37,7 +37,7 @@ export default function ReportaPage() {
         </div>
         <Link href="/admin/reporta/settings" className="btn-secondary text-sm">⚙️ ตั้งค่ากลุ่ม LINE</Link>
       </div>
-      <ReportaClient branchName={branch?.name ?? `#${branchId}`} />
+      <ReportaClient branchName={branch?.name ?? `#${branchId}`} operatorName={user.display_name} defaultColor={cardColor} />
     </div>
   );
 }

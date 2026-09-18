@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 // REPORTA dashboard (owner 2026-09-16): import the POS files, review the day's
 // deep analytics + menu ranking, and push the summary card to the HOD LINE group
@@ -63,6 +63,13 @@ type DiscountInsight = { avgDiscountPct: number | null; totalDiscount: number; h
 type ChannelSlice = { name: string; sales: number; qty: number; pct: number };
 type ChannelMix = { types: ChannelSlice[]; payments: ChannelSlice[]; sources: ChannelSlice[] };
 type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
+type MonthlyAnalytics = {
+  year: number; month: number; ym: string; label: string; dayCount: number;
+  totalNett: number; totalBills: number; totalPax: number; totalDiscount: number;
+  avgPerDay: number | null; avgPerBill: number | null; bestDate: string | null; bestNett: number | null;
+  prevMonthNett: number | null; prevMonthPct: number | null; lastYearNett: number | null; lastYearPct: number | null;
+  topItems: MenuRank[]; topCategories: MenuRank[];
+};
 
 function MenuList({ title, list, muted }: { title: string; list: MenuRank[]; muted?: boolean }) {
   if (!list.length) return null;
@@ -82,7 +89,7 @@ function MenuList({ title, list, muted }: { title: string; list: MenuRank[]; mut
 }
 
 /** Preview + PIN → confirm send. */
-function PinModal({ title, onConfirm, onClose }: { title: string; onConfirm: (pin: string) => Promise<{ ok: boolean; message?: string }>; onClose: () => void }) {
+function PinModal({ title, preview, onConfirm, onClose }: { title: string; preview?: ReactNode; onConfirm: (pin: string) => Promise<{ ok: boolean; message?: string }>; onClose: () => void }) {
   const [pin, setPin] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -96,9 +103,15 @@ function PinModal({ title, onConfirm, onClose }: { title: string; onConfirm: (pi
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-3">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-3 max-h-[90vh] overflow-y-auto">
         <h3 className="font-bold text-slate-800">{title}</h3>
-        <p className="text-sm text-slate-500">การ์ดสรุปจะถูกส่งเข้ากลุ่ม LINE หัวหน้างาน (HOD) — ยืนยันด้วย PIN</p>
+        {preview && (
+          <div>
+            <p className="text-xs text-slate-400 mb-1.5">ตัวอย่างการ์ดที่จะส่งเข้ากลุ่ม LINE</p>
+            <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100">{preview}</div>
+          </div>
+        )}
+        <p className="text-sm text-slate-500">ยืนยันด้วย PIN เพื่อส่งเข้ากลุ่ม LINE หัวหน้างาน (HOD)</p>
         <div>
           <label className="label text-center">PIN (4 หลัก)</label>
           <input type="password" inputMode="numeric" autoComplete="off" autoFocus maxLength={4} value={pin}
@@ -116,7 +129,7 @@ function PinModal({ title, onConfirm, onClose }: { title: string; onConfirm: (pi
   );
 }
 
-export default function ReportaClient({ branchName }: { branchName: string }) {
+export default function ReportaClient({ branchName, operatorName, defaultColor }: { branchName: string; operatorName: string; defaultColor: string }) {
   const initial = todayBkk();
   const [year, setYear] = useState(Number(initial.slice(0, 4)));
   const [month, setMonth] = useState(Number(initial.slice(5, 7)));
@@ -135,7 +148,8 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
   const [weeklySentAt, setWeeklySentAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [pin, setPin] = useState<null | { title: string; run: (pin: string) => Promise<{ ok: boolean; message?: string }> }>(null);
+  const [pin, setPin] = useState<null | { title: string; preview?: ReactNode; run: (pin: string) => Promise<{ ok: boolean; message?: string }> }>(null);
+  const [cardColor, setCardColor] = useState(defaultColor);
   const fileRef = useRef<HTMLInputElement>(null);
   const [picked, setPicked] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -152,13 +166,14 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
       setDays(r.view.days); setHasLineGroup(r.hasLineGroup); setMonthCompare(r.monthCompare ?? null);
       setWeekdays(r.weekdays ?? []); setDiscount(r.discount ?? null); setChannels(r.channels ?? null);
       setMonthTarget(r.monthTarget ?? null); setMonthSentAt(r.monthSentAt ?? null);
+      if (r.cardColor) setCardColor(r.cardColor);
     }
   }, [year, month]);
 
   const loadDay = useCallback(async (date: string) => {
     setSelDate(date); setDaily(null);
     const r = await fetch(`/api/admin/reporta/view?date=${date}`).then((x) => x.json());
-    if (r.ok) setDaily(r.daily); else setMsg({ kind: "err", text: r.message ?? "โหลดข้อมูลวันไม่สำเร็จ" });
+    if (r.ok) { setDaily(r.daily); if (r.cardColor) setCardColor(r.cardColor); } else setMsg({ kind: "err", text: r.message ?? "โหลดข้อมูลวันไม่สำเร็จ" });
   }, []);
 
   const loadWeek = useCallback(async (ws: string) => {
@@ -213,6 +228,7 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
 
   const sendDaily = (date: string) => setPin({
     title: `ส่งสรุปยอดขายวันที่ ${thaiDate(date)}`,
+    preview: daily && daily.date === date ? <DailyPreview a={daily} branchName={branchName} operator={operatorName} color={cardColor} /> : undefined,
     run: async (p) => {
       const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "daily", date, pin: p }) }).then((x) => x.json());
       if (r.ok) { setMsg({ kind: "ok", text: "ส่งสรุปรายวันเข้ากลุ่ม HOD แล้ว" }); await loadMonth(); if (selDate === date) await loadDay(date); }
@@ -222,6 +238,7 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
 
   const sendWeekly = (ws: string) => setPin({
     title: `ส่งสรุปสัปดาห์ ${weekly?.label ?? ""}`,
+    preview: weekly && weekly.weekStart === ws ? <WeeklyPreview w={weekly} branchName={branchName} operator={operatorName} color={cardColor} /> : undefined,
     run: async (p) => {
       const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "weekly", week: ws, pin: p }) }).then((x) => x.json());
       if (r.ok) { setMsg({ kind: "ok", text: "ส่งสรุปรายสัปดาห์เข้ากลุ่ม HOD แล้ว" }); await loadWeek(ws); }
@@ -229,14 +246,21 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
     }
   });
 
-  const sendMonthly = (y: number, m: number) => setPin({
-    title: `ส่งสรุปเดือน ${TH_MONTHS[m]} ${y + 543}`,
-    run: async (p) => {
-      const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "monthly", year: y, month: m, pin: p }) }).then((x) => x.json());
-      if (r.ok) { setMsg({ kind: "ok", text: "ส่งสรุปรายเดือนเข้ากลุ่ม HOD แล้ว" }); await loadMonth(); }
-      return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
-    }
-  });
+  const sendMonthly = async (y: number, m: number) => {
+    // Fetch the monthly rollup so the modal can preview the exact card.
+    const ym = `${y}-${String(m).padStart(2, "0")}`;
+    const pv = await fetch(`/api/admin/reporta/view?monthly=${ym}`).then((x) => x.json()).catch(() => null);
+    const monthly: MonthlyAnalytics | null = pv?.ok ? pv.monthly : null;
+    setPin({
+      title: `ส่งสรุปเดือน ${TH_MONTHS[m]} ${y + 543}`,
+      preview: monthly ? <MonthlyPreview m={monthly} branchName={branchName} operator={operatorName} color={cardColor} /> : undefined,
+      run: async (p) => {
+        const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "monthly", year: y, month: m, pin: p }) }).then((x) => x.json());
+        if (r.ok) { setMsg({ kind: "ok", text: "ส่งสรุปรายเดือนเข้ากลุ่ม HOD แล้ว" }); await loadMonth(); }
+        return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
+      }
+    });
+  };
 
   const shiftMonth = (delta: number) => {
     let y = year, m = month + delta;
@@ -548,7 +572,7 @@ export default function ReportaClient({ branchName }: { branchName: string }) {
         )}
       </div>
 
-      {pin && <PinModal title={pin.title} onConfirm={pin.run} onClose={() => setPin(null)} />}
+      {pin && <PinModal title={pin.title} preview={pin.preview} onConfirm={pin.run} onClose={() => setPin(null)} />}
     </div>
   );
 }
@@ -621,6 +645,103 @@ function PctChip({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-slate-300">—</span>;
   const up = pct >= 0;
   return <span className={up ? "text-emerald-600" : "text-rose-600"}>{up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%</span>;
+}
+
+// ── LINE card previews (owner 2026-09-18: ดูก่อนส่งทุกการ์ด) ──────────────────
+function CardShell({ color, title, subtitle, children }: { color: string; title: string; subtitle: string; children: ReactNode }) {
+  return (
+    <div className="bg-white text-[13px]">
+      <div style={{ backgroundColor: color }} className="px-4 py-3">
+        <div className="text-[10px]" style={{ color: "#ffffff99" }}>IKIGAI OS · ยอดขายรายวัน</div>
+        <div className="text-white font-bold text-base leading-tight">{title}</div>
+        <div className="text-xs" style={{ color: "#ffffffcc" }}>{subtitle}</div>
+      </div>
+      <div className="px-4 py-3 space-y-1">{children}</div>
+    </div>
+  );
+}
+function PRow({ label, value, bold, tone }: { label: string; value: string; bold?: boolean; tone?: "green" | "red" }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-slate-500">{label}</span>
+      <span className={`text-right ${bold ? "font-bold" : ""} ${tone === "green" ? "text-emerald-700" : tone === "red" ? "text-rose-600" : "text-slate-800"}`}>{value}</span>
+    </div>
+  );
+}
+function Cmp({ parts }: { parts: Array<{ label: string; pct: number | null }> }) {
+  if (parts.every((p) => p.pct == null)) return <div className="text-[11px] text-slate-400">ยังไม่มีข้อมูลเทียบ</div>;
+  return (
+    <div className="text-[11px] text-slate-400 flex flex-wrap gap-x-4">
+      {parts.map((p, i) => <span key={i}>{p.label} <PctChip pct={p.pct} /></span>)}
+    </div>
+  );
+}
+function PMenu({ title, list }: { title: string; list: MenuRank[] }) {
+  if (!list.length) return null;
+  return (
+    <div className="pt-1">
+      <div className="text-xs font-bold text-slate-700 mb-0.5">{title}</div>
+      {list.map((m, i) => (
+        <div key={m.name} className="flex justify-between gap-2 text-[12px]"><span className="text-slate-600 truncate">{i + 1}. {m.name}</span><span className="whitespace-nowrap">{baht(m.nett)}</span></div>
+      ))}
+    </div>
+  );
+}
+const sepline = <div className="border-t border-slate-100 my-1.5" />;
+
+function DailyPreview({ a, branchName, operator, color }: { a: DailyAnalytics; branchName: string; operator: string; color: string }) {
+  const r = a.row;
+  const fmt = (m: MetricCompare) => m.kind === "baht" ? `${baht(m.value)} บาท` : m.key === "bills" ? `${intTh(m.value)} บิล` : m.key === "pax" ? `${intTh(m.value)} คน` : intTh(m.value);
+  return (
+    <CardShell color={color} title="สรุปยอดขายประจำวัน" subtitle={`${a.dateLabel} · ${branchName}`}>
+      <div className="font-bold text-slate-800">{branchName}</div>
+      <div className="text-[11px] text-slate-400">บันทึกโดย: {operator}</div>
+      {sepline}
+      {a.metrics.map((m) => (
+        <div key={m.key}>
+          <PRow label={m.label} value={fmt(m)} bold={m.key === "nett"} tone={m.key === "nett" ? "green" : undefined} />
+          <Cmp parts={[{ label: a.wowLabel, pct: m.wowPct }, { label: a.momLabel, pct: m.momPct }]} />
+        </div>
+      ))}
+      <PRow label="ส่วนลด" value={`${baht(Math.abs(r.discount))}${a.discountPct != null ? ` (${a.discountPct.toFixed(1)}%)` : ""}`} tone="red" />
+      {r.void_amount > 0 && <PRow label="ยกเลิกบิล (Void)" value={`${baht(r.void_amount)} · ${intTh(r.void_bill_count)} บิล`} tone="red" />}
+      <PMenu title="เมนูทำรายได้สูงสุด" list={a.topItems} />
+      <PMenu title="หมวดทำรายได้สูงสุด" list={a.topCategories} />
+    </CardShell>
+  );
+}
+
+function WeeklyPreview({ w, branchName, operator, color }: { w: WeeklyAnalytics; branchName: string; operator: string; color: string }) {
+  return (
+    <CardShell color={color} title="สรุปยอดขายประจำสัปดาห์" subtitle={`${w.label} · ${branchName}`}>
+      <div className="font-bold text-slate-800">{branchName}</div>
+      <div className="text-[11px] text-slate-400">สรุปโดย: {operator} · รวม {w.dayCount} วัน</div>
+      {sepline}
+      <PRow label="ยอดขายรวมสัปดาห์" value={`${baht(w.totalNett)} บาท`} bold tone="green" />
+      <Cmp parts={[{ label: "เทียบสัปดาห์ก่อน", pct: w.wowNettPct }]} />
+      <PRow label="จำนวนบิลรวม" value={`${intTh(w.totalBills)} บิล`} />
+      <PRow label="ลูกค้ารวม" value={`${intTh(w.totalPax)} คน`} />
+      {w.avgPerDay != null && <PRow label="เฉลี่ยต่อวัน" value={`${baht(w.avgPerDay)} บาท`} />}
+      {w.bestDate && <PRow label="วันขายดีสุด" value={`${w.days.find((d) => d.date === w.bestDate)?.dateLabel ?? w.bestDate} · ${baht(w.bestNett ?? 0)}`} />}
+      <PMenu title="เมนูทำรายได้สูงสุดประจำสัปดาห์" list={w.topItems} />
+    </CardShell>
+  );
+}
+
+function MonthlyPreview({ m, branchName, operator, color }: { m: MonthlyAnalytics; branchName: string; operator: string; color: string }) {
+  return (
+    <CardShell color={color} title="สรุปยอดขายประจำเดือน" subtitle={`${m.label} · ${branchName}`}>
+      <div className="font-bold text-slate-800">{branchName}</div>
+      <div className="text-[11px] text-slate-400">สรุปโดย: {operator} · รวม {m.dayCount} วัน</div>
+      {sepline}
+      <PRow label="ยอดขายรวมทั้งเดือน" value={`${baht(m.totalNett)} บาท`} bold tone="green" />
+      <Cmp parts={[{ label: "เทียบเดือนก่อน", pct: m.prevMonthPct }, { label: "เทียบปีก่อน", pct: m.lastYearPct }]} />
+      <PRow label="จำนวนบิลรวม" value={`${intTh(m.totalBills)} บิล`} />
+      <PRow label="ลูกค้ารวม" value={`${intTh(m.totalPax)} คน`} />
+      {m.avgPerDay != null && <PRow label="เฉลี่ยต่อวัน" value={`${baht(m.avgPerDay)} บาท`} />}
+      <PMenu title="เมนูทำรายได้สูงสุดประจำเดือน" list={m.topItems} />
+    </CardShell>
+  );
 }
 
 function Kpi({ label, value, accent, wowPct, momPct, wowLabel, momLabel }: {
