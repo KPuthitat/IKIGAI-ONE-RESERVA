@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
-import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, discountInsight, monthChannelMix, targetProgress, menuEngineering, beverageMix, menuConcentration, guestMetrics, rhythmInsight, qualitySignal } from "@/lib/salesa-analytics";
+import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, discountInsight, monthChannelMix, targetProgress, menuEngineering, beverageMix, menuConcentration, guestMetrics, rhythmInsight, qualitySignal, receiptInsights } from "@/lib/salesa-analytics";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
 // day's full analytics + menu ranking. ?week=YYYY-MM-DD (a Monday): the weekly
@@ -72,7 +72,8 @@ export function GET(req: Request) {
     concentration: menuConcentration(branchId, year, month),
     guests: guestMetrics(branchId, year, month),
     rhythm: rhythmInsight(branchId, year, month),
-    quality: qualitySignal(branchId, year, month)
+    quality: qualitySignal(branchId, year, month),
+    receipt: receiptInsights(branchId, year, month)
   };
   const days = listMonth(branchId, year, month).map((d) => ({
     date: d.sale_date,
@@ -81,6 +82,7 @@ export function GET(req: Request) {
     pax: d.pax,
     hasSales: d.has_sales === 1,
     hasMenu: d.has_menu === 1,
+    hasReceipt: d.has_receipt === 1,
     dailySentAt: d.daily_sent_at
   }));
   return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, insights });

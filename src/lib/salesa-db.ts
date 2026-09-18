@@ -4,7 +4,7 @@
 // views, and stores the HOD LINE-group binding.
 
 import { getDb } from "./db";
-import type { SalesCloseUp, SalesOverview, PayEntry, TypeEntry, MenuEntry } from "./salesa-parse";
+import type { SalesCloseUp, SalesOverview, SalesReceipt, PayEntry, TypeEntry, MenuEntry } from "./salesa-parse";
 
 export type DailyRow = {
   branch_id: number;
@@ -32,6 +32,7 @@ export type DailyRow = {
   sources: TypeEntry[];
   has_sales: number;
   has_menu: number;
+  has_receipt: number;
   daily_sent_at: string | null;
   imported_at: string;
 };
@@ -121,6 +122,37 @@ export function upsertMenu(branchId: number, userId: number, o: SalesOverview): 
   tx();
 }
 
+/** Upsert per-bill receipts + items for a (branch, date). Ensures a daily row
+ *  exists, flips has_receipt on, and replaces that day's receipts. */
+export function upsertReceipts(branchId: number, userId: number, r: SalesReceipt): void {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO salesa_daily (branch_id, sale_date, merchant, has_receipt, imported_by, imported_at)
+      VALUES (?, ?, ?, 1, ?, datetime('now'))
+      ON CONFLICT(branch_id, sale_date) DO UPDATE SET
+        has_receipt = 1,
+        merchant = COALESCE(salesa_daily.merchant, excluded.merchant),
+        imported_by = excluded.imported_by
+    `).run(branchId, r.date, r.merchant, userId);
+    db.prepare("DELETE FROM salesa_receipts WHERE branch_id = ? AND sale_date = ?").run(branchId, r.date);
+    db.prepare("DELETE FROM salesa_receipt_items WHERE branch_id = ? AND sale_date = ?").run(branchId, r.date);
+    const insB = db.prepare(
+      `INSERT INTO salesa_receipts (branch_id, sale_date, bill_no, hour, table_name, gross, discount, nett, payment, is_staff, is_takeaway)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const insI = db.prepare(
+      `INSERT INTO salesa_receipt_items (branch_id, sale_date, bill_no, name, qty) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(branch_id, sale_date, bill_no, name) DO UPDATE SET qty = qty + excluded.qty`
+    );
+    for (const b of r.bills) {
+      insB.run(branchId, r.date, b.billNo, b.hour, b.table, b.gross, b.discount, b.nett, b.payment, b.isStaff ? 1 : 0, b.isTakeaway ? 1 : 0);
+      for (const it of b.items) insI.run(branchId, r.date, b.billNo, it.name, it.qty);
+    }
+  });
+  tx();
+}
+
 // ── Reads ────────────────────────────────────────────────────────────────
 
 export function getDaily(branchId: number, date: string): DailyRow | null {
@@ -162,12 +194,56 @@ export function menuRange(branchId: number, start: string, end: string, kind: "i
   return rows.map((r) => ({ name: r.name, nett: Math.round((r.nett + Number.EPSILON) * 100) / 100 }));
 }
 
+// ── Receipt reads (owner 2026-09-18: hourly + basket, excl STAFF) ────────────
+
+/** Bills + nett per hour over [start, end], excluding staff bills. */
+export function hourlyReceipts(branchId: number, start: string, end: string): Array<{ hour: number; bills: number; nett: number }> {
+  return (getDb().prepare(
+    `SELECT hour, COUNT(*) AS bills, SUM(nett) AS nett FROM salesa_receipts
+     WHERE branch_id = ? AND sale_date BETWEEN ? AND ? AND is_staff = 0
+     GROUP BY hour ORDER BY hour`
+  ).all(branchId, start, end) as Array<{ hour: number; bills: number; nett: number }>)
+    .map((r) => ({ hour: r.hour, bills: r.bills, nett: Math.round((r.nett + Number.EPSILON) * 100) / 100 }));
+}
+
+/** Units sold per item over [start, end], excluding staff bills. */
+export function itemUnitsRange(branchId: number, start: string, end: string): Array<{ name: string; units: number; bills: number }> {
+  return getDb().prepare(
+    `SELECT i.name AS name, SUM(i.qty) AS units, COUNT(DISTINCT i.bill_no) AS bills
+     FROM salesa_receipt_items i
+     JOIN salesa_receipts r ON r.branch_id = i.branch_id AND r.sale_date = i.sale_date AND r.bill_no = i.bill_no
+     WHERE i.branch_id = ? AND i.sale_date BETWEEN ? AND ? AND r.is_staff = 0
+     GROUP BY i.name ORDER BY units DESC`
+  ).all(branchId, start, end) as Array<{ name: string; units: number; bills: number }>;
+}
+
+/** Per-bill item name lists over [start, end], excluding staff bills (basket). */
+export function receiptItemSets(branchId: number, start: string, end: string): string[][] {
+  const rows = getDb().prepare(
+    `SELECT i.bill_no AS bill, i.name AS name
+     FROM salesa_receipt_items i
+     JOIN salesa_receipts r ON r.branch_id = i.branch_id AND r.sale_date = i.sale_date AND r.bill_no = i.bill_no
+     WHERE i.branch_id = ? AND i.sale_date BETWEEN ? AND ? AND r.is_staff = 0`
+  ).all(branchId, start, end) as Array<{ bill: string; name: string }>;
+  const byBill = new Map<string, string[]>();
+  for (const r of rows) { const a = byBill.get(r.bill) ?? []; a.push(r.name); byBill.set(r.bill, a); }
+  return [...byBill.values()];
+}
+
+export function hasReceiptData(branchId: number, start: string, end: string): boolean {
+  return !!getDb().prepare(
+    "SELECT 1 FROM salesa_receipts WHERE branch_id = ? AND sale_date BETWEEN ? AND ? LIMIT 1"
+  ).get(branchId, start, end);
+}
+
 // ── Mutations ──────────────────────────────────────────────────────────────
 
 export function clearDay(branchId: number, date: string): number {
   const db = getDb();
   const tx = db.transaction(() => {
     db.prepare("DELETE FROM salesa_menu WHERE branch_id = ? AND sale_date = ?").run(branchId, date);
+    db.prepare("DELETE FROM salesa_receipt_items WHERE branch_id = ? AND sale_date = ?").run(branchId, date);
+    db.prepare("DELETE FROM salesa_receipts WHERE branch_id = ? AND sale_date = ?").run(branchId, date);
     return db.prepare("DELETE FROM salesa_daily WHERE branch_id = ? AND sale_date = ?").run(branchId, date).changes;
   });
   return tx() as number;

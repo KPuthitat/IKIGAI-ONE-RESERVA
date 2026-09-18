@@ -28,7 +28,7 @@ function todayBkk(): string {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 }
 
-type MonthDay = { date: string; nett: number; billCount: number; pax: number; hasSales: boolean; hasMenu: boolean; dailySentAt: string | null };
+type MonthDay = { date: string; nett: number; billCount: number; pax: number; hasSales: boolean; hasMenu: boolean; hasReceipt?: boolean; dailySentAt: string | null };
 type MenuRank = { name: string; nett: number; rank: number };
 type DailyAnalytics = {
   date: string; dateLabel: string;
@@ -70,6 +70,13 @@ type Insights = {
   guests: { avgPartySize: number | null; avgSpendPerHead: number | null; prevPartySize: number | null; partyMomPct: number | null; prevSpendPerHead: number | null; spendMomPct: number | null };
   rhythm: { paydayAvgNett: number | null; otherAvgNett: number | null; paydayLiftPct: number | null; paydayDays: number; weekendAvgNett: number | null; weekdayAvgNett: number | null; weekendLiftPct: number | null };
   quality: { voidAmount: number; voidBillCount: number; refund: number; voidRatePct: number | null; voidBillRatePct: number | null; prevVoidRatePct: number | null; flag: boolean };
+  receipt: {
+    hasData: boolean; peakHour: number | null;
+    hourly: Array<{ hour: number; bills: number; nett: number }>;
+    topUnits: Array<{ name: string; units: number; bills: number }>;
+    bottomUnits: Array<{ name: string; units: number; bills: number }>;
+    basket: Array<{ a: string; b: string; count: number }>;
+  };
 };
 type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
 type MonthlyAnalytics = {
@@ -203,7 +210,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       const r = await fetch("/api/admin/reporta/import", { method: "POST", body: fd }).then((x) => x.json());
       if (!r.ok) { setMsg({ kind: "err", text: r.message ?? r.error ?? "นำเข้าไม่สำเร็จ" }); }
       else {
-        const lines = r.imported.map((i: { kind: string; date: string; note: string }) => `${i.kind === "close_up" ? "ยอดขาย" : "เมนู"} · ${thaiDate(i.date)} · ${i.note}`);
+        const lines = r.imported.map((i: { kind: string; date: string; note: string }) => `${i.kind === "close_up" ? "ยอดขาย" : i.kind === "overview" ? "เมนู" : "ใบเสร็จ"} · ${thaiDate(i.date)} · ${i.note}`);
         setMsg({ kind: "ok", text: `นำเข้าสำเร็จ: ${lines.join(" / ")}` });
         setPicked([]);
         if (fileRef.current) fileRef.current.value = "";
@@ -312,7 +319,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
             </svg>
           </div>
           <div className="text-sm font-semibold text-slate-700">ลากไฟล์มาวางที่นี่ หรือ <span className="text-emerald-600 underline">เลือกไฟล์</span></div>
-          <div className="mt-1 text-xs text-slate-400">ไฟล์ <b>Close up</b> (ยอดขาย) และ <b>Overview</b> (เมนู) พร้อมกันได้ — ระบบแยกประเภทและวันที่ให้เอง</div>
+          <div className="mt-1 text-xs text-slate-400">ไฟล์ <b>Close up</b> (ยอดขาย) · <b>Overview</b> (เมนู) · <b>Receipt</b> (ใบเสร็จ) พร้อมกันได้ — ระบบแยกประเภทและวันที่ให้เอง</div>
         </div>
 
         {picked.length > 0 && (
@@ -401,6 +408,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                   <div className="text-xs text-slate-500">
                     {d.hasSales ? `${intTh(d.billCount)} บิล · ${intTh(d.pax)} คน` : "ยังไม่มียอดขาย"}
                     {d.hasMenu ? " · มีเมนู" : ""}
+                    {d.hasReceipt ? " · มีใบเสร็จ" : ""}
                     {d.dailySentAt ? " · ✓ ส่งแล้ว" : ""}
                   </div>
                 </div>
@@ -561,6 +569,50 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               </div>
             )}
           </div>
+
+          {/* Receipt insights: peak hour + units + basket (owner 2026-09-18) */}
+          {insights.receipt.hasData && (
+            <>
+              <div className="card space-y-2">
+                <div>
+                  <h2 className="font-bold text-slate-800">ช่วงเวลาขายดี (พีคไทม์)</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">ยอดขาย/จำนวนบิลตามชั่วโมง จากไฟล์ใบเสร็จ (ไม่รวมบิลพนักงาน)</p>
+                </div>
+                <HourBars hours={insights.receipt.hourly} peak={insights.receipt.peakHour} />
+              </div>
+
+              <div className="grid lg:grid-cols-2 gap-4">
+                <div className="card space-y-2">
+                  <h2 className="font-bold text-slate-800">เมนูขายดีเชิงจำนวน (จานที่ขายได้)</h2>
+                  <p className="text-xs text-slate-500">คนละมุมกับ "เชิงเงิน" — ของถูกที่ขายเยอะช่วยสร้างทราฟฟิก</p>
+                  <ol className="space-y-1">
+                    {insights.receipt.topUnits.map((u, i) => (
+                      <li key={u.name} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="text-slate-700 truncate">{i + 1}. {u.name}</span>
+                        <span className="whitespace-nowrap text-slate-600"><b>{intTh(u.units)}</b> จาน · {intTh(u.bills)} บิล</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+                <div className="card space-y-2">
+                  <h2 className="font-bold text-slate-800">เมนูที่มักสั่งคู่กัน (Basket)</h2>
+                  <p className="text-xs text-slate-500">ใช้ออกแบบ "เซ็ตคู่หู" / ครอสเซล / จัดวางเมนู</p>
+                  {insights.receipt.basket.length === 0 ? (
+                    <div className="text-sm text-slate-400">ข้อมูลยังน้อย — นำเข้าใบเสร็จหลายวันเพื่อดูคู่ที่ชัดขึ้น</div>
+                  ) : (
+                    <ol className="space-y-1">
+                      {insights.receipt.basket.map((p) => (
+                        <li key={`${p.a}|${p.b}`} className="flex items-center justify-between gap-2 text-sm">
+                          <span className="text-slate-700 truncate">{p.a} <span className="text-slate-400">+</span> {p.b}</span>
+                          <span className="whitespace-nowrap text-emerald-600 font-semibold">{intTh(p.count)} บิล</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -714,6 +766,25 @@ function MomentumList({ title, list, up }: { title: string; list: MenuMomentum[]
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+function HourBars({ hours, peak }: { hours: Array<{ hour: number; bills: number; nett: number }>; peak: number | null }) {
+  if (!hours.length) return <div className="text-xs text-slate-400">ยังไม่มีข้อมูลใบเสร็จ</div>;
+  const max = Math.max(1, ...hours.map((h) => h.nett));
+  return (
+    <div className="space-y-1">
+      {hours.map((h) => (
+        <div key={h.hour} className="flex items-center gap-2">
+          <span className="w-12 text-xs text-slate-500 shrink-0 tabular-nums">{String(h.hour).padStart(2, "0")}:00</span>
+          <div className="flex-1 h-4 rounded bg-slate-100 overflow-hidden">
+            <div className={`h-full ${h.hour === peak ? "bg-emerald-500" : "bg-emerald-300"}`} style={{ width: `${Math.max(3, (h.nett / max) * 100)}%` }} />
+          </div>
+          <span className="w-36 text-right text-xs text-slate-700 shrink-0">{baht(h.nett)} · {intTh(h.bills)} บิล</span>
+        </div>
+      ))}
+      {peak != null && <div className="text-xs text-slate-500 pt-1">ช่วงพีค <b className="text-emerald-600">{String(peak).padStart(2, "0")}:00</b> — จัดกำลังคน/เตรียมของให้พร้อม · ช่วงร้างจัด Happy Hour กระตุ้น</div>}
     </div>
   );
 }

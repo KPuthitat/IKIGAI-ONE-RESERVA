@@ -4,7 +4,7 @@
 
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
 import type { MenuEntry } from "./salesa-parse";
-import { getDaily, listRange, getMenu, menuRange, type DailyRow } from "./salesa-db";
+import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, itemUnitsRange, receiptItemSets, hasReceiptData, type DailyRow } from "./salesa-db";
 
 function addDaysIso(iso: string, n: number): string {
   const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n);
@@ -601,4 +601,53 @@ export function qualitySignal(branchId: number, year: number, month: number): Qu
     prevVoidRatePct: prevVoidRate,
     flag: (voidRate ?? 0) > 2
   };
+}
+
+// ── Receipt insights (owner 2026-09-18): peak hour + basket + units ─────────
+
+export type HourStat = { hour: number; bills: number; nett: number };
+export type ItemUnits = { name: string; units: number; bills: number };
+export type BasketPair = { a: string; b: string; count: number };
+export type ReceiptInsights = {
+  hasData: boolean;
+  hourly: HourStat[];        // hours present, ascending
+  peakHour: number | null;
+  topUnits: ItemUnits[];     // best-sellers by units sold (excl staff)
+  bottomUnits: ItemUnits[];  // fewest units among items present
+  basket: BasketPair[];      // menus most often bought together
+};
+
+function monthRange(year: number, month: number): [string, string] {
+  const mm = String(month).padStart(2, "0");
+  return [`${year}-${mm}-01`, `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`];
+}
+
+export function receiptInsights(branchId: number, year: number, month: number, topN = 8): ReceiptInsights {
+  const [start, end] = monthRange(year, month);
+  if (!hasReceiptData(branchId, start, end)) {
+    return { hasData: false, hourly: [], peakHour: null, topUnits: [], bottomUnits: [], basket: [] };
+  }
+  const hourly = hourlyReceipts(branchId, start, end);
+  const peak = hourly.reduce<HourStat | null>((p, h) => (p == null || h.nett > p.nett ? h : p), null);
+
+  const units = itemUnitsRange(branchId, start, end);
+  const topUnits = units.slice(0, topN);
+  const bottomUnits = units.length > topN ? units.slice(-topN).reverse() : [];
+
+  // Basket co-occurrence: count distinct-item pairs across non-staff bills.
+  const pairCount = new Map<string, number>();
+  for (const set of receiptItemSets(branchId, start, end)) {
+    const names = [...new Set(set)].sort();
+    for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) {
+      const key = JSON.stringify([names[i], names[j]]);
+      pairCount.set(key, (pairCount.get(key) ?? 0) + 1);
+    }
+  }
+  const basket: BasketPair[] = [...pairCount.entries()]
+    .map(([k, count]) => { const [a, b] = JSON.parse(k) as [string, string]; return { a, b, count }; })
+    .filter((p) => p.count >= 2)
+    .sort((x, y) => y.count - x.count)
+    .slice(0, topN);
+
+  return { hasData: true, hourly, peakHour: peak?.hour ?? null, topUnits, bottomUnits, basket };
 }

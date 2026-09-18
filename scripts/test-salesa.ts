@@ -41,6 +41,12 @@ function scalar(title: string, date: string, merchant: string, name: string, val
   return [...preamble(title, date, merchant), ["Name", "Value"], [name, value]];
 }
 
+function receiptBuf(date: string, merchant: string, bills: Array<{ time: string; no: string; table: string; gross: string; discount: string; nett: string; payment: string; items: string }>): Buffer {
+  const header = ["Time", "No.", "Table", "Status", "ID", "Gross", "Discount", "VAT", "SC", "Other Charge", "Delivery fee", "Rounding", "Nett", "Payment", "Items"];
+  const rows = bills.map((b) => [b.time, b.no, b.table, "COMPLETED", "id", b.gross, b.discount, "0", "0", "0", "0", "0", b.nett, b.payment, b.items]);
+  return wbBuf({ "1.": [...preamble("Receipt", date, merchant), header, ...rows] });
+}
+
 function closeUpBuf(date: string, merchant: string): Buffer {
   const P = (label: string, val: string) => scalar("Close up", date, merchant, label, val);
   return wbBuf({
@@ -101,6 +107,22 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("overview items tail lowest", ov.items[ov.items.length - 1].name === "ยำมาม่า");
   ok("overview categories sorted desc", ov.categories[0].name === "ย่าง" && ov.categories[0].nett === 2819.93);
   ok("parseSalesFile dispatch", parse.parseSalesFile(overviewBuf("16/09/2026", "X", [["a", "10"]], [["b", "20"]])).kind === "overview");
+
+  // ── receipt parser ──
+  const rbuf = receiptBuf("17/09/2026", "TESTBR", [
+    { time: "17/09/2026 12:07:20", no: "1", table: "G2", gross: "1,000", discount: "-100", nett: "1,000", payment: "PromptPay", items: "1x ข้าวสวย,1x คอหมูย่าง,2x ข้าวเหนียว" },
+    { time: "17/09/2026 19:30:00", no: "2", table: "C2", gross: "500", discount: "-50", nett: "500", payment: "PromptPay", items: "1x คอหมูย่าง,1x ข้าวเหนียว\t\t, 1x  โค้ก " },
+    { time: "17/09/2026 20:00:00", no: "3", table: "STAFF", gross: "300", discount: "-300", nett: "0", payment: "", items: "1x ข้าวสวย,1x ปลาทู" }
+  ]);
+  const rp = parse.parseSalesFile(rbuf);
+  ok("receipt kind + date + merchant", rp.kind === "receipt" && rp.kind === "receipt" && rp.receipt.date === "2026-09-17" && rp.receipt.merchant === "TESTBR");
+  if (rp.kind === "receipt") {
+    ok("receipt bills parsed (3)", rp.receipt.bills.length === 3);
+    const b1 = rp.receipt.bills[0];
+    ok("receipt hour + qty aggregation", b1.hour === 12 && b1.items.find((i) => i.name === "ข้าวเหนียว")?.qty === 2);
+    ok("receipt name cleaning (tabs/spaces)", !!rp.receipt.bills[1].items.find((i) => i.name === "โค้ก") && !!rp.receipt.bills[1].items.find((i) => i.name === "ข้าวเหนียว"));
+    ok("receipt staff flagged", rp.receipt.bills[2].isStaff === true && rp.receipt.bills[0].isStaff === false);
+  }
 
   // ── 3) DB + analytics ──
   const db = getDb();
@@ -283,6 +305,27 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     const rejected = sdb.getCardColor(bid2) === null;
     return good && rejected;
   })());
+
+  // ── 8) Receipt DB + insights (hourly / units / basket, excl STAFF) ──
+  const bid4 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('r4','REST4')").run().lastInsertRowid);
+  const rbuf2 = receiptBuf("17/09/2026", "R4", [
+    { time: "17/09/2026 12:07:20", no: "1", table: "G2", gross: "1000", discount: "-100", nett: "1000", payment: "PromptPay", items: "1x A,1x B,2x C" },
+    { time: "17/09/2026 12:40:00", no: "2", table: "S4", gross: "600", discount: "0", nett: "600", payment: "PromptPay", items: "1x A,1x C" },
+    { time: "17/09/2026 19:30:00", no: "3", table: "C2", gross: "800", discount: "0", nett: "800", payment: "PromptPay", items: "1x A,1x B" },
+    { time: "17/09/2026 20:00:00", no: "4", table: "STAFF", gross: "300", discount: "-300", nett: "0", payment: "", items: "5x A,5x B" }
+  ]);
+  const rParsed = parse.parseSalesFile(rbuf2);
+  if (rParsed.kind === "receipt") sdb.upsertReceipts(bid4, uid, rParsed.receipt);
+  ok("upsertReceipts sets has_receipt", sdb.getDaily(bid4, "2026-09-17")?.has_receipt === 1);
+  const ri = analytics.receiptInsights(bid4, 2026, 9);
+  ok("receipt hasData + peak hour 12 (1600>800)", ri.hasData && ri.peakHour === 12);
+  ok("hourly 12:00 has 2 bills", ri.hourly.find((h) => h.hour === 12)?.bills === 2);
+  // Item units excl staff: A=1+1+1=3, B=1+1=2, C=2+1=3 (staff A/B not counted)
+  ok("item units exclude staff (A=3)", ri.topUnits.find((u) => u.name === "A")?.units === 3);
+  ok("item units B=2 (staff 5 excluded)", ri.topUnits.find((u) => u.name === "B")?.units === 2);
+  // Basket: A+B appears in bills 1,3 = 2; A+C in bills 1,2 = 2 (staff excluded)
+  ok("basket pair A+B count 2", !!ri.basket.find((p) => (p.a === "A" && p.b === "B") && p.count === 2));
+  ok("clearDay removes receipts too", (() => { sdb.clearDay(bid4, "2026-09-17"); return !analytics.receiptInsights(bid4, 2026, 9).hasData; })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
