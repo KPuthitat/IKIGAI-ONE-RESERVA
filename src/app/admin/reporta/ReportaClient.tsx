@@ -330,6 +330,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     if (!plan) return;
     setPin({
       title: `ส่งรายงานผู้บริหาร (แผนผลักดันยอดขาย ${plan.days} วัน)`,
+      preview: <PushPreview plan={plan} branchName={branchName} operator={operatorName} color={cardColor} />,
       run: async (p) => {
         const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "push", days: plan.days, target: plan.targetBaht, pin: p }) }).then((x) => x.json());
         if (r.ok) setMsg({ kind: "ok", text: "ส่งรายงานผู้บริหารแล้ว" });
@@ -1167,6 +1168,43 @@ function MonthlyPreview({ m, branchName, operator, color }: { m: MonthlyAnalytic
       <PRow label="ลูกค้ารวม" value={`${intTh(m.totalPax)} คน`} />
       {m.avgPerDay != null && <PRow label="เฉลี่ยต่อวัน" value={`${baht(m.avgPerDay)} บาท`} />}
       <PMenu title="เมนูทำรายได้สูงสุดประจำเดือน" list={m.topItems} />
+    </CardShell>
+  );
+}
+
+function PushPreview({ plan, branchName, operator, color }: { plan: SalesPushPlan; branchName: string; operator: string; color: string }) {
+  const toneCls = plan.verdict === "easy" || plan.verdict === "ontrack" ? "bg-emerald-50 text-emerald-800"
+    : plan.verdict === "stretch" ? "bg-amber-50 text-amber-800"
+    : plan.verdict === "no_data" ? "bg-slate-50 text-slate-700" : "bg-rose-50 text-rose-800";
+  return (
+    <CardShell color={color} title="แผนผลักดันยอดขาย · คำแนะนำจากน้องฮูก" subtitle={`${plan.days} วัน · ${branchName}`}>
+      <div className="font-bold text-slate-800">{branchName}</div>
+      <div className="text-[11px] text-slate-400">บรีฟโดย: {operator}</div>
+      {sepline}
+      <PRow label="เป้าหมาย" value={`${baht(plan.targetBaht)} บาท · ${plan.days} วัน`} bold tone="green" />
+      <PRow label="ต้องได้เฉลี่ย/วัน" value={`${baht(plan.requiredPerDay)} บาท`} />
+      {plan.hasBaseline && (
+        <PRow label="คาดการณ์ตามปกติ"
+          value={`${baht(plan.baselineProjected)} บาท${plan.liftPct != null ? ` (${plan.liftPct > 0 ? "+" : ""}${plan.liftPct.toFixed(0)}%)` : ""}`}
+          tone={plan.gap > 0 ? "red" : "green"} />
+      )}
+      <div className={`rounded-md p-2 my-1 text-[11px] leading-snug ${toneCls}`}>{plan.verdictText}</div>
+      {plan.advice.length > 0 && (
+        <div className="rounded-md bg-slate-50 p-2 my-1">
+          <div className="text-[11px] font-bold" style={{ color }}>สรุปประเด็นสำหรับบรีฟทีม</div>
+          {plan.advice.map((line, i) => (
+            <div key={i} className="flex gap-1.5 text-[11px] text-slate-600 leading-snug"><span style={{ color }}>•</span><span>{line}</span></div>
+          ))}
+        </div>
+      )}
+      {plan.topEarners.length > 0 && (
+        <div className="pt-1">
+          <div className="text-xs font-bold text-slate-700 mb-0.5">เมนูที่ทำรายได้หลัก (ช่วง 4 สัปดาห์)</div>
+          {plan.topEarners.map((mm, i) => (
+            <div key={mm.name} className="flex justify-between gap-2 text-[12px]"><span className="text-slate-600 truncate">{i + 1}. {mm.name}</span><span className="whitespace-nowrap">{baht(mm.nett)}</span></div>
+          ))}
+        </div>
+      )}
     </CardShell>
   );
 }
