@@ -111,7 +111,7 @@ function PinModal({ title, preview, onConfirm, onClose }: { title: string; previ
             <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100">{preview}</div>
           </div>
         )}
-        <p className="text-sm text-slate-500">ยืนยันด้วย PIN เพื่อส่งเข้ากลุ่ม LINE หัวหน้างาน (HOD)</p>
+        <p className="text-sm text-slate-500">ยืนยันด้วย PIN เพื่อส่งรายงานผู้บริหารเข้ากลุ่ม LINE</p>
         <div>
           <label className="label text-center">PIN (4 หลัก)</label>
           <input type="password" inputMode="numeric" autoComplete="off" autoFocus maxLength={4} value={pin}
@@ -231,7 +231,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     preview: daily && daily.date === date ? <DailyPreview a={daily} branchName={branchName} operator={operatorName} color={cardColor} /> : undefined,
     run: async (p) => {
       const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "daily", date, pin: p }) }).then((x) => x.json());
-      if (r.ok) { setMsg({ kind: "ok", text: "ส่งสรุปรายวันเข้ากลุ่ม HOD แล้ว" }); await loadMonth(); if (selDate === date) await loadDay(date); }
+      if (r.ok) { setMsg({ kind: "ok", text: "ส่งรายงานผู้บริหาร (รายวัน) แล้ว" }); await loadMonth(); if (selDate === date) await loadDay(date); }
       return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
     }
   });
@@ -241,7 +241,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     preview: weekly && weekly.weekStart === ws ? <WeeklyPreview w={weekly} branchName={branchName} operator={operatorName} color={cardColor} /> : undefined,
     run: async (p) => {
       const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "weekly", week: ws, pin: p }) }).then((x) => x.json());
-      if (r.ok) { setMsg({ kind: "ok", text: "ส่งสรุปรายสัปดาห์เข้ากลุ่ม HOD แล้ว" }); await loadWeek(ws); }
+      if (r.ok) { setMsg({ kind: "ok", text: "ส่งรายงานผู้บริหาร (รายสัปดาห์) แล้ว" }); await loadWeek(ws); }
       return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
     }
   });
@@ -256,7 +256,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       preview: monthly ? <MonthlyPreview m={monthly} branchName={branchName} operator={operatorName} color={cardColor} /> : undefined,
       run: async (p) => {
         const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "monthly", year: y, month: m, pin: p }) }).then((x) => x.json());
-        if (r.ok) { setMsg({ kind: "ok", text: "ส่งสรุปรายเดือนเข้ากลุ่ม HOD แล้ว" }); await loadMonth(); }
+        if (r.ok) { setMsg({ kind: "ok", text: "ส่งรายงานผู้บริหาร (รายเดือน) แล้ว" }); await loadMonth(); }
         return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
       }
     });
@@ -375,7 +375,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
             {monthSentAt && <span className="text-xs text-emerald-600">✓ ส่งสรุปเดือนแล้ว</span>}
             <button onClick={() => sendMonthly(year, month)} disabled={!hasLineGroup}
               className="btn-success text-sm px-4 py-2 disabled:opacity-50">
-              {monthSentAt ? "ส่งซ้ำสรุปเดือนเข้ากลุ่ม HOD" : "ส่งสรุปเดือนเข้ากลุ่ม HOD"}
+              {monthSentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
             </button>
           </div>
         )}
@@ -450,7 +450,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
             <div className="flex gap-2">
               {daily.row.has_sales === 1 && (
                 <button onClick={() => sendDaily(daily.date)} disabled={!hasLineGroup} className="btn-success text-sm px-4 py-2 disabled:opacity-50">
-                  {daily.row.daily_sent_at ? "ส่งซ้ำเข้ากลุ่ม HOD" : "ส่งสรุปวันนี้เข้ากลุ่ม HOD"}
+                  {daily.row.daily_sent_at ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
                 </button>
               )}
               <button onClick={() => del(daily.date)} className="btn-danger text-sm px-3 py-2">ลบ</button>
@@ -524,7 +524,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-sm text-slate-600">{weekly.label} · รวม {weekly.dayCount} วัน {weeklySentAt ? "· ✓ ส่งแล้ว" : ""}</div>
               <button onClick={() => sendWeekly(weekly.weekStart)} disabled={!hasLineGroup || weekly.dayCount === 0} className="btn-success text-sm px-4 py-2 disabled:opacity-50">
-                {weeklySentAt ? "ส่งซ้ำเข้ากลุ่ม HOD" : "ส่งสรุปสัปดาห์เข้ากลุ่ม HOD"}
+                {weeklySentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
               </button>
             </div>
             {weekly.dayCount === 0 ? (
