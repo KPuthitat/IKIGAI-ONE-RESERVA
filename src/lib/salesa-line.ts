@@ -6,6 +6,7 @@
 import { sendLinePush } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
 import type { DailyAnalytics, WeeklyAnalytics, MonthlyAnalytics } from "./salesa-analytics";
+import type { SalesPushPlan } from "./salesa-push";
 
 type FlexMsg = { type: "flex"; altText: string; contents: unknown };
 
@@ -240,6 +241,51 @@ export function salesaMonthlyFlex(m: MonthlyAnalytics, meta: DailyCardMeta): Fle
       header: header("สรุปยอดขายประจำเดือน", `${m.label} · ${meta.branchName}`, meta.color),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายเดือน")
+    }
+  };
+}
+
+// ── แผนดันยอด (sales-push brief, owner 2026-09-18) ───────────────────────────
+const VERDICT_COLOR: Record<SalesPushPlan["verdict"], string> = {
+  no_data: "#999999", easy: "#0f7a4f", ontrack: "#0f7a4f",
+  stretch: "#b8860b", hard: "#b0392f", unrealistic: "#b0392f"
+};
+export function salesaPushFlex(p: SalesPushPlan, meta: DailyCardMeta): FlexMsg {
+  const vColor = VERDICT_COLOR[p.verdict];
+  const body: unknown[] = [
+    { type: "text", text: meta.branchName, weight: "bold", size: "lg", wrap: true },
+    { type: "text", text: `บรีฟโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true },
+    sep,
+    kv("เป้าหมาย", `${baht(p.targetBaht)} · ${p.days} วัน`, { bold: true, color: "#0f7a4f", size: "md" }),
+    kv("ต้องได้เฉลี่ย/วัน", baht(p.requiredPerDay), { size: "xs" }),
+  ];
+  if (p.hasBaseline) {
+    body.push(kv("คาดการณ์ตามปกติ", `${baht(p.baselineProjected)}${p.liftPct != null ? ` (${p.liftPct > 0 ? "+" : ""}${p.liftPct.toFixed(0)}%)` : ""}`, { size: "xs", color: p.gap > 0 ? "#b0392f" : "#0f7a4f" }));
+  }
+  body.push({ type: "box", layout: "vertical", backgroundColor: "#f4f7f6", cornerRadius: "md", paddingAll: "12px", margin: "sm",
+    contents: [{ type: "text", text: p.verdictText, size: "xs", color: vColor, wrap: true }] });
+  if (p.advice.length) {
+    body.push(sep);
+    body.push({ type: "text", text: "บรีฟดันยอด (อ่านให้ทีม)", size: "xs", weight: "bold", color: meta.color });
+    p.advice.forEach((line) => body.push({
+      type: "box", layout: "horizontal", spacing: "sm", contents: [
+        { type: "text", text: "•", size: "sm", color: meta.color, flex: 0 },
+        { type: "text", text: line, size: "xs", color: "#333333", wrap: true, flex: 1 }
+      ]
+    }));
+  }
+  if (p.topEarners.length) {
+    body.push(sep);
+    body.push(...menuBlock("เมนูทำเงินหลัก (ช่วง 4 สัปดาห์)", p.topEarners));
+  }
+  return {
+    type: "flex",
+    altText: `แผนดันยอด ${p.days} วัน ${baht(p.targetBaht)} · ${meta.branchName}`,
+    contents: {
+      type: "bubble", size: "giga",
+      header: header("แผนดันยอด · น้องฮูกแนะนำ", `${p.days} วัน · ${meta.branchName}`, meta.color),
+      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
+      footer: footer("สรุปโดยระบบ IKIGAI OS · แผนดันยอดระยะสั้น")
     }
   };
 }

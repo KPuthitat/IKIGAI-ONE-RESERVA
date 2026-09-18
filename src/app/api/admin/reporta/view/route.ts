@@ -3,6 +3,7 @@ import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle } from "@/lib/salesa-analytics";
+import { salesPushPlan } from "@/lib/salesa-push";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
 // day's full analytics + menu ranking. ?week=YYYY-MM-DD (a Monday): the weekly
@@ -49,6 +50,15 @@ export function GET(req: Request) {
   if (YM.test(monthly)) {
     const [my, mm] = monthly.split("-").map(Number);
     return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, monthly: monthlyAnalytics(branchId, my, mm) });
+  }
+
+  // แผนดันยอด (owner 2026-09-18): น้องฮูก plans a short-horizon target.
+  if (sp.get("push") != null) {
+    const todayIsoP = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    const days = Math.min(31, Math.max(1, Math.floor(Number(sp.get("days")) || 0)));
+    const target = Math.max(0, Math.floor(Number(sp.get("target")) || 0));
+    if (!days || !target) return NextResponse.json({ error: "bad_input", message: "ระบุจำนวนวันและยอดเป้าหมาย" }, { status: 400 });
+    return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, plan: salesPushPlan(branchId, target, days, todayIsoP) });
   }
 
   const now = bkkNow();
