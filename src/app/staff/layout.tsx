@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, canModule } from "@/lib/auth";
+import { ADMIN_MODULES } from "@/lib/admin-modules";
 import { getDb, getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -190,11 +191,24 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   // detection; `href` may be a branch-picker gate URL. In admin-view the
   // module links point at /admin (modBase) so an admin is never stranded.
   const homeBase = adminView ? "/admin" : "/staff";
+  // Full admins (super_admin, or an admin with a per-branch admin grant) see
+  // their COMPLETE module set in the top bar even in staff view (owner
+  // 2026-09-19: "โมดูลบนท้อปบาร์ควรมีครบ"), each linking to its /admin page.
+  // Scoped to real admins — NOT permission-only staffers — so a staffer with a
+  // delegated permission keeps their PERSONA/RESERVA self-service tabs.
+  const showFullModuleBar =
+    user.role === "super_admin" || (user.role === "admin" && user.adminBranchIds.length > 0);
   const moduleTabs: ModuleTab[] = [
     { key: "home", label: t(lang, "sidebar.modulePicker"), href: homeBase, base: homeBase, exact: true },
-    { key: "persona", label: "PERSONA", href: gate(`${modBase}/persona`), base: `${modBase}/persona` },
-    { key: "reserva", label: "RESERVA", href: gate(`${modBase}/reserva`), base: `${modBase}/reserva` },
-    { key: "inventa", label: "INVENTA", href: gate("/staff/inventa"), base: "/staff/inventa" }
+    ...(showFullModuleBar
+      ? ADMIN_MODULES
+          .filter((m) => m.perm == null || canModule(user, m.perm))
+          .map((m) => ({ key: m.key, label: m.label, href: gate(m.href), base: m.base }))
+      : [
+          { key: "persona", label: "PERSONA", href: gate(`${modBase}/persona`), base: `${modBase}/persona` },
+          { key: "reserva", label: "RESERVA", href: gate(`${modBase}/reserva`), base: `${modBase}/reserva` },
+          { key: "inventa", label: "INVENTA", href: gate("/staff/inventa"), base: "/staff/inventa" }
+        ])
   ];
   const subSections = sections.slice(1);
 
