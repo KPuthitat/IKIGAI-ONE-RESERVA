@@ -153,6 +153,15 @@ export function upsertReceipts(branchId: number, userId: number, r: SalesReceipt
   tx();
 }
 
+/** Which file kinds a (branch, date) already has data for. Used to warn the
+ *  importer that re-importing overwrites existing data (owner 2026-09-19). */
+export function existingKinds(branchId: number, date: string): { sales: boolean; menu: boolean; receipt: boolean } {
+  const r = getDb().prepare(
+    "SELECT has_sales, has_menu, has_receipt FROM salesa_daily WHERE branch_id = ? AND sale_date = ?"
+  ).get(branchId, date) as { has_sales: number; has_menu: number; has_receipt: number } | undefined;
+  return { sales: !!r?.has_sales, menu: !!r?.has_menu, receipt: !!r?.has_receipt };
+}
+
 // ── Reads ────────────────────────────────────────────────────────────────
 
 export function getDaily(branchId: number, date: string): DailyRow | null {

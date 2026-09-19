@@ -384,6 +384,20 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const meNoRcpt = analytics.menuEngineering(bid, 2026, 9);
   ok("menu engineering units null without receipts", [...meNoRcpt.stars, ...meNoRcpt.plowhorses, ...meNoRcpt.puzzles, ...meNoRcpt.dogs].every((m) => m.units === null));
 
+  // ── 10) existingKinds: dup-import guard flags (owner 2026-09-19) ──
+  const bid6 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('r6','REST6')").run().lastInsertRowid);
+  ok("existingKinds all false when empty", (() => { const e = sdb.existingKinds(bid6, "2026-09-16"); return !e.sales && !e.menu && !e.receipt; })());
+  sdb.upsertDaily(bid6, uid, { date: "2026-09-16", dateEnd: "2026-09-16", merchant: "R6", nett: 100, gross: 100, grossBeforeCharges: 100, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 1, pax: 1, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: 100, avgPax: 1, avgSalesPax: 100, payments: [], types: [], sources: [] });
+  ok("existingKinds sales true after close_up (menu still false)", (() => { const e = sdb.existingKinds(bid6, "2026-09-16"); return e.sales === true && e.menu === false; })());
+  sdb.upsertMenu(bid6, uid, { date: "2026-09-16", dateEnd: "2026-09-16", merchant: "R6", categories: [], items: [{ name: "A", nett: 100 }] });
+  ok("existingKinds menu true after overview", sdb.existingKinds(bid6, "2026-09-16").menu === true);
+  const rbuf6 = parse.parseSalesFile(receiptBuf("16/09/2026", "R6", [
+    { time: "16/09/2026 12:00:00", no: "1", table: "T1", gross: "100", discount: "0", nett: "100", payment: "Cash", items: "1x A" }
+  ]));
+  if (rbuf6.kind === "receipt") sdb.upsertReceipts(bid6, uid, rbuf6.receipt);
+  ok("existingKinds receipt true after receipt", sdb.existingKinds(bid6, "2026-09-16").receipt === true);
+  ok("existingKinds other date still all false", (() => { const e = sdb.existingKinds(bid6, "2026-09-17"); return !e.sales && !e.menu && !e.receipt; })());
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

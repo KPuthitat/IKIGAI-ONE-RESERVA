@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
-import { isSalesaBranch, upsertDaily, upsertMenu, upsertReceipts, getMerchantName } from "@/lib/salesa-db";
+import { isSalesaBranch, upsertDaily, upsertMenu, upsertReceipts, getMerchantName, existingKinds } from "@/lib/salesa-db";
 import { parseSalesFile, type SalesFileParse } from "@/lib/salesa-parse";
 import { getDb } from "@/lib/db";
 
@@ -68,22 +68,26 @@ export async function POST(req: Request) {
     }, { status: 422 });
   }
 
-  // Pass 2: save.
-  const results: Array<{ filename: string; kind: string; date: string; merchant: string | null; note: string }> = [];
+  // Pass 2: save. `overwritten` = this (date, kind) already held data before
+  // this import, so the importer is warned it replaced existing data.
+  const results: Array<{ filename: string; kind: string; date: string; merchant: string | null; note: string; overwritten: boolean }> = [];
   for (const f of parsedFiles) {
     if (f.parsed.kind === "close_up") {
       const c = f.parsed.closeUp;
+      const overwritten = existingKinds(branchId, c.date).sales;
       upsertDaily(branchId, user.id, c);
-      results.push({ filename: f.name, kind: "close_up", date: c.date, merchant: c.merchant, note: `ยอดสุทธิ ${c.nett.toLocaleString("th-TH")} · ${c.billCount} บิล` });
+      results.push({ filename: f.name, kind: "close_up", date: c.date, merchant: c.merchant, note: `ยอดสุทธิ ${c.nett.toLocaleString("th-TH")} · ${c.billCount} บิล`, overwritten });
     } else if (f.parsed.kind === "overview") {
       const o = f.parsed.overview;
+      const overwritten = existingKinds(branchId, o.date).menu;
       upsertMenu(branchId, user.id, o);
-      results.push({ filename: f.name, kind: "overview", date: o.date, merchant: o.merchant, note: `เมนู ${o.items.length} รายการ · หมวด ${o.categories.length}` });
+      results.push({ filename: f.name, kind: "overview", date: o.date, merchant: o.merchant, note: `เมนู ${o.items.length} รายการ · หมวด ${o.categories.length}`, overwritten });
     } else {
       const rc = f.parsed.receipt;
+      const overwritten = existingKinds(branchId, rc.date).receipt;
       upsertReceipts(branchId, user.id, rc);
       const staff = rc.bills.filter((b) => b.isStaff).length;
-      results.push({ filename: f.name, kind: "receipt", date: rc.date, merchant: rc.merchant, note: `ใบเสร็จ ${rc.bills.length} บิล${staff ? ` (พนักงาน ${staff})` : ""}` });
+      results.push({ filename: f.name, kind: "receipt", date: rc.date, merchant: rc.merchant, note: `ใบเสร็จ ${rc.bills.length} บิล${staff ? ` (พนักงาน ${staff})` : ""}`, overwritten });
     }
   }
 
