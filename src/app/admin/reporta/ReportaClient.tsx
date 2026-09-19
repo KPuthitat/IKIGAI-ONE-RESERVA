@@ -186,7 +186,9 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [weekly, setWeekly] = useState<WeeklyAnalytics | null>(null);
   const [weeklySentAt, setWeeklySentAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [showAllDays, setShowAllDays] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err" | "warn"; text: string } | null>(null);
   const [pin, setPin] = useState<null | { title: string; preview?: ReactNode; run: (pin: string) => Promise<{ ok: boolean; message?: string }> }>(null);
   const [cardColor, setCardColor] = useState(defaultColor);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -224,6 +226,38 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   useEffect(() => { loadMonth(); }, [loadMonth]);
   useEffect(() => { loadWeek(weekStart); }, [weekStart, loadWeek]);
 
+  // Default the day-analysis to the latest day that has data whenever the month
+  // loads/changes — the analysis sits at the top now, so the owner shouldn't
+  // have to pick a day first (owner 2026-09-19).
+  useEffect(() => {
+    if (!days.length) return;
+    if (selDate && days.some((d) => d.date === selDate)) return;
+    const withSales = [...days].reverse().find((d) => d.hasSales);
+    const pick = (withSales ?? days[days.length - 1]).date;
+    loadDay(pick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days]);
+
+  // Re-run all analytics (owner 2026-09-19: ปุ่มวิเคราะห์อีกครั้ง after importing
+  // more data). Everything is computed server-side per GET, so this re-fetches.
+  const reanalyze = async () => {
+    setAnalyzing(true); setMsg(null);
+    await loadMonth();
+    await loadWeek(weekStart);
+    if (selDate) await loadDay(selDate);
+    setAnalyzing(false);
+    setMsg({ kind: "ok", text: "วิเคราะห์ใหม่จากข้อมูลล่าสุดแล้ว" });
+  };
+
+  // Step the day-analysis to the adjacent day that has data (days[] is ascending).
+  const dayIdx = selDate ? days.findIndex((d) => d.date === selDate) : -1;
+  const gotoDay = (delta: number) => {
+    if (dayIdx < 0) return;
+    const j = dayIdx + delta;
+    if (j < 0 || j >= days.length) return;
+    loadDay(days[j].date);
+  };
+
   // Period-aware labels for the insight panels (owner 2026-09-18 สัปดาห์/เดือน).
   const nowLabel = insightRange?.nowLabel ?? "เดือนนี้";
   const prevLabel = insightRange?.prevLabel ?? "เทียบเดือนก่อน";
@@ -238,13 +272,33 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       const r = await fetch("/api/admin/reporta/import", { method: "POST", body: fd }).then((x) => x.json());
       if (!r.ok) { setMsg({ kind: "err", text: r.message ?? r.error ?? "นำเข้าไม่สำเร็จ" }); }
       else {
-        setMsg({ kind: "ok", text: "นำเข้าไฟล์สำเร็จ" });
+        // Duplicate-file guard (owner 2026-09-19): warn when an import replaced
+        // data that already existed for that day+type.
+        const kindTh = (k: string) => k === "close_up" ? "ยอดขาย" : k === "overview" ? "เมนู" : "ใบเสร็จ";
+        const dup = (r.imported as Array<{ date: string; kind: string; overwritten?: boolean }>).filter((x) => x.overwritten);
+        if (dup.length) {
+          const list = dup.map((x) => `${thaiDate(x.date)} (${kindTh(x.kind)})`).join(", ");
+          setMsg({ kind: "warn", text: `นำเข้าไฟล์สำเร็จ · ⚠️ ทับข้อมูลเดิม ${dup.length} รายการ — ${list}` });
+        } else {
+          setMsg({ kind: "ok", text: "นำเข้าไฟล์สำเร็จ" });
+        }
         setPicked([]);
         if (fileRef.current) fileRef.current.value = "";
-        await loadMonth();
-        await loadWeek(weekStart);
-        const first = r.imported[0]?.date;
-        if (first) await loadDay(first);
+        // Jump the whole page to the imported file's month, so the list, weekly
+        // and insights follow the data just added — not whatever month was open
+        // (owner 2026-09-19: import August → show August, not September).
+        const dates = (r.imported as Array<{ date: string }>).map((x) => x.date).filter(Boolean).sort();
+        const target = dates[dates.length - 1];
+        if (target) {
+          setYear(Number(target.slice(0, 4)));   // → re-runs loadMonth via effect
+          setMonth(Number(target.slice(5, 7)));
+          setWeekStart(mondayOf(target));         // → re-runs loadWeek via effect
+          setSelDate(target);
+          await loadDay(target);
+        } else {
+          await loadMonth();
+          await loadWeek(weekStart);
+        }
       }
     } catch { setMsg({ kind: "err", text: "อัปโหลดผิดพลาด" }); }
     setBusy(false);
@@ -352,7 +406,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         </div>
       )}
       {msg && (
-        <div className={`card text-sm ${msg.kind === "ok" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-rose-50 border-rose-200 text-rose-700"}`}>{msg.text}</div>
+        <div className={`card text-sm ${msg.kind === "ok" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : msg.kind === "warn" ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-rose-50 border-rose-200 text-rose-700"}`}>{msg.text}</div>
       )}
 
       {/* Import — modern drop zone */}
@@ -412,172 +466,149 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         </div>
       </div>
 
-      {/* แผนดันยอด — น้องฮูกแนะนำ (owner 2026-09-18) */}
+      {/* Day analysis — moved to the top (owner 2026-09-19: บทวิเคราะห์ขึ้นบน) */}
+      {selDate && daily && (
+        <div className="card space-y-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <button onClick={() => gotoDay(-1)} disabled={dayIdx <= 0} className="btn-secondary text-sm px-2.5 py-1.5 disabled:opacity-40" title="วันก่อนหน้า">←</button>
+              <h2 className="font-bold text-slate-800">สรุปยอดขาย · {daily.dateLabel}</h2>
+              <button onClick={() => gotoDay(1)} disabled={dayIdx < 0 || dayIdx >= days.length - 1} className="btn-secondary text-sm px-2.5 py-1.5 disabled:opacity-40" title="วันถัดไป">→</button>
+            </div>
+            <div className="flex gap-2">
+              {daily.row.has_sales === 1 && (
+                <button onClick={() => sendDaily(daily.date)} disabled={!hasLineGroup} className="btn-success text-sm px-4 py-2 disabled:opacity-50">
+                  {daily.row.daily_sent_at ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
+                </button>
+              )}
+              <button onClick={() => del(daily.date)} className="btn-danger text-sm px-3 py-2">ลบ</button>
+            </div>
+          </div>
+
+          {daily.advice.length > 0 && (
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+              <div className="text-xs font-bold mb-1" style={{ color: cardColor }}>สรุป &amp; คำแนะนำ</div>
+              <ul className="space-y-1">
+                {daily.advice.map((line, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-slate-700">
+                    <span style={{ color: cardColor }}>•</span><span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {daily.row.has_sales === 1 ? (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {daily.metrics.map((m) => (
+                  <Kpi key={m.key}
+                    label={m.label}
+                    value={m.kind === "baht" ? baht(m.value) : m.key === "bills" ? `${intTh(m.value)} บิล` : m.key === "pax" ? `${intTh(m.value)} คน` : intTh(m.value)}
+                    accent={m.key === "nett"}
+                    wowPct={m.wowPct} momPct={m.momPct} wowLabel={daily.wowLabel} momLabel={daily.momLabel} />
+                ))}
+                <Kpi label="ส่วนลด" value={`${baht(Math.abs(daily.row.discount))}${daily.discountPct != null ? ` (${daily.discountPct.toFixed(1)}%)` : ""}`} />
+                <Kpi label="ยกเลิกบิล (Void)" value={`${baht(daily.row.void_amount)} · ${intTh(daily.row.void_bill_count)}`} />
+                <Kpi label="VAT / Service" value={`${baht(daily.row.vat)} / ${baht(daily.row.service_charge)}`} />
+              </div>
+
+              {(daily.row.payments.length > 0 || daily.row.types.length > 0) && (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {daily.row.payments.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-slate-600 mb-1">ช่องทางชำระเงิน</div>
+                      {daily.row.payments.map((p) => (
+                        <div key={p.name} className="flex justify-between text-sm"><span className="text-slate-600">{p.name} · {intTh(p.qty)}</span><span className="font-medium">{baht(p.total)}</span></div>
+                      ))}
+                    </div>
+                  )}
+                  {daily.row.types.filter((t) => t.qty > 0 || t.sales > 0).length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-slate-600 mb-1">ประเภทออเดอร์</div>
+                      {daily.row.types.filter((t) => t.qty > 0 || t.sales > 0).map((t) => (
+                        <div key={t.name} className="flex justify-between text-sm"><span className="text-slate-600">{t.name} · {intTh(t.qty)}</span><span className="font-medium">{baht(t.sales)}</span></div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-amber-700">วันนี้ยังไม่ได้นำเข้าไฟล์ยอดขาย (Close up)</p>
+          )}
+
+          {(daily.topItems.length > 0 || daily.topCategories.length > 0) ? (
+            <div className="grid sm:grid-cols-2 gap-4 pt-1">
+              <MenuList title="เมนูทำรายได้สูงสุด" list={daily.topItems} />
+              <MenuList title="หมวดทำรายได้สูงสุด" list={daily.topCategories} />
+              <MenuList title="เมนูทำรายได้น้อยสุด (ในรายการที่มี)" list={daily.bottomItems} muted />
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">ยังไม่มีไฟล์เมนู (Overview) ของวันนี้ — นำเข้าเพื่อดูเมนูทำรายได้สูงสุด/น้อยสุด</p>
+          )}
+        </div>
+      )}
+
+      {/* Weekly */}
       <div className="card space-y-3">
-        <div className="flex items-start gap-3">
-          <OwlMascot size={44} mood="thinking" className="shrink-0" ariaLabel="น้องฮูก" />
-          <div>
-            <h2 className="font-bold text-slate-800">แผนผลักดันยอดขาย · คำแนะนำจากน้องฮูก</h2>
-            <p className="text-xs text-slate-500 mt-0.5">ระบุยอดเป้าหมายและจำนวนวัน น้องฮูกจะวิเคราะห์ข้อมูลย้อนหลังและสรุปแนวทางผลักดันยอดขายให้ สำหรับ HOD นำไปบรีฟทีม</p>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="font-bold text-slate-800">สรุปรายสัปดาห์ (จันทร์–อาทิตย์)</h2>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setWeekStart(addDays(weekStart, -7))} className="btn-secondary text-sm px-3 py-1.5">← สัปดาห์ก่อนหน้า</button>
+            <button onClick={() => setWeekStart(mondayOf(todayBkk()))} className="btn-secondary text-sm px-3 py-1.5">สัปดาห์นี้</button>
+            <button onClick={() => setWeekStart(addDays(weekStart, 7))} className="btn-secondary text-sm px-3 py-1.5">สัปดาห์ถัดไป →</button>
           </div>
         </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-sm">
-            <span className="block text-[11px] text-slate-500 mb-0.5">ภายในกี่วัน</span>
-            <input type="number" min={1} max={31} value={pushDays}
-              onChange={(e) => setPushDays(Math.min(31, Math.max(1, Math.floor(Number(e.target.value) || 1))))}
-              className="w-24 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
-          </label>
-          <label className="text-sm">
-            <span className="block text-[11px] text-slate-500 mb-0.5">ยอดเป้าหมาย (บาท)</span>
-            <input type="text" inputMode="numeric" placeholder="เช่น 100,000"
-              value={pushTarget ? Number(pushTarget).toLocaleString("th-TH") : ""}
-              onChange={(e) => setPushTarget(e.target.value.replace(/\D/g, ""))}
-              onKeyDown={(e) => { if (e.key === "Enter") runPush(); }}
-              className="w-40 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
-          </label>
-          <button onClick={runPush} disabled={planBusy} className="btn-primary text-sm disabled:opacity-50">
-            {planBusy ? "กำลังวิเคราะห์…" : "ขอคำแนะนำจากน้องฮูก"}
-          </button>
-        </div>
-
-        {plan && (
-          <div className="space-y-3 pt-1">
-            {(() => {
-              const tone = plan.verdict === "easy" || plan.verdict === "ontrack" ? "emerald"
-                : plan.verdict === "stretch" ? "amber"
-                : plan.verdict === "no_data" ? "slate" : "rose";
-              const cls: Record<string, string> = {
-                emerald: "bg-emerald-50 border-emerald-200 text-emerald-800",
-                amber: "bg-amber-50 border-amber-200 text-amber-800",
-                rose: "bg-rose-50 border-rose-200 text-rose-800",
-                slate: "bg-slate-50 border-slate-200 text-slate-700",
-              };
-              return <div className={`rounded-lg border p-3 text-sm ${cls[tone]}`}>{plan.verdictText}</div>;
-            })()}
-
-            {plan.hasBaseline && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <Kpi label="ต้องได้เฉลี่ย/วัน" value={baht(plan.requiredPerDay)} accent />
-                <Kpi label="คาดการณ์ตามปกติ/วัน" value={baht(plan.baselinePerDay)} />
-                <Kpi label="ส่วนต่างที่ต้องเพิ่ม" value={plan.gap > 0 ? `+${baht(plan.gap)}` : "บรรลุแล้ว"} />
-                <Kpi label="เทียบยอดปกติ" value={plan.liftPct != null ? `${plan.liftPct > 0 ? "+" : ""}${plan.liftPct.toFixed(0)}%` : "—"} />
-              </div>
-            )}
-
-            {plan.advice.length > 0 && (
-              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-                <div className="text-xs font-bold mb-1" style={{ color: cardColor }}>สรุปประเด็นสำหรับบรีฟทีม</div>
-                <ul className="space-y-1">
-                  {plan.advice.map((line, i) => (
-                    <li key={i} className="flex gap-2 text-sm text-slate-700">
-                      <span style={{ color: cardColor }}>•</span><span>{line}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={sendPush} disabled={!hasLineGroup || !plan.hasBaseline}
-                className="btn-success text-sm px-4 py-2 disabled:opacity-50">ส่งรายงานผู้บริหาร</button>
-              {!hasLineGroup && <span className="text-[11px] text-slate-400">ตั้งกลุ่ม LINE ก่อนถึงจะส่งได้</span>}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Month list */}
-      <div className="card space-y-3">
-        <div className="flex items-center justify-between">
-          <button onClick={() => shiftMonth(-1)} className="btn-secondary text-sm px-3 py-1.5">←</button>
-          <h2 className="font-bold text-slate-800">{TH_MONTHS[month]} {year + 543}</h2>
-          <button onClick={() => shiftMonth(1)} className="btn-secondary text-sm px-3 py-1.5">→</button>
-        </div>
-
-        {/* Month-level cumulative comparisons (owner 2026-09-17). */}
-        {monthCompare && monthCompare.throughDay > 0 && (
-          <div className="rounded-xl bg-slate-50 p-3 space-y-1.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[11px] text-slate-500">ยอดสะสมต้นเดือน (ถึงวันที่ {monthCompare.throughDay})</span>
-              <span className="text-lg font-bold text-emerald-700">{baht(monthCompare.mtdNett)}</span>
-            </div>
-            <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
-              <span>เทียบเดือนก่อน (ช่วงเดียวกัน) <PctChip pct={monthCompare.prevMonthPct} /></span>
-              <span>เทียบปีก่อน (เดือนเดียวกัน) <PctChip pct={monthCompare.lastYearPct} /></span>
-            </div>
-
-            {/* Monthly target progress (owner C) */}
-            {monthTarget && (
-              <div className="pt-2 mt-1 border-t border-slate-200 space-y-1">
-                <div className="flex items-baseline justify-between gap-2 text-[11px]">
-                  <span className="text-slate-500">เป้าเดือนนี้ {baht(monthTarget.target)}</span>
-                  <span className={`font-bold ${monthTarget.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{monthTarget.pctOfTarget.toFixed(0)}% ของเป้า</span>
-                </div>
-                <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
-                  <div className={`h-full ${monthTarget.pctOfTarget >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, monthTarget.pctOfTarget)}%` }} />
-                </div>
-                <div className="text-[11px] text-slate-500">
-                  คาดการณ์สิ้นเดือน <b className={monthTarget.onTrack ? "text-emerald-600" : "text-amber-600"}>{baht(monthTarget.projectedNett)}</b> ({monthTarget.projectedPct.toFixed(0)}% ของเป้า) · {monthTarget.onTrack ? "มีแนวโน้มถึงเป้า ✓" : "ต่ำกว่าเป้า ต้องเร่ง"}
-                </div>
-              </div>
-            )}
-            {!monthTarget && (
-              <div className="text-[11px] text-slate-400 pt-1">ยังไม่ได้ตั้งเป้ายอดขาย — ตั้งได้ที่ ⚙️ ตั้งค่ากลุ่ม LINE</div>
-            )}
-          </div>
-        )}
-
-        {/* Monthly summary send button (owner F) */}
-        {days.length > 0 && (
-          <div className="flex items-center justify-end gap-2">
-            {monthSentAt && <span className="text-xs text-emerald-600">✓ ส่งสรุปเดือนแล้ว</span>}
-            <button onClick={() => sendMonthly(year, month)} disabled={!hasLineGroup}
-              className="btn-success text-sm px-4 py-2 disabled:opacity-50">
-              {monthSentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
-            </button>
-          </div>
-        )}
-
-        {days.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลในเดือนนี้ — นำเข้าไฟล์ด้านบน</p>
-        ) : (
+        {weekly && (
           <>
-            {/* Missing-file summary for the month (owner 2026-09-18). */}
-            {(() => {
-              const inc = days.filter((d) => !(d.hasSales && d.hasMenu && d.hasReceipt));
-              if (!inc.length) return <div className="text-xs text-emerald-600">✓ ทุกวันในเดือนนี้ลงไฟล์ครบทั้ง 3 ชนิดแล้ว</div>;
-              const miss = (pred: (d: MonthDay) => boolean) => days.filter(pred).length;
-              return (
-                <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-                  มี <b>{inc.length}</b> วันที่ลงไฟล์ไม่ครบ —
-                  {miss((d) => !d.hasSales) > 0 && <> ขาดยอดขาย {miss((d) => !d.hasSales)} วัน</>}
-                  {miss((d) => !d.hasMenu) > 0 && <> · ขาดเมนู {miss((d) => !d.hasMenu)} วัน</>}
-                  {miss((d) => !d.hasReceipt) > 0 && <> · ขาดใบเสร็จ {miss((d) => !d.hasReceipt)} วัน</>}
-                </div>
-              );
-            })()}
-            <div className="divide-y divide-slate-100">
-              {days.map((d) => (
-                <div key={d.date} className={`flex items-center justify-between gap-2 py-2 cursor-pointer ${selDate === d.date ? "bg-emerald-50 -mx-2 px-2 rounded" : ""}`} onClick={() => loadDay(d.date)}>
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-800">{thaiDate(d.date)}</div>
-                    <div className="text-xs text-slate-500">
-                      {d.hasSales ? `${intTh(d.billCount)} บิล · ${intTh(d.pax)} คน` : "ยังไม่มียอดขาย"}
-                      {d.dailySentAt ? " · ✓ ส่งแล้ว" : ""}
-                    </div>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      <FileChip label="ยอดขาย" present={d.hasSales} />
-                      <FileChip label="เมนู" present={d.hasMenu} />
-                      <FileChip label="ใบเสร็จ" present={d.hasReceipt} />
-                    </div>
-                  </div>
-                  <div className="text-right whitespace-nowrap">
-                    <div className="text-sm font-bold text-slate-900">{d.hasSales ? baht(d.nett) : "—"}</div>
-                  </div>
-                </div>
-              ))}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-sm text-slate-600">{weekly.label} · รวม {weekly.dayCount} วัน {weeklySentAt ? "· ✓ ส่งแล้ว" : ""}</div>
+              <button onClick={() => sendWeekly(weekly.weekStart)} disabled={!hasLineGroup || weekly.dayCount === 0} className="btn-success text-sm px-4 py-2 disabled:opacity-50">
+                {weeklySentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
+              </button>
             </div>
+            {weekly.dayCount === 0 ? (
+              <p className="text-sm text-slate-400">ยังไม่มีข้อมูลยอดขายในสัปดาห์นี้</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <Kpi label="ยอดขายรวมสัปดาห์" value={baht(weekly.totalNett)} accent />
+                  <Kpi label="จำนวนบิลรวม" value={`${intTh(weekly.totalBills)} บิล`} />
+                  <Kpi label="ลูกค้ารวม" value={`${intTh(weekly.totalPax)} คน`} />
+                  <Kpi label="เฉลี่ยต่อวัน" value={weekly.avgPerDay != null ? baht(weekly.avgPerDay) : "—"} />
+                </div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 flex flex-wrap gap-x-6 gap-y-1">
+                  <span className="font-semibold text-slate-700">เทียบสัปดาห์ก่อน:</span>
+                  {weekly.wowNettPct == null ? (
+                    <span className="text-slate-400">ยังไม่มีข้อมูลสัปดาห์ก่อน</span>
+                  ) : (
+                    <>
+                      <span>ยอดขาย <PctChip pct={weekly.wowNettPct} /> {weekly.prevWeekNett != null && <span className="text-slate-400">({baht(weekly.prevWeekNett)})</span>}</span>
+                      <span>บิล <PctChip pct={weekly.wowBillsPct} /></span>
+                      <span>ลูกค้า <PctChip pct={weekly.wowPaxPct} /></span>
+                    </>
+                  )}
+                </div>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs font-bold text-slate-600 mb-1">ยอดขายรายวัน</div>
+                    {weekly.days.map((d) => (
+                      <div key={d.date} className={`flex justify-between text-sm ${d.date === weekly.bestDate ? "font-bold text-emerald-700" : ""}`}>
+                        <span className="text-slate-600">{d.dateLabel}{d.date === weekly.bestDate ? "" : ""}</span><span>{baht(d.nett)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <MenuList title="เมนูทำรายได้สูงสุดประจำสัปดาห์" list={weekly.topItems} />
+                </div>
+                {(weekly.menuRisers.length > 0 || weekly.menuFallers.length > 0) && (
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <MomentumList title="เมนูมาแรง (เทียบสัปดาห์ก่อน)" list={weekly.menuRisers} up />
+                    <MomentumList title="เมนูร่วง (เทียบสัปดาห์ก่อน)" list={weekly.menuFallers} />
+                  </div>
+                )}
+              </>
+            )}
           </>
         )}
       </div>
@@ -587,16 +618,22 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       {days.length > 0 && (
         <div className="flex items-end justify-between gap-2 flex-wrap pt-1">
           <div>
-            <h2 className="font-bold text-slate-800">การวิเคราะห์เชิงลึก</h2>
+            <h2 className="font-bold text-slate-800">การวิเคราะห์ภาพรวม (เชิงลึก)</h2>
             {insightRange && <p className="text-xs text-slate-500 mt-0.5">ช่วง{nowLabel}: {insightRange.rangeLabel}</p>}
           </div>
-          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-sm">
-            {(["month", "week"] as const).map((p) => (
-              <button key={p} type="button" onClick={() => setPanelPeriod(p)}
-                className={`px-3 py-1 rounded-md transition ${panelPeriod === p ? "bg-white shadow-sm font-semibold text-slate-800" : "text-slate-500 hover:text-slate-700"}`}>
-                {p === "month" ? "เดือนนี้" : "สัปดาห์นี้"}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={reanalyze} disabled={analyzing}
+              className="btn-secondary text-sm px-3 py-1.5 disabled:opacity-50" title="ดึงข้อมูลล่าสุดมาวิเคราะห์ใหม่">
+              {analyzing ? "กำลังวิเคราะห์…" : "↻ วิเคราะห์อีกครั้ง"}
+            </button>
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-sm">
+              {(["month", "week"] as const).map((p) => (
+                <button key={p} type="button" onClick={() => setPanelPeriod(p)}
+                  className={`px-3 py-1 rounded-md transition ${panelPeriod === p ? "bg-white shadow-sm font-semibold text-slate-800" : "text-slate-500 hover:text-slate-700"}`}>
+                  {p === "month" ? "เดือนนี้" : "สัปดาห์นี้"}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -763,13 +800,13 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
 
               <div className="grid lg:grid-cols-2 gap-4">
                 <div className="card space-y-2">
-                  <h2 className="font-bold text-slate-800">เมนูขายดีเชิงจำนวน (จานที่ขายได้)</h2>
+                  <h2 className="font-bold text-slate-800">เมนูขายดีเชิงจำนวน (จำนวนที่ขายได้)</h2>
                   <p className="text-xs text-slate-500">คนละมุมกับ "เชิงเงิน" — ของถูกที่ขายเยอะช่วยสร้างทราฟฟิก</p>
                   <ol className="space-y-1">
                     {insights.receipt.topUnits.map((u, i) => (
                       <li key={u.name} className="flex items-center justify-between gap-2 text-sm">
                         <span className="text-slate-700 truncate">{i + 1}. {u.name}</span>
-                        <span className="whitespace-nowrap text-slate-600"><b>{intTh(u.units)}</b> จาน · {intTh(u.bills)} บิล</span>
+                        <span className="whitespace-nowrap text-slate-600"><b>{intTh(u.units)}</b> ครั้ง · {intTh(u.bills)} บิล</span>
                       </li>
                     ))}
                   </ol>
@@ -796,144 +833,180 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         </div>
       )}
 
-      {/* Day detail */}
-      {selDate && daily && (
-        <div className="card space-y-4">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <h2 className="font-bold text-slate-800">สรุปยอดขาย · {daily.dateLabel}</h2>
-            <div className="flex gap-2">
-              {daily.row.has_sales === 1 && (
-                <button onClick={() => sendDaily(daily.date)} disabled={!hasLineGroup} className="btn-success text-sm px-4 py-2 disabled:opacity-50">
-                  {daily.row.daily_sent_at ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
-                </button>
-              )}
-              <button onClick={() => del(daily.date)} className="btn-danger text-sm px-3 py-2">ลบ</button>
-            </div>
-          </div>
-
-          {daily.advice.length > 0 && (
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-              <div className="text-xs font-bold mb-1" style={{ color: cardColor }}>สรุป &amp; คำแนะนำ</div>
-              <ul className="space-y-1">
-                {daily.advice.map((line, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-slate-700">
-                    <span style={{ color: cardColor }}>•</span><span>{line}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {daily.row.has_sales === 1 ? (
-            <>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {daily.metrics.map((m) => (
-                  <Kpi key={m.key}
-                    label={m.label}
-                    value={m.kind === "baht" ? baht(m.value) : m.key === "bills" ? `${intTh(m.value)} บิล` : m.key === "pax" ? `${intTh(m.value)} คน` : intTh(m.value)}
-                    accent={m.key === "nett"}
-                    wowPct={m.wowPct} momPct={m.momPct} wowLabel={daily.wowLabel} momLabel={daily.momLabel} />
-                ))}
-                <Kpi label="ส่วนลด" value={`${baht(Math.abs(daily.row.discount))}${daily.discountPct != null ? ` (${daily.discountPct.toFixed(1)}%)` : ""}`} />
-                <Kpi label="ยกเลิกบิล (Void)" value={`${baht(daily.row.void_amount)} · ${intTh(daily.row.void_bill_count)}`} />
-                <Kpi label="VAT / Service" value={`${baht(daily.row.vat)} / ${baht(daily.row.service_charge)}`} />
-              </div>
-
-              {(daily.row.payments.length > 0 || daily.row.types.length > 0) && (
-                <div className="grid sm:grid-cols-2 gap-4">
-                  {daily.row.payments.length > 0 && (
-                    <div>
-                      <div className="text-xs font-bold text-slate-600 mb-1">ช่องทางชำระเงิน</div>
-                      {daily.row.payments.map((p) => (
-                        <div key={p.name} className="flex justify-between text-sm"><span className="text-slate-600">{p.name} · {intTh(p.qty)}</span><span className="font-medium">{baht(p.total)}</span></div>
-                      ))}
-                    </div>
-                  )}
-                  {daily.row.types.filter((t) => t.qty > 0 || t.sales > 0).length > 0 && (
-                    <div>
-                      <div className="text-xs font-bold text-slate-600 mb-1">ประเภทออเดอร์</div>
-                      {daily.row.types.filter((t) => t.qty > 0 || t.sales > 0).map((t) => (
-                        <div key={t.name} className="flex justify-between text-sm"><span className="text-slate-600">{t.name} · {intTh(t.qty)}</span><span className="font-medium">{baht(t.sales)}</span></div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-amber-700">วันนี้ยังไม่ได้นำเข้าไฟล์ยอดขาย (Close up)</p>
-          )}
-
-          {(daily.topItems.length > 0 || daily.topCategories.length > 0) ? (
-            <div className="grid sm:grid-cols-2 gap-4 pt-1">
-              <MenuList title="เมนูทำรายได้สูงสุด" list={daily.topItems} />
-              <MenuList title="หมวดทำรายได้สูงสุด" list={daily.topCategories} />
-              <MenuList title="เมนูทำรายได้น้อยสุด (ในรายการที่มี)" list={daily.bottomItems} muted />
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400">ยังไม่มีไฟล์เมนู (Overview) ของวันนี้ — นำเข้าเพื่อดูเมนูทำรายได้สูงสุด/น้อยสุด</p>
-          )}
-        </div>
-      )}
-
-      {/* Weekly */}
+      {/* แผนดันยอด — น้องฮูกแนะนำ (owner 2026-09-18) */}
       <div className="card space-y-3">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h2 className="font-bold text-slate-800">สรุปรายสัปดาห์ (จันทร์–อาทิตย์)</h2>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setWeekStart(addDays(weekStart, -7))} className="btn-secondary text-sm px-3 py-1.5">← สัปดาห์ก่อนหน้า</button>
-            <button onClick={() => setWeekStart(mondayOf(todayBkk()))} className="btn-secondary text-sm px-3 py-1.5">สัปดาห์นี้</button>
-            <button onClick={() => setWeekStart(addDays(weekStart, 7))} className="btn-secondary text-sm px-3 py-1.5">สัปดาห์ถัดไป →</button>
+        <div className="flex items-start gap-3">
+          <OwlMascot size={44} mood="thinking" className="shrink-0" ariaLabel="น้องฮูก" />
+          <div>
+            <h2 className="font-bold text-slate-800">แผนผลักดันยอดขาย · คำแนะนำจากน้องฮูก</h2>
+            <p className="text-xs text-slate-500 mt-0.5">ระบุยอดเป้าหมายและจำนวนวัน น้องฮูกจะวิเคราะห์ข้อมูลย้อนหลังและสรุปแนวทางผลักดันยอดขายให้ สำหรับ HOD นำไปบรีฟทีม</p>
           </div>
         </div>
-        {weekly && (
-          <>
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="text-sm text-slate-600">{weekly.label} · รวม {weekly.dayCount} วัน {weeklySentAt ? "· ✓ ส่งแล้ว" : ""}</div>
-              <button onClick={() => sendWeekly(weekly.weekStart)} disabled={!hasLineGroup || weekly.dayCount === 0} className="btn-success text-sm px-4 py-2 disabled:opacity-50">
-                {weeklySentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
-              </button>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-sm">
+            <span className="block text-[11px] text-slate-500 mb-0.5">ภายในกี่วัน</span>
+            <input type="number" min={1} max={31} value={pushDays}
+              onChange={(e) => setPushDays(Math.min(31, Math.max(1, Math.floor(Number(e.target.value) || 1))))}
+              className="w-24 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+          </label>
+          <label className="text-sm">
+            <span className="block text-[11px] text-slate-500 mb-0.5">ยอดเป้าหมาย (บาท)</span>
+            <input type="text" inputMode="numeric" placeholder="เช่น 100,000"
+              value={pushTarget ? Number(pushTarget).toLocaleString("th-TH") : ""}
+              onChange={(e) => setPushTarget(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={(e) => { if (e.key === "Enter") runPush(); }}
+              className="w-40 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+          </label>
+          <button onClick={runPush} disabled={planBusy} className="btn-primary text-sm disabled:opacity-50">
+            {planBusy ? "กำลังวิเคราะห์…" : "ขอคำแนะนำจากน้องฮูก"}
+          </button>
+        </div>
+
+        {plan && (
+          <div className="space-y-3 pt-1">
+            {(() => {
+              const tone = plan.verdict === "easy" || plan.verdict === "ontrack" ? "emerald"
+                : plan.verdict === "stretch" ? "amber"
+                : plan.verdict === "no_data" ? "slate" : "rose";
+              const cls: Record<string, string> = {
+                emerald: "bg-emerald-50 border-emerald-200 text-emerald-800",
+                amber: "bg-amber-50 border-amber-200 text-amber-800",
+                rose: "bg-rose-50 border-rose-200 text-rose-800",
+                slate: "bg-slate-50 border-slate-200 text-slate-700",
+              };
+              return <div className={`rounded-lg border p-3 text-sm ${cls[tone]}`}>{plan.verdictText}</div>;
+            })()}
+
+            {plan.hasBaseline && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <Kpi label="ต้องได้เฉลี่ย/วัน" value={baht(plan.requiredPerDay)} accent />
+                <Kpi label="คาดการณ์ตามปกติ/วัน" value={baht(plan.baselinePerDay)} />
+                <Kpi label="ส่วนต่างที่ต้องเพิ่ม" value={plan.gap > 0 ? `+${baht(plan.gap)}` : "บรรลุแล้ว"} />
+                <Kpi label="เทียบยอดปกติ" value={plan.liftPct != null ? `${plan.liftPct > 0 ? "+" : ""}${plan.liftPct.toFixed(0)}%` : "—"} />
+              </div>
+            )}
+
+            {plan.advice.length > 0 && (
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                <div className="text-xs font-bold mb-1" style={{ color: cardColor }}>สรุปประเด็นสำหรับบรีฟทีม</div>
+                <ul className="space-y-1">
+                  {plan.advice.map((line, i) => (
+                    <li key={i} className="flex gap-2 text-sm text-slate-700">
+                      <span style={{ color: cardColor }}>•</span><span>{line}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={sendPush} disabled={!hasLineGroup || !plan.hasBaseline}
+                className="btn-success text-sm px-4 py-2 disabled:opacity-50">ส่งรายงานผู้บริหาร</button>
+              {!hasLineGroup && <span className="text-[11px] text-slate-400">ตั้งกลุ่ม LINE ก่อนถึงจะส่งได้</span>}
             </div>
-            {weekly.dayCount === 0 ? (
-              <p className="text-sm text-slate-400">ยังไม่มีข้อมูลยอดขายในสัปดาห์นี้</p>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <Kpi label="ยอดขายรวมสัปดาห์" value={baht(weekly.totalNett)} accent />
-                  <Kpi label="จำนวนบิลรวม" value={`${intTh(weekly.totalBills)} บิล`} />
-                  <Kpi label="ลูกค้ารวม" value={`${intTh(weekly.totalPax)} คน`} />
-                  <Kpi label="เฉลี่ยต่อวัน" value={weekly.avgPerDay != null ? baht(weekly.avgPerDay) : "—"} />
+          </div>
+        )}
+      </div>
+
+      {/* Month list — the per-day list is collapsed by default (owner 2026-09-19:
+          ซ่อนหลังนำเข้า); the month header + target progress + monthly send stay. */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <button onClick={() => shiftMonth(-1)} className="btn-secondary text-sm px-3 py-1.5">←</button>
+          <h2 className="font-bold text-slate-800">{TH_MONTHS[month]} {year + 543}</h2>
+          <button onClick={() => shiftMonth(1)} className="btn-secondary text-sm px-3 py-1.5">→</button>
+        </div>
+
+        {/* Month-level cumulative comparisons (owner 2026-09-17). */}
+        {monthCompare && monthCompare.throughDay > 0 && (
+          <div className="rounded-xl bg-slate-50 p-3 space-y-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[11px] text-slate-500">ยอดสะสมต้นเดือน (ถึงวันที่ {monthCompare.throughDay})</span>
+              <span className="text-lg font-bold text-emerald-700">{baht(monthCompare.mtdNett)}</span>
+            </div>
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
+              <span>เทียบเดือนก่อน (ช่วงเดียวกัน) <PctChip pct={monthCompare.prevMonthPct} /></span>
+              <span>เทียบปีก่อน (เดือนเดียวกัน) <PctChip pct={monthCompare.lastYearPct} /></span>
+            </div>
+
+            {/* Monthly target progress (owner C) */}
+            {monthTarget && (
+              <div className="pt-2 mt-1 border-t border-slate-200 space-y-1">
+                <div className="flex items-baseline justify-between gap-2 text-[11px]">
+                  <span className="text-slate-500">เป้าเดือนนี้ {baht(monthTarget.target)}</span>
+                  <span className={`font-bold ${monthTarget.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{monthTarget.pctOfTarget.toFixed(0)}% ของเป้า</span>
                 </div>
-                <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 flex flex-wrap gap-x-6 gap-y-1">
-                  <span className="font-semibold text-slate-700">เทียบสัปดาห์ก่อน:</span>
-                  {weekly.wowNettPct == null ? (
-                    <span className="text-slate-400">ยังไม่มีข้อมูลสัปดาห์ก่อน</span>
-                  ) : (
-                    <>
-                      <span>ยอดขาย <PctChip pct={weekly.wowNettPct} /> {weekly.prevWeekNett != null && <span className="text-slate-400">({baht(weekly.prevWeekNett)})</span>}</span>
-                      <span>บิล <PctChip pct={weekly.wowBillsPct} /></span>
-                      <span>ลูกค้า <PctChip pct={weekly.wowPaxPct} /></span>
-                    </>
-                  )}
+                <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
+                  <div className={`h-full ${monthTarget.pctOfTarget >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, monthTarget.pctOfTarget)}%` }} />
                 </div>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-xs font-bold text-slate-600 mb-1">ยอดขายรายวัน</div>
-                    {weekly.days.map((d) => (
-                      <div key={d.date} className={`flex justify-between text-sm ${d.date === weekly.bestDate ? "font-bold text-emerald-700" : ""}`}>
-                        <span className="text-slate-600">{d.dateLabel}{d.date === weekly.bestDate ? "" : ""}</span><span>{baht(d.nett)}</span>
+                <div className="text-[11px] text-slate-500">
+                  คาดการณ์สิ้นเดือน <b className={monthTarget.onTrack ? "text-emerald-600" : "text-amber-600"}>{baht(monthTarget.projectedNett)}</b> ({monthTarget.projectedPct.toFixed(0)}% ของเป้า) · {monthTarget.onTrack ? "มีแนวโน้มถึงเป้า ✓" : "ต่ำกว่าเป้า ต้องเร่ง"}
+                </div>
+              </div>
+            )}
+            {!monthTarget && (
+              <div className="text-[11px] text-slate-400 pt-1">ยังไม่ได้ตั้งเป้ายอดขาย — ตั้งได้ที่ ⚙️ ตั้งค่ากลุ่ม LINE</div>
+            )}
+          </div>
+        )}
+
+        {/* Monthly summary send button (owner F) */}
+        {days.length > 0 && (
+          <div className="flex items-center justify-end gap-2">
+            {monthSentAt && <span className="text-xs text-emerald-600">✓ ส่งสรุปเดือนแล้ว</span>}
+            <button onClick={() => sendMonthly(year, month)} disabled={!hasLineGroup}
+              className="btn-success text-sm px-4 py-2 disabled:opacity-50">
+              {monthSentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
+            </button>
+          </div>
+        )}
+
+        {days.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลในเดือนนี้ — นำเข้าไฟล์ด้านบน</p>
+        ) : (
+          <>
+            {/* Missing-file summary for the month (owner 2026-09-18) — always shown. */}
+            {(() => {
+              const inc = days.filter((d) => !(d.hasSales && d.hasMenu && d.hasReceipt));
+              if (!inc.length) return <div className="text-xs text-emerald-600">✓ ทุกวันในเดือนนี้ลงไฟล์ครบทั้ง 3 ชนิดแล้ว</div>;
+              const miss = (pred: (d: MonthDay) => boolean) => days.filter(pred).length;
+              return (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                  มี <b>{inc.length}</b> วันที่ลงไฟล์ไม่ครบ —
+                  {miss((d) => !d.hasSales) > 0 && <> ขาดยอดขาย {miss((d) => !d.hasSales)} วัน</>}
+                  {miss((d) => !d.hasMenu) > 0 && <> · ขาดเมนู {miss((d) => !d.hasMenu)} วัน</>}
+                  {miss((d) => !d.hasReceipt) > 0 && <> · ขาดใบเสร็จ {miss((d) => !d.hasReceipt)} วัน</>}
+                </div>
+              );
+            })()}
+            {/* Per-day list collapsed by default (owner 2026-09-19). */}
+            <button type="button" onClick={() => setShowAllDays((v) => !v)}
+              className="w-full flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+              <span>รายวันทั้งเดือน ({days.length} วัน)</span>
+              <span className="text-slate-400">{showAllDays ? "ซ่อน ▲" : "ดูรายวัน ▼"}</span>
+            </button>
+            {showAllDays && (
+              <div className="divide-y divide-slate-100">
+                {days.map((d) => (
+                  <div key={d.date} className={`flex items-center justify-between gap-2 py-2 cursor-pointer ${selDate === d.date ? "bg-emerald-50 -mx-2 px-2 rounded" : ""}`} onClick={() => loadDay(d.date)}>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-800">{thaiDate(d.date)}</div>
+                      <div className="text-xs text-slate-500">
+                        {d.hasSales ? `${intTh(d.billCount)} บิล · ${intTh(d.pax)} คน` : "ยังไม่มียอดขาย"}
+                        {d.dailySentAt ? " · ✓ ส่งแล้ว" : ""}
                       </div>
-                    ))}
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <FileChip label="ยอดขาย" present={d.hasSales} />
+                        <FileChip label="เมนู" present={d.hasMenu} />
+                        <FileChip label="ใบเสร็จ" present={d.hasReceipt} />
+                      </div>
+                    </div>
+                    <div className="text-right whitespace-nowrap">
+                      <div className="text-sm font-bold text-slate-900">{d.hasSales ? baht(d.nett) : "—"}</div>
+                    </div>
                   </div>
-                  <MenuList title="เมนูทำรายได้สูงสุดประจำสัปดาห์" list={weekly.topItems} />
-                </div>
-                {(weekly.menuRisers.length > 0 || weekly.menuFallers.length > 0) && (
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <MomentumList title="เมนูมาแรง (เทียบสัปดาห์ก่อน)" list={weekly.menuRisers} up />
-                    <MomentumList title="เมนูร่วง (เทียบสัปดาห์ก่อน)" list={weekly.menuFallers} />
-                  </div>
-                )}
-              </>
+                ))}
+              </div>
             )}
           </>
         )}
@@ -1003,7 +1076,7 @@ function QuadCard({ title, hint, list, tone }: { title: string; hint: string; li
             <li key={m.name} className="flex items-center justify-between gap-2 text-xs">
               <span className="text-slate-700 truncate">{m.name}</span>
               <span className="whitespace-nowrap text-slate-500">
-                {m.units != null ? <span className="text-slate-400">{intTh(m.units)} จาน · </span> : null}{baht(m.nett)}{m.isNew ? " · ใหม่" : m.deltaPct != null ? <> · <PctChip pct={m.deltaPct} /></> : ""}
+                {m.units != null ? <span className="text-slate-400">{intTh(m.units)} ครั้ง · </span> : null}{baht(m.nett)}{m.isNew ? " · ใหม่" : m.deltaPct != null ? <> · <PctChip pct={m.deltaPct} /></> : ""}
               </span>
             </li>
           ))}

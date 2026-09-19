@@ -121,19 +121,15 @@ export default function RecruitaLanding() {
       </div>
 
       {/* Quick links */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <HubCard href="/admin/recruita/positions" icon="briefcase" tone="brand"
-          eyebrow="จัดการ" title="ตำแหน่งงาน"
-          sub="สร้าง / แก้ไข / เปิด-ปิดรับสมัคร + คำถามเฉพาะตำแหน่ง" cta="เปิด →" />
-        <HubCard href="/admin/recruita/pipeline" icon="list" tone="emerald"
-          eyebrow="มุมมอง" title="Pipeline"
-          sub="Kanban · ลากการ์ดระหว่าง stage · ภาพรวม pipeline ทั้งหมด" cta="เปิด →" />
-        <HubCard href="/admin/recruita/applications" icon="doc" tone="slate"
-          eyebrow="จัดการ" title="ใบสมัคร"
-          sub="List view · ค้นหา · กรองตามตำแหน่ง/สถานะ" cta="เปิด →" />
-        <HubCard href="/admin/recruita/dashboard" icon="chart" tone="sky"
-          eyebrow="วิเคราะห์" title="Analytics"
-          sub="Funnel · Source attribution · Time-to-hire · Fill rate" cta="เปิด →" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <HubCard compact href="/admin/recruita/positions" icon="briefcase" tone="brand"
+          title="ตำแหน่งงาน" sub="สร้าง / แก้ไข / เปิด-ปิดรับสมัคร + คำถามเฉพาะตำแหน่ง" />
+        <HubCard compact href="/admin/recruita/pipeline" icon="list" tone="emerald"
+          title="Pipeline" sub="Kanban · ลากการ์ดระหว่าง stage · ภาพรวม pipeline ทั้งหมด" />
+        <HubCard compact href="/admin/recruita/applications" icon="doc" tone="slate"
+          title="ใบสมัคร" sub="List view · ค้นหา · กรองตามตำแหน่ง/สถานะ" />
+        <HubCard compact href="/admin/recruita/dashboard" icon="chart" tone="sky"
+          title="Analytics" sub="Funnel · Source attribution · Time-to-hire · Fill rate" />
       </div>
 
       {/* Pipeline breakdown */}
