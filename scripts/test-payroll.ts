@@ -4,7 +4,8 @@
 // Guarantees: salary/30 per unpaid day, FT only, default 0 = no change,
 // and the deduction never drives base pay negative.
 
-import { computeLineFromMinutes, computeLineForEmployee, computeSso, computeHelperLine, countClockInDays, helperMode, applyPtGrace, keepEntryForBranch, overridesToShiftMap, effectiveTaxModeForMonth, holidayPremiumApplies, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
+import { computeLineFromMinutes, computeLineForEmployee, computeSso, computeHelperLine, countClockInDays, helperMode, applyPtGrace, keepEntryForBranch, overridesToShiftMap, effectiveTaxModeForMonth, holidayPremiumApplies, branchBaseHourlyRate, type PayrollSettings, type EmployeePayrollSnapshot, type ScheduledShift, type EntryWithBranch } from "../src/lib/payroll-compute";
+import Database from "better-sqlite3";
 
 const SETTINGS: PayrollSettings = {
   ot_mode: "flat", ot_flat_per_15min: 0,
@@ -1076,6 +1077,18 @@ console.log("\nเปลี่ยนประจำ→พาร์ทไทม�
   });
   eq("DF: สาขาที่ไม่ใช่คลินิก → จ่ายค่าเวรตามปกติ (5ชม×50=250)", otherBranch.base_pay, 250);
   eq("DF: สาขาที่ไม่ใช่คลินิก → ไม่มี DF (additions 0)", otherBranch.other_additions, 0);
+}
+
+// ── Per-branch base hourly rate (owner 2026-09-19) ──────────────────────────
+{
+  const db = new Database(":memory:");
+  db.exec("CREATE TABLE branches (id INTEGER PRIMARY KEY, name TEXT, pt_default_hourly_rate REAL)");
+  db.prepare("INSERT INTO branches (id, name, pt_default_hourly_rate) VALUES (1, 'A', 65), (2, 'B', NULL)").run();
+  eq("branch base rate: A overrides company default", branchBaseHourlyRate(db, 1, 50), 65);
+  eq("branch base rate: B unset → company default", branchBaseHourlyRate(db, 2, 50), 50);
+  eq("branch base rate: unknown branch → company default", branchBaseHourlyRate(db, 99, 50), 50);
+  eq("branch base rate: null branch → company default", branchBaseHourlyRate(db, null, 50), 50);
+  db.close();
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

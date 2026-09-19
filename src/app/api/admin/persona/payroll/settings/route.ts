@@ -14,7 +14,15 @@ const Body = z.object({
   sso_rate: z.number().min(0).max(1),         // 0.05 = 5%
   sso_cap: z.number().min(0).max(100000),
   pt_default_hourly_rate: z.number().min(0).max(10000),
-  wht_rate: z.number().min(0).max(1)          // 0.03 = 3%
+  wht_rate: z.number().min(0).max(1),         // 0.03 = 3%
+  // Per-branch base PT rate overrides (owner 2026-09-19). null (or an invalid /
+  // out-of-range number, normalised below) = clear → use the company default.
+  // Omitted entirely = leave branch rates untouched. No min/max here on purpose,
+  // so one bad branch value never rejects the whole settings save.
+  branch_rates: z.array(z.object({
+    branch_id: z.number().int(),
+    rate: z.number().nullable()
+  })).optional()
 });
 
 export async function PATCH(req: Request) {
@@ -53,6 +61,19 @@ export async function PATCH(req: Request) {
     d.wht_rate,
     user.id
   );
+
+  // Per-branch base rate overrides. Only a positive rate ≤10000 is stored; any
+  // 0 / negative / NaN / out-of-range value normalises to NULL (= use the company
+  // default) so it can never silently zero or inflate a branch's pay.
+  if (d.branch_rates?.length) {
+    const upd = db.prepare("UPDATE branches SET pt_default_hourly_rate = ? WHERE id = ?");
+    db.transaction((rows: NonNullable<typeof d.branch_rates>) => {
+      for (const r of rows) {
+        const rate = r.rate != null && Number.isFinite(r.rate) && r.rate > 0 && r.rate <= 10000 ? r.rate : null;
+        upd.run(rate, r.branch_id);
+      }
+    })(d.branch_rates);
+  }
 
   return NextResponse.json({ ok: true });
 }

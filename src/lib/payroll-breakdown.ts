@@ -13,8 +13,8 @@ import type Database from "better-sqlite3";
 import {
   applyPtGrace, pickScheduled, deductBreak, splitRegularOt, computeOtPay,
   overlaySwapShifts, branchHourlyRateSelect, keepEntryForBranch, loadDayBranchMap,
-  holidayPremiumApplies,
-  type ScheduledShift, type PayrollSettings
+  holidayPremiumApplies, loadPayrollSettings,
+  type ScheduledShift
 } from "@/lib/payroll-compute";
 import { resolveSiblingPeriods } from "@/lib/payroll-cycle";
 
@@ -130,13 +130,7 @@ export function buildLineBreakdown(
   const isPt = emp?.employment_type === "pt";
   const isExec = emp?.employment_type === "ft" && emp?.track_attendance === 0;
 
-  const settings = db.prepare(`
-    SELECT ot_mode, ot_flat_per_15min,
-           break_threshold_minutes, break_deduction_minutes,
-           long_shift_threshold_minutes, long_shift_break_minutes,
-           sso_rate, sso_cap, pt_default_hourly_rate, wht_rate
-    FROM payroll_settings WHERE id = 1
-  `).get() as PayrollSettings;
+  const settings = loadPayrollSettings(db, period.branch_id);
   const ptRate = emp?.hourly_rate ?? settings.pt_default_hourly_rate;
   const ftHourlyEquiv = emp?.monthly_salary ? emp.monthly_salary / 30 / 8 : 0;
   const rateForPay = isPt ? ptRate : ftHourlyEquiv;

@@ -5,8 +5,8 @@ import { getDb, logPersonaAction } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import {
   computeLineFromMinutes, computeSso, computeWht, earliestDate, resolveHomeCompanyFlag,
-  branchHourlyRateSelect, branchDailyRateSelect, branchOnlyHourlyRateSelect,
-  type EmployeePayrollSnapshot, type PayrollSettings
+  branchHourlyRateSelect, branchDailyRateSelect, branchOnlyHourlyRateSelect, loadPayrollSettings,
+  type EmployeePayrollSnapshot
 } from "@/lib/payroll-compute";
 import { sumRedeemedDrinksForUser } from "@/lib/partner-drink-orders";
 import { sumCrossCompanyChargesForUser } from "@/lib/mealpass-payroll";
@@ -148,13 +148,7 @@ export async function PATCH(
     // (not the original snapshot). This way, if admin updates the employee's
     // tax_mode / hourly_rate / monthly_salary on the employees page, the
     // line edit picks up the latest values automatically.
-    const settings = db.prepare(`
-      SELECT ot_mode, ot_flat_per_15min,
-             break_threshold_minutes, break_deduction_minutes,
-             long_shift_threshold_minutes, long_shift_break_minutes,
-             sso_rate, sso_cap, pt_default_hourly_rate, wht_rate
-      FROM payroll_settings WHERE id = 1
-    `).get() as PayrollSettings;
+    const settings = loadPayrollSettings(db, period.branch_id);
 
     const fresh = db.prepare(`
       SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, pay_cycle, salary_tax_mode, track_attendance,
@@ -278,13 +272,7 @@ export async function PATCH(
     // tax mode (not the line snapshot). This way, if admin types a base_pay
     // directly (e.g., 10,000 ฿), the system still applies SSO 5% / WHT 3%
     // automatically so net_pay reflects reality.
-    const settings = db.prepare(`
-      SELECT ot_mode, ot_flat_per_15min,
-             break_threshold_minutes, break_deduction_minutes,
-             long_shift_threshold_minutes, long_shift_break_minutes,
-             sso_rate, sso_cap, pt_default_hourly_rate, wht_rate
-      FROM payroll_settings WHERE id = 1
-    `).get() as PayrollSettings;
+    const settings = loadPayrollSettings(db, period.branch_id);
 
     const fresh = db.prepare(`
       SELECT salary_tax_mode FROM users WHERE id = ?

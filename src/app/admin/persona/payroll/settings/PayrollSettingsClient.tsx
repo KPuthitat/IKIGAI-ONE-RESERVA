@@ -20,9 +20,11 @@ export type PayrollSettings = {
   wht_rate: number;
 };
 
+export type BranchRate = { id: number; name: string; pt_default_hourly_rate: number | null };
+
 export default function PayrollSettingsClient({
-  initial, lang
-}: { initial: PayrollSettings; lang: Lang }) {
+  initial, branches, lang
+}: { initial: PayrollSettings; branches: BranchRate[]; lang: Lang }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -36,6 +38,10 @@ export default function PayrollSettingsClient({
   const [ssoCap, setSsoCap] = useState(String(initial.sso_cap));
   const [ptDefault, setPtDefault] = useState(String(initial.pt_default_hourly_rate));
   const [whtRatePct, setWhtRatePct] = useState(String(initial.wht_rate * 100));
+  // Per-branch base rate overrides — string per branch id ("" = use default).
+  const [branchRates, setBranchRates] = useState<Record<number, string>>(
+    () => Object.fromEntries(branches.map((b) => [b.id, b.pt_default_hourly_rate == null ? "" : String(b.pt_default_hourly_rate)]))
+  );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -56,7 +62,12 @@ export default function PayrollSettingsClient({
           sso_rate: Number(ssoRatePct) / 100,
           sso_cap: Number(ssoCap),
           pt_default_hourly_rate: Number(ptDefault),
-          wht_rate: Number(whtRatePct) / 100
+          wht_rate: Number(whtRatePct) / 100,
+          branch_rates: branches.map((b) => {
+            const n = Number(branchRates[b.id]);
+            const valid = !!branchRates[b.id]?.trim() && Number.isFinite(n) && n > 0 && n <= 10000;
+            return { branch_id: b.id, rate: valid ? n : null };
+          })
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -284,6 +295,31 @@ export default function PayrollSettingsClient({
           </div>
         </div>
       </div>
+
+      {/* Per-branch base rate (owner 2026-09-19) */}
+      {branches.length > 0 && (
+        <div className="card space-y-3">
+          <div>
+            <h2 className="font-semibold text-slate-800">{t(lang, "admin.persona.payroll.settings.branchRateTitle")}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {t(lang, "admin.persona.payroll.settings.branchRateDesc", { rate: `${fmtMoney(Number(ptDefault) || 0)} ${t(lang, "admin.persona.employees.bahtPerHour")}` })}
+            </p>
+          </div>
+          <div className="space-y-2">
+            {branches.map((b) => (
+              <div key={b.id} className="flex items-center gap-3">
+                <span className="flex-1 text-sm text-slate-700 truncate">{b.name}</span>
+                <input type="number" step="0.01" min="0" inputMode="decimal"
+                  className="input max-w-[120px]"
+                  placeholder={String(ptDefault)}
+                  value={branchRates[b.id] ?? ""}
+                  onChange={(e) => setBranchRates((prev) => ({ ...prev, [b.id]: e.target.value }))} />
+                <span className="text-sm text-slate-500 w-20">{t(lang, "admin.persona.employees.bahtPerHour")}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Save */}
       <div className="flex items-center justify-between gap-3">
