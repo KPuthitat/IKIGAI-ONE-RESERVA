@@ -30,7 +30,8 @@ function todayBkk(): string {
 }
 
 type MonthDay = { date: string; nett: number; billCount: number; pax: number; hasSales: boolean; hasMenu: boolean; hasReceipt?: boolean; dailySentAt: string | null };
-type MenuRank = { name: string; nett: number; rank: number };
+type MenuRank = { name: string; nett: number; rank: number; units?: number | null };
+type MtdMetric = { key: string; label: string; kind: "baht" | "int"; value: number; prev: number | null; pct: number | null };
 type DailyAnalytics = {
   date: string; dateLabel: string;
   row: {
@@ -49,7 +50,7 @@ type DailyAnalytics = {
   peakHour: number | null; advice: string[];
 };
 type MetricCompare = { key: string; label: string; value: number; kind: "baht" | "int"; wowPct: number | null; momPct: number | null };
-type MonthCompare = { throughDay: number; mtdNett: number; prevMonthNett: number | null; prevMonthPct: number | null; lastYearNett: number | null; lastYearPct: number | null };
+type MonthCompare = { throughDay: number; mtdNett: number; prevMonthNett: number | null; prevMonthPct: number | null; lastYearNett: number | null; lastYearPct: number | null; trend?: MtdMetric[] };
 type MenuMomentum = { name: string; thisNett: number; prevNett: number; deltaPct: number | null; isNew: boolean };
 type WeeklyAnalytics = {
   weekStart: string; weekEnd: string; label: string;
@@ -112,7 +113,9 @@ function MenuList({ title, list, muted }: { title: string; list: MenuRank[]; mut
         {list.map((m, i) => (
           <li key={m.name} className="flex items-center justify-between gap-2 text-sm">
             <span className="text-slate-700 truncate">{i + 1}. {m.name}</span>
-            <span className="text-slate-900 font-medium whitespace-nowrap">{baht(m.nett)}</span>
+            <span className="text-slate-900 font-medium whitespace-nowrap">
+              {m.units != null && <span className="text-slate-400 font-normal">{intTh(m.units)} ครั้ง · </span>}{baht(m.nett)}
+            </span>
           </li>
         ))}
       </ol>
@@ -466,22 +469,145 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         </div>
       </div>
 
+      {/* Month browser — sits right under the upload box (owner 2026-09-20) with
+          the per-day list collapsed by default, so managing/picking days is close
+          to where you import; month header + target progress + monthly send stay. */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <button onClick={() => shiftMonth(-1)} className="btn-secondary text-sm px-3 py-1.5">←</button>
+          <h2 className="font-bold text-slate-800">{TH_MONTHS[month]} {year + 543}</h2>
+          <button onClick={() => shiftMonth(1)} className="btn-secondary text-sm px-3 py-1.5">→</button>
+        </div>
+
+        {/* Month-level cumulative comparisons (owner 2026-09-17). */}
+        {monthCompare && monthCompare.throughDay > 0 && (
+          <div className="rounded-xl bg-slate-50 p-3 space-y-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[11px] text-slate-500">ยอดสะสมต้นเดือน (ถึงวันที่ {monthCompare.throughDay})</span>
+              <span className="text-lg font-bold text-emerald-700">{baht(monthCompare.mtdNett)}</span>
+            </div>
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
+              <span>เทียบเดือนก่อน (ช่วงเดียวกัน) <PctChip pct={monthCompare.prevMonthPct} /></span>
+              <span>เทียบปีก่อน (เดือนเดียวกัน) <PctChip pct={monthCompare.lastYearPct} /></span>
+            </div>
+
+            {/* Monthly target progress (owner C) */}
+            {monthTarget && (
+              <div className="pt-2 mt-1 border-t border-slate-200 space-y-1">
+                <div className="flex items-baseline justify-between gap-2 text-[11px]">
+                  <span className="text-slate-500">เป้าเดือนนี้ {baht(monthTarget.target)}</span>
+                  <span className={`font-bold ${monthTarget.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{monthTarget.pctOfTarget.toFixed(0)}% ของเป้า</span>
+                </div>
+                <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
+                  <div className={`h-full ${monthTarget.pctOfTarget >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, monthTarget.pctOfTarget)}%` }} />
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  คาดการณ์สิ้นเดือน <b className={monthTarget.onTrack ? "text-emerald-600" : "text-amber-600"}>{baht(monthTarget.projectedNett)}</b> ({monthTarget.projectedPct.toFixed(0)}% ของเป้า) · {monthTarget.onTrack ? "มีแนวโน้มถึงเป้า ✓" : "ต่ำกว่าเป้า ต้องเร่ง"}
+                </div>
+              </div>
+            )}
+            {!monthTarget && (
+              <div className="text-[11px] text-slate-400 pt-1">ยังไม่ได้ตั้งเป้ายอดขาย — ตั้งได้ที่ ⚙️ ตั้งค่ากลุ่ม LINE</div>
+            )}
+          </div>
+        )}
+
+        {/* Monthly summary send button (owner F) */}
+        {days.length > 0 && (
+          <div className="flex items-center justify-end gap-2">
+            {monthSentAt && <span className="text-xs text-emerald-600">✓ ส่งสรุปเดือนแล้ว</span>}
+            <button onClick={() => sendMonthly(year, month)} disabled={!hasLineGroup}
+              className="btn-success text-sm px-4 py-2 disabled:opacity-50">
+              {monthSentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
+            </button>
+          </div>
+        )}
+
+        {days.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลในเดือนนี้ — นำเข้าไฟล์ด้านบน</p>
+        ) : (
+          <>
+            {/* Missing-file summary for the month (owner 2026-09-18) — always shown. */}
+            {(() => {
+              const inc = days.filter((d) => !(d.hasSales && d.hasMenu && d.hasReceipt));
+              if (!inc.length) return <div className="text-xs text-emerald-600">✓ ทุกวันในเดือนนี้ลงไฟล์ครบทั้ง 3 ชนิดแล้ว</div>;
+              const miss = (pred: (d: MonthDay) => boolean) => days.filter(pred).length;
+              return (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                  มี <b>{inc.length}</b> วันที่ลงไฟล์ไม่ครบ —
+                  {miss((d) => !d.hasSales) > 0 && <> ขาดยอดขาย {miss((d) => !d.hasSales)} วัน</>}
+                  {miss((d) => !d.hasMenu) > 0 && <> · ขาดเมนู {miss((d) => !d.hasMenu)} วัน</>}
+                  {miss((d) => !d.hasReceipt) > 0 && <> · ขาดใบเสร็จ {miss((d) => !d.hasReceipt)} วัน</>}
+                </div>
+              );
+            })()}
+            {/* Per-day list collapsed by default (owner 2026-09-19). */}
+            <button type="button" onClick={() => setShowAllDays((v) => !v)}
+              className="w-full flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+              <span>รายวันทั้งเดือน ({days.length} วัน)</span>
+              <span className="text-slate-400">{showAllDays ? "ซ่อน ▲" : "ดูรายวัน ▼"}</span>
+            </button>
+            {showAllDays && (
+              <div className="divide-y divide-slate-100">
+                {days.map((d) => (
+                  <div key={d.date} className={`flex items-center justify-between gap-2 py-2 cursor-pointer ${selDate === d.date ? "bg-emerald-50 -mx-2 px-2 rounded" : ""}`} onClick={() => loadDay(d.date)}>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-800">{thaiDate(d.date)}</div>
+                      <div className="text-xs text-slate-500">
+                        {d.hasSales ? `${intTh(d.billCount)} บิล · ${intTh(d.pax)} คน` : "ยังไม่มียอดขาย"}
+                        {d.dailySentAt ? " · ✓ ส่งแล้ว" : ""}
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <FileChip label="ยอดขาย" present={d.hasSales} />
+                        <FileChip label="เมนู" present={d.hasMenu} />
+                        <FileChip label="ใบเสร็จ" present={d.hasReceipt} />
+                      </div>
+                    </div>
+                    <div className="text-right whitespace-nowrap">
+                      <div className="text-sm font-bold text-slate-900">{d.hasSales ? baht(d.nett) : "—"}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
       {/* Day analysis — moved to the top (owner 2026-09-19: บทวิเคราะห์ขึ้นบน) */}
       {selDate && daily && (
         <div className="card space-y-4">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
-              <button onClick={() => gotoDay(-1)} disabled={dayIdx <= 0} className="btn-secondary text-sm px-2.5 py-1.5 disabled:opacity-40" title="วันก่อนหน้า">←</button>
-              <h2 className="font-bold text-slate-800">สรุปยอดขาย · {daily.dateLabel}</h2>
-              <button onClick={() => gotoDay(1)} disabled={dayIdx < 0 || dayIdx >= days.length - 1} className="btn-secondary text-sm px-2.5 py-1.5 disabled:opacity-40" title="วันถัดไป">→</button>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            {/* Modern date navigator (owner 2026-09-20): rounded ← [date] → group */}
+            <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50/60 p-1">
+              <button onClick={() => gotoDay(-1)} disabled={dayIdx <= 0}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-slate-800 hover:shadow-sm disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:shadow-none transition"
+                title="วันก่อนหน้า" aria-label="วันก่อนหน้า">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 6l-6 6 6 6" /></svg>
+              </button>
+              <div className="px-2 text-center leading-tight min-w-[9rem]">
+                <div className="text-[9px] uppercase tracking-[1.5px] text-slate-400">สรุปยอดขายรายวัน</div>
+                <div className="font-bold text-slate-800 text-[15px]">{daily.dateLabel}</div>
+              </div>
+              <button onClick={() => gotoDay(1)} disabled={dayIdx < 0 || dayIdx >= days.length - 1}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-slate-800 hover:shadow-sm disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:shadow-none transition"
+                title="วันถัดไป" aria-label="วันถัดไป">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 6l6 6-6 6" /></svg>
+              </button>
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               {daily.row.has_sales === 1 && (
-                <button onClick={() => sendDaily(daily.date)} disabled={!hasLineGroup} className="btn-success text-sm px-4 py-2 disabled:opacity-50">
-                  {daily.row.daily_sent_at ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
+                <button onClick={() => sendDaily(daily.date)} disabled={!hasLineGroup}
+                  className="inline-flex items-center gap-1.5 btn-success text-sm px-4 py-2 disabled:opacity-50">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /></svg>
+                  {daily.row.daily_sent_at ? "ส่งอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
                 </button>
               )}
-              <button onClick={() => del(daily.date)} className="btn-danger text-sm px-3 py-2">ลบ</button>
+              <button onClick={() => del(daily.date)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 transition"
+                title="ลบข้อมูลของวันนี้" aria-label="ลบ">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m1 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" /></svg>
+              </button>
             </div>
           </div>
 
@@ -634,6 +760,33 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MTD same-period trend vs last month (owner 2026-09-20): compare day
+          1..N of this month against the identical window last month across every
+          headline metric, so a partial month reads apples-to-apples. */}
+      {monthCompare && monthCompare.throughDay > 0 && (monthCompare.trend?.length ?? 0) > 0 && (
+        <div className="card space-y-3">
+          <div>
+            <h2 className="font-bold text-slate-800">เทรนด์เทียบเดือนก่อน (ช่วงเดียวกัน วันที่ 1–{monthCompare.throughDay})</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {TH_MONTHS[month]} เทียบ {TH_MONTHS[month === 1 ? 12 : month - 1]} · เทียบวันที่ 1–{monthCompare.throughDay} เท่ากันทั้งสองเดือน เพื่อดูเทรนด์แบบตรง ๆ
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {monthCompare.trend!.map((m) => (
+              <div key={m.key} className={`rounded-xl p-3 ${m.key === "nett" ? "bg-emerald-50" : "bg-slate-50"}`}>
+                <div className="text-[11px] text-slate-500">{m.label}</div>
+                <div className={`text-base font-bold ${m.key === "nett" ? "text-emerald-700" : "text-slate-800"}`}>
+                  {m.kind === "baht" ? baht(m.value) : intTh(m.value)}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                  เดือนก่อน {m.prev != null ? (m.kind === "baht" ? baht(m.prev) : intTh(m.prev)) : "—"} · <PctChip pct={m.pct} />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -905,110 +1058,6 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               {!hasLineGroup && <span className="text-[11px] text-slate-400">ตั้งกลุ่ม LINE ก่อนถึงจะส่งได้</span>}
             </div>
           </div>
-        )}
-      </div>
-
-      {/* Month list — the per-day list is collapsed by default (owner 2026-09-19:
-          ซ่อนหลังนำเข้า); the month header + target progress + monthly send stay. */}
-      <div className="card space-y-3">
-        <div className="flex items-center justify-between">
-          <button onClick={() => shiftMonth(-1)} className="btn-secondary text-sm px-3 py-1.5">←</button>
-          <h2 className="font-bold text-slate-800">{TH_MONTHS[month]} {year + 543}</h2>
-          <button onClick={() => shiftMonth(1)} className="btn-secondary text-sm px-3 py-1.5">→</button>
-        </div>
-
-        {/* Month-level cumulative comparisons (owner 2026-09-17). */}
-        {monthCompare && monthCompare.throughDay > 0 && (
-          <div className="rounded-xl bg-slate-50 p-3 space-y-1.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[11px] text-slate-500">ยอดสะสมต้นเดือน (ถึงวันที่ {monthCompare.throughDay})</span>
-              <span className="text-lg font-bold text-emerald-700">{baht(monthCompare.mtdNett)}</span>
-            </div>
-            <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
-              <span>เทียบเดือนก่อน (ช่วงเดียวกัน) <PctChip pct={monthCompare.prevMonthPct} /></span>
-              <span>เทียบปีก่อน (เดือนเดียวกัน) <PctChip pct={monthCompare.lastYearPct} /></span>
-            </div>
-
-            {/* Monthly target progress (owner C) */}
-            {monthTarget && (
-              <div className="pt-2 mt-1 border-t border-slate-200 space-y-1">
-                <div className="flex items-baseline justify-between gap-2 text-[11px]">
-                  <span className="text-slate-500">เป้าเดือนนี้ {baht(monthTarget.target)}</span>
-                  <span className={`font-bold ${monthTarget.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{monthTarget.pctOfTarget.toFixed(0)}% ของเป้า</span>
-                </div>
-                <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
-                  <div className={`h-full ${monthTarget.pctOfTarget >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, monthTarget.pctOfTarget)}%` }} />
-                </div>
-                <div className="text-[11px] text-slate-500">
-                  คาดการณ์สิ้นเดือน <b className={monthTarget.onTrack ? "text-emerald-600" : "text-amber-600"}>{baht(monthTarget.projectedNett)}</b> ({monthTarget.projectedPct.toFixed(0)}% ของเป้า) · {monthTarget.onTrack ? "มีแนวโน้มถึงเป้า ✓" : "ต่ำกว่าเป้า ต้องเร่ง"}
-                </div>
-              </div>
-            )}
-            {!monthTarget && (
-              <div className="text-[11px] text-slate-400 pt-1">ยังไม่ได้ตั้งเป้ายอดขาย — ตั้งได้ที่ ⚙️ ตั้งค่ากลุ่ม LINE</div>
-            )}
-          </div>
-        )}
-
-        {/* Monthly summary send button (owner F) */}
-        {days.length > 0 && (
-          <div className="flex items-center justify-end gap-2">
-            {monthSentAt && <span className="text-xs text-emerald-600">✓ ส่งสรุปเดือนแล้ว</span>}
-            <button onClick={() => sendMonthly(year, month)} disabled={!hasLineGroup}
-              className="btn-success text-sm px-4 py-2 disabled:opacity-50">
-              {monthSentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
-            </button>
-          </div>
-        )}
-
-        {days.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลในเดือนนี้ — นำเข้าไฟล์ด้านบน</p>
-        ) : (
-          <>
-            {/* Missing-file summary for the month (owner 2026-09-18) — always shown. */}
-            {(() => {
-              const inc = days.filter((d) => !(d.hasSales && d.hasMenu && d.hasReceipt));
-              if (!inc.length) return <div className="text-xs text-emerald-600">✓ ทุกวันในเดือนนี้ลงไฟล์ครบทั้ง 3 ชนิดแล้ว</div>;
-              const miss = (pred: (d: MonthDay) => boolean) => days.filter(pred).length;
-              return (
-                <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-                  มี <b>{inc.length}</b> วันที่ลงไฟล์ไม่ครบ —
-                  {miss((d) => !d.hasSales) > 0 && <> ขาดยอดขาย {miss((d) => !d.hasSales)} วัน</>}
-                  {miss((d) => !d.hasMenu) > 0 && <> · ขาดเมนู {miss((d) => !d.hasMenu)} วัน</>}
-                  {miss((d) => !d.hasReceipt) > 0 && <> · ขาดใบเสร็จ {miss((d) => !d.hasReceipt)} วัน</>}
-                </div>
-              );
-            })()}
-            {/* Per-day list collapsed by default (owner 2026-09-19). */}
-            <button type="button" onClick={() => setShowAllDays((v) => !v)}
-              className="w-full flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
-              <span>รายวันทั้งเดือน ({days.length} วัน)</span>
-              <span className="text-slate-400">{showAllDays ? "ซ่อน ▲" : "ดูรายวัน ▼"}</span>
-            </button>
-            {showAllDays && (
-              <div className="divide-y divide-slate-100">
-                {days.map((d) => (
-                  <div key={d.date} className={`flex items-center justify-between gap-2 py-2 cursor-pointer ${selDate === d.date ? "bg-emerald-50 -mx-2 px-2 rounded" : ""}`} onClick={() => loadDay(d.date)}>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-800">{thaiDate(d.date)}</div>
-                      <div className="text-xs text-slate-500">
-                        {d.hasSales ? `${intTh(d.billCount)} บิล · ${intTh(d.pax)} คน` : "ยังไม่มียอดขาย"}
-                        {d.dailySentAt ? " · ✓ ส่งแล้ว" : ""}
-                      </div>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        <FileChip label="ยอดขาย" present={d.hasSales} />
-                        <FileChip label="เมนู" present={d.hasMenu} />
-                        <FileChip label="ใบเสร็จ" present={d.hasReceipt} />
-                      </div>
-                    </div>
-                    <div className="text-right whitespace-nowrap">
-                      <div className="text-sm font-bold text-slate-900">{d.hasSales ? baht(d.nett) : "—"}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
         )}
       </div>
 

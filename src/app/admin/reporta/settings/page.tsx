@@ -6,7 +6,7 @@ import { isSalesaBranch, getLineGroupId, getMonthlyTarget, getMerchantName, getC
 import ReportaSettingsClient from "./ReportaSettingsClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "REPORTA · ตั้งค่ากลุ่ม LINE หัวหน้างาน" };
+export const metadata: Metadata = { title: "ANALYTICA · ตั้งค่ากลุ่ม LINE หัวหน้างาน" };
 
 export default function ReportaSettingsPage() {
   const user = requirePermission("reporta.manage");
@@ -14,7 +14,7 @@ export default function ReportaSettingsPage() {
   if (branchId == null || !isSalesaBranch(branchId)) {
     return (
       <div className="space-y-4">
-        <Link href="/admin/reporta" className="text-sm text-slate-500 hover:text-brand">← REPORTA</Link>
+        <Link href="/admin/reporta" className="text-sm text-slate-500 hover:text-brand">← ANALYTICA</Link>
         <div className="card text-sm text-slate-500">กรุณาเลือกสาขาที่มุมบนซ้ายก่อน</div>
       </div>
     );
@@ -23,7 +23,7 @@ export default function ReportaSettingsPage() {
 
   return (
     <div className="space-y-4 max-w-xl">
-      <Link href="/admin/reporta" className="text-sm text-slate-500 hover:text-brand">← REPORTA</Link>
+      <Link href="/admin/reporta" className="text-sm text-slate-500 hover:text-brand">← ANALYTICA</Link>
       <div>
         <h1 className="text-2xl font-bold text-slate-800">ตั้งค่ากลุ่ม LINE หัวหน้างาน</h1>
         <p className="text-sm text-slate-500 mt-1">สาขา {branch?.name ?? `#${branchId}`} · การ์ดสรุปยอดขายรายวัน/รายสัปดาห์จะถูกส่งเข้ากลุ่มนี้</p>

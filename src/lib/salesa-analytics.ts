@@ -34,7 +34,15 @@ function relPct(today: number, base: number | null | undefined): number | null {
   return base != null && base > 0 ? round2(((today - base) / base) * 100) : null;
 }
 
-export type MenuRank = MenuEntry & { rank: number };
+// `units` = จำนวนที่ขายได้ (owner calls it "ครั้ง"), joined from receipt data by
+// name; null when there's no receipt match. Shown alongside revenue everywhere a
+// menu is listed, so the kitchen can plan by volume, not just baht (owner 2026-09-20).
+export type MenuRank = MenuEntry & { rank: number; units?: number | null };
+
+/** Attach receipt units to a ranked menu list, matched by name. */
+function attachUnits(list: MenuRank[], unitsByName: Map<string, number>): MenuRank[] {
+  return list.map((m) => ({ ...m, units: unitsByName.get(m.name) ?? null }));
+}
 
 /** One KPI with two business-meaningful comparisons (owner 2026-09-17):
  *  the same weekday last week, and the same day-of-month last month. */
@@ -141,12 +149,13 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
   const menu = getMenu(branchId, date);
   const items = menu.items.map((m, i) => ({ ...m, rank: i + 1 }));
   const cats = menu.categories.map((m, i) => ({ ...m, rank: i + 1 }));
+  const unitsByName = new Map(itemUnitsRange(branchId, date, date).map((u) => [u.name, u.units]));
   const dom = Number(date.slice(8, 10));
   const weekdayTh = thaiWeekday(date);
   const discountPct = pct(Math.abs(row.discount), row.gross);
   const voidPct = pct(row.void_amount, row.gross);
   const peakHour = dayPeakHour(branchId, date);
-  const topItems = items.slice(0, topN);
+  const topItems = attachUnits(items.slice(0, topN), unitsByName);
 
   return {
     date,
@@ -164,7 +173,7 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
     topItems,
     // lowest-earning end of the ranked list (owner: เมนูขายน้อยสุด) — only
     // meaningful within the menus the POS export actually lists.
-    bottomItems: items.length > topN ? items.slice(-topN).reverse() : [],
+    bottomItems: items.length > topN ? attachUnits(items.slice(-topN).reverse(), unitsByName) : [],
     topCategories: cats.slice(0, topN),
     peakHour,
     advice: dailyAdvice({ metrics, wowHasData, wowLabel: `${weekdayTh}ที่แล้ว`, momHasData, momLabel: `วันที่ ${dom} เดือนก่อน`, discountPct, voidPct, topItems, peakHour })
@@ -175,6 +184,9 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
  *  month vs the same day-count last month, and vs the same month last year.
  *  `throughDay` is the last day-of-month covered — today for the current month,
  *  else the latest imported day. Null pcts when there's no baseline to compare. */
+/** One same-period MTD metric: this month's day 1..N vs last month's day 1..N. */
+export type MtdMetric = { key: string; label: string; kind: "baht" | "int"; value: number; prev: number | null; pct: number | null };
+
 export type MonthComparison = {
   year: number;
   month: number;
@@ -184,16 +196,31 @@ export type MonthComparison = {
   prevMonthPct: number | null; // bullet 4: MTD this vs last month
   lastYearNett: number | null;
   lastYearPct: number | null;  // bullet 3: this month vs same month last year (same day-count)
+  // Same-period (day 1..throughDay) trend across dimensions vs the previous
+  // month's identical window — so the current partial month compares apples to
+  // apples, not against a full month (owner 2026-09-20: ดูเทรนด์ 1–19 vs 1–19).
+  trend: MtdMetric[];
 };
 
-function sumNett(branchId: number, year: number, month: number, throughDay: number): number | null {
+type MtdAgg = { nett: number; bills: number; pax: number; discount: number; days: number };
+function aggMtd(branchId: number, year: number, month: number, throughDay: number): MtdAgg | null {
   if (throughDay < 1) return null;
   const mm = String(month).padStart(2, "0");
   const last = Math.min(throughDay, daysInMonth(year, month));
   const rows = listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(last).padStart(2, "0")}`)
     .filter((d) => d.has_sales);
   if (!rows.length) return null;
-  return round2(rows.reduce((s, d) => s + d.nett, 0));
+  return {
+    nett: round2(rows.reduce((s, d) => s + d.nett, 0)),
+    bills: rows.reduce((s, d) => s + d.bill_count, 0),
+    pax: rows.reduce((s, d) => s + d.pax, 0),
+    discount: round2(rows.reduce((s, d) => s + d.discount, 0)),
+    days: rows.length
+  };
+}
+
+function sumNett(branchId: number, year: number, month: number, throughDay: number): number | null {
+  return aggMtd(branchId, year, month, throughDay)?.nett ?? null;
 }
 
 export function monthComparison(branchId: number, year: number, month: number, todayIso: string): MonthComparison {
@@ -205,11 +232,25 @@ export function monthComparison(branchId: number, year: number, month: number, t
   const maxImported = rows.reduce((mx, d) => Math.max(mx, Number(d.sale_date.slice(8, 10))), 0);
   const throughDay = isCurrentMonth ? Number(todayIso.slice(8, 10)) : maxImported;
 
-  const mtdNett = sumNett(branchId, year, month, throughDay) ?? 0;
   const pm = month === 1 ? 12 : month - 1;
   const pmY = month === 1 ? year - 1 : year;
-  const prevMonthNett = sumNett(branchId, pmY, pm, throughDay);
+  const cur = aggMtd(branchId, year, month, throughDay);
+  const prev = aggMtd(branchId, pmY, pm, throughDay);
+  const mtdNett = cur?.nett ?? 0;
+  const prevMonthNett = prev?.nett ?? null;
   const lastYearNett = sumNett(branchId, year - 1, month, throughDay);
+
+  // Same-window trend across dimensions (owner 2026-09-20). avg/head guard 0.
+  const mtdMetric = (key: string, label: string, kind: "baht" | "int", value: number, prevVal: number | null): MtdMetric =>
+    ({ key, label, kind, value: round2(value), prev: prevVal == null ? null : round2(prevVal), pct: relPct(value, prevVal) });
+  const trend: MtdMetric[] = cur ? [
+    mtdMetric("nett", "ยอดขาย", "baht", cur.nett, prev?.nett ?? null),
+    mtdMetric("bills", "จำนวนบิล", "int", cur.bills, prev?.bills ?? null),
+    mtdMetric("pax", "ลูกค้า", "int", cur.pax, prev?.pax ?? null),
+    mtdMetric("avgBill", "เฉลี่ยต่อบิล", "baht", cur.bills > 0 ? cur.nett / cur.bills : 0, prev && prev.bills > 0 ? prev.nett / prev.bills : null),
+    mtdMetric("avgHead", "เฉลี่ยต่อหัว", "baht", cur.pax > 0 ? cur.nett / cur.pax : 0, prev && prev.pax > 0 ? prev.nett / prev.pax : null),
+    mtdMetric("discount", "ส่วนลด", "baht", Math.abs(cur.discount), prev == null ? null : Math.abs(prev.discount))
+  ] : [];
 
   return {
     year, month, throughDay,
@@ -217,7 +258,8 @@ export function monthComparison(branchId: number, year: number, month: number, t
     prevMonthNett,
     prevMonthPct: relPct(mtdNett, prevMonthNett),
     lastYearNett,
-    lastYearPct: relPct(mtdNett, lastYearNett)
+    lastYearPct: relPct(mtdNett, lastYearNett),
+    trend
   };
 }
 
@@ -273,6 +315,7 @@ export function weeklyAnalytics(branchId: number, weekStart: string, topN = 5): 
 
   const items = menuRange(branchId, start, end, "item").map((m, i) => ({ ...m, rank: i + 1 }));
   const cats = menuRange(branchId, start, end, "category").map((m, i) => ({ ...m, rank: i + 1 }));
+  const unitsByName = new Map(itemUnitsRange(branchId, start, end).map((u) => [u.name, u.units]));
 
   // Previous ISO week totals (owner 2026-09-17: เทียบสัปดาห์ก่อน).
   const prevStart = addDaysIso(start, -7);
@@ -313,7 +356,7 @@ export function weeklyAnalytics(branchId: number, weekStart: string, topN = 5): 
     wowNettPct: relPct(totalNett, prevNett),
     wowBillsPct: prevBills > 0 ? relPct(totalBills, prevBills) : null,
     wowPaxPct: prevPax > 0 ? relPct(totalPax, prevPax) : null,
-    topItems: items.slice(0, topN),
+    topItems: attachUnits(items.slice(0, topN), unitsByName),
     topCategories: cats.slice(0, topN),
     menuRisers,
     menuFallers
@@ -363,6 +406,7 @@ export function monthlyAnalytics(branchId: number, year: number, month: number, 
   const lastYearNett = sumNett(branchId, year - 1, month, full);
   const items = menuRange(branchId, `${year}-${mm}-01`, end, "item").map((m, i) => ({ ...m, rank: i + 1 }));
   const cats = menuRange(branchId, `${year}-${mm}-01`, end, "category").map((m, i) => ({ ...m, rank: i + 1 }));
+  const unitsByName = new Map(itemUnitsRange(branchId, `${year}-${mm}-01`, end).map((u) => [u.name, u.units]));
 
   return {
     year, month, ym: `${year}-${mm}`,
@@ -375,7 +419,7 @@ export function monthlyAnalytics(branchId: number, year: number, month: number, 
     bestNett: best?.nett ?? null,
     prevMonthNett, prevMonthPct: relPct(totalNett, prevMonthNett),
     lastYearNett, lastYearPct: relPct(totalNett, lastYearNett),
-    topItems: items.slice(0, topN),
+    topItems: attachUnits(items.slice(0, topN), unitsByName),
     topCategories: cats.slice(0, topN)
   };
 }
@@ -775,8 +819,21 @@ export function insightRangeFor(period: InsightPeriod, year: number, month: numb
       prevLabel: "เทียบสัปดาห์ก่อน", nowLabel: "สัปดาห์นี้"
     };
   }
-  const [s, e] = monthRange(year, month);
-  const [ps, pe] = prevMonthRange(year, month);
+  // Same-period month comparison (owner 2026-09-20): compare day 1..N of this
+  // month against day 1..N of last month — so a partial current month is never
+  // measured against a FULL previous month. N = today (current month), or the
+  // month's own last day when reviewing a completed month. This makes every
+  // "vs เดือนก่อน" panel (menu momentum, guests, quality) apples-to-apples.
+  const mm = String(month).padStart(2, "0");
+  const isCurrent = todayIso.startsWith(`${year}-${mm}`);
+  const throughDay = isCurrent ? Number(todayIso.slice(8, 10)) : daysInMonth(year, month);
+  const pm = month === 1 ? 12 : month - 1;
+  const pmY = month === 1 ? year - 1 : year;
+  const pmm = String(pm).padStart(2, "0");
+  const s = `${year}-${mm}-01`;
+  const e = `${year}-${mm}-${String(Math.min(throughDay, daysInMonth(year, month))).padStart(2, "0")}`;
+  const ps = `${pmY}-${pmm}-01`;
+  const pe = `${pmY}-${pmm}-${String(Math.min(throughDay, daysInMonth(pmY, pm))).padStart(2, "0")}`;
   return { period, start: s, end: e, prevStart: ps, prevEnd: pe, rangeLabel: roundLabel(s, e), prevLabel: "เทียบเดือนก่อน", nowLabel: "เดือนนี้" };
 }
 

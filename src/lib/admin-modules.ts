@@ -36,7 +36,7 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: "insigna", perm: "insigna.view", href: "/admin/insigna", base: "/admin/insigna", label: "INSIGNA", icon: "insigna", tone: "violet", subKey: "portal.mod.insigna", badge: { label: "NEW", tone: "emerald" } },
   { key: "recruita", perm: "recruita.access", href: "/admin/recruita", base: "/admin/recruita", label: "RECRUITA", icon: "recruita", tone: "amber", subKey: "portal.mod.recruita", badge: { label: "NEW", tone: "emerald" } },
   { key: "accounta", perm: "accounta.manage", href: "/admin/accounta", base: "/admin/accounta", label: "ACCOUNTA", icon: "accounta", tone: "rose", subKey: "portal.mod.accounta", badge: { label: "NEW", tone: "emerald" } },
-  { key: "reporta", perm: "reporta.manage", href: "/admin/reporta", base: "/admin/reporta", label: "REPORTA", icon: "chart", tone: "emerald", subKey: "portal.mod.reporta", badge: { label: "NEW", tone: "emerald" } },
+  { key: "reporta", perm: "reporta.manage", href: "/admin/reporta", base: "/admin/reporta", label: "ANALYTICA", icon: "chart", tone: "emerald", subKey: "portal.mod.reporta", badge: { label: "NEW", tone: "emerald" } },
   { key: "delivera", perm: "delivera.manage", href: "/admin/delivera/kitchen", base: "/admin/delivera", label: "DELIVERA", icon: "inbox", tone: "sky", subKey: "portal.mod.delivera" },
   { key: "ir", perm: "ir.manage", href: "/admin/ir", base: "/admin/ir", label: "IR", icon: "shield", tone: "amber", subKey: "portal.mod.ir" },
   { key: "ascenda", perm: "ascenda.view", href: "/admin/ascenda", base: "/admin/ascenda", label: "ASCENDA", icon: "ascenda", tone: "slate", subKey: "portal.mod.ascenda", comingSoon: true, badge: { label: "เร็วๆ นี้", tone: "amber" } }

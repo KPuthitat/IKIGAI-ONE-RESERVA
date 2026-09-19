@@ -192,6 +192,16 @@ export function isOverview(buf: Buffer | ArrayBuffer): boolean {
   return sheetsByName(buf).names.some((n) => /top products/i.test(n));
 }
 
+/** Merge menu entries that share a name (some POS "Top products" exports list
+ *  the same item on more than one row — e.g. sold under two categories). Summing
+ *  the revenue avoids a PRIMARY KEY (branch, date, kind, name) clash on upsert,
+ *  which otherwise 500s the whole import (owner 2026-09-20). Sorted by nett desc. */
+function mergeByName(entries: MenuEntry[]): MenuEntry[] {
+  const m = new Map<string, number>();
+  for (const e of entries) m.set(e.name, round2((m.get(e.name) ?? 0) + e.nett));
+  return [...m.entries()].map(([name, nett]) => ({ name, nett })).sort((a, b) => b.nett - a.nett);
+}
+
 export function parseOverview(buf: Buffer | ArrayBuffer): SalesOverview {
   const s = sheetsByName(buf);
   const first = s.get(() => true);
@@ -219,7 +229,6 @@ export function parseOverview(buf: Buffer | ArrayBuffer): SalesOverview {
     }
     break;
   }
-  categories.sort((a, b) => b.nett - a.nett);
 
   // Individual menus: the "Name / Value" list sheet.
   const items: MenuEntry[] = [];
@@ -237,9 +246,8 @@ export function parseOverview(buf: Buffer | ArrayBuffer): SalesOverview {
     }
     break;
   }
-  items.sort((a, b) => b.nett - a.nett);
 
-  return { date: pre.date, dateEnd: pre.dateEnd ?? pre.date, merchant: pre.merchant, categories, items };
+  return { date: pre.date, dateEnd: pre.dateEnd ?? pre.date, merchant: pre.merchant, categories: mergeByName(categories), items: mergeByName(items) };
 }
 
 // ── receipt (per-bill with time + items — owner 2026-09-18) ─────────────────

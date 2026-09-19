@@ -75,8 +75,8 @@ export const RBAC_PERMISSIONS: RbacPermissionDef[] = [
   },
   {
     key: "reporta.manage",
-    module: "REPORTA",
-    labelTh: "REPORTA — วิเคราะห์ยอดขายรายวัน",
+    module: "ANALYTICA",
+    labelTh: "ANALYTICA — วิเคราะห์ยอดขายรายวัน",
     descTh: "นำเข้าไฟล์ยอดขายรายวันจาก POS วิเคราะห์ยอดขาย/เมนูทำรายได้สูงสุด และส่งการ์ดสรุปเข้ากลุ่ม LINE หัวหน้างาน (รายวัน/รายสัปดาห์) — จำกัดเฉพาะแอดมินและหัวหน้างาน"
   },
   {

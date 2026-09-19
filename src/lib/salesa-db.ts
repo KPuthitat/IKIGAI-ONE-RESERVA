@@ -111,8 +111,11 @@ export function upsertMenu(branchId: number, userId: number, o: SalesOverview): 
         imported_by = excluded.imported_by
     `).run(branchId, o.date, o.merchant, userId);
     db.prepare("DELETE FROM salesa_menu WHERE branch_id = ? AND sale_date = ?").run(branchId, o.date);
+    // ON CONFLICT: a POS export may still list the same name twice — sum it in
+    // rather than crash the import on the PRIMARY KEY (owner 2026-09-20).
     const ins = db.prepare(
-      "INSERT INTO salesa_menu (branch_id, sale_date, kind, name, nett, rank) VALUES (?, ?, ?, ?, ?, ?)"
+      `INSERT INTO salesa_menu (branch_id, sale_date, kind, name, nett, rank) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(branch_id, sale_date, kind, name) DO UPDATE SET nett = nett + excluded.nett`
     );
     const write = (kind: "item" | "category", list: MenuEntry[]) =>
       list.forEach((m, i) => ins.run(branchId, o.date, kind, m.name, m.nett, i + 1));
