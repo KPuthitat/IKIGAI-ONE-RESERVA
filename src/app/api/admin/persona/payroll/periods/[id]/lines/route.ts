@@ -4,8 +4,8 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   computeLineFromMinutes, earliestDate, resolveHomeCompanyFlag, branchHourlyRateSelect,
-  branchDailyRateSelect, branchOnlyHourlyRateSelect,
-  type EmployeePayrollSnapshot, type PayrollSettings
+  branchDailyRateSelect, branchOnlyHourlyRateSelect, loadPayrollSettings,
+  type EmployeePayrollSnapshot
 } from "@/lib/payroll-compute";
 import { sumRedeemedDrinksForUser } from "@/lib/partner-drink-orders";
 import { sumCrossCompanyChargesForUser } from "@/lib/mealpass-payroll";
@@ -88,13 +88,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "already_in_period" }, { status: 409 });
   }
 
-  const settings = db.prepare(`
-    SELECT ot_mode, ot_flat_per_15min,
-           break_threshold_minutes, break_deduction_minutes,
-           long_shift_threshold_minutes, long_shift_break_minutes,
-           sso_rate, sso_cap, pt_default_hourly_rate, wht_rate
-    FROM payroll_settings WHERE id = 1
-  `).get() as PayrollSettings;
+  const settings = loadPayrollSettings(db, period.branch_id);
 
   // Home-branch flag for FT salary (owner 2026-07-14) — pay salary only when
   // this period's branch is the employee's primary (is_primary=1, else lowest

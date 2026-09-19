@@ -4,7 +4,7 @@ import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import PayrollSettingsClient, { type PayrollSettings } from "./PayrollSettingsClient";
+import PayrollSettingsClient, { type PayrollSettings, type BranchRate } from "./PayrollSettingsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +24,12 @@ export default function PayrollSettingsPage() {
     FROM payroll_settings WHERE id = 1
   `).get() as PayrollSettings;
 
+  // Per-branch base-rate overrides (owner 2026-09-19). NULL rate = use the
+  // company default above.
+  const branches = db.prepare(
+    "SELECT id, name, pt_default_hourly_rate FROM branches ORDER BY display_order, name"
+  ).all() as BranchRate[];
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -39,7 +45,7 @@ export default function PayrollSettingsPage() {
           {t(lang, "admin.persona.payroll.settings.subtitle")}
         </p>
       </div>
-      <PayrollSettingsClient initial={settings} lang={lang} />
+      <PayrollSettingsClient initial={settings} branches={branches} lang={lang} />
     </div>
   );
 }

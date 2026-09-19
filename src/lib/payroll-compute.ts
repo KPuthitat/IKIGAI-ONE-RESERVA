@@ -218,6 +218,43 @@ export function branchHourlyRateSelect(branchId: number | null): string {
     : "hourly_rate";
 }
 
+// Per-branch BASE PT hourly rate (owner 2026-09-19): a branch may set its own
+// base rate that overrides the company payroll_settings.pt_default_hourly_rate
+// for that branch only. NULL/unset → the company default. This is the fallback
+// used when an employee has no rate of their own; per-employee and per-branch
+// employee rates still win over it.
+export function branchBaseHourlyRate(
+  db: Database.Database,
+  branchId: number | null,
+  companyDefault: number
+): number {
+  if (branchId == null) return companyDefault;
+  const r = db.prepare("SELECT pt_default_hourly_rate FROM branches WHERE id = ?")
+    .get(branchId) as { pt_default_hourly_rate: number | null } | undefined;
+  const rate = r?.pt_default_hourly_rate;
+  // Only a positive rate overrides. 0/NULL = "not set" → company default, so a
+  // stray 0 can never zero a real employee's pay.
+  return rate != null && rate > 0 ? rate : companyDefault;
+}
+
+/** Load the company payroll settings with pt_default_hourly_rate resolved to the
+ *  branch's base rate (owner 2026-09-19). Every payroll PAYOUT path (period
+ *  compute, line recompute/edit, per-day breakdown, add-to-period) must load
+ *  settings through this so the per-branch base rate is applied uniformly. The
+ *  mealpass weekly-income estimator deliberately keeps the company default — it
+ *  spans a person's roster across all branches, not one branch's payout. */
+export function loadPayrollSettings(db: Database.Database, branchId: number | null): PayrollSettings {
+  const settings = db.prepare(`
+    SELECT ot_mode, ot_flat_per_15min,
+           break_threshold_minutes, break_deduction_minutes,
+           long_shift_threshold_minutes, long_shift_break_minutes,
+           sso_rate, sso_cap, pt_default_hourly_rate, wht_rate
+    FROM payroll_settings WHERE id = 1
+  `).get() as PayrollSettings;
+  settings.pt_default_hourly_rate = branchBaseHourlyRate(db, branchId, settings.pt_default_hourly_rate);
+  return settings;
+}
+
 // Cross-company/branch HELPER day rate (owner 2026-08-17). Selects the host
 // branch's user_branches.daily_rate for `users.id`, or NULL when this period has
 // no branch (legacy all-branches periods never treat anyone as a helper).
@@ -1760,13 +1797,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
   if (!period) throw new Error("period_not_found");
   if (period.status !== "draft") throw new Error("period_not_draft");
 
-  const settings = db.prepare(`
-    SELECT ot_mode, ot_flat_per_15min,
-           break_threshold_minutes, break_deduction_minutes,
-           long_shift_threshold_minutes, long_shift_break_minutes,
-           sso_rate, sso_cap, pt_default_hourly_rate, wht_rate
-    FROM payroll_settings WHERE id = 1
-  `).get() as PayrollSettings;
+  const settings = loadPayrollSettings(db, period.branch_id);
 
   const fromIso = new Date(`${period.period_start}T00:00:00+07:00`).toISOString();
   const toIso = new Date(`${period.period_end}T23:59:59+07:00`).toISOString();
@@ -2470,13 +2501,7 @@ export function recomputeLine(
     resign_last_day: string | null; term_last_day: string | null;
   } | undefined;
 
-  const settings = db.prepare(`
-    SELECT ot_mode, ot_flat_per_15min,
-           break_threshold_minutes, break_deduction_minutes,
-           long_shift_threshold_minutes, long_shift_break_minutes,
-           sso_rate, sso_cap, pt_default_hourly_rate, wht_rate
-    FROM payroll_settings WHERE id = 1
-  `).get() as PayrollSettings;
+  const settings = loadPayrollSettings(db, period.branch_id);
 
   const fromIso = new Date(`${period.period_start}T00:00:00+07:00`).toISOString();
   const toIso = new Date(`${period.period_end}T23:59:59+07:00`).toISOString();

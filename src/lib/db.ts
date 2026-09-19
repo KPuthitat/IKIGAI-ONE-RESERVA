@@ -1338,6 +1338,12 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("extra_button_url")) {
     db.exec("ALTER TABLE branches ADD COLUMN extra_button_url TEXT");
   }
+  // Per-branch base PT hourly rate (owner 2026-09-19) — overrides the company
+  // payroll_settings.pt_default_hourly_rate for this branch only. NULL = use the
+  // company default. Applied as the fallback when an employee has no own rate.
+  if (!bnames2.has("pt_default_hourly_rate")) {
+    db.exec("ALTER TABLE branches ADD COLUMN pt_default_hourly_rate REAL");
+  }
   // 2026-05-30 — shift_close default-field highlight toggles. Three
   // money fields (closing drawer, service charge, daily revenue) are
   // baked into the post-shift summary card. Until now they were ALL
