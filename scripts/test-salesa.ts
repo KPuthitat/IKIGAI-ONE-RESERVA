@@ -109,6 +109,19 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("overview categories sorted desc", ov.categories[0].name === "ย่าง" && ov.categories[0].nett === 2819.93);
   ok("parseSalesFile dispatch", parse.parseSalesFile(overviewBuf("16/09/2026", "X", [["a", "10"]], [["b", "20"]])).kind === "overview");
 
+  // Duplicate item/category name (some POS "Top products" exports repeat a row)
+  // → merged + summed so upsertMenu doesn't clash on the PK (owner 2026-09-20).
+  const ovDup = parse.parseOverview(overviewBuf("16/09/2026", "TESTBR",
+    [["คอหมูย่าง", "1000"], ["เนื้อย่าง", "600"], ["คอหมูย่าง", "500"]],
+    [["ย่าง", "2000"], ["ส้มตำ", "300"], ["ย่าง", "100"]]));
+  ok("overview merges duplicate item name (1000+500=1500)",
+    ovDup.items.filter((i) => i.name === "คอหมูย่าง").length === 1 &&
+    ovDup.items.find((i) => i.name === "คอหมูย่าง")?.nett === 1500 &&
+    ovDup.items[0].name === "คอหมูย่าง");
+  ok("overview merges duplicate category name (2000+100=2100)",
+    ovDup.categories.filter((c) => c.name === "ย่าง").length === 1 &&
+    ovDup.categories.find((c) => c.name === "ย่าง")?.nett === 2100);
+
   // ── receipt parser ──
   const rbuf = receiptBuf("17/09/2026", "TESTBR", [
     { time: "17/09/2026 12:07:20", no: "1", table: "G2", gross: "1,000", discount: "-100", nett: "1,000", payment: "PromptPay", items: "1x ข้าวสวย,1x คอหมูย่าง,2x ข้าวเหนียว" },
@@ -129,6 +142,18 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const db = getDb();
   const bid = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('r','REST')").run().lastInsertRowid);
   const uid = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status) VALUES ('op','x','ผู้จัดการ','admin','active')").run().lastInsertRowid);
+
+  // upsertMenu ON CONFLICT safety net: a raw list with a duplicate name (past the
+  // parser merge) must sum, not crash on the PK (owner 2026-09-20).
+  ok("upsertMenu sums duplicate item names without PK crash", (() => {
+    const b = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('dupmenu','DUPM')").run().lastInsertRowid);
+    try {
+      sdb.upsertMenu(b, uid, { date: "2026-09-16", dateEnd: "2026-09-16", merchant: "DUPM", categories: [],
+        items: [{ name: "คอหมูย่าง", nett: 1000 }, { name: "เนื้อย่าง", nett: 600 }, { name: "คอหมูย่าง", nett: 500 }] });
+    } catch { return false; }
+    const row = db.prepare("SELECT nett FROM salesa_menu WHERE branch_id=? AND kind='item' AND name='คอหมูย่าง'").get(b) as { nett: number } | undefined;
+    return !!row && Math.abs(row.nett - 1500) < 0.01;
+  })());
 
   // A full ISO week: Mon 2026-09-14 … Sun 2026-09-20. Vary the netts.
   const week: Array<{ d: string; nett: number; bills: number; pax: number }> = [

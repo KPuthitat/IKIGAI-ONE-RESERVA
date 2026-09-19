@@ -72,22 +72,28 @@ export async function POST(req: Request) {
   // this import, so the importer is warned it replaced existing data.
   const results: Array<{ filename: string; kind: string; date: string; merchant: string | null; note: string; overwritten: boolean }> = [];
   for (const f of parsedFiles) {
-    if (f.parsed.kind === "close_up") {
-      const c = f.parsed.closeUp;
-      const overwritten = existingKinds(branchId, c.date).sales;
-      upsertDaily(branchId, user.id, c);
-      results.push({ filename: f.name, kind: "close_up", date: c.date, merchant: c.merchant, note: `ยอดสุทธิ ${c.nett.toLocaleString("th-TH")} · ${c.billCount} บิล`, overwritten });
-    } else if (f.parsed.kind === "overview") {
-      const o = f.parsed.overview;
-      const overwritten = existingKinds(branchId, o.date).menu;
-      upsertMenu(branchId, user.id, o);
-      results.push({ filename: f.name, kind: "overview", date: o.date, merchant: o.merchant, note: `เมนู ${o.items.length} รายการ · หมวด ${o.categories.length}`, overwritten });
-    } else {
-      const rc = f.parsed.receipt;
-      const overwritten = existingKinds(branchId, rc.date).receipt;
-      upsertReceipts(branchId, user.id, rc);
-      const staff = rc.bills.filter((b) => b.isStaff).length;
-      results.push({ filename: f.name, kind: "receipt", date: rc.date, merchant: rc.merchant, note: `ใบเสร็จ ${rc.bills.length} บิล${staff ? ` (พนักงาน ${staff})` : ""}`, overwritten });
+    // Per-file try/catch so an unexpected save error returns a clear message
+    // instead of a 500 the client can only show as "อัปโหลดผิดพลาด" (owner 2026-09-20).
+    try {
+      if (f.parsed.kind === "close_up") {
+        const c = f.parsed.closeUp;
+        const overwritten = existingKinds(branchId, c.date).sales;
+        upsertDaily(branchId, user.id, c);
+        results.push({ filename: f.name, kind: "close_up", date: c.date, merchant: c.merchant, note: `ยอดสุทธิ ${c.nett.toLocaleString("th-TH")} · ${c.billCount} บิล`, overwritten });
+      } else if (f.parsed.kind === "overview") {
+        const o = f.parsed.overview;
+        const overwritten = existingKinds(branchId, o.date).menu;
+        upsertMenu(branchId, user.id, o);
+        results.push({ filename: f.name, kind: "overview", date: o.date, merchant: o.merchant, note: `เมนู ${o.items.length} รายการ · หมวด ${o.categories.length}`, overwritten });
+      } else {
+        const rc = f.parsed.receipt;
+        const overwritten = existingKinds(branchId, rc.date).receipt;
+        upsertReceipts(branchId, user.id, rc);
+        const staff = rc.bills.filter((b) => b.isStaff).length;
+        results.push({ filename: f.name, kind: "receipt", date: rc.date, merchant: rc.merchant, note: `ใบเสร็จ ${rc.bills.length} บิล${staff ? ` (พนักงาน ${staff})` : ""}`, overwritten });
+      }
+    } catch (e) {
+      return NextResponse.json({ error: "save_failed", message: `บันทึกไม่สำเร็จ (${f.name}): ${(e as Error).message}` }, { status: 422 });
     }
   }
 
