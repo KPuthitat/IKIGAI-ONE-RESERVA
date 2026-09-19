@@ -515,7 +515,10 @@ export function monthChannelMix(branchId: number, year: number, month: number): 
 
 // #1 Menu engineering — classify menus by revenue (high/low vs median) × momentum
 // (rising/falling vs the previous period). Star / Plowhorse / Puzzle / Dog.
-export type MenuClass = { name: string; nett: number; deltaPct: number | null; isNew: boolean };
+// units = จำนวนจานที่ขาย (owner 2026-09-19), joined from receipt data by name;
+// null when there's no receipt match (the revenue-only overview file has no unit
+// count). Shown alongside nett.
+export type MenuClass = { name: string; nett: number; units: number | null; deltaPct: number | null; isNew: boolean };
 export type MenuEngineering = {
   stars: MenuClass[];        // high revenue + rising
   plowhorses: MenuClass[];   // high revenue + flat/falling
@@ -527,11 +530,13 @@ function rangeMenuEngineering(branchId: number, start: string, end: string, prev
   const items = menuRange(branchId, start, end, "item");
   const prev = new Map(menuRange(branchId, prevStart, prevEnd, "item").map((m) => [m.name, m.nett]));
   if (!items.length) return { stars: [], plowhorses: [], puzzles: [], dogs: [], medianNett: 0 };
+  // จำนวนจาน per menu from receipt data (by name). Null when no receipt match.
+  const unitsByName = new Map(itemUnitsRange(branchId, start, end).map((u) => [u.name, u.units]));
   const sorted = [...items].map((m) => m.nett).sort((a, b) => a - b);
   const medianNett = sorted[Math.floor(sorted.length / 2)];
   const classed: MenuClass[] = items.map((m) => {
     const isNew = !prev.has(m.name);
-    return { name: m.name, nett: m.nett, isNew, deltaPct: isNew ? null : relPct(m.nett, prev.get(m.name) ?? 0) };
+    return { name: m.name, nett: m.nett, units: unitsByName.get(m.name) ?? null, isNew, deltaPct: isNew ? null : relPct(m.nett, prev.get(m.name) ?? 0) };
   });
   const rising = (c: MenuClass) => c.isNew || (c.deltaPct ?? 0) > 0;
   const high = (c: MenuClass) => c.nett >= medianNett;

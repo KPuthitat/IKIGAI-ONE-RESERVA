@@ -368,6 +368,22 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("basket pair A+B count 2", !!ri.basket.find((p) => (p.a === "A" && p.b === "B") && p.count === 2));
   ok("clearDay removes receipts too", (() => { sdb.clearDay(bid4, "2026-09-17"); return !analytics.receiptInsights(bid4, 2026, 9).hasData; })());
 
+  // ── 9) Menu engineering: จำนวนจาน joined from receipts by name (owner 2026-09-19) ──
+  const bid5 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('r5','REST5')").run().lastInsertRowid);
+  sdb.upsertMenu(bid5, uid, { date: "2026-09-16", dateEnd: "2026-09-16", merchant: "R5",
+    categories: [], items: [{ name: "A", nett: 1000 }, { name: "B", nett: 500 }] });
+  const rbuf3 = parse.parseSalesFile(receiptBuf("16/09/2026", "R5", [
+    { time: "16/09/2026 12:00:00", no: "1", table: "T1", gross: "1500", discount: "0", nett: "1500", payment: "Cash", items: "3x A,2x B" }
+  ]));
+  if (rbuf3.kind === "receipt") sdb.upsertReceipts(bid5, uid, rbuf3.receipt);
+  const me5 = analytics.menuEngineering(bid5, 2026, 9);
+  const meAll = [...me5.stars, ...me5.plowhorses, ...me5.puzzles, ...me5.dogs];
+  ok("menu engineering units A=3 (from receipts)", meAll.find((m) => m.name === "A")?.units === 3);
+  ok("menu engineering units B=2 (from receipts)", meAll.find((m) => m.name === "B")?.units === 2);
+  // No receipts for bid's menu names → units null.
+  const meNoRcpt = analytics.menuEngineering(bid, 2026, 9);
+  ok("menu engineering units null without receipts", [...meNoRcpt.stars, ...meNoRcpt.plowhorses, ...meNoRcpt.puzzles, ...meNoRcpt.dogs].every((m) => m.units === null));
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
