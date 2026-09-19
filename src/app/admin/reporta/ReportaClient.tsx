@@ -64,7 +64,7 @@ type WeekdayStat = { dow: number; label: string; avgNett: number; days: number; 
 type DiscountInsight = { avgDiscountPct: number | null; totalDiscount: number; highDiscAvgNett: number | null; lowDiscAvgNett: number | null; days: number };
 type ChannelSlice = { name: string; sales: number; qty: number; pct: number; avgTicket: number | null };
 type ChannelMix = { types: ChannelSlice[]; payments: ChannelSlice[]; sources: ChannelSlice[] };
-type MenuClass = { name: string; nett: number; deltaPct: number | null; isNew: boolean };
+type MenuClass = { name: string; nett: number; units: number | null; deltaPct: number | null; isNew: boolean };
 type Insights = {
   menuEngineering: { stars: MenuClass[]; plowhorses: MenuClass[]; puzzles: MenuClass[]; dogs: MenuClass[]; medianNett: number };
   beverage: { total: number; beverageNett: number; beveragePct: number; dessertNett: number; dessertPct: number; foodNett: number; foodPct: number; bevToFoodPct: number | null };
@@ -1003,7 +1003,7 @@ function QuadCard({ title, hint, list, tone }: { title: string; hint: string; li
             <li key={m.name} className="flex items-center justify-between gap-2 text-xs">
               <span className="text-slate-700 truncate">{m.name}</span>
               <span className="whitespace-nowrap text-slate-500">
-                {baht(m.nett)}{m.isNew ? " · ใหม่" : m.deltaPct != null ? <> · <PctChip pct={m.deltaPct} /></> : ""}
+                {m.units != null ? <span className="text-slate-400">{intTh(m.units)} จาน · </span> : null}{baht(m.nett)}{m.isNew ? " · ใหม่" : m.deltaPct != null ? <> · <PctChip pct={m.deltaPct} /></> : ""}
               </span>
             </li>
           ))}
