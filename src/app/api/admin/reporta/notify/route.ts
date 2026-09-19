@@ -45,7 +45,7 @@ export async function POST(req: Request) {
 
   const groupId = getLineGroupId(branchId);
   if (!groupId) {
-    return NextResponse.json({ error: "no_group", message: "ยังไม่ได้ตั้งกลุ่ม LINE หัวหน้างาน (ตั้งที่หน้าตั้งค่า REPORTA)" }, { status: 400 });
+    return NextResponse.json({ error: "no_group", message: "ยังไม่ได้ตั้งกลุ่ม LINE หัวหน้างาน (ตั้งที่หน้าตั้งค่า ANALYTICA)" }, { status: 400 });
   }
   const meta = { branchName: branchName(branchId), operator: user.display_name, color: getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR };
 

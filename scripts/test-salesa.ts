@@ -231,8 +231,17 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("month vs last year (Sep2025 50000)", near(mc.lastYearPct ?? 0, ((mtd - 50000) / 50000) * 100));
 
   // Period toggle (owner 2026-09-18): month vs current ISO week ranges + bundle.
+  // Current partial month: same-period window vs last month (owner 2026-09-20).
   const rMonth = analytics.insightRangeFor("month", 2026, 9, "2026-09-16");
-  ok("range month = 09-01..09-30", rMonth.start === "2026-09-01" && rMonth.end === "2026-09-30" && rMonth.nowLabel === "เดือนนี้" && rMonth.prevLabel === "เทียบเดือนก่อน");
+  ok("range month same-period 09-01..09-16 vs 08-01..08-16",
+    rMonth.start === "2026-09-01" && rMonth.end === "2026-09-16" &&
+    rMonth.prevStart === "2026-08-01" && rMonth.prevEnd === "2026-08-16" &&
+    rMonth.nowLabel === "เดือนนี้" && rMonth.prevLabel === "เทียบเดือนก่อน");
+  // Completed past month: full month vs full prev month (both complete windows).
+  const rPastMonth = analytics.insightRangeFor("month", 2026, 8, "2026-09-16");
+  ok("range past month full 08-01..08-31 vs 07-01..07-31",
+    rPastMonth.start === "2026-08-01" && rPastMonth.end === "2026-08-31" &&
+    rPastMonth.prevStart === "2026-07-01" && rPastMonth.prevEnd === "2026-07-31");
   const rWeek = analytics.insightRangeFor("week", 2026, 9, "2026-09-16");
   ok("range week Mon–Sun of 09-16", rWeek.start === "2026-09-14" && rWeek.end === "2026-09-20" && rWeek.prevStart === "2026-09-07" && rWeek.prevEnd === "2026-09-13");
   ok("range week labels", rWeek.nowLabel === "สัปดาห์นี้" && rWeek.prevLabel === "เทียบสัปดาห์ก่อน");
