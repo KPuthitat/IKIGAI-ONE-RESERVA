@@ -144,6 +144,35 @@ process.env.DATABASE_PATH = TMP;
   ).get(batchA) as { amount_total: number; category: string } | undefined;
   ok("accounta: โพสต์เบี้ยประชุมแยกหมวด (เบี้ยประชุม 300)", !!mfExpense && near(mfExpense.amount_total, 300));
 
+  // ── Resignation SVC: forfeit the FINAL month, keep earlier months (owner 2026-09-20) ──
+  // ฐิติวรดา-style case: last working day 6 Sept, resignation approved with forfeit_svc,
+  // decided back in AUGUST. She must still appear in Aug (paid, full month) and Sept
+  // (withheld → share to company), and be gone by October.
+  const RB = Number(db.prepare("INSERT INTO branches (slug,name,company_id,display_order) VALUES ('rb','RESIGN-BR',?,4)").run(co).lastInsertRowid);
+  const res = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,receives_service_charge) VALUES ('res','x','ฐิติวรดา','staff','resigned',1)").run().lastInsertRowid);
+  const act = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,receives_service_charge) VALUES ('act','x','คนอยู่ต่อ','staff','active',1)").run().lastInsertRowid);
+  db.prepare("INSERT INTO user_branches (user_id,branch_id,is_primary) VALUES (?,?,1)").run(res, RB);
+  db.prepare("INSERT INTO user_branches (user_id,branch_id,is_primary) VALUES (?,?,1)").run(act, RB);
+  for (const mo of ["2026-08", "2026-09"]) for (let d = 1; d <= 28; d++) insDay.run(RB, `${mo}-${String(d).padStart(2, "0")}`, 100, uid);
+  db.prepare(`INSERT INTO resignation_requests (user_id,proposed_last_day,computed_min_last_day,reason,status,decided_at,forfeit_svc)
+              VALUES (?,?,?,?,'approved',?,1)`).run(res, "2026-09-06", "2026-10-31", "ดูแลครอบครัว", "2026-08-20T03:00:00.000Z");
+
+  const sep = sc.computeMonthlySvcSummary(RB, "2026-09");
+  const sepRes = sep.rows.find((r) => r.userId === res);
+  ok("resigned member still appears in the September table", !!sepRes);
+  ok("September SVC forfeited (งดจ่าย · ลาออกผิดระเบียบ)", sepRes?.forfeited === true && sepRes?.forfeitReason === "resignation");
+  ok("September forfeited net = 0", sepRes?.netAllocation === 0);
+  ok("forfeit is targeted — co-worker NOT forfeited in September", (() => { const a = sep.rows.find((r) => r.userId === act); return !!a && a.forfeited === false; })());
+
+  const aug = sc.computeMonthlySvcSummary(RB, "2026-08");
+  const augRes = aug.rows.find((r) => r.userId === res);
+  ok("resigned member still appears in the August table (full month)", !!augRes);
+  ok("August NOT forfeited — keyed off last-working month, not decided month", augRes?.forfeited === false && augRes?.forfeitReason === null);
+  ok("active co-worker present + not forfeited in August", (() => { const a = aug.rows.find((r) => r.userId === act); return !!a && a.forfeited === false; })());
+
+  const octr = sc.computeMonthlySvcSummary(RB, "2026-10");
+  ok("resigned member is gone by October (last day already passed)", !octr.rows.some((r) => r.userId === res));
+
   console.log(`\nsvc company-payout test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);

@@ -135,7 +135,7 @@ export default function SvcCalcModal({
             )}
             {forfeited ? (
               <div className="mt-3 text-xs font-medium text-rose-600">
-                ยอดสุทธิ = 0 (ถูกตัดสิทธิ์: {forfeitReason === "late_20pct" ? "สายเกิน 20%" : "ลาออก"})
+                ยอดสุทธิ = 0 · งดจ่าย ส่วนแบ่งเข้าบริษัท ({forfeitReason === "late_20pct" ? "สายเกิน 20%" : "ลาออกผิดระเบียบ"})
               </div>
             ) : (
               <div className="mt-3 text-xs space-y-0.5">
