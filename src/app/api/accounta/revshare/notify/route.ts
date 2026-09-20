@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
-import { isRevshareBranch, getPartner, previewSettlement, listRounds, markRoundSent } from "@/lib/revshare-db";
+import { isRevshareBranch, getPartner, previewSettlement, listRounds, markRoundSent, partnerCategorySales } from "@/lib/revshare-db";
 import { revshareSettlementFlex, revshareWeeklyFlex, revshareDailyFlex, revshareDrinkWelfareFlex, notifyRevsharePartner } from "@/lib/revshare-line";
 import { postRevshareDailyIncome } from "@/lib/accounta-db";
 import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName, salesVat, roundLabel } from "@/lib/revshare";
@@ -80,11 +80,15 @@ export async function POST(req: Request) {
     dailyRoundId = round.id;
     // รวม VAT figure (base × 1.07 for pre-VAT bases; the stored value for nett).
     dailyIncomeAmount = salesVat(round.sales_amount, vatRate, salesIncludesVat).total;
-    flex = revshareDailyFlex({ shop, sellerName: seller, dateLabel: thaiDate(date), sales: round.sales_amount, vatRate, salesIncludesVat, billCount: round.bill_count });
+    // Sales-by-category for the partner's marketing team (owner 2026-09-20) —
+    // read from ANALYTICA's per-category figures for this branch + day.
+    const cats = partnerCategorySales(branchId, partner.pos_categories, date, date);
+    flex = revshareDailyFlex({ shop, sellerName: seller, dateLabel: thaiDate(date), sales: round.sales_amount, vatRate, salesIncludesVat, billCount: round.bill_count, categories: cats });
   } else if (kind === "weekly") {
     const w = week_start ? preview.breakdown.find((b) => b.start === week_start) : preview.breakdown[preview.breakdown.length - 1];
     if (!w) return NextResponse.json({ error: "week_not_found" }, { status: 404 });
-    flex = revshareWeeklyFlex({ shop, sellerName: seller, weekLabel: w.label, transferAmount: w.sales, dayCount: daySpan(w.start, w.end), vatRate, salesIncludesVat });
+    const cats = partnerCategorySales(branchId, partner.pos_categories, w.start, w.end);
+    flex = revshareWeeklyFlex({ shop, sellerName: seller, weekLabel: w.label, transferAmount: w.sales, dayCount: daySpan(w.start, w.end), vatRate, salesIncludesVat, categories: cats });
   } else if (kind === "drink_welfare") {
     // Staff drink welfare read from redemptions (owner 2026-07-30). Period = a
     // week (week_start → +6d) or the whole month (month-end round).

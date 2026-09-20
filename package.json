@@ -26,6 +26,7 @@
     "test:late-excusal": "node --import tsx scripts/test-late-excusal.ts",
     "test:clock": "node --import tsx scripts/test-clock-code.ts",
     "test:revshare": "node --import tsx scripts/test-revshare.ts",
+    "test:revshare-category": "node --import tsx scripts/test-revshare-category.ts",
     "test:revshare-pos": "node --import tsx scripts/test-revshare-pos.ts",
     "test:delivera": "node --import tsx scripts/test-delivera-quote.ts && node --import tsx scripts/test-delivera-payment.ts",
     "test:income-tax": "node --import tsx scripts/test-income-tax.ts",
