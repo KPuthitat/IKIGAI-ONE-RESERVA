@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { computePayrollPeriod, VISIBLE_PAYROLL_LINE_FILTER } from "@/lib/payroll-compute";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postPayrollToAccounta, removePayrollFromAccounta } from "@/lib/accounta-db";
+import { notifyPayrollPeriodPaid } from "@/lib/payout-notify";
 
 // PATCH /api/admin/persona/payroll/periods/[id] — recompute, finalize, mark paid, unpay, update notes
 // DELETE /api/admin/persona/payroll/periods/[id] — delete (only if draft)
@@ -139,6 +140,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       SET status = 'paid', paid_by = ?, paid_at = ?
       WHERE id = ?
     `).run(user.id, paidAtIso, id);
+    // Tell each staff on LINE that their pay was disbursed (owner 2026-09-20).
+    // Best-effort, fire-and-forget — never blocks or fails the payout.
+    void notifyPayrollPeriodPaid(id);
     return NextResponse.json({ ok: true });
   }
 
