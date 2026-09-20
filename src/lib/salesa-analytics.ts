@@ -969,14 +969,11 @@ export type FestivalBranchCell = {
 export type FestivalRow = { date: string; dateLabel: string; nameTh: string; branches: FestivalBranchCell[] };
 export type FestivalAnalysis = { year: number; branches: Array<{ id: number; name: string }>; rows: FestivalRow[] };
 
-export function festivalAnalysis(year: number, todayIso: string, allowedBranchIds?: number[] | null): FestivalAnalysis {
-  const db = getDb();
-  const yr = String(year);
-
-  // Branches that have SALESA data IN THIS YEAR, optionally restricted to what
-  // the caller may see (a per-branch admin only sees their own; super_admin sees
-  // all). Year-scoping keeps decommissioned/other-year branches out of the table.
-  let branches = (db.prepare(`
+/** Branches that recorded sales in `yr` (year-scoped, has_sales & nett>0), sorted
+ *  by display order, optionally restricted to allowedBranchIds. Shared by the
+ *  cross-branch year panels (festival + growth bars) so the two never diverge. */
+function branchesWithSalesInYear(yr: string, allowedBranchIds?: number[] | null): Array<{ id: number; name: string }> {
+  let branches = (getDb().prepare(`
     SELECT DISTINCT d.branch_id AS id, b.name AS name, b.display_order AS ord
     FROM salesa_daily d JOIN branches b ON b.id = d.branch_id
     WHERE substr(d.sale_date, 1, 4) = ? AND d.has_sales = 1 AND d.nett > 0
@@ -987,6 +984,17 @@ export function festivalAnalysis(year: number, todayIso: string, allowedBranchId
     const allow = new Set(allowedBranchIds);
     branches = branches.filter((b) => allow.has(b.id));
   }
+  return branches;
+}
+
+export function festivalAnalysis(year: number, todayIso: string, allowedBranchIds?: number[] | null): FestivalAnalysis {
+  const db = getDb();
+  const yr = String(year);
+
+  // Branches that have SALESA data IN THIS YEAR, optionally restricted to what
+  // the caller may see (a per-branch admin only sees their own; super_admin sees
+  // all). Year-scoping keeps decommissioned/other-year branches out of the table.
+  const branches = branchesWithSalesInYear(yr, allowedBranchIds);
   if (!branches.length) return { year, branches: [], rows: [] };
 
   const holidays = db.prepare(
@@ -1026,4 +1034,62 @@ export function festivalAnalysis(year: number, todayIso: string, allowedBranchId
     }
   }
   return { year, branches, rows };
+}
+
+// ── Full-year growth bars (owner 2026-09-21) ─────────────────────────────────
+// Per branch, monthly nett across the year (Jan → the last month with data), so
+// the owner can see each branch's growth trend once a full year is imported.
+// Cross-branch (super_admin) or the active branch only.
+
+export type BranchYearBars = {
+  branchId: number; branchName: string;
+  months: Array<number | null>; // index 0..monthCount-1 = Jan.. ; null = no data that month
+  total: number;
+  growthPct: number | null;     // first month with data → last month with data
+  peakMonth: number | null;     // 1..12 of the biggest month
+};
+export type AnnualBranchBars = { year: number; monthCount: number; branches: BranchYearBars[] };
+
+export function annualBranchBars(year: number, todayIso: string, allowedBranchIds?: number[] | null): AnnualBranchBars {
+  const db = getDb();
+  const yr = String(year);
+
+  const branches = branchesWithSalesInYear(yr, allowedBranchIds);
+  // Render Jan..Dec for a past year; only through the current month for this year.
+  const isThisYear = year === Number(todayIso.slice(0, 4));
+  const monthCount = isThisYear ? Number(todayIso.slice(5, 7)) : 12;
+  // Growth % ignores the in-progress current month (it's a partial figure that
+  // would read spuriously low) — compare only fully-elapsed months.
+  const completeUpTo = isThisYear ? Math.max(0, monthCount - 1) : monthCount;
+  if (!branches.length) return { year, monthCount, branches: [] };
+
+  const bids = branches.map((b) => b.id);
+  const rows = db.prepare(`
+    SELECT branch_id AS b, substr(sale_date, 6, 2) AS m, SUM(nett) AS n
+    FROM salesa_daily
+    WHERE substr(sale_date, 1, 4) = ? AND has_sales = 1 AND nett > 0
+      AND branch_id IN (${bids.map(() => "?").join(",")})
+    GROUP BY branch_id, m
+  `).all(yr, ...bids) as Array<{ b: number; m: string; n: number }>;
+  const byBranchMonth = new Map<number, number>(); // key = branchId*100 + monthIdx
+  for (const r of rows) {
+    const idx = Number(r.m) - 1;
+    if (idx >= 0 && idx < monthCount) byBranchMonth.set(r.b * 100 + idx, round2(r.n));
+  }
+
+  const out: BranchYearBars[] = branches.map((br) => {
+    const months: Array<number | null> = [];
+    for (let i = 0; i < monthCount; i++) months.push(byBranchMonth.has(br.id * 100 + i) ? (byBranchMonth.get(br.id * 100 + i) as number) : null);
+    const active = months.map((v, i) => ({ v, i })).filter((x) => x.v != null) as Array<{ v: number; i: number }>;
+    const total = round2(active.reduce((s, x) => s + x.v, 0));
+    // Growth compares the first vs last month with data among fully-elapsed
+    // months only (drops the in-progress current month).
+    const gActive = active.filter((x) => x.i < completeUpTo);
+    const gFirst = gActive[0], gLast = gActive[gActive.length - 1];
+    const growthPct = gActive.length >= 2 && gFirst.v > 0 ? Math.round(((gLast.v - gFirst.v) / gFirst.v) * 1000) / 10 : null;
+    const peak = active.reduce<{ v: number; i: number } | null>((best, x) => (!best || x.v > best.v ? x : best), null);
+    return { branchId: br.id, branchName: br.name, months, total, growthPct, peakMonth: peak ? peak.i + 1 : null };
+  }).filter((b) => b.total > 0);
+
+  return { year, monthCount, branches: out };
 }

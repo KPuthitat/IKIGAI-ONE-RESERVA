@@ -101,6 +101,9 @@ type Annual = { year: number; annualTarget: number; fullYearTarget: number; pror
 type FestivalCell = { branchId: number; branchName: string; sales: number | null; monthAvg: number | null; upliftPct: number | null };
 type FestivalRow = { date: string; dateLabel: string; nameTh: string; branches: FestivalCell[] };
 type FestivalData = { year: number; branches: Array<{ id: number; name: string }>; rows: FestivalRow[] };
+// Full-year growth bars (owner 2026-09-21): per branch, monthly nett across the year.
+type YearBar = { branchId: number; branchName: string; months: Array<number | null>; total: number; growthPct: number | null; peakMonth: number | null };
+type YearBarsData = { year: number; monthCount: number; branches: YearBar[] };
 // Menu-name merging (owner 2026-09-20): similar spellings that might be one dish.
 type NameStat = { nett: number; units: number };
 type MergeSuggestion = { a: string; b: string; score: number; reason: "exact" | "contains" | "fuzzy"; aStats: NameStat; bStats: NameStat };
@@ -245,6 +248,12 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [festData, setFestData] = useState<FestivalData | null>(null);
   const festReqRef = useRef(0);
   const [festBusy, setFestBusy] = useState(false);
+  // Full-year growth bars (owner 2026-09-21) — lazy-loaded on expand.
+  const [ybOpen, setYbOpen] = useState(false);
+  const [ybYear, setYbYear] = useState(Number(initial.slice(0, 4)));
+  const [ybData, setYbData] = useState<YearBarsData | null>(null);
+  const ybReqRef = useRef(0);
+  const [ybBusy, setYbBusy] = useState(false);
   const [picked, setPicked] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
@@ -336,6 +345,29 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     const y = festYear + delta;
     setFestYear(y);
     if (festOpen) loadFestivals(y);
+  };
+
+  // Full-year growth bars (owner 2026-09-21) — lazy, cross-branch yearly query.
+  const loadYearBars = useCallback(async (y: number) => {
+    const seq = ++ybReqRef.current;
+    setYbBusy(true);
+    try {
+      const r = await fetch(`/api/admin/reporta/view?yearbars=1&year=${y}`, { cache: "no-store" }).then((x) => x.json());
+      if (seq !== ybReqRef.current) return;
+      if (r.ok) setYbData(r.yearbars);
+    } catch { /* ignore */ } finally {
+      if (seq === ybReqRef.current) setYbBusy(false);
+    }
+  }, []);
+  const toggleYearBars = () => {
+    const next = !ybOpen;
+    setYbOpen(next);
+    if (next && (!ybData || ybData.year !== ybYear)) loadYearBars(ybYear);
+  };
+  const stepYbYear = (delta: number) => {
+    const y = ybYear + delta;
+    setYbYear(y);
+    if (ybOpen) loadYearBars(y);
   };
 
   useEffect(() => { loadMonth(); }, [loadMonth]);
@@ -1021,6 +1053,68 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                     </tbody>
                   </table>
                   <p className="text-[11px] text-slate-400 mt-2">▲/▼ = ยอดวันนั้นเทียบกับยอดขายเฉลี่ยต่อวันของสาขาในเดือนเดียวกัน · แสดงเฉพาะวันสำคัญที่มีข้อมูลแล้ว</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Full-year growth bars (owner 2026-09-21): each branch's monthly nett
+          across the year (ม.ค.→ธ.ค.), so the growth trend is visible once a full
+          year is imported. Lazy-loaded, cross-branch or active branch. */}
+      {(
+        <div className="card">
+          <button type="button" onClick={toggleYearBars} className="w-full flex items-center justify-between gap-2 text-left">
+            <div>
+              <h2 className="font-bold text-slate-800">เทรนด์การเติบโตทั้งปี — รายเดือนแต่ละสาขา</h2>
+              <p className="text-xs text-slate-500 mt-0.5">กราฟแท่งยอดขายสุทธิรายเดือนของแต่ละสาขา ดูการเติบโตตลอดทั้งปี</p>
+            </div>
+            <span className="text-slate-400 text-sm shrink-0">{ybOpen ? "▲ ซ่อน" : "▼ ดู"}</span>
+          </button>
+          {ybOpen && (
+            <div className="mt-3 space-y-4">
+              <NavStepper eyebrow="ปี" label={`${ybYear + 543}`}
+                onPrev={() => stepYbYear(-1)} onNext={() => stepYbYear(1)} nextDisabled={ybYear >= Number(todayBkk().slice(0, 4))} />
+              {ybBusy ? (
+                <p className="text-sm text-slate-400 text-center py-4">กำลังโหลด…</p>
+              ) : !ybData || ybData.branches.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลยอดขายในปีนี้</p>
+              ) : (
+                <div className="space-y-5">
+                  {ybData.branches.map((b) => {
+                    const peak = Math.max(1, ...b.months.map((v) => v ?? 0));
+                    return (
+                      <div key={b.branchId}>
+                        <div className="flex items-baseline justify-between gap-2 mb-1">
+                          <span className="text-sm font-semibold text-slate-800">{b.branchName}</span>
+                          <span className="text-xs text-slate-500">
+                            รวม {baht(b.total)}
+                            {b.growthPct != null && (
+                              <span className={`ml-2 font-medium ${b.growthPct > 0 ? "text-emerald-600" : b.growthPct < 0 ? "text-rose-500" : "text-slate-400"}`}>
+                                {b.growthPct > 0 ? `▲ +${b.growthPct}%` : b.growthPct < 0 ? `▼ ${b.growthPct}%` : "± 0%"}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-end gap-1 h-24">
+                          {b.months.map((v, i) => (
+                            <div key={i} className="flex-1 flex flex-col items-center justify-end h-full"
+                              title={`${TH_MONTHS[i + 1]}: ${v == null ? "ไม่มีข้อมูล" : baht(v)}`}>
+                              <div className={`w-full rounded-t ${b.peakMonth === i + 1 ? "bg-emerald-500" : "bg-emerald-300"}`}
+                                style={{ height: v == null ? "0%" : `${Math.max(2, (v / peak) * 100)}%` }} />
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex gap-1 mt-1">
+                          {b.months.map((_, i) => (
+                            <div key={i} className="flex-1 text-center text-[9px] text-slate-400">{i + 1}</div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <p className="text-[11px] text-slate-400">แท่ง = ยอดขายสุทธิรายเดือน (เลข 1–12 = เดือน) · เขียวเข้ม = เดือนที่ยอดสูงสุด · % = เทียบเดือนแรก↔เดือนล่าสุดที่มีข้อมูล</p>
                 </div>
               )}
             </div>
