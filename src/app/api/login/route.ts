@@ -108,9 +108,9 @@ export async function POST(req: Request) {
 
   const { branchCount, landsOnAdmin } = finalizeLogin(authedUserId, authedRole);
 
-  // `lands_on_admin` routes super_admin and branch-admins straight to /admin —
-  // the page with all their modules (owner 2026-09-18) — while everyone else
-  // lands on the staff picker.
+  // `lands_on_admin` is always false now (owner 2026-09-20): every account —
+  // super_admin included — lands on the staff picker and PIN-switches into admin
+  // view deliberately. The field is kept in the response shape for the client.
   return NextResponse.json({
     ok: true,
     role: tabRole,

@@ -71,10 +71,11 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   const isAdminUser = user.role === "super_admin"
     || (user.role === "admin" && user.adminBranchIds.length > 0)
     || user.permissions.length > 0;
-  // Home mode by role (owner 2026-06-11): super_admin lands in admin view,
-  // everyone else in staff view. The os_view cookie overrides once the user
-  // deliberately switches (PIN-gated for the non-default direction).
-  const defaultView: "admin" | "staff" = user.role === "super_admin" ? "admin" : "staff";
+  // Home mode is STAFF for everyone — super_admin included (owner 2026-09-20:
+  // every account auto-lands in staff mode; entering admin is a deliberate,
+  // PIN-gated switch). The os_view cookie overrides once the user switches, and
+  // switching INTO admin always requires the PIN since staff is now home.
+  const defaultView: "admin" | "staff" = "staff";
   const viewCookie = cookies().get("os_view")?.value;
   const effectiveView: "admin" | "staff" =
     viewCookie === "admin" || viewCookie === "staff" ? viewCookie : defaultView;
