@@ -45,6 +45,7 @@ export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, 
       <Row label="VAT 7%" value={baht(v.vat)} />
       {billCount != null && <Row label="จำนวนบิล" value={`${billCount.toLocaleString("th-TH")} บิล`} />}
       <div className="border-t border-slate-100 my-1" />
+      <div className="text-[9px] text-slate-500 text-center">การ์ดจริงจะแสดง “ยอดขายแยกตามหมวด” ต่อท้ายด้วย (จากไฟล์ Overview ที่นำเข้า ANALYTICA วันนั้น)</div>
       <div className="text-[9px] text-slate-400 text-center">ยอดสะสมจะสรุปอีกครั้งในใบประจำสัปดาห์/เดือน</div>
     </Shell>
   );
@@ -66,7 +67,8 @@ export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount,
         <div className="text-[11px] text-slate-500">ยอดวางบิลประจำสัปดาห์ (รวม VAT)</div>
         <div className="text-xl font-bold tabular-nums" style={{ color: "#0f6e56" }}>{baht(v.total)}</div>
       </div>
-      <div className="text-[9px] text-slate-400 text-center pt-1">ส่วนแบ่งยอดขายจะเรียกเก็บอีกครั้งตอนสรุปสิ้นเดือน</div>
+      <div className="text-[9px] text-slate-500 text-center pt-1">การ์ดจริงจะแสดง “ยอดขายแยกตามหมวด” ของสัปดาห์ต่อท้ายด้วย</div>
+      <div className="text-[9px] text-slate-400 text-center">ส่วนแบ่งยอดขายจะเรียกเก็บอีกครั้งตอนสรุปสิ้นเดือน</div>
     </Shell>
   );
 }

@@ -38,6 +38,26 @@ function footer(note: string): unknown {
   };
 }
 
+// Sales-by-category breakdown for the partner cards (owner 2026-09-20): the
+// partner's team uses this for marketing. Top 8 categories by sales; the rest
+// collapse into "อื่นๆ". Returns null (section omitted) when there's no data.
+export type CategorySale = { name: string; sales: number };
+function categoryBox(cats: CategorySale[] | undefined): unknown | null {
+  if (!cats || !cats.length) return null;
+  const TOP = 8;
+  const top = cats.slice(0, TOP);
+  const rest = cats.slice(TOP);
+  const rows: unknown[] = top.map((c) => kv(c.name, baht(c.sales), { size: "xs" }));
+  if (rest.length) {
+    const restSum = rest.reduce((s, c) => s + c.sales, 0);
+    rows.push(kv(`อื่นๆ (${rest.length} หมวด)`, baht(restSum), { size: "xs", color: "#999999" }));
+  }
+  return {
+    type: "box", layout: "vertical", spacing: "sm", margin: "md",
+    contents: [{ type: "text", text: "ยอดขายแยกตามหมวด", size: "xs", weight: "bold", color: "#7a4f16" }, ...rows]
+  };
+}
+
 export type SettlementCard = {
   shop: string; sellerName: string; sellerCompany?: string | null; partnerName: string; monthLabel: string;
   totalSales: number; tierGP: number; floorApplied: number; topup: number; billedGP: number; avgGpPct: number;
@@ -86,9 +106,10 @@ export function revshareSettlementFlex(d: SettlementCard): FlexMsg {
 }
 
 // ── Daily sales heads-up (owner 2026-06-23: ส่งทุกวันที่นำเข้ายอด) ──
-export type DailyCard = { shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number; salesIncludesVat?: boolean; billCount?: number | null };
+export type DailyCard = { shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number; salesIncludesVat?: boolean; billCount?: number | null; categories?: CategorySale[] };
 export function revshareDailyFlex(d: DailyCard): FlexMsg {
   const v = salesVat(d.sales, d.vatRate, d.salesIncludesVat ?? false);
+  const catBox = categoryBox(d.categories);
   return {
     type: "flex",
     altText: `สรุปยอดขายประจำวัน ${d.dateLabel} · ${d.shop} · ${baht(d.sales)}`,
@@ -104,7 +125,8 @@ export function revshareDailyFlex(d: DailyCard): FlexMsg {
           kv("ยอดขายวันนี้ (รวม VAT)", baht(v.total), { bold: true }),
           kv("ยอดขายก่อนภาษี", baht(v.base), { size: "xs" }),
           kv("VAT 7%", baht(v.vat), { size: "xs" }),
-          ...(d.billCount != null ? [kv("จำนวนบิล", `${d.billCount.toLocaleString("th-TH")} บิล`, { size: "xs" })] : [])
+          ...(d.billCount != null ? [kv("จำนวนบิล", `${d.billCount.toLocaleString("th-TH")} บิล`, { size: "xs" })] : []),
+          ...(catBox ? [sep, catBox] : [])
         ]
       },
       footer: footer("ยอดสะสมจะสรุปอีกครั้งในใบประจำสัปดาห์/เดือน")
@@ -115,10 +137,11 @@ export function revshareDailyFlex(d: DailyCard): FlexMsg {
 // ── Weekly sales summary (the amount HYPOPLARAEMIA transfers back to the shop) ──
 export type WeeklyCard = {
   shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number;
-  salesIncludesVat?: boolean;
+  salesIncludesVat?: boolean; categories?: CategorySale[];
 };
 export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
   const v = salesVat(d.transferAmount, d.vatRate, d.salesIncludesVat ?? false);
+  const catBox = categoryBox(d.categories);
   return {
     type: "flex",
     altText: `สรุปยอดขายประจำสัปดาห์ ${d.weekLabel} · ${d.shop} · ${baht(d.transferAmount)}`,
@@ -138,7 +161,8 @@ export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
             // ยอดที่โอนจริงให้คู่ค้า = ยอดรวม VAT (owner 2026-07-27).
             { type: "text", text: "ยอดวางบิลประจำสัปดาห์ (รวม VAT)", size: "xs", color: "#888888" },
             { type: "text", text: baht(v.total), size: "xxl", weight: "bold", color: "#0f6e56" }
-          ] }
+          ] },
+          ...(catBox ? [sep, catBox] : [])
         ]
       },
       footer: footer("ส่วนแบ่งยอดขายจะเรียกเก็บอีกครั้งตอนสรุปสิ้นเดือน")

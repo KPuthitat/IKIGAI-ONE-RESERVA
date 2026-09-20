@@ -4,6 +4,7 @@
 // branch. Calc always goes through lib/revshare.ts. Owner 2026-06-22.
 
 import { getDb } from "./db";
+import { menuRange } from "./salesa-db";
 import {
   computeSettlement, computeRoundBreakdown, roundLabel, round2,
   groupDailyIntoWeeks, salesVat, salesBaseIncludesVat, partnerShopName,
@@ -674,4 +675,26 @@ export function revertSettlement(partnerId: number, branchId: number, year: numb
   // Reverting to draft un-posts any GP income that a prior "paid" recorded.
   if (done) removeSettlementGpIncome(partnerId, branchId, year, month);
   return done;
+}
+
+// ── Category breakdown for a partner (owner 2026-09-20) ──────────────────────
+// The จ้อจี้-style partner team wants each POS category's sales, for marketing.
+// Revshare stores only the daily total, but the same day's Overview file lands
+// in ANALYTICA (salesa_menu) as per-category sales — so we read the category
+// figures there for the partner's branch over [start, end] and keep only the
+// categories that map to this partner (its pos_categories; all when unset,
+// since then the partner IS the whole venue). nett = category sales incl VAT.
+
+export type PartnerCategorySale = { name: string; sales: number };
+
+export function partnerCategorySales(
+  branchId: number, posCategories: string[], start: string, end: string
+): PartnerCategorySale[] {
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  const want = new Set(posCategories.map(norm).filter(Boolean));
+  return menuRange(branchId, start, end, "category")
+    .filter((c) => (want.size === 0 ? true : want.has(norm(c.name))))
+    .map((c) => ({ name: c.name, sales: c.nett }))
+    .filter((c) => c.sales > 0)
+    .sort((a, b) => b.sales - a.sales);
 }
