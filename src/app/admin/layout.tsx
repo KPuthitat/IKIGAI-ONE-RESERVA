@@ -455,7 +455,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               />
             )}
             {canSwitchView && (
-              <AdminModeToggle view="admin" defaultView={user.role === "super_admin" ? "admin" : "staff"} className="flex-1 md:flex-none" />
+              <AdminModeToggle view="admin" defaultView="staff" className="flex-1 md:flex-none" />
             )}
           </div>
 

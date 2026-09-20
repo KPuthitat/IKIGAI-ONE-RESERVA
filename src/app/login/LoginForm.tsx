@@ -85,13 +85,14 @@ export default function LoginForm({
         setErr(data.error || t("login.error.generic"));
         return;
       }
-      // Landing (owner 2026-09-18): anyone with admin-console access — super_admin,
-      // branch-admins, RBAC module holders — goes through the ADMIN branch picker
-      // → /admin, the page with all their modules. Plain staff → STAFF picker →
-      // /staff. Both pickers auto-skip when there's a single eligible branch, so
-      // single-branch users feel no extra step. A deep-link target (a tapped LINE
-      // card → /login?next=…) is passed through the picker so it forwards there
-      // after the branch is chosen, instead of demanding a branch mid-jump.
+      // Landing (owner 2026-09-20): EVERY account — super_admin included — lands
+      // in staff mode through the STAFF branch picker → /staff. Admins reach the
+      // console by deliberately PIN-switching to admin view afterward, so nobody
+      // is dropped straight into /admin (lands_on_admin is always false now). The
+      // picker auto-skips when there's a single eligible branch, so single-branch
+      // users feel no extra step. A deep-link target (a tapped LINE card →
+      // /login?next=…) is passed through the picker so it forwards there after the
+      // branch is chosen, instead of demanding a branch mid-jump.
       const pickerBase = data.lands_on_admin
         ? "/admin/branch-picker"
         : (data.branchCount ?? 0) >= 1

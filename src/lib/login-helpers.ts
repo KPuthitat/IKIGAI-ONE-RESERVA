@@ -61,30 +61,23 @@ export function finalizeLogin(
   db.prepare("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?").run(userId);
   createSession(userId, null);
 
-  // Everyone lands in STAFF mode by default so they clock in like any employee;
-  // ONLY an admin who is exempt from clocking in (track_attendance = 0 — the
-  // "ไม่ต้องลงเวลา" toggle in employee settings) auto-lands in the admin console
-  // (owner 2026-09-20). This keeps admins who work a shift from operating in
-  // admin mode by accident. os_view is still just a view preference; they can
-  // switch modes any time (PIN-gated), and every admin page enforces RBAC.
+  // EVERY account — super_admin included — auto-lands in STAFF mode on login,
+  // with NO exception (owner 2026-09-20: "บังคับเลยให้ทุกบัญชีเข้า auto login
+  // โหมดพนักงานก่อน แล้วก็ค่อยให้กด PIN เข้าโหมดผู้ดูแลระบบ ป้องกันปัญหา"). Nobody
+  // is dropped straight into the admin console anymore — you clock in like any
+  // employee first, then deliberately PIN into admin view via the mode toggle.
+  // This prevents accidentally operating in admin mode. os_view is only a view
+  // preference; every admin page still enforces RBAC server-side.
   //
-  // "Admin rights" for the admin picker = super_admin, or an admin with a
-  // per-branch admin grant (the picker only lists admin branches; a
-  // permission-only user would get an empty picker).
-  const hasAdminBranch = !!db.prepare(
-    "SELECT 1 FROM user_branches WHERE user_id = ? AND is_admin = 1 LIMIT 1"
-  ).get(userId);
-  const trackAttendance = (
-    db.prepare("SELECT track_attendance FROM users WHERE id = ?").get(userId) as { track_attendance: number } | undefined
-  )?.track_attendance ?? 1;
-  const clockInExempt = trackAttendance === 0;
-  const hasAdminRights = role === "super_admin" || (role === "admin" && hasAdminBranch);
-  const landsOnAdmin = hasAdminRights && clockInExempt;
+  // `role` is unused now that landing is unconditional, but kept in the
+  // signature so both login entry points share one shape.
+  void role;
+  const landsOnAdmin = false;
 
-  // Match the view intent to the home the user lands on, so the console is
-  // coherent on arrival. os_view is a view preference only — every admin page
-  // still enforces requireAdmin()/requirePermission() server-side.
-  cookies().set("os_view", landsOnAdmin ? "admin" : "staff", {
+  // Everyone starts in staff view; entering admin is a deliberate, PIN-gated
+  // switch. os_view is a view preference only — every admin page still enforces
+  // requireAdmin()/requirePermission() server-side.
+  cookies().set("os_view", "staff", {
     httpOnly: false,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
