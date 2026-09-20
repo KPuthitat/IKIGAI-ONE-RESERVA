@@ -33,6 +33,7 @@ export default function AdminResignationPage({
     SELECT r.id, r.user_id, r.proposed_last_day, r.computed_min_last_day,
            r.reason, r.evidence_filename, r.is_special_request,
            r.status, r.decided_by, r.decided_at, r.decision_note, r.created_at, r.ref_no,
+           r.forfeit_svc,
            u.username, u.display_name, u.title_prefix, u.hire_date,
            du.display_name AS decided_by_name,
            du.title_prefix AS decided_by_prefix
