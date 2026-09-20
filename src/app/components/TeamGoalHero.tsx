@@ -55,32 +55,32 @@ export default function TeamGoalHero({
   }, [pct]);
 
   return (
-    <div className="rounded-2xl p-5 border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white shadow-sm">
+    <div className="rounded-2xl p-5 border border-brand/20 bg-gradient-to-br from-brand/10 to-white shadow-sm">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-[1.5px] text-emerald-700/70">เป้ายอดขายสาขา · เดือนนี้</div>
+        <div className="text-xs font-semibold uppercase tracking-[1.5px] text-brand/80">เป้ายอดขายสาขา · เดือนนี้</div>
         <div className="text-sm font-bold text-slate-600">{branchName}</div>
       </div>
 
       <div className="mt-2 flex items-end gap-3 flex-wrap">
-        <div className="text-5xl font-black leading-none tabular-nums text-emerald-700">{pct.toFixed(0)}%</div>
+        <div className="text-5xl font-black leading-none tabular-nums text-brand-dark">{pct.toFixed(0)}%</div>
         <div className="pb-1 text-sm text-slate-600">
           <div>฿{baht0(mtd)} <span className="text-slate-400">/ ฿{baht0(target)}</span></div>
           <div className="text-[11px] text-slate-400">ทำได้แล้ว (ถึงวันที่ {throughDay})</div>
         </div>
       </div>
 
-      <div className="mt-3 h-3 rounded-full bg-emerald-100 overflow-hidden">
-        <div className={`h-full rounded-full transition-[width] duration-1000 ease-out ${reached ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.max(2, w)}%` }} />
+      <div className="mt-3 h-3 rounded-full bg-brand/15 overflow-hidden">
+        <div className={`h-full rounded-full transition-[width] duration-1000 ease-out ${reached ? "bg-brand-dark" : "bg-brand"}`} style={{ width: `${Math.max(2, w)}%` }} />
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2 flex-wrap text-[11px] text-slate-500">
         <span>คาดสิ้นเดือน ฿{baht0(projected)} ({projectedPct.toFixed(0)}% ของเป้า)</span>
-        <span className={`rounded-full px-2 py-0.5 font-semibold ${onTrack || reached ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+        <span className={`rounded-full px-2 py-0.5 font-semibold ${onTrack || reached ? "bg-brand/15 text-brand-dark" : "bg-amber-100 text-amber-700"}`}>
           {reached ? "เกินเป้าแล้ว 🎉" : onTrack ? "มีลุ้นถึงเป้า ✓" : "ช่วยกันอีกแรง"}
         </span>
       </div>
 
-      <div className="mt-3 min-h-[1.25rem] text-sm font-semibold text-emerald-800">
+      <div className="mt-3 min-h-[1.25rem] text-sm font-semibold text-brand-dark">
         {msg}
       </div>
     </div>
