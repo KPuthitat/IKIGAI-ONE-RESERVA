@@ -690,11 +690,18 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
 
         {/* Monthly summary send button (owner F) — enabled ONLY when every day of
             the month is fully imported (all 3 file types), so a partial month
-            can't be sent (owner 2026-09-21: ส่งได้เฉพาะเมื่อนำเข้าไฟล์ครบทั้งเดือน). */}
+            can't be sent (owner 2026-09-21: ส่งได้เฉพาะเมื่อนำเข้าไฟล์ครบทั้งเดือน).
+            Counts only ELAPSED days: a past month needs the whole month; the
+            current month needs every day up to today — so future days aren't
+            counted as "missing" and the button un-locks once you're caught up. */}
         {days.length > 0 && (() => {
           const dim = new Date(year, month, 0).getDate();  // days in the viewed month
-          const missing = Math.max(0, dim - days.length) + days.filter((d) => !(d.hasSales && d.hasMenu && d.hasReceipt)).length;
-          const monthComplete = missing === 0;
+          const [ty, tm, td] = todayBkk().split("-").map(Number);
+          const elapsed = (year > ty || (year === ty && month > tm)) ? 0        // future month: nothing due yet
+            : (year === ty && month === tm) ? td                                 // current month: through today
+            : dim;                                                               // past month: the whole month
+          const missing = Math.max(0, elapsed - days.length) + days.filter((d) => !(d.hasSales && d.hasMenu && d.hasReceipt)).length;
+          const monthComplete = elapsed > 0 && missing === 0;
           return (
             <div className="flex items-center justify-end gap-2 flex-wrap">
               {monthSentAt && <span className="text-xs text-emerald-600">✓ ส่งสรุปเดือนแล้ว</span>}
