@@ -27,10 +27,7 @@ export default function ReportaPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <span className="inline-block h-4 w-4 rounded-full shrink-0" style={{ backgroundColor: cardColor }} title={`สีสาขา ${branch?.name ?? ""}`} />
-            ANALYTICA · วิเคราะห์ยอดขายรายวัน
-          </h1>
+          <h1 className="text-2xl font-bold text-slate-800">ANALYTICA · วิเคราะห์ยอดขายรายวัน</h1>
           <p className="text-sm text-slate-500 mt-1">
             นำเข้าไฟล์ยอดขายจาก POS ทุกวัน · ระบบวิเคราะห์ยอดขาย/เมนูทำรายได้สูงสุด · ส่งการ์ดสรุปเข้ากลุ่ม LINE หัวหน้างาน (รายวัน) และสรุปรายสัปดาห์ทุกวันจันทร์
           </p>
