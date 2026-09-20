@@ -31,6 +31,9 @@ export type ResignationAdminRow = {
   decided_by_name: string | null;
   decided_by_prefix: string | null;
   ref_no?: string | null;
+  /** 1 = approver withheld this staff's SVC for the resignation month
+   *  (improper/early resignation); 0 = SVC paid normally. */
+  forfeit_svc: number;
 };
 
 export type StaffUnlockOption = {
@@ -120,10 +123,15 @@ export default function ResignationAdminClient({
   const [decidePin, setDecidePin] = useState("");
   const [decidePinErr, setDecidePinErr] = useState<string | null>(null);
 
-  function decide(id: number, decision: DecideTarget["decision"]) {
+  // `defaultForfeit` seeds the "งดเซอร์วิสชาร์จ" toggle. For an EARLY/improper
+  // resignation (last day before the policy minimum) withholding is the default
+  // (owner 2026-09-20) — the approver unticks it to pay anyway, or grants SVC
+  // later via เปิดสิทธิ์ on the service-charge page. On-time resignations default
+  // to paying.
+  function decide(id: number, decision: DecideTarget["decision"], defaultForfeit = false) {
     setDecideTarget({ id, decision });
     setDecideNote("");
-    setForfeitSvc(false);
+    setForfeitSvc(decision === "approved" && defaultForfeit);
     setDecidePin("");
     setDecidePinErr(null);
   }
@@ -370,7 +378,7 @@ export default function ResignationAdminClient({
                         <button
                           type="button"
                           disabled={pending || busyId === r.id}
-                          onClick={() => decide(r.id, "approved")}
+                          onClick={() => decide(r.id, "approved", earlier)}
                           className="px-3 py-1.5 rounded text-xs font-medium bg-emerald-500 hover:bg-emerald-600 text-white disabled:opacity-50"
                         >
                           {t("admin.persona.leave.approve")}
@@ -394,13 +402,28 @@ export default function ResignationAdminClient({
                       </div>
                     )}
                     {r.status !== "pending" && (
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        r.status === "approved" ? "bg-emerald-100 text-emerald-700" :
-                        r.status === "rejected" ? "bg-rose-100 text-rose-700" :
-                        "bg-slate-100 text-slate-500"
-                      }`}>
-                        {t(`leave.status.${r.status}` as any)}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          r.status === "approved" ? "bg-emerald-100 text-emerald-700" :
+                          r.status === "rejected" ? "bg-rose-100 text-rose-700" :
+                          "bg-slate-100 text-slate-500"
+                        }`}>
+                          {t(`leave.status.${r.status}` as any)}
+                        </span>
+                        {/* SVC give/withhold indicator (owner 2026-09-20): shows what the
+                            approver decided about this staff's service charge. */}
+                        {r.status === "approved" && (
+                          r.forfeit_svc === 1 ? (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+                              ✕ {t("admin.persona.resignation.svcWithheld")}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                              ✓ {t("admin.persona.resignation.svcPaid")}
+                            </span>
+                          )
+                        )}
+                      </div>
                     )}
                   </div>
                 </li>
