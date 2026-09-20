@@ -6,6 +6,9 @@ import { nameWithPrefix } from "@/lib/name";
 import { HubCard, type HubCardProps } from "@/components/HubCard";
 import { getMyEnrollment, type MjActor } from "@/lib/mounjaro-db";
 import { moduleHits } from "@/lib/module-usage";
+import { getMonthlyTarget, isSalesaBranch } from "@/lib/salesa-db";
+import { monthComparison, targetProgress } from "@/lib/salesa-analytics";
+import TeamGoalHero from "@/app/components/TeamGoalHero";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +22,34 @@ export default function StaffHomePage({
   const showForbidden = searchParams.error === "forbidden";
   const moduleEyebrow = t(lang, "portal.label.module");
   const openModule = t(lang, "portal.openModule");
+
+  // Team goal hero (owner 2026-09-20): the active branch's monthly sales target,
+  // progress this month, and rotating encouragement — a shared banner so the whole
+  // branch pulls toward the number together. Best-effort: only for a POS branch
+  // with a target set, and never breaks the landing if salesa data isn't there.
+  let goal: {
+    branchName: string; target: number; mtd: number; pct: number;
+    projected: number; projectedPct: number; onTrack: boolean; throughDay: number;
+  } | null = null;
+  try {
+    const bid = user.activeBranchId;
+    if (bid != null && isSalesaBranch(bid)) {
+      const target = getMonthlyTarget(bid);
+      if (target != null && target > 0) {
+        const todayIso = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+        const y = Number(todayIso.slice(0, 4)), m = Number(todayIso.slice(5, 7));
+        const mc = monthComparison(bid, y, m, todayIso);
+        const tp = mc.throughDay > 0 ? targetProgress(target, mc.mtdNett, mc.throughDay, y, m) : null;
+        if (tp) {
+          goal = {
+            branchName: user.branches.find((b) => b.id === bid)?.name ?? "",
+            target: tp.target, mtd: tp.mtdNett, pct: tp.pctOfTarget,
+            projected: tp.projectedNett, projectedPct: tp.projectedPct, onTrack: tp.onTrack, throughDay: tp.throughDay
+          };
+        }
+      }
+    }
+  } catch { goal = null; }
 
   // Wellness (Mounjaro) appears ONLY for enrolled staff — same rule as the
   // nav (privacy: non-enrolled employees never see it). Surfacing it here
@@ -74,6 +105,7 @@ export default function StaffHomePage({
 
   return (
     <div className="space-y-6">
+      {goal && <TeamGoalHero {...goal} />}
       <div>
         <h1 className="text-2xl font-bold text-slate-800">{t(lang, "portal.chooseModule")}</h1>
         <p className="text-sm text-slate-500 mt-1">
