@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { isRevshareBranch, getPartner, previewSettlement } from "@/lib/revshare-db";
+import { isRevshareBranch, getPartner, previewSettlement, partnerCategorySalesForMonths } from "@/lib/revshare-db";
 import { generateStatementPdf } from "@/lib/revshare-statement-pdf";
 import { TH_MONTHS_FULL } from "@/lib/revshare";
 
@@ -24,6 +24,10 @@ export async function GET(req: Request) {
   const preview = previewSettlement(partnerId, branchId, year, month);
   if (!preview) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
+  // Category breakdown for the partner's marketing team (จ้อจี้ phase 2) — this
+  // statement's single month (the PDF route is anchor-month only).
+  const categories = partnerCategorySalesForMonths(branchId, partner.pos_categories, [`${year}-${String(month).padStart(2, "0")}`]);
+
   const seller = getDb().prepare(`
     SELECT b.name, b.reg_address, b.tax_branch_code, b.contact_phone, c.tax_id AS company_tax_id, c.address AS company_address
     FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?
@@ -38,7 +42,8 @@ export async function GET(req: Request) {
     status: STATUS_TH[preview.stored?.status ?? "draft"],
     withVat: partner.vat_enabled && preview.result.vatAmount > 0,
     result: preview.result,
-    breakdown: preview.breakdown.map((b) => ({ label: b.label, sales: b.sales, roundGP: b.roundGP }))
+    breakdown: preview.breakdown.map((b) => ({ label: b.label, sales: b.sales, roundGP: b.roundGP })),
+    categories
   });
 
   return new NextResponse(pdf as unknown as BodyInit, {

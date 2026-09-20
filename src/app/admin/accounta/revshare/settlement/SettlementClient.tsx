@@ -25,9 +25,11 @@ function monthKeyLabel(ym: string): string {
   return `${TH_MONTHS_FULL[m]} ${y + 543}`;
 }
 
+type CategorySale = { name: string; sales: number };
+
 export default function SettlementClient({
-  partner, seller, initial, year, month, monthOptions
-}: { partner: Partner; seller: Seller; initial: Preview; year: number; month: number; monthOptions: MonthOption[] }) {
+  partner, seller, initial, year, month, monthOptions, categories
+}: { partner: Partner; seller: Seller; initial: Preview; year: number; month: number; monthOptions: MonthOption[]; categories: CategorySale[] }) {
   const router = useRouter();
   const [pv, setPv] = useState<Preview>(initial);
   const [invoiceNo, setInvoiceNo] = useState(initial.stored?.invoice_no ?? "");
@@ -217,6 +219,35 @@ export default function SettlementClient({
           </div>
         )}
       </div>
+
+      {/* Sales by category (จ้อจี้ phase 3) — analytics for the partner's
+          marketing team; same figures as the LINE cards + PDF statement. */}
+      {categories.length > 0 && (() => {
+        const catTotal = categories.reduce((s, c) => s + c.sales, 0);
+        const peak = Math.max(1, ...categories.map((c) => c.sales));
+        return (
+          <div className="card space-y-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="text-sm font-bold text-slate-800">ยอดขายแยกตามหมวด</div>
+              <div className="text-[11px] text-slate-400">สำหรับทีมการตลาดของคู่ค้า · {periodLabel}</div>
+            </div>
+            <div className="space-y-1.5">
+              {categories.map((c) => (
+                <div key={c.name}>
+                  <div className="flex items-baseline justify-between gap-2 text-xs">
+                    <span className="text-slate-700 truncate">{c.name}</span>
+                    <span className="tabular-nums text-slate-500 whitespace-nowrap">฿{fmtMoney(c.sales)} · {catTotal > 0 ? ((c.sales / catTotal) * 100).toFixed(1) : "0"}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden mt-0.5">
+                    <div className="h-full bg-amber-400 rounded-full" style={{ width: `${Math.max(2, (c.sales / peak) * 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-400">ยอดขายแยกตามหมวดจาก ANALYTICA (รวม VAT · คนละฐานกับยอดที่ใช้คิดส่วนแบ่ง จึงอาจไม่ตรงกับยอดขายรวมด้านบน) · แนบไปกับการ์ด LINE และ PDF สรุปเดือนด้วย</p>
+          </div>
+        );
+      })()}
 
       {/* Actions */}
       <div className="card space-y-3">

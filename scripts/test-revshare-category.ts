@@ -17,7 +17,7 @@ process.env.DATABASE_PATH = TMP;
 
 (async () => {
   const { getDb } = await import("../src/lib/db");
-  const { partnerCategorySales } = await import("../src/lib/revshare-db");
+  const { partnerCategorySales, partnerCategorySalesForMonths } = await import("../src/lib/revshare-db");
   const db = getDb();
 
   let passed = 0, failed = 0;
@@ -58,6 +58,20 @@ process.env.DATABASE_PATH = TMP;
     })());
 
   ok("no data for the range → empty", partnerCategorySales(B, [], "2026-10-01", "2026-10-31").length === 0);
+
+  // partnerCategorySalesForMonths (จ้อจี้ phase 2/3): sums over a SET of months,
+  // merged by category — a skipped month is NOT over-counted (owner 2026-09-21).
+  ins.run(B, "2026-07-05", "ย่าง", 1000, 1);   // July
+  ins.run(B, "2026-08-05", "ย่าง", 9000, 1);   // August (to be EXCLUDED)
+  ok("months helper sums Jul+Sep only, skips unselected Aug", (() => {
+    const r = partnerCategorySalesForMonths(B, ["ย่าง"], ["2026-07", "2026-09"]);
+    // Jul 1000 + Sep (5000+2000) = 8000 — August's 9000 must be excluded.
+    return r.length === 1 && r[0].name === "ย่าง" && r[0].sales === 8000;
+  })());
+  ok("months helper merges categories across months, sorted desc", (() => {
+    const r = partnerCategorySalesForMonths(B, [], ["2026-09"]);
+    return r[0].name === "ย่าง" && r[0].sales === 7000 && r.some((c) => c.name === "ส้มตำ" && c.sales === 3000);
+  })());
 
   console.log(`\nrevshare-category test: ${passed} passed, ${failed} failed`);
   cleanup();

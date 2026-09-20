@@ -698,3 +698,20 @@ export function partnerCategorySales(
     .filter((c) => c.sales > 0)
     .sort((a, b) => b.sales - a.sales);
 }
+
+/** Category sales summed over a specific SET of "YYYY-MM" months (each whole
+ *  month), merged by category. Use this for a settlement that may cover several
+ *  months — possibly non-contiguous — so a skipped month isn't over-counted the
+ *  way a single min→max range would (owner 2026-09-21, จ้อจี้ phase 2/3). */
+export function partnerCategorySalesForMonths(
+  branchId: number, posCategories: string[], months: string[]
+): PartnerCategorySale[] {
+  const map = new Map<string, number>();
+  for (const ym of months) {
+    const [y, m] = ym.split("-").map(Number);
+    for (const c of partnerCategorySales(branchId, posCategories, `${ym}-01`, monthEndIso(y, m))) {
+      map.set(c.name, (map.get(c.name) ?? 0) + c.sales);
+    }
+  }
+  return [...map].map(([name, sales]) => ({ name, sales })).filter((c) => c.sales > 0).sort((a, b) => b.sales - a.sales);
+}
