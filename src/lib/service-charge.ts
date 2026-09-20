@@ -2111,21 +2111,69 @@ export type BranchSvcPayoutRow = {
  */
 export function meetingFeeGrossByUser(yearMonth: string): Map<number, number> {
   const map = new Map<number, number>();
-  if (yearMonth < MEETING_FEE_SVC_START_MONTH) return map;
+  // Computed (attendance-based) fees only exist on/after the cutover — before it
+  // they were paid via payroll and must not be re-paid here.
+  if (yearMonth >= MEETING_FEE_SVC_START_MONTH) {
+    try {
+      const rows = getDb().prepare(`
+        SELECT a.user_id AS user_id, SUM(a.fee_amount) AS fee
+        FROM exec_meeting_attendance a JOIN exec_meetings m ON m.id = a.meeting_id
+        WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0
+          AND substr(m.meeting_date, 1, 7) = ?
+        GROUP BY a.user_id
+      `).all(yearMonth) as Array<{ user_id: number; fee: number }>;
+      for (const r of rows) {
+        const g = Math.round((r.fee || 0) * 100) / 100;
+        if (g > 0) map.set(r.user_id, g);
+      }
+    } catch { /* exec-meeting tables may not exist yet */ }
+  }
+  // Manual lump-sum meeting fees (owner 2026-09-20) are an explicit decision to
+  // pay via SVC, so they apply to ANY month (the cutover doesn't gate them) and
+  // add on top of any computed fee for the same person.
   try {
-    const rows = getDb().prepare(`
-      SELECT a.user_id AS user_id, SUM(a.fee_amount) AS fee
-      FROM exec_meeting_attendance a JOIN exec_meetings m ON m.id = a.meeting_id
-      WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0
-        AND substr(m.meeting_date, 1, 7) = ?
-      GROUP BY a.user_id
-    `).all(yearMonth) as Array<{ user_id: number; fee: number }>;
-    for (const r of rows) {
-      const g = Math.round((r.fee || 0) * 100) / 100;
-      if (g > 0) map.set(r.user_id, g);
+    for (const r of getDb().prepare(
+      "SELECT user_id, amount FROM svc_manual_meeting_fees WHERE year_month = ? AND amount > 0"
+    ).all(yearMonth) as Array<{ user_id: number; amount: number }>) {
+      const add = Math.round((r.amount || 0) * 100) / 100;
+      if (add > 0) map.set(r.user_id, Math.round(((map.get(r.user_id) ?? 0) + add) * 100) / 100);
     }
-  } catch { /* exec-meeting tables may not exist yet */ }
+  } catch { /* table may not exist yet */ }
   return map;
+}
+
+export type ManualMeetingFee = { amount: number; note: string | null };
+
+/** Manual lump-sum meeting fees for a month, keyed user_id (owner 2026-09-20). */
+export function listManualMeetingFees(yearMonth: string): Map<number, ManualMeetingFee> {
+  const m = new Map<number, ManualMeetingFee>();
+  for (const r of getDb().prepare(
+    "SELECT user_id, amount, note FROM svc_manual_meeting_fees WHERE year_month = ?"
+  ).all(yearMonth) as Array<{ user_id: number; amount: number; note: string | null }>) {
+    m.set(r.user_id, { amount: r.amount, note: r.note });
+  }
+  return m;
+}
+
+/** Set (amount > 0) or clear (amount <= 0) a person's manual meeting fee for a
+ *  month. Amount is GROSS (pre-WHT). */
+export function setManualMeetingFee(args: {
+  userId: number; yearMonth: string; amount: number; note?: string | null; byUserId: number;
+}): void {
+  const db = getDb();
+  const amt = Math.round((args.amount || 0) * 100) / 100;
+  if (amt > 0) {
+    db.prepare(`
+      INSERT INTO svc_manual_meeting_fees (user_id, year_month, amount, note, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(user_id, year_month) DO UPDATE SET
+        amount = excluded.amount, note = excluded.note,
+        created_by = excluded.created_by
+    `).run(args.userId, args.yearMonth, amt, args.note?.trim() || null, args.byUserId);
+  } else {
+    db.prepare("DELETE FROM svc_manual_meeting_fees WHERE user_id = ? AND year_month = ?")
+      .run(args.userId, args.yearMonth);
+  }
 }
 
 /** Home (primary, else lowest) branch id for a user — where their meeting fee books. */
@@ -2185,8 +2233,9 @@ export function computeBranchSvcPayout(branchId: number, yearMonth: string): Bra
   // charge, attributed to each attendee's HOME branch (so it books once). Taxed like
   // SVC: WHT 3% for wht-mode, none for sso-mode. Folded into net/wht so the batch
   // total + cash paid include it; the meetingFee* fields expose it for a separate
-  // accounta category. Only for months on/after the cutover (meetingFeeGrossByUser
-  // enforces that), so pre-cutover fees already paid via payroll are never re-paid.
+  // accounta category. COMPUTED (attendance) fees only count on/after the cutover
+  // (so pre-cutover fees already paid via payroll aren't re-paid), but a MANUAL
+  // lump-sum fee applies to any month — meetingFeeGrossByUser combines both.
   const meetingFees = meetingFeeGrossByUser(yearMonth);
   if (meetingFees.size > 0) {
     const whtRate = (db.prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")

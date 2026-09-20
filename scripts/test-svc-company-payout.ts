@@ -182,6 +182,23 @@ process.env.DATABASE_PATH = TMP;
   sc.setSvcLineReview("2026-08", res, false, uid);
   ok("review can be cleared", !sc.listSvcLineReviews("2026-08").has(res));
 
+  // ── Manual lump-sum meeting fee rides the SVC payout, any month (owner 2026-09-20) ──
+  // August (2026-08) is BEFORE the meeting-fee cutover (2026-09): computed fees are
+  // gated then, but a manual entry is an explicit decision to pay via SVC and is not.
+  const mf = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status) VALUES ('mf','x','คุณประชุม','staff','active')").run().lastInsertRowid);
+  db.prepare("INSERT INTO user_branches (user_id,branch_id,is_primary) VALUES (?,?,1)").run(mf, A);
+  ok("no manual meeting fee before it's set", sc.meetingFeeGrossByUser("2026-08").get(mf) === undefined);
+  sc.setManualMeetingFee({ userId: mf, yearMonth: "2026-08", amount: 2000, note: "เหมาจ่าย ส.ค.", byUserId: uid });
+  ok("manual meeting fee flows even for a pre-cutover month", sc.meetingFeeGrossByUser("2026-08").get(mf) === 2000);
+  ok("listManualMeetingFees returns amount + note", (() => { const r = sc.listManualMeetingFees("2026-08").get(mf); return r?.amount === 2000 && r?.note === "เหมาจ่าย ส.ค."; })());
+  ok("manual fee rides computeBranchSvcPayout as gross meeting fee", (() => {
+    const r = sc.computeBranchSvcPayout(A, "2026-08").find((x) => x.userId === mf);
+    return !!r && near(r.meetingFeeGross, 2000) && r.meetingFeeNet > 0;
+  })());
+  ok("manual meeting fee is month-scoped (Sept empty for this user)", sc.meetingFeeGrossByUser("2026-09").get(mf) === undefined);
+  sc.setManualMeetingFee({ userId: mf, yearMonth: "2026-08", amount: 0, byUserId: uid });
+  ok("setting amount 0 clears the manual meeting fee", sc.meetingFeeGrossByUser("2026-08").get(mf) === undefined);
+
   console.log(`\nsvc company-payout test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);
