@@ -592,6 +592,28 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     return apCo.prorated === true && apCo.branchCount === 2 && Math.abs(apCo.annualTarget - expect) < 1 && apCo.fullYearTarget === 13200000;
   })());
 
+  // ── 16) full-year growth bars (owner 2026-09-21): per-branch monthly nett,
+  // Jan → last month with data, for reading each branch's growth trend. ──
+  const fput3 = (bid: number, d: string, nett: number) => sdb.upsertDaily(bid, uid, { date: d, dateEnd: d, merchant: "BAR", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 4, pax: 7, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / 4, avgPax: 1.8, avgSalesPax: nett / 7, payments: [], types: [], sources: [] });
+  const bidBar = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('bar','BARBR')").run().lastInsertRowid);
+  fput3(bidBar, "2026-01-10", 10000); fput3(bidBar, "2026-01-20", 10000); // Jan 20000
+  fput3(bidBar, "2026-02-14", 30000);                                     // Feb 30000 (peak)
+  fput3(bidBar, "2026-03-05", 15000);                                     // Mar 15000
+  fput3(bidBar, "2026-09-03", 5000);                                      // Sep 5000 (current, partial)
+  const yb = analytics.annualBranchBars(2026, "2026-09-20", [bidBar]);
+  ok("yearbars: monthCount = through current month (Sep → 9)", yb.monthCount === 9);
+  ok("yearbars: monthly nett Jan/Feb/Mar + current Sep bar", (() => {
+    const b = yb.branches.find((x) => x.branchId === bidBar);
+    return !!b && b.months[0] === 20000 && b.months[1] === 30000 && b.months[2] === 15000 && b.months[3] === null && b.months[8] === 5000;
+  })());
+  ok("yearbars: growth ignores in-progress Sep (Jan→Mar −25%, not Jan→Sep)", (() => {
+    const b = yb.branches.find((x) => x.branchId === bidBar);
+    return !!b && b.total === 70000 && b.peakMonth === 2 && b.growthPct === -25;
+  })());
+  ok("yearbars: past year renders all 12 months", analytics.annualBranchBars(2025, "2026-09-20").monthCount === 12);
+  ok("yearbars: allowedBranchIds scopes to that branch only",
+    yb.branches.length === 1 && yb.branches[0].branchId === bidBar);
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
