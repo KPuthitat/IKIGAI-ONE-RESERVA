@@ -18,6 +18,7 @@ import HookFab from "../components/HookFab";
 import RefreshButton from "../components/RefreshButton";
 import ImpersonationBanner from "../components/ImpersonationBanner";
 import MaintenanceBanner from "../components/MaintenanceBanner";
+import ModuleVisitTracker from "../components/ModuleVisitTracker";
 import { currentImpersonationContext } from "@/lib/impersonation";
 import { nameWithPrefix } from "@/lib/name";
 import { getMyEnrollment, type MjActor } from "@/lib/mounjaro-db";
@@ -233,6 +234,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F6F0E5]">
+      <ModuleVisitTracker />
       {/* Maintenance banner rendered ABOVE the impersonation banner so
           the more urgent "system updating" message wins eye-catch when
           both are active simultaneously. */}

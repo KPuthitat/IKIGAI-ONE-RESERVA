@@ -5,6 +5,7 @@ import { t } from "@/lib/i18n";
 import { nameWithPrefix } from "@/lib/name";
 import { HubCard, type HubCardProps } from "@/components/HubCard";
 import { getMyEnrollment, type MjActor } from "@/lib/mounjaro-db";
+import { moduleHits } from "@/lib/module-usage";
 
 export const dynamic = "force-dynamic";
 
@@ -27,31 +28,49 @@ export default function StaffHomePage({
 
   // Cards mirror the staff nav + the modern icon-card look shared with the
   // admin landing (HubCard, owner 2026-08-02). Only modules this employee can
-  // actually open are shown; ASCENDA is a preview.
-  const cards: (HubCardProps | null)[] = [
-    {
+  // actually open are shown; ASCENDA is a preview. `key` is the /staff path
+  // segment — it matches what ModuleVisitTracker records, so the landing can
+  // order cards by how often this person opens each module (owner 2026-09-20).
+  type Entry = { key: string; card: HubCardProps; pinLast?: boolean };
+  const entries: (Entry | null)[] = [
+    { key: "persona", card: {
       href: "/staff/persona", icon: "persona", tone: "brand", eyebrow: moduleEyebrow,
       title: t(lang, "portal.persona.title"), sub: t(lang, "portal.persona.staffDesc"), cta: openModule,
-    },
-    {
+    } },
+    { key: "reserva", card: {
       href: "/staff/reserva", icon: "reserva", tone: "sky", eyebrow: moduleEyebrow,
       title: t(lang, "portal.reserva.title"), sub: t(lang, "portal.reserva.staffDesc"), cta: openModule,
-    },
-    {
+    } },
+    { key: "inventa", card: {
       href: "/staff/inventa", icon: "inventa", tone: "emerald", eyebrow: moduleEyebrow,
       title: "INVENTA", sub: t(lang, "inv.module.desc"), cta: openModule,
-    },
-    mjEnrolled ? {
+    } },
+    mjEnrolled ? { key: "health", card: {
       href: "/staff/health/exams", icon: "shield", tone: "rose", eyebrow: moduleEyebrow,
       title: t(lang, "portal.wellness.title"), sub: t(lang, "portal.wellness.staffDesc"), cta: openModule,
-    } : null,
-    {
+    } } : null,
+    // ASCENDA is a preview (no real page yet) — always pinned last.
+    { key: "ascenda", pinLast: true, card: {
       href: "/staff/ascenda", icon: "ascenda", tone: "slate", eyebrow: moduleEyebrow,
       title: t(lang, "portal.ascenda.title"), sub: t(lang, "portal.ascenda.staffDesc"),
       cta: t(lang, "portal.previewModule"), muted: true,
       badge: { label: t(lang, "portal.label.comingSoon"), tone: "amber" },
-    },
+    } },
   ];
+
+  // Order by this user's own usage: most-opened first, preview pinned last, and
+  // a stable original order for ties (and for a brand-new user with no history).
+  const hits = moduleHits(user.id);
+  const ordered = entries
+    .filter((e): e is Entry => e !== null)
+    .map((e, i) => ({ e, i, n: hits.get(e.key) ?? 0 }))
+    .sort((a, b) => {
+      const pa = a.e.pinLast ? 1 : 0, pb = b.e.pinLast ? 1 : 0;
+      if (pa !== pb) return pa - pb;
+      if (b.n !== a.n) return b.n - a.n;
+      return a.i - b.i;
+    })
+    .map((x) => x.e.card);
 
   return (
     <div className="space-y-6">
@@ -68,7 +87,7 @@ export default function StaffHomePage({
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {cards.filter((c): c is HubCardProps => c !== null).map((c) => (
+        {ordered.map((c) => (
           <HubCard key={c.href} compact {...c} />
         ))}
       </div>

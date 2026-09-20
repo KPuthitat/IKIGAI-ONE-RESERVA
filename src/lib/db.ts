@@ -1987,6 +1987,16 @@ function runMigrations(db: Database.Database): void {
       PRIMARY KEY (branch_id, sale_date, kind, name)
     );
     CREATE INDEX IF NOT EXISTS idx_salesa_menu_day ON salesa_menu(branch_id, sale_date, kind, rank);
+    -- Per-user module usage (owner 2026-09-20): count how often each person
+    -- opens each module, so the landing page can order their cards by what they
+    -- actually use most. Best-effort telemetry — never blocks a page.
+    CREATE TABLE IF NOT EXISTS module_usage (
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      module_key  TEXT NOT NULL,
+      hits        INTEGER NOT NULL DEFAULT 0,
+      last_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, module_key)
+    );
     CREATE TABLE IF NOT EXISTS salesa_weekly_sent (
       branch_id  INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
       week_start TEXT NOT NULL,   -- Monday YYYY-MM-DD
