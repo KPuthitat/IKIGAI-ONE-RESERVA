@@ -3057,6 +3057,16 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_svc_deductions_month ON svc_deductions(year_month);
     CREATE INDEX IF NOT EXISTS idx_svc_deductions_user_month ON svc_deductions(user_id, year_month);
+    -- Per-person SVC "ตรวจแล้ว" sign-off (owner 2026-09-20): a reviewer ticks a
+    -- row once they've verified that month's calculation. Touches no money — a
+    -- checklist marker only. One row per (month, user); absence = not reviewed.
+    CREATE TABLE IF NOT EXISTS svc_line_reviews (
+      year_month  TEXT NOT NULL,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reviewed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      reviewed_by INTEGER REFERENCES users(id),
+      PRIMARY KEY (year_month, user_id)
+    );
   `);
 
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────

@@ -18,6 +18,7 @@ import {
   companySvcPayoutState,
   isSharedSvcMonth,
   isManualSvcMonth,
+  listSvcLineReviews,
   SVC_STAFF_SHARE_RATIO,
   SVC_COMPANY_SHARE_RATIO
 } from "@/lib/service-charge";
@@ -26,6 +27,7 @@ import CompanySvcPayoutActions from "./CompanySvcPayoutActions";
 import SvcGrossOverrideEditor from "./SvcGrossOverrideEditor";
 import CompanySvcCalcModal from "./CompanySvcCalcModal";
 import SvcForfeitExemptButton from "../SvcForfeitExemptButton";
+import SvcReviewButton from "../SvcReviewButton";
 import SvcDeductionEditor from "../SvcDeductionEditor";
 import OwlMascot from "../../../../components/OwlMascot";
 
@@ -71,6 +73,8 @@ export default function CompanyServiceChargePage({
   const shared = isSharedSvcMonth(branchRow.company_id, month);
   const manual = isManualSvcMonth(month);
   const canManagePayout = userCanViewPayroll(user);
+  // "ตรวจแล้ว" sign-off state per person for this month (owner 2026-09-20).
+  const reviews = listSvcLineReviews(month);
 
   // Company-wide payout (close/pay/post to ACCOUNTA, split per branch) — only in
   // shared "รวมกอง" mode (owner 2026-09-03). In that mode the per-branch page hides
@@ -347,6 +351,13 @@ export default function CompanyServiceChargePage({
                           </td>
                           <td className="py-2 pr-3 text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              <SvcReviewButton
+                                userId={r.userId}
+                                yearMonth={month}
+                                reviewed={reviews.has(r.userId)}
+                                reviewedByName={reviews.get(r.userId)?.reviewedByName ?? null}
+                                canEdit={canManagePayout}
+                              />
                               <SvcDeductionEditor
                                 userId={r.userId}
                                 yearMonth={month}
