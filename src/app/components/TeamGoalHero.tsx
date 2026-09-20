@@ -9,18 +9,20 @@ import { useEffect, useMemo, useState } from "react";
 
 const baht0 = (n: number) => n.toLocaleString("th-TH", { maximumFractionDigits: 0 });
 
+// Executive (C-level) voice — leadership addressing the branch team. Measured,
+// professional, no emojis (owner 2026-09-20).
 const ENCOURAGE = [
-  "สู้ๆ นะทีมงาน ทุกออเดอร์คือก้าวสำคัญ 💪",
-  "ไปด้วยกัน เดี๋ยวก็ถึงเป้า!",
-  "วันนี้ทำได้ดีมาก พรุ่งนี้ทำได้อีก 🔥",
-  "ทีมเราแข็งแรง ช่วยกันคนละไม้คนละมือ",
-  "รอยยิ้มของลูกค้าวันนี้ = ยอดของเราพรุ่งนี้ 😊"
+  "ทุกยอดขายที่เพิ่มขึ้น คือการเติบโตที่เราสร้างไปด้วยกัน",
+  "เป้าหมายอยู่ไม่ไกล ฝ่ายบริหารเชื่อมั่นในศักยภาพของทีมทุกคน",
+  "ความตั้งใจของทุกท่านในวันนี้ คือรากฐานขององค์กรในวันหน้า",
+  "มาตรฐานการบริการของทีม คือความได้เปรียบที่แท้จริงขององค์กร",
+  "เดินหน้าอย่างมั่นคงไปทีละวัน แล้วเราจะไปถึงเป้าหมายพร้อมกัน"
 ];
 const THANKS = [
-  "ขอบคุณทีมงานทุกคนที่ทุ่มเทนะครับ 🙏",
-  "ขอบคุณที่ดูแลลูกค้าอย่างดีเสมอ ❤️",
-  "แรงของทุกคนคือหัวใจของร้าน ขอบคุณครับ",
-  "ขอบคุณที่มาเต็มที่ทุกกะ 🙌"
+  "ฝ่ายบริหารขอขอบคุณในความทุ่มเทของทีมงานทุกท่าน",
+  "ความสำเร็จนี้เป็นของทุกคน ขอบคุณที่ตั้งใจอย่างเต็มที่เสมอมา",
+  "ขอบคุณที่รักษามาตรฐานและดูแลลูกค้าอย่างดีตลอดมา",
+  "แรงกายแรงใจของทุกท่าน คือพลังขับเคลื่อนขององค์กร"
 ];
 
 export default function TeamGoalHero({
@@ -35,8 +37,8 @@ export default function TeamGoalHero({
   // celebratory / final-push line leads, then the usual encouragement + thanks.
   const pool = useMemo(() => {
     const base = [...ENCOURAGE, ...THANKS];
-    if (reached) return ["🎉 ทะลุเป้าแล้ว! สุดยอดมากทีมงาน", "เกินเป้าไปด้วยกัน ขอบคุณทุกแรงครับ 🙌", ...base];
-    if (pct >= 85) return ["ใกล้ถึงเป้าแล้ว ฮึบอีกนิดเดียว! 💪", ...base];
+    if (reached) return ["ทีมทำได้เกินเป้าหมายแล้ว ฝ่ายบริหารขอขอบคุณในทุกความทุ่มเท", "ความสำเร็จนี้คือความภาคภูมิใจของเราทุกคน", ...base];
+    if (pct >= 85) return ["ใกล้ถึงเป้าหมายแล้ว ฝ่ายบริหารขอเป็นกำลังใจให้ทีมในช่วงโค้งสุดท้าย", ...base];
     return base;
   }, [reached, pct]);
 
@@ -76,7 +78,7 @@ export default function TeamGoalHero({
       <div className="mt-2 flex items-center justify-between gap-2 flex-wrap text-[11px] text-white/75">
         <span>คาดสิ้นเดือน ฿{baht0(projected)} ({projectedPct.toFixed(0)}% ของเป้า)</span>
         <span className={`rounded-full px-2 py-0.5 font-semibold ${onTrack || reached ? "bg-white/20 text-white" : "bg-amber-400/90 text-amber-950"}`}>
-          {reached ? "เกินเป้าแล้ว 🎉" : onTrack ? "มีลุ้นถึงเป้า ✓" : "ช่วยกันอีกแรง"}
+          {reached ? "เกินเป้าแล้ว" : onTrack ? "มีลุ้นถึงเป้า" : "ต่ำกว่าเป้า"}
         </span>
       </div>
 
