@@ -5,6 +5,7 @@
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
 import type { MenuEntry } from "./salesa-parse";
 import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTarget, branchIdsWithTarget, type DailyRow } from "./salesa-db";
+import { getDb } from "./db";
 
 function addDaysIso(iso: string, n: number): string {
   const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n);
@@ -919,4 +920,78 @@ export function insightBundle(branchId: number, r: InsightRange): InsightBundle 
     quality: rangeQualitySignal(branchId, r.start, r.end, r.prevStart, r.prevEnd),
     receipt: rangeReceiptInsights(branchId, r.start, r.end)
   };
+}
+
+// ── Festival / important-day analysis (owner 2026-09-20) ─────────────────────
+// Cross-branch: for each public-holiday date in a year, each POS branch's sales
+// that day vs the branch's average daily sales that month (uplift %) — so the
+// owner can plan next year's festivals per branch. Only past dates (<= today)
+// with at least one branch's sales appear.
+
+export type FestivalBranchCell = {
+  branchId: number; branchName: string;
+  sales: number | null;      // that day's nett (null = no data)
+  monthAvg: number | null;   // avg daily nett that month (excl. the day itself)
+  upliftPct: number | null;  // (sales − monthAvg) / monthAvg × 100
+};
+export type FestivalRow = { date: string; dateLabel: string; nameTh: string; branches: FestivalBranchCell[] };
+export type FestivalAnalysis = { year: number; branches: Array<{ id: number; name: string }>; rows: FestivalRow[] };
+
+export function festivalAnalysis(year: number, todayIso: string, allowedBranchIds?: number[] | null): FestivalAnalysis {
+  const db = getDb();
+  const yr = String(year);
+
+  // Branches that have SALESA data IN THIS YEAR, optionally restricted to what
+  // the caller may see (a per-branch admin only sees their own; super_admin sees
+  // all). Year-scoping keeps decommissioned/other-year branches out of the table.
+  let branches = (db.prepare(`
+    SELECT DISTINCT d.branch_id AS id, b.name AS name, b.display_order AS ord
+    FROM salesa_daily d JOIN branches b ON b.id = d.branch_id
+    WHERE substr(d.sale_date, 1, 4) = ? AND d.has_sales = 1 AND d.nett > 0
+  `).all(yr) as Array<{ id: number; name: string; ord: number }>)
+    .sort((a, b) => (a.ord - b.ord) || a.name.localeCompare(b.name, "th"))
+    .map((b) => ({ id: b.id, name: b.name }));
+  if (allowedBranchIds && allowedBranchIds.length) {
+    const allow = new Set(allowedBranchIds);
+    branches = branches.filter((b) => allow.has(b.id));
+  }
+  if (!branches.length) return { year, branches: [], rows: [] };
+
+  const holidays = db.prepare(
+    "SELECT date, name_th FROM public_holidays WHERE substr(date, 1, 4) = ? ORDER BY date"
+  ).all(yr) as Array<{ date: string; name_th: string }>;
+
+  // Pull only the branches we'll actually render (small droplet — avoid loading
+  // every branch's year of dailies just to discard them for a per-branch admin).
+  const bids = branches.map((b) => b.id);
+  const daily = db.prepare(`
+    SELECT branch_id AS b, sale_date AS d, nett AS n
+    FROM salesa_daily
+    WHERE substr(sale_date, 1, 4) = ? AND has_sales = 1 AND nett > 0
+      AND branch_id IN (${bids.map(() => "?").join(",")})
+  `).all(yr, ...bids) as Array<{ b: number; d: string; n: number }>;
+  const byBranchDate = new Map<string, number>();
+  const byBranchMonth = new Map<string, Array<{ d: string; n: number }>>();
+  for (const r of daily) {
+    byBranchDate.set(`${r.b}:${r.d}`, r.n);
+    const mk = `${r.b}:${r.d.slice(0, 7)}`;
+    const arr = byBranchMonth.get(mk) ?? []; arr.push({ d: r.d, n: r.n }); byBranchMonth.set(mk, arr);
+  }
+
+  const rows: FestivalRow[] = [];
+  for (const h of holidays) {
+    if (h.date > todayIso) continue; // future festival — no sales yet
+    const cells: FestivalBranchCell[] = branches.map((br) => {
+      const sales = byBranchDate.get(`${br.id}:${h.date}`) ?? null;
+      const monthDays = (byBranchMonth.get(`${br.id}:${h.date.slice(0, 7)}`) ?? []).filter((x) => x.d !== h.date);
+      const monthAvg = monthDays.length ? monthDays.reduce((s, x) => s + x.n, 0) / monthDays.length : null;
+      const upliftPct = (sales != null && monthAvg != null && monthAvg > 0)
+        ? Math.round(((sales - monthAvg) / monthAvg) * 1000) / 10 : null;
+      return { branchId: br.id, branchName: br.name, sales, monthAvg: monthAvg != null ? round2(monthAvg) : null, upliftPct };
+    });
+    if (cells.some((c) => c.sales != null)) {
+      rows.push({ date: h.date, dateLabel: thaiDate(h.date), nameTh: h.name_th, branches: cells });
+    }
+  }
+  return { year, branches, rows };
 }
