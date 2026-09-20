@@ -142,6 +142,42 @@ export function isManualSvcMonth(yearMonth: string): boolean {
   return yearMonth < SVC_SYSTEM_START_MONTH;
 }
 
+// Shared SVC-roster eligibility, used by every roster query (branch members and
+// cross-branch visitors, in both the per-branch and company compute paths) so
+// they can never drift apart. Active staff/admin who receive SVC, PLUS a member
+// who has RESIGNED but whose approved last working day falls in or after this
+// month — they worked at least part of it, so they belong in the table (PAID for
+// months fully worked; forfeited only in their final month when the resignation
+// broke policy — owner 2026-09-20). Disabled/terminated stay excluded even if
+// they also have a resignation on file. Binds two params IN THIS ORDER: the
+// month's first day (YYYY-MM-01) for the resigned check, then the month end for
+// the hire_date cutoff.
+const SVC_ELIGIBLE_WHERE = `u.role IN ('staff', 'admin')
+      AND u.receives_service_charge = 1
+      AND u.is_test_account = 0
+      AND (
+        u.status NOT IN ('disabled', 'resigned', 'terminated')
+        OR (u.status = 'resigned' AND EXISTS (
+          SELECT 1 FROM resignation_requests rr
+          WHERE rr.user_id = u.id AND rr.status = 'approved'
+            AND rr.proposed_last_day >= ?
+        ))
+      )
+      AND (u.hire_date IS NULL OR u.hire_date <= ?)`;
+
+/** Users whose approved, forfeit-flagged resignation lands its FINAL (incomplete)
+ *  working month inside [start, end] — SVC is withheld for that last month only,
+ *  keyed off the last working day, not the decision date (owner 2026-09-20). */
+function resignationForfeitUserIds(db: ReturnType<typeof getDb>, start: string, end: string): Set<number> {
+  const out = new Set<number>();
+  for (const r of db.prepare(
+    `SELECT user_id FROM resignation_requests
+     WHERE status = 'approved' AND forfeit_svc = 1
+       AND proposed_last_day >= ? AND proposed_last_day <= ?`
+  ).all(start, end) as Array<{ user_id: number }>) out.add(r.user_id);
+  return out;
+}
+
 /** The tax mode that applies to a person's SVC for a given ACCRUAL month (owner
  *  2026-09-03). Someone now on ประกันสังคม ('sso') but who entered it only from
  *  sso_start_month is still หัก ณ ที่จ่าย ('wht') for SVC earned in earlier months
@@ -669,13 +705,9 @@ export function computeMonthlySvcSummary(
            u.group_insurance_start_month AS groupInsuranceStartMonth
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
-    WHERE ub.branch_id = ? AND u.role IN ('staff', 'admin')
-      AND u.receives_service_charge = 1
-      AND u.is_test_account = 0
-      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
-      AND (u.hire_date IS NULL OR u.hire_date <= ?)
+    WHERE ub.branch_id = ? AND ${SVC_ELIGIBLE_WHERE}
     ORDER BY (u.employee_code IS NULL), u.employee_code COLLATE NOCASE ASC
-  `).all(branchId, end) as StaffMeta[];
+  `).all(branchId, start, end) as StaffMeta[];
 
   // Cross-branch visitors (owner 2026-08-02, "ย้ายสาขาระหว่างวัน"): staff who are
   // NOT members of this branch but clocked in here this month via a mid-day
@@ -698,16 +730,12 @@ export function computeMonthlySvcSummary(
            u.hire_date AS hireDate,
            u.group_insurance_start_month AS groupInsuranceStartMonth
     FROM users u
-    WHERE u.role IN ('staff', 'admin')
-      AND u.receives_service_charge = 1
-      AND u.is_test_account = 0
-      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
-      AND (u.hire_date IS NULL OR u.hire_date <= ?)
+    WHERE ${SVC_ELIGIBLE_WHERE}
       AND u.id IN (
         SELECT DISTINCT user_id FROM time_entries
         WHERE branch_id = ? AND ts >= ? AND ts <= ?
       )
-  `).all(end, branchId, monthStartIso, monthEndIso) as StaffMeta[];
+  `).all(start, end, branchId, monthStartIso, monthEndIso) as StaffMeta[];
   for (const v of visitorRows) {
     if (memberIds.has(v.userId)) continue;
     visitorIds.add(v.userId);
@@ -903,17 +931,12 @@ export function computeMonthlySvcSummary(
     insByUser.get(e.user_id)!.push({ ts: e.ts });
   }
 
-  // 8. Resignation forfeits — fetch any approved resignation in this
-  //    month flagged with forfeit_svc. We match by decided_at falling
-  //    inside the period.
-  const forfeitedFromResign = new Set<number>();
-  const resignRows = db.prepare(`
-    SELECT user_id FROM resignation_requests
-    WHERE status = 'approved'
-      AND forfeit_svc = 1
-      AND decided_at >= ? AND decided_at <= ?
-  `).all(monthStartIso, monthEndIso) as Array<{ user_id: number }>;
-  for (const r of resignRows) forfeitedFromResign.add(r.user_id);
+  // 8. Resignation forfeits — a forfeit_svc resignation withholds SVC for the
+  //    employee's FINAL (incomplete) month, i.e. the month of their approved last
+  //    working day, not the month it was decided (owner 2026-09-20: last day
+  //    6 Sept → forfeit September, keep August). Earlier fully-worked months are
+  //    unaffected and paid normally.
+  const forfeitedFromResign = resignationForfeitUserIds(db, start, end);
 
   // 8b. Executive forfeiture exemptions + ad-hoc deductions for the month (owner 2026-08-20).
   const exemptedSet = listSvcForfeitExemptions(yearMonth);
@@ -1323,13 +1346,9 @@ function computeBranchSvcContext(branchId: number, yearMonth: string): BranchSvc
            u.group_insurance_start_month AS groupInsuranceStartMonth
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
-    WHERE ub.branch_id = ? AND u.role IN ('staff', 'admin')
-      AND u.receives_service_charge = 1
-      AND u.is_test_account = 0
-      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
-      AND (u.hire_date IS NULL OR u.hire_date <= ?)
+    WHERE ub.branch_id = ? AND ${SVC_ELIGIBLE_WHERE}
     ORDER BY (u.employee_code IS NULL), u.employee_code COLLATE NOCASE ASC
-  `).all(branchId, end) as StaffMeta[];
+  `).all(branchId, start, end) as StaffMeta[];
 
   // 2b. Mid-day transfer visitors — clocked here but members elsewhere.
   const memberIds = new Set(staff.map((s) => s.userId));
@@ -1347,16 +1366,12 @@ function computeBranchSvcContext(branchId: number, yearMonth: string): BranchSvc
            u.hire_date AS hireDate,
            u.group_insurance_start_month AS groupInsuranceStartMonth
     FROM users u
-    WHERE u.role IN ('staff', 'admin')
-      AND u.receives_service_charge = 1
-      AND u.is_test_account = 0
-      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
-      AND (u.hire_date IS NULL OR u.hire_date <= ?)
+    WHERE ${SVC_ELIGIBLE_WHERE}
       AND u.id IN (
         SELECT DISTINCT user_id FROM time_entries
         WHERE branch_id = ? AND ts >= ? AND ts <= ?
       )
-  `).all(end, branchId, monthStartIso, monthEndIso) as StaffMeta[];
+  `).all(start, end, branchId, monthStartIso, monthEndIso) as StaffMeta[];
   for (const v of visitorRows) {
     if (memberIds.has(v.userId)) continue;
     visitorIds.add(v.userId);
@@ -1490,15 +1505,10 @@ function computeBranchSvcContext(branchId: number, yearMonth: string): BranchSvc
     lateByUser.set(s.userId, { lateMinutes, anyComputable });
   }
 
-  // 7. Resignation forfeits (company-wide query — same for every branch).
-  const forfeitedFromResign = new Set<number>();
-  for (const r of db.prepare(`
-    SELECT user_id FROM resignation_requests
-    WHERE status = 'approved' AND forfeit_svc = 1
-      AND decided_at >= ? AND decided_at <= ?
-  `).all(monthStartIso, monthEndIso) as Array<{ user_id: number }>) {
-    forfeitedFromResign.add(r.user_id);
-  }
+  // 7. Resignation forfeits (company-wide query — same for every branch). Matched
+  //    by the FINAL working month (proposed_last_day), so SVC is withheld only in
+  //    the incomplete last month, not any earlier fully-worked month (owner 2026-09-20).
+  const forfeitedFromResign = resignationForfeitUserIds(db, start, end);
 
   return {
     totalCollected, amountByDate, staff, memberIds, visitorIds, workedByDay,
