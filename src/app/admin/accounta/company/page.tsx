@@ -147,7 +147,9 @@ export default function CompanyOverviewPage({
           <div className="text-xs text-slate-500">
             คาดสิ้นปี <b className={annual.onTrack ? "text-emerald-600" : "text-amber-600"}>{fmtMoney(annual.projectedNett)}</b> ({annual.projectedPct.toFixed(0)}% ของเป้า) · {annual.onTrack ? "มีแนวโน้มถึงเป้าทั้งปี ✓" : "ต่ำกว่าเป้าทั้งปี ต้องเร่ง"}
           </div>
-          <div className="text-[11px] text-slate-400">เป้า = เป้ารายเดือนของแต่ละสาขา × 12 ({annual.branchCount} สาขาที่ตั้งเป้า) · คาดสิ้นปีจากอัตราเฉลี่ยต่อวันปีนี้</div>
+          <div className="text-[11px] text-slate-400">
+            เป้า = เป้ารายเดือนของแต่ละสาขา × 12 ({annual.branchCount} สาขาที่ตั้งเป้า){annual.prorated ? ` — สาขาที่เพิ่งเปิดปีนี้คิดตามวันที่เปิดจริง (เต็มปีทุกสาขา ${fmtMoney(annual.fullYearTarget)})` : ""} · คาดสิ้นปีจากอัตราเฉลี่ยต่อวันปีนี้
+          </div>
         </div>
       )}
 

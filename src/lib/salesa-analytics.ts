@@ -4,7 +4,7 @@
 
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
 import type { MenuEntry } from "./salesa-parse";
-import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTarget, branchIdsWithTarget, type DailyRow } from "./salesa-db";
+import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTarget, branchIdsWithTarget, branchOpensOn, type DailyRow } from "./salesa-db";
 import { getDb } from "./db";
 
 function addDaysIso(iso: string, n: number): string {
@@ -459,7 +459,10 @@ export function targetProgress(target: number, mtdNett: number, throughDay: numb
 // year-to-date sales and a run-rate projection to year end. ──────────────────
 export type AnnualProjection = {
   year: number;
-  annualTarget: number;   // monthly target × 12
+  annualTarget: number;   // year-available target (monthly×12, prorated if opened mid-year)
+  fullYearTarget: number; // monthly target × 12 (the un-prorated figure, for reference)
+  prorated: boolean;      // true when the target was cut to the branch's open span
+  openedIso: string | null; // a branch that opened this year: its first-sale date (null for company roll-up / full-year branch)
   ytdNett: number;        // Σ nett, Jan 1 .. throughDate
   pctOfTarget: number;
   projectedNett: number;  // run-rate to Dec 31
@@ -484,39 +487,68 @@ function branchYtdProjection(branchId: number, todayIso: string): { ytd: number;
   return { ytd: round2(ytd), projected: round2(ytd + dailyRate * remainingDays) };
 }
 
-function buildAnnual(year: number, annualTarget: number, ytd: number, projected: number, todayIso: string, branchCount: number): AnnualProjection | null {
-  if (!(annualTarget > 0)) return null;
+const dayNum = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
+
+/** A branch's target for the calendar year. Full year = monthly×12; but a branch
+ *  whose authoritative opening date (branches.opens_on) falls within this year is
+ *  prorated to its available span (open date → Dec 31), so a store that opened
+ *  25/07 isn't judged against a whole-year 7.2M (owner 2026-09-21). */
+function branchAnnualTarget(branchId: number, year: number): { annualTarget: number; fullYearTarget: number; openedIso: string | null } | null {
+  const monthly = getMonthlyTarget(branchId);
+  if (monthly == null || monthly <= 0) return null;
+  const fullYearTarget = monthly * 12;
+  const jan1 = `${year}-01-01`, dec31 = `${year}-12-31`;
+  const opensOn = branchOpensOn(branchId);
+  const openedThisYear = opensOn != null && opensOn.slice(0, 4) === String(year) && opensOn > jan1;
+  if (!openedThisYear) return { annualTarget: round2(fullYearTarget), fullYearTarget, openedIso: null };
+  const yearDays = dayNum(dec31) - dayNum(jan1) + 1;
+  const availDays = dayNum(dec31) - dayNum(opensOn as string) + 1;
+  return { annualTarget: round2(fullYearTarget * (availDays / yearDays)), fullYearTarget, openedIso: opensOn };
+}
+
+function buildAnnual(year: number, t: { annualTarget: number; fullYearTarget: number; openedIso: string | null }, ytd: number, projected: number, todayIso: string, branchCount: number): AnnualProjection | null {
+  if (!(t.annualTarget > 0)) return null;
   return {
-    year, annualTarget, ytdNett: round2(ytd),
-    pctOfTarget: round2((ytd / annualTarget) * 100),
+    year, annualTarget: round2(t.annualTarget), fullYearTarget: round2(t.fullYearTarget),
+    prorated: t.annualTarget < t.fullYearTarget - 0.005, openedIso: t.openedIso,
+    ytdNett: round2(ytd),
+    pctOfTarget: round2((ytd / t.annualTarget) * 100),
     projectedNett: round2(projected),
-    projectedPct: round2((projected / annualTarget) * 100),
-    onTrack: projected >= annualTarget,
+    projectedPct: round2((projected / t.annualTarget) * 100),
+    onTrack: projected >= t.annualTarget,
     throughDate: todayIso, branchCount
   };
 }
 
 /** Per-branch annual projection. Null when the branch has no monthly target. */
 export function annualProjection(branchId: number, todayIso: string): AnnualProjection | null {
-  const target = getMonthlyTarget(branchId);
-  if (target == null || target <= 0) return null;
+  const y = Number(todayIso.slice(0, 4));
+  const t = branchAnnualTarget(branchId, y);
+  if (!t) return null;
   const { ytd, projected } = branchYtdProjection(branchId, todayIso);
-  return buildAnnual(Number(todayIso.slice(0, 4)), target * 12, ytd, projected, todayIso, 1);
+  return buildAnnual(y, t, ytd, projected, todayIso, 1);
 }
 
 /** Company roll-up: project EACH branch on its own active span, then sum — so
  *  branches that opened on different dates aggregate correctly (owner 2026-09-20:
- *  ยอดทั้งปีสองสาขาไม่เท่ากัน ให้คาดการณ์แต่ละสาขาแล้วค่อยรวม). Only branches with a
+ *  ยอดทั้งปีสองสาขาไม่เท่ากัน ให้คาดการณ์แต่ละสาขาแล้วค่อยรวม). Each branch's annual
+ *  target is prorated to its own open span before summing. Only branches with a
  *  target contribute. Scoped to a company's branches by the caller. */
 export function annualProjectionForBranches(branchIds: number[], todayIso: string): AnnualProjection | null {
-  let annualTarget = 0, ytd = 0, projected = 0, n = 0;
+  const y = Number(todayIso.slice(0, 4));
+  let annualTarget = 0, fullYearTarget = 0, ytd = 0, projected = 0, n = 0, anyProrated = false;
   for (const id of branchIds) {
-    const target = getMonthlyTarget(id);
-    if (target == null || target <= 0) continue;
+    const t = branchAnnualTarget(id, y);
+    if (!t) continue;
     const p = branchYtdProjection(id, todayIso);
-    annualTarget += target * 12; ytd += p.ytd; projected += p.projected; n++;
+    annualTarget += t.annualTarget; fullYearTarget += t.fullYearTarget; ytd += p.ytd; projected += p.projected; n++;
+    if (t.openedIso) anyProrated = true;
   }
-  return buildAnnual(Number(todayIso.slice(0, 4)), annualTarget, ytd, projected, todayIso, n);
+  // Company view: openedIso is per-branch, so leave it null; `prorated` still
+  // flags that at least one branch's target was cut to its open span.
+  const out = buildAnnual(y, { annualTarget, fullYearTarget, openedIso: null }, ytd, projected, todayIso, n);
+  if (out) out.prorated = anyProrated;
+  return out;
 }
 
 /** Company-wide annual projection — every branch that has a target. */
