@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postSvcToAccounta, removeSvcFromAccounta } from "@/lib/accounta-db";
 import { isManualSvcMonth, isSharedSvcMonth } from "@/lib/service-charge";
+import { notifySvcBranchPaid } from "@/lib/payout-notify";
 
 // PATCH /api/admin/persona/service-charge/payout — 3-step flow mirroring payroll
 // (owner 2026-07-21): draft → finalize → paid → posted.
@@ -117,6 +118,9 @@ export async function PATCH(req: Request) {
   if (d.action === "mark_paid") {
     if (batch.status !== "finalized") return NextResponse.json({ error: "must_be_finalized_to_pay" }, { status: 400 });
     db.prepare(`UPDATE svc_payout_batches SET status = 'paid', paid_by_user_id = ?, paid_at = ? WHERE id = ?`).run(user.id, now, batch.id);
+    // Notify each staff who received a share this month (owner 2026-09-20).
+    // Best-effort, fire-and-forget — never blocks or fails the payout.
+    void notifySvcBranchPaid(branchId, d.yearMonth);
     return NextResponse.json({ ok: true });
   }
 

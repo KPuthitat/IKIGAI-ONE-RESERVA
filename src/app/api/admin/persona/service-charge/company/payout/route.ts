@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postSvcToAccounta, removeSvcFromAccounta } from "@/lib/accounta-db";
 import { companySvcPayoutState } from "@/lib/service-charge";
+import { notifySvcCompanyPaid } from "@/lib/payout-notify";
 
 // PATCH /api/admin/persona/service-charge/company/payout — company-wide payout,
 // mirroring the per-branch flow but fanned out across every participating branch
@@ -101,6 +102,9 @@ export async function PATCH(req: Request) {
         db.prepare(`UPDATE svc_payout_batches SET status = 'paid', paid_by_user_id = ?, paid_at = ? WHERE branch_id = ? AND year_month = ?`).run(user.id, now, b.id, d.yearMonth);
       }
     })();
+    // Notify everyone who received a company-wide share this month (owner
+    // 2026-09-20). Best-effort, fire-and-forget — never blocks or fails payout.
+    void notifySvcCompanyPaid(companyId, d.yearMonth);
     return NextResponse.json({ ok: true });
   }
 
