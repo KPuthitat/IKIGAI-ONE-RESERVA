@@ -656,16 +656,25 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           </div>
         )}
 
-        {/* Monthly summary send button (owner F) */}
-        {days.length > 0 && (
-          <div className="flex items-center justify-end gap-2">
-            {monthSentAt && <span className="text-xs text-emerald-600">✓ ส่งสรุปเดือนแล้ว</span>}
-            <button onClick={() => sendMonthly(year, month)} disabled={!hasLineGroup}
-              className="btn-success text-sm px-4 py-2 disabled:opacity-50">
-              {monthSentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
-            </button>
-          </div>
-        )}
+        {/* Monthly summary send button (owner F) — enabled ONLY when every day of
+            the month is fully imported (all 3 file types), so a partial month
+            can't be sent (owner 2026-09-21: ส่งได้เฉพาะเมื่อนำเข้าไฟล์ครบทั้งเดือน). */}
+        {days.length > 0 && (() => {
+          const dim = new Date(year, month, 0).getDate();  // days in the viewed month
+          const missing = Math.max(0, dim - days.length) + days.filter((d) => !(d.hasSales && d.hasMenu && d.hasReceipt)).length;
+          const monthComplete = missing === 0;
+          return (
+            <div className="flex items-center justify-end gap-2 flex-wrap">
+              {monthSentAt && <span className="text-xs text-emerald-600">✓ ส่งสรุปเดือนแล้ว</span>}
+              {!monthComplete && <span className="text-xs text-amber-600">นำเข้าไฟล์ให้ครบทั้งเดือนก่อนส่ง (ขาด {missing} วัน)</span>}
+              <button onClick={() => sendMonthly(year, month)} disabled={!hasLineGroup || !monthComplete}
+                title={!monthComplete ? "นำเข้าไฟล์ให้ครบทั้งเดือนก่อน" : undefined}
+                className="btn-success text-sm px-4 py-2 disabled:opacity-50">
+                {monthSentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
+              </button>
+            </div>
+          );
+        })()}
 
         {days.length === 0 ? (
           <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลในเดือนนี้ — นำเข้าไฟล์ด้านบน</p>
