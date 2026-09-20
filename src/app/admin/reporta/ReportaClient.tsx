@@ -244,8 +244,11 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     if (xlsx.length) setPicked((prev) => [...prev, ...xlsx].filter((f, i, a) => a.findIndex((g) => g.name === f.name && g.size === f.size) === i));
   };
 
-  const loadMonth = useCallback(async () => {
-    const r = await fetch(`/api/admin/reporta/view?year=${year}&month=${month}&period=${panelPeriod}`).then((x) => x.json());
+  // Accepts an explicit year/month so a caller can reload a specific month even
+  // when it equals the current state (setState-to-same-value doesn't re-fire the
+  // load effect) — e.g. importing another day of the month already on screen.
+  const loadMonth = useCallback(async (y: number = year, m: number = month) => {
+    const r = await fetch(`/api/admin/reporta/view?year=${y}&month=${m}&period=${panelPeriod}`).then((x) => x.json());
     if (r.ok) {
       setDays(r.view.days); setHasLineGroup(r.hasLineGroup); setMonthCompare(r.monthCompare ?? null);
       setWeekdays(r.weekdays ?? []); setDiscount(r.discount ?? null); setChannels(r.channels ?? null);
@@ -370,10 +373,16 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         const dates = (r.imported as Array<{ date: string }>).map((x) => x.date).filter(Boolean).sort();
         const target = dates[dates.length - 1];
         if (target) {
-          setYear(Number(target.slice(0, 4)));   // → re-runs loadMonth via effect
-          setMonth(Number(target.slice(5, 7)));
-          setWeekStart(mondayOf(target));         // → re-runs loadWeek via effect
+          const ty = Number(target.slice(0, 4)), tm = Number(target.slice(5, 7));
+          setYear(ty);
+          setMonth(tm);
+          setWeekStart(mondayOf(target));
           setSelDate(target);
+          // Reload the target month/week EXPLICITLY — setState to the same month
+          // doesn't re-fire the load effect, so the day list would otherwise stay
+          // stale (owner 2026-09-20: uploaded day 20 but list still showed 19).
+          await loadMonth(ty, tm);
+          await loadWeek(mondayOf(target));
           await loadDay(target);
         } else {
           await loadMonth();
