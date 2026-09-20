@@ -57,7 +57,7 @@ export default function TeamGoalHero({
   }, [pct]);
 
   return (
-    <div className="rounded-2xl p-5 text-white shadow-md bg-coffee-gradient">
+    <div className="rounded-2xl p-5 text-white shadow-md bg-gradient-to-br from-sky-800 via-sky-700 to-sky-600">
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs font-semibold uppercase tracking-[1.5px] text-white/70">เป้ายอดขายสาขา · เดือนนี้</div>
         <div className="text-sm font-bold text-white/90">{branchName}</div>
@@ -72,7 +72,7 @@ export default function TeamGoalHero({
       </div>
 
       <div className="mt-3 h-3 rounded-full bg-black/25 overflow-hidden">
-        <div className={`h-full rounded-full transition-[width] duration-1000 ease-out ${reached ? "bg-brand-light" : "bg-white"}`} style={{ width: `${Math.max(2, w)}%` }} />
+        <div className={`h-full rounded-full transition-[width] duration-1000 ease-out ${reached ? "bg-sky-200" : "bg-white"}`} style={{ width: `${Math.max(2, w)}%` }} />
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2 flex-wrap text-[11px] text-white/75">
