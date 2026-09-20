@@ -96,7 +96,7 @@ type SalesPushPlan = {
   verdictText: string; advice: string[];
 };
 type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
-type Annual = { year: number; annualTarget: number; ytdNett: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean; throughDate: string; branchCount: number };
+type Annual = { year: number; annualTarget: number; fullYearTarget: number; prorated: boolean; openedIso: string | null; ytdNett: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean; throughDate: string; branchCount: number };
 // Festival / important-day analysis (owner 2026-09-20): each วันสำคัญ × each branch.
 type FestivalCell = { branchId: number; branchName: string; sales: number | null; monthAvg: number | null; upliftPct: number | null };
 type FestivalRow = { date: string; dateLabel: string; nameTh: string; branches: FestivalCell[] };
@@ -631,13 +631,20 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               <div className="text-[11px] text-slate-400 pt-1">ยังไม่ได้ตั้งเป้ายอดขาย — ตั้งได้ที่ ⚙️ ตั้งค่ากลุ่ม LINE</div>
             )}
 
-            {/* Full-year projection (owner 2026-09-20): annual target = monthly × 12. */}
+            {/* Full-year projection (owner 2026-09-20): annual target = monthly × 12,
+                prorated to the branch's open span if it opened mid-year (owner
+                2026-09-21: ไฮโปเปิด 25/07 เป้าทั้งปีต้องคิดจากวันที่ available จริง). */}
             {annual && (
               <div className="pt-2 mt-1 border-t border-slate-200 space-y-1">
                 <div className="flex items-baseline justify-between gap-2 text-[11px]">
                   <span className="text-slate-500">เป้าทั้งปี {annual.year + 543} · {baht(annual.annualTarget)}</span>
                   <span className={`font-bold ${annual.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{annual.pctOfTarget.toFixed(0)}% ของเป้า</span>
                 </div>
+                {annual.prorated && (
+                  <div className="text-[11px] text-slate-400">
+                    คิดตามวันที่เปิดจริง{annual.openedIso ? ` (${thaiDate(annual.openedIso)})` : ""} — ไม่ใช่ทั้งปีเต็ม (เต็มปี {baht(annual.fullYearTarget)})
+                  </div>
+                )}
                 <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
                   <div className={`h-full ${annual.pctOfTarget >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, annual.pctOfTarget)}%` }} />
                 </div>

@@ -432,13 +432,14 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("existingKinds receipt true after receipt", sdb.existingKinds(bid6, "2026-09-16").receipt === true);
   ok("existingKinds other date still all false", (() => { const e = sdb.existingKinds(bid6, "2026-09-17"); return !e.sales && !e.menu && !e.receipt; })());
 
-  // ── 11) annualProjection (owner 2026-09-20): annual target = monthly × 12 ──
+  // ── 11) annualProjection (owner 2026-09-20): full-year target = monthly × 12
+  // for an established branch (no opens_on this year → not prorated). ──
   const mkDay = (bid: number, d: string, nett: number) => sdb.upsertDaily(bid, uid, { date: d, dateEnd: d, merchant: "RY", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 10, pax: 18, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / 10, avgPax: 1.8, avgSalesPax: nett / 18, payments: [], types: [], sources: [] });
   const bid7 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('r7','REST7')").run().lastInsertRowid);
   sdb.setMonthlyTarget(bid7, 100000);
   mkDay(bid7, "2026-01-15", 50000);
   const ap = analytics.annualProjection(bid7, "2026-01-31");
-  ok("annual target = monthly × 12", ap?.annualTarget === 1200000);
+  ok("annual target = monthly × 12 (no opens_on → full year)", ap?.annualTarget === 1200000 && ap?.prorated === false);
   ok("annual ytd = 50000", ap?.ytdNett === 50000);
   // Active span Jan15→Jan31 = 17 days; project the remaining 334 days at that rate.
   ok("annual projected uses branch's active span", ap != null && near(ap.projectedNett, 50000 + (50000 / 17) * 334));
@@ -558,6 +559,38 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("festival: allowedBranchIds scopes columns to branch B only",
     faScoped.branches.length === 1 && faScoped.branches[0].id === fbB &&
     (faScoped.rows.find((r) => r.date === "2026-04-13")?.branches.length === 1));
+
+  // ── 15) annual target prorated to a branch's open span (owner 2026-09-21):
+  // a branch whose branches.opens_on is mid-year (ไฮโปเปิด 25/07) must not be
+  // judged against a full-year monthly×12 target — prorate to (opens_on → 31 ธ.ค.).
+  // Keyed off opens_on, NOT first sale (SALESA data only starts in 2026). ──
+  const fput2 = (bid: number, d: string, nett: number) => sdb.upsertDaily(bid, uid, { date: d, dateEnd: d, merchant: "OPEN", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 5, pax: 9, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / 5, avgPax: 1.8, avgSalesPax: nett / 9, payments: [], types: [], sources: [] });
+  // New branch: monthly target 600k, opened 25/07/2026 (opens_on set).
+  const bidNew = Number(db.prepare("INSERT INTO branches (slug,name,opens_on) VALUES ('opn','HYPOP','2026-07-25')").run().lastInsertRowid);
+  sdb.setMonthlyTarget(bidNew, 600000);
+  fput2(bidNew, "2026-07-25", 20000); fput2(bidNew, "2026-08-10", 25000);
+  const apNew = analytics.annualProjection(bidNew, "2026-09-20");
+  ok("annual: new branch is prorated (opens_on 25/07)", !!apNew && apNew.prorated === true && apNew.openedIso === "2026-07-25");
+  ok("annual: new branch full-year figure kept for reference (7.2M)", !!apNew && apNew.fullYearTarget === 7200000);
+  ok("annual: new branch target prorated to open span (~3.156M, not 7.2M)", (() => {
+    if (!apNew) return false;
+    const expect = 7200000 * (160 / 365); // 25 ก.ค.→31 ธ.ค. = 160 วัน / 365
+    return Math.abs(apNew.annualTarget - expect) < 1 && apNew.annualTarget < 7200000;
+  })());
+  // Established branch: opens_on in a PRIOR year → full ×12, not prorated — even
+  // though its imported SALESA data only starts in 2026.
+  const bidOld = Number(db.prepare("INSERT INTO branches (slug,name,opens_on) VALUES ('est','ESTAB','2024-01-01')").run().lastInsertRowid);
+  sdb.setMonthlyTarget(bidOld, 500000);
+  fput2(bidOld, "2026-02-01", 30000);
+  const apOld = analytics.annualProjection(bidOld, "2026-09-20");
+  ok("annual: established branch (opens_on prior year) NOT prorated (full 6M)", !!apOld && apOld.prorated === false && apOld.annualTarget === 6000000 && apOld.openedIso === null);
+  // Company roll-up flags proration when any branch opened mid-year.
+  const apCo = analytics.annualProjectionForBranches([bidNew, bidOld], "2026-09-20");
+  ok("annual: company roll-up flags prorated + sums both targets", (() => {
+    if (!apCo) return false;
+    const expect = 7200000 * (160 / 365) + 6000000;
+    return apCo.prorated === true && apCo.branchCount === 2 && Math.abs(apCo.annualTarget - expect) < 1 && apCo.fullYearTarget === 13200000;
+  })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();

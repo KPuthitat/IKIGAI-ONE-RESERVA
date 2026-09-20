@@ -335,6 +335,19 @@ export function listMonth(branchId: number, year: number, month: number): DailyR
   return listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(last).padStart(2, "0")}`);
 }
 
+/** The branch's authoritative opening date (branches.opens_on, YYYY-MM-DD) or
+ *  null if unset. Used to tell whether a branch OPENED this year — so its annual
+ *  target is prorated to its available span rather than a full 12 months
+ *  (owner 2026-09-21: ไฮโปเปิด 25/07 เป้าทั้งปีต้องคิดจากวันที่ available จริง). We key
+ *  off opens_on, NOT the first imported sale: SALESA data only starts in 2026, so
+ *  a first-sale heuristic would wrongly prorate every long-standing branch. */
+export function branchOpensOn(branchId: number): string | null {
+  const r = getDb().prepare(
+    "SELECT opens_on FROM branches WHERE id = ?"
+  ).get(branchId) as { opens_on: string | null } | undefined;
+  return r?.opens_on ?? null;
+}
+
 export function getMenu(branchId: number, date: string): { items: MenuEntry[]; categories: MenuEntry[] } {
   const rows = getDb().prepare(
     "SELECT kind, name, nett, rank FROM salesa_menu WHERE branch_id = ? AND sale_date = ? ORDER BY rank ASC"
