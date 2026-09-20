@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { requireUser } from "@/lib/auth";
+import { requireUser, canModule } from "@/lib/auth";
+import { ADMIN_MODULES } from "@/lib/admin-modules";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { nameWithPrefix } from "@/lib/name";
@@ -57,37 +58,52 @@ export default function StaffHomePage({
   let mjEnrolled = false;
   try { mjEnrolled = !!getMyEnrollment(user as MjActor); } catch { mjEnrolled = false; }
 
-  // Cards mirror the staff nav + the modern icon-card look shared with the
-  // admin landing (HubCard, owner 2026-08-02). Only modules this employee can
-  // actually open are shown; ASCENDA is a preview. `key` is the /staff path
-  // segment — it matches what ModuleVisitTracker records, so the landing can
-  // order cards by how often this person opens each module (owner 2026-09-20).
+  // Full admins (super_admin, or an admin with a per-branch admin grant) see the
+  // COMPLETE module set on the landing — the same list as the top module bar —
+  // so nothing is missing (owner 2026-09-20: "เมนูยังขึ้นไม่ครบทุกโมดูล"). Everyone
+  // else sees their staff self-service modules. `key` matches what
+  // ModuleVisitTracker records so staff cards can order by usage.
+  const showFullModuleBar = user.role === "super_admin"
+    || (user.role === "admin" && user.adminBranchIds.length > 0);
   type Entry = { key: string; card: HubCardProps; pinLast?: boolean };
-  const entries: (Entry | null)[] = [
-    { key: "persona", card: {
-      href: "/staff/persona", icon: "persona", tone: "brand", eyebrow: moduleEyebrow,
-      title: t(lang, "portal.persona.title"), sub: t(lang, "portal.persona.staffDesc"), cta: openModule,
-    } },
-    { key: "reserva", card: {
-      href: "/staff/reserva", icon: "reserva", tone: "sky", eyebrow: moduleEyebrow,
-      title: t(lang, "portal.reserva.title"), sub: t(lang, "portal.reserva.staffDesc"), cta: openModule,
-    } },
-    { key: "inventa", card: {
-      href: "/staff/inventa", icon: "inventa", tone: "emerald", eyebrow: moduleEyebrow,
-      title: "INVENTA", sub: t(lang, "inv.module.desc"), cta: openModule,
-    } },
-    mjEnrolled ? { key: "health", card: {
-      href: "/staff/health/exams", icon: "shield", tone: "rose", eyebrow: moduleEyebrow,
-      title: t(lang, "portal.wellness.title"), sub: t(lang, "portal.wellness.staffDesc"), cta: openModule,
-    } } : null,
-    // ASCENDA is a preview (no real page yet) — always pinned last.
-    { key: "ascenda", pinLast: true, card: {
-      href: "/staff/ascenda", icon: "ascenda", tone: "slate", eyebrow: moduleEyebrow,
-      title: t(lang, "portal.ascenda.title"), sub: t(lang, "portal.ascenda.staffDesc"),
-      cta: t(lang, "portal.previewModule"), muted: true,
-      badge: { label: t(lang, "portal.label.comingSoon"), tone: "amber" },
-    } },
-  ];
+  const entries: (Entry | null)[] = showFullModuleBar
+    ? ADMIN_MODULES
+        .filter((m) => m.perm == null || canModule(user, m.perm))
+        .map((m) => ({
+          key: m.key,
+          pinLast: m.comingSoon,
+          card: {
+            href: m.href, icon: m.icon, tone: m.tone, eyebrow: moduleEyebrow,
+            title: m.label, sub: t(lang, m.subKey),
+            cta: m.comingSoon ? t(lang, "portal.previewModule") : openModule,
+            muted: m.comingSoon, badge: m.badge
+          } as HubCardProps
+        }))
+    : [
+        { key: "persona", card: {
+          href: "/staff/persona", icon: "persona", tone: "brand", eyebrow: moduleEyebrow,
+          title: t(lang, "portal.persona.title"), sub: t(lang, "portal.persona.staffDesc"), cta: openModule,
+        } },
+        { key: "reserva", card: {
+          href: "/staff/reserva", icon: "reserva", tone: "sky", eyebrow: moduleEyebrow,
+          title: t(lang, "portal.reserva.title"), sub: t(lang, "portal.reserva.staffDesc"), cta: openModule,
+        } },
+        { key: "inventa", card: {
+          href: "/staff/inventa", icon: "inventa", tone: "emerald", eyebrow: moduleEyebrow,
+          title: "INVENTA", sub: t(lang, "inv.module.desc"), cta: openModule,
+        } },
+        mjEnrolled ? { key: "health", card: {
+          href: "/staff/health/exams", icon: "shield", tone: "rose", eyebrow: moduleEyebrow,
+          title: t(lang, "portal.wellness.title"), sub: t(lang, "portal.wellness.staffDesc"), cta: openModule,
+        } } : null,
+        // ASCENDA is a preview (no real page yet) — always pinned last.
+        { key: "ascenda", pinLast: true, card: {
+          href: "/staff/ascenda", icon: "ascenda", tone: "slate", eyebrow: moduleEyebrow,
+          title: t(lang, "portal.ascenda.title"), sub: t(lang, "portal.ascenda.staffDesc"),
+          cta: t(lang, "portal.previewModule"), muted: true,
+          badge: { label: t(lang, "portal.label.comingSoon"), tone: "amber" },
+        } },
+      ];
 
   // Order by this user's own usage: most-opened first, preview pinned last, and
   // a stable original order for ties (and for a brand-new user with no history).
