@@ -468,27 +468,30 @@ export type AnnualProjection = {
   branchCount: number;    // 1 for a branch; N for the company roll-up
 };
 
-function daysInYear(y: number): number {
-  return ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365;
-}
-function dayOfYear(iso: string): number {
-  const y = Number(iso.slice(0, 4));
-  return Math.floor((Date.parse(`${iso}T00:00:00Z`) - Date.parse(`${y}-01-01T00:00:00Z`)) / 86_400_000) + 1;
+/** YTD nett + a run-rate projection to year end for ONE branch, based on the
+ *  branch's OWN active span (first sale this year → today) — so a branch that
+ *  opened mid-year isn't annualised against the whole calendar (owner 2026-09-20). */
+function branchYtdProjection(branchId: number, todayIso: string): { ytd: number; projected: number } {
+  const y = Number(todayIso.slice(0, 4));
+  const rows = listRange(branchId, `${y}-01-01`, todayIso).filter((d) => d.has_sales); // ascending
+  const ytd = rows.reduce((s, d) => s + d.nett, 0);
+  if (!rows.length) return { ytd: 0, projected: 0 };
+  const day = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
+  const spanDays = Math.max(1, day(todayIso) - day(rows[0].sale_date) + 1);
+  const dailyRate = ytd / spanDays;
+  const remainingDays = Math.max(0, day(`${y}-12-31`) - day(todayIso));
+  return { ytd: round2(ytd), projected: round2(ytd + dailyRate * remainingDays) };
 }
 
-/** Build an AnnualProjection from a combined annual target + YTD nett. */
-function annualFrom(year: number, annualTarget: number, ytdNett: number, todayIso: string, branchCount: number): AnnualProjection | null {
+function buildAnnual(year: number, annualTarget: number, ytd: number, projected: number, todayIso: string, branchCount: number): AnnualProjection | null {
   if (!(annualTarget > 0)) return null;
-  const doy = dayOfYear(todayIso);
-  const projectedNett = doy > 0 ? round2((ytdNett / doy) * daysInYear(year)) : ytdNett;
   return {
-    year, annualTarget, ytdNett: round2(ytdNett),
-    pctOfTarget: round2((ytdNett / annualTarget) * 100),
-    projectedNett,
-    projectedPct: round2((projectedNett / annualTarget) * 100),
-    onTrack: projectedNett >= annualTarget,
-    throughDate: todayIso,
-    branchCount
+    year, annualTarget, ytdNett: round2(ytd),
+    pctOfTarget: round2((ytd / annualTarget) * 100),
+    projectedNett: round2(projected),
+    projectedPct: round2((projected / annualTarget) * 100),
+    onTrack: projected >= annualTarget,
+    throughDate: todayIso, branchCount
   };
 }
 
@@ -496,26 +499,23 @@ function annualFrom(year: number, annualTarget: number, ytdNett: number, todayIs
 export function annualProjection(branchId: number, todayIso: string): AnnualProjection | null {
   const target = getMonthlyTarget(branchId);
   if (target == null || target <= 0) return null;
-  const y = Number(todayIso.slice(0, 4));
-  const rows = listRange(branchId, `${y}-01-01`, todayIso).filter((d) => d.has_sales);
-  const ytd = rows.reduce((s, d) => s + d.nett, 0);
-  return annualFrom(y, target * 12, ytd, todayIso, 1);
+  const { ytd, projected } = branchYtdProjection(branchId, todayIso);
+  return buildAnnual(Number(todayIso.slice(0, 4)), target * 12, ytd, projected, todayIso, 1);
 }
 
-/** Annual projection summed across the given branches (only those with a
- *  target). Used for the ACCOUNTA company roll-up (scoped to a company's
- *  branches) and, via companyAnnualProjection, for every targeted branch. */
+/** Company roll-up: project EACH branch on its own active span, then sum — so
+ *  branches that opened on different dates aggregate correctly (owner 2026-09-20:
+ *  ยอดทั้งปีสองสาขาไม่เท่ากัน ให้คาดการณ์แต่ละสาขาแล้วค่อยรวม). Only branches with a
+ *  target contribute. Scoped to a company's branches by the caller. */
 export function annualProjectionForBranches(branchIds: number[], todayIso: string): AnnualProjection | null {
-  const y = Number(todayIso.slice(0, 4));
-  let annualTarget = 0, ytd = 0, n = 0;
+  let annualTarget = 0, ytd = 0, projected = 0, n = 0;
   for (const id of branchIds) {
     const target = getMonthlyTarget(id);
     if (target == null || target <= 0) continue;
-    annualTarget += target * 12;
-    ytd += listRange(id, `${y}-01-01`, todayIso).filter((d) => d.has_sales).reduce((s, d) => s + d.nett, 0);
-    n++;
+    const p = branchYtdProjection(id, todayIso);
+    annualTarget += target * 12; ytd += p.ytd; projected += p.projected; n++;
   }
-  return annualFrom(y, annualTarget, ytd, todayIso, n);
+  return buildAnnual(Number(todayIso.slice(0, 4)), annualTarget, ytd, projected, todayIso, n);
 }
 
 /** Company-wide annual projection — every branch that has a target. */

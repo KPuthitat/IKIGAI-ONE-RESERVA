@@ -440,7 +440,8 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const ap = analytics.annualProjection(bid7, "2026-01-31");
   ok("annual target = monthly × 12", ap?.annualTarget === 1200000);
   ok("annual ytd = 50000", ap?.ytdNett === 50000);
-  ok("annual projected run-rate (31d → 365)", ap != null && near(ap.projectedNett, (50000 / 31) * 365));
+  // Active span Jan15→Jan31 = 17 days; project the remaining 334 days at that rate.
+  ok("annual projected uses branch's active span", ap != null && near(ap.projectedNett, 50000 + (50000 / 17) * 334));
   ok("annual pct of target ≈ 4.17", ap != null && near(ap.pctOfTarget, (50000 / 1200000) * 100));
   const bidNoTgt = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('rnt','RESTNT')").run().lastInsertRowid);
   ok("annual no target → null", analytics.annualProjection(bidNoTgt, "2026-01-31") === null);
@@ -451,6 +452,8 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("company annual target = (100k+200k)×12", co?.annualTarget === 3600000);
   ok("company annual ytd = 80000", co?.ytdNett === 80000);
   ok("company branchCount counts only targeted branches (2)", co?.branchCount === 2);
+  // Each branch projected on its own span (bid7 Jan15→17d, bid8 Jan20→12d) then summed.
+  ok("company projection = sum of per-branch projections", co != null && near(co.projectedNett, (50000 + (50000 / 17) * 334) + (30000 + (30000 / 12) * 334)));
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
