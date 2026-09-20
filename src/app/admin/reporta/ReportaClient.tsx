@@ -97,6 +97,10 @@ type SalesPushPlan = {
 };
 type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
 type Annual = { year: number; annualTarget: number; ytdNett: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean; throughDate: string; branchCount: number };
+// Festival / important-day analysis (owner 2026-09-20): each วันสำคัญ × each branch.
+type FestivalCell = { branchId: number; branchName: string; sales: number | null; monthAvg: number | null; upliftPct: number | null };
+type FestivalRow = { date: string; dateLabel: string; nameTh: string; branches: FestivalCell[] };
+type FestivalData = { year: number; branches: Array<{ id: number; name: string }>; rows: FestivalRow[] };
 // Menu-name merging (owner 2026-09-20): similar spellings that might be one dish.
 type NameStat = { nett: number; units: number };
 type MergeSuggestion = { a: string; b: string; score: number; reason: "exact" | "contains" | "fuzzy"; aStats: NameStat; bStats: NameStat };
@@ -235,6 +239,12 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [mergeGroups, setMergeGroups] = useState<MergeGroup[]>([]);
   const [mergeBusy, setMergeBusy] = useState(false);
   const [showMerged, setShowMerged] = useState(false);
+  // Festival / important-day analysis (owner 2026-09-20) — lazy-loaded on expand.
+  const [festOpen, setFestOpen] = useState(false);
+  const [festYear, setFestYear] = useState(Number(initial.slice(0, 4)));
+  const [festData, setFestData] = useState<FestivalData | null>(null);
+  const festReqRef = useRef(0);
+  const [festBusy, setFestBusy] = useState(false);
   const [picked, setPicked] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
@@ -301,6 +311,31 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       }
     } catch { setMsg({ kind: "err", text: "ทำรายการไม่สำเร็จ" }); }
     setMergeBusy(false);
+  };
+
+  // Festival analysis (owner 2026-09-20): fetched only when the panel is opened
+  // or its year changes — it's a cross-branch yearly query, not needed on every
+  // dashboard render.
+  const loadFestivals = useCallback(async (y: number) => {
+    const seq = ++festReqRef.current;
+    setFestBusy(true);
+    try {
+      const r = await fetch(`/api/admin/reporta/view?festivals=1&year=${y}`).then((x) => x.json());
+      if (seq !== festReqRef.current) return; // a newer year request superseded this one
+      if (r.ok) setFestData(r.festivals);
+    } catch { /* ignore */ } finally {
+      if (seq === festReqRef.current) setFestBusy(false);
+    }
+  }, []);
+  const toggleFestivals = () => {
+    const next = !festOpen;
+    setFestOpen(next);
+    if (next && (!festData || festData.year !== festYear)) loadFestivals(festYear);
+  };
+  const stepFestYear = (delta: number) => {
+    const y = festYear + delta;
+    setFestYear(y);
+    if (festOpen) loadFestivals(y);
   };
 
   useEffect(() => { loadMonth(); }, [loadMonth]);
@@ -909,6 +944,69 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                     className="text-xs text-slate-500 hover:text-rose-600 shrink-0">ยกเลิกรวม</button>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Festival / important-day analysis (owner 2026-09-20): which วันสำคัญ lift
+          each branch's sales, for planning next year's festivals. Lazy-loaded,
+          cross-branch (super_admin) or active branch. Independent of the month
+          view — it's a whole-year, cross-branch panel — so not gated on `days`. */}
+      {(
+        <div className="card">
+          <button type="button" onClick={toggleFestivals} className="w-full flex items-center justify-between gap-2 text-left">
+            <div>
+              <h2 className="font-bold text-slate-800">วันสำคัญ / เทศกาล — เทียบยอดขายแต่ละสาขา</h2>
+              <p className="text-xs text-slate-500 mt-0.5">ดูว่าวันสำคัญไหนดันยอดขายของแต่ละสาขา เพื่อวางแผนรับมือเทศกาลในปีถัดไป</p>
+            </div>
+            <span className="text-slate-400 text-sm shrink-0">{festOpen ? "▲ ซ่อน" : "▼ ดู"}</span>
+          </button>
+          {festOpen && (
+            <div className="mt-3 space-y-3">
+              <NavStepper eyebrow="ปี" label={`${festYear + 543}`}
+                onPrev={() => stepFestYear(-1)} onNext={() => stepFestYear(1)} nextDisabled={festYear >= Number(todayBkk().slice(0, 4))} />
+              {festBusy ? (
+                <p className="text-sm text-slate-400 text-center py-4">กำลังโหลด…</p>
+              ) : !festData || festData.rows.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลยอดขายในวันสำคัญของปีนี้</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="text-xs text-slate-500 border-b border-slate-200">
+                        <th className="text-left py-2 pr-3">วันสำคัญ</th>
+                        {festData.branches.map((b) => <th key={b.id} className="text-right py-2 px-2 whitespace-nowrap">{b.name}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {festData.rows.map((row) => (
+                        <tr key={row.date} className="border-b border-slate-100 align-top">
+                          <td className="py-2 pr-3">
+                            <div className="font-medium text-slate-800">{row.nameTh}</div>
+                            <div className="text-[11px] text-slate-400">{row.dateLabel}</div>
+                          </td>
+                          {row.branches.map((c) => (
+                            <td key={c.branchId} className="py-2 px-2 text-right">
+                              {c.sales == null ? <span className="text-slate-300">—</span> : (
+                                <>
+                                  <div className="font-semibold text-slate-700 tabular-nums">{baht(c.sales)}</div>
+                                  {c.upliftPct != null && (
+                                    <div className={`text-[11px] font-medium ${c.upliftPct > 0 ? "text-emerald-600" : c.upliftPct < 0 ? "text-rose-500" : "text-slate-400"}`}>
+                                      {c.upliftPct > 0 ? `▲ +${c.upliftPct}` : c.upliftPct < 0 ? `▼ ${c.upliftPct}` : `± 0`}%
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="text-[11px] text-slate-400 mt-2">▲/▼ = ยอดวันนั้นเทียบกับยอดขายเฉลี่ยต่อวันของสาขาในเดือนเดียวกัน · แสดงเฉพาะวันสำคัญที่มีข้อมูลแล้ว</p>
+                </div>
+              )}
             </div>
           )}
         </div>

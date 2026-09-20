@@ -521,6 +521,44 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const singleOv = parse.parseOverview(overviewBuf("16/09/2026", "TESTBR", [["ก", "10"]], [["ย่าง", "20"]]));
   ok("single-day overview → date == dateEnd (import accepts)", singleOv.date === singleOv.dateEnd && singleOv.date === "2026-09-16");
 
+  // ── 14) festival / important-day analysis (owner 2026-09-20): per วันสำคัญ,
+  // each branch's sales that day vs its month average (uplift %); only past
+  // dates with sales appear; future festivals are hidden. ──
+  const fbA = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('fa','FEST-A',1)").run().lastInsertRowid);
+  const fbB = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('fb','FEST-B',2)").run().lastInsertRowid);
+  const fput = (bid: number, d: string, nett: number) => sdb.upsertDaily(bid, uid, { date: d, dateEnd: d, merchant: "FST", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 10, pax: 18, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / 10, avgPax: 1.8, avgSalesPax: nett / 18, payments: [], types: [], sources: [] });
+  // Songkran 13 Apr: branch A spikes (300 vs 100-avg → +200%), branch B flat (100 vs 100 → 0%).
+  db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-04-13", "วันสงกรานต์", "Songkran");
+  fput(fbA, "2026-04-13", 300); fput(fbA, "2026-04-14", 100); fput(fbA, "2026-04-15", 100);
+  fput(fbB, "2026-04-13", 100); fput(fbB, "2026-04-14", 100); fput(fbB, "2026-04-15", 100);
+  // A festival with no sales at all (both branches) — must be dropped from the table.
+  db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-01-01", "วันขึ้นปีใหม่", "New Year");
+  // A future festival (after today 2026-09-20) — even if seeded, must be excluded.
+  db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-12-31", "วันสิ้นปี", "NYE");
+  fput(fbA, "2026-12-31", 500);
+  const fa = analytics.festivalAnalysis(2026, "2026-09-20");
+  ok("festival: branch A ordered before branch B (display_order)", (() => {
+    const ids = fa.branches.map((b) => b.id);
+    const ia = ids.indexOf(fbA), ib = ids.indexOf(fbB);
+    return ia >= 0 && ib >= 0 && ia < ib;
+  })());
+  const songkran = fa.rows.find((r) => r.date === "2026-04-13");
+  ok("festival: Songkran row present with Thai name", !!songkran && songkran.nameTh === "วันสงกรานต์");
+  ok("festival: branch A uplift +200% on Songkran", (() => {
+    const c = songkran?.branches.find((x) => x.branchId === fbA);
+    return !!c && c.sales === 300 && near(c.monthAvg ?? -1, 100) && c.upliftPct === 200;
+  })());
+  ok("festival: branch B flat (0% uplift)", (() => {
+    const c = songkran?.branches.find((x) => x.branchId === fbB);
+    return !!c && c.sales === 100 && c.upliftPct === 0;
+  })());
+  ok("festival: no-sales festival (New Year) dropped", !fa.rows.some((r) => r.date === "2026-01-01"));
+  ok("festival: future festival (NYE) excluded", !fa.rows.some((r) => r.date === "2026-12-31"));
+  const faScoped = analytics.festivalAnalysis(2026, "2026-09-20", [fbB]);
+  ok("festival: allowedBranchIds scopes columns to branch B only",
+    faScoped.branches.length === 1 && faScoped.branches[0].id === fbB &&
+    (faScoped.rows.find((r) => r.date === "2026-04-13")?.branches.length === 1));
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

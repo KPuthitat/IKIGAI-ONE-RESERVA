@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
-import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection } from "@/lib/salesa-analytics";
+import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis } from "@/lib/salesa-analytics";
 import { salesPushPlan } from "@/lib/salesa-push";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
@@ -21,6 +21,9 @@ function bkkNow(): { year: number; month: number } {
   const d = new Date(Date.now() + 7 * 3600_000);
   return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
 }
+function todayBkkIso(): string {
+  return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+}
 
 export function GET(req: Request) {
   const user = requirePermission("reporta.manage");
@@ -32,6 +35,15 @@ export function GET(req: Request) {
   const name = branchName(branchId);
   const hasLineGroup = !!getLineGroupId(branchId);
   const cardColor = getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR;
+
+  // Festival / important-day analysis (owner 2026-09-20) — cross-branch for
+  // super_admin, active branch only otherwise. Read-only; scoped by role.
+  if (sp.get("festivals") != null) {
+    const todayIsoF = todayBkkIso();
+    const fy = Number(sp.get("year")) || bkkNow().year;
+    const allowed = user.role === "super_admin" ? null : [branchId];
+    return NextResponse.json({ ok: true, festivals: festivalAnalysis(fy, todayIsoF, allowed) });
+  }
 
   const date = sp.get("date") ?? "";
   if (ISO.test(date)) {
@@ -54,7 +66,7 @@ export function GET(req: Request) {
 
   // แผนดันยอด (owner 2026-09-18): น้องฮูก plans a short-horizon target.
   if (sp.get("push") != null) {
-    const todayIsoP = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    const todayIsoP = todayBkkIso();
     const days = Math.min(31, Math.max(1, Math.floor(Number(sp.get("days")) || 0)));
     const target = Math.max(0, Math.floor(Number(sp.get("target")) || 0));
     if (!days || !target) return NextResponse.json({ error: "bad_input", message: "ระบุจำนวนวันและยอดเป้าหมาย" }, { status: 400 });
@@ -64,7 +76,7 @@ export function GET(req: Request) {
   const now = bkkNow();
   const year = Number(sp.get("year")) || now.year;
   const month = Number(sp.get("month")) || now.month;
-  const todayIso = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const todayIso = todayBkkIso();
   const monthCompare = monthComparison(branchId, year, month, todayIso);
   // Weekday pattern reflects data up to the viewed month (today for the current
   // month, else that month's end).
