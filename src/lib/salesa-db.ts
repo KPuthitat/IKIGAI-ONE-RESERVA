@@ -352,6 +352,14 @@ export function getMonthlyTarget(branchId: number): number | null {
   return r?.monthly_target ?? null;
 }
 
+/** Branch ids that have a positive monthly target — used for the company-wide
+ *  annual projection (owner 2026-09-20). */
+export function branchIdsWithTarget(): number[] {
+  return (getDb().prepare(
+    "SELECT branch_id FROM salesa_settings WHERE monthly_target IS NOT NULL AND monthly_target > 0"
+  ).all() as Array<{ branch_id: number }>).map((r) => r.branch_id);
+}
+
 export function setMonthlyTarget(branchId: number, target: number | null): void {
   const clean = target != null && target > 0 ? target : null;
   getDb().prepare(

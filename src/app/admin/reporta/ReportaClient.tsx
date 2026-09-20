@@ -96,6 +96,7 @@ type SalesPushPlan = {
   verdictText: string; advice: string[];
 };
 type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
+type Annual = { year: number; annualTarget: number; ytdNett: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean; throughDate: string; branchCount: number };
 type MonthlyAnalytics = {
   year: number; month: number; ym: string; label: string; dayCount: number;
   totalNett: number; totalBills: number; totalPax: number; totalDiscount: number;
@@ -201,6 +202,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [panelPeriod, setPanelPeriod] = useState<"month" | "week">("month");
   const [insightRange, setInsightRange] = useState<InsightRange | null>(null);
   const [monthTarget, setMonthTarget] = useState<MonthTarget | null>(null);
+  const [annual, setAnnual] = useState<Annual | null>(null);
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [pushDays, setPushDays] = useState(3);
   const [pushTarget, setPushTarget] = useState("");
@@ -238,7 +240,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     if (r.ok) {
       setDays(r.view.days); setHasLineGroup(r.hasLineGroup); setMonthCompare(r.monthCompare ?? null);
       setWeekdays(r.weekdays ?? []); setDiscount(r.discount ?? null); setChannels(r.channels ?? null);
-      setMonthTarget(r.monthTarget ?? null); setMonthSentAt(r.monthSentAt ?? null); setInsights(r.insights ?? null);
+      setMonthTarget(r.monthTarget ?? null); setAnnual(r.annual ?? null); setMonthSentAt(r.monthSentAt ?? null); setInsights(r.insights ?? null);
       setInsightRange(r.insightRange ?? null);
       if (r.cardColor) setCardColor(r.cardColor);
     }
@@ -537,6 +539,22 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
             )}
             {!monthTarget && (
               <div className="text-[11px] text-slate-400 pt-1">ยังไม่ได้ตั้งเป้ายอดขาย — ตั้งได้ที่ ⚙️ ตั้งค่ากลุ่ม LINE</div>
+            )}
+
+            {/* Full-year projection (owner 2026-09-20): annual target = monthly × 12. */}
+            {annual && (
+              <div className="pt-2 mt-1 border-t border-slate-200 space-y-1">
+                <div className="flex items-baseline justify-between gap-2 text-[11px]">
+                  <span className="text-slate-500">เป้าทั้งปี {annual.year + 543} · {baht(annual.annualTarget)}</span>
+                  <span className={`font-bold ${annual.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{annual.pctOfTarget.toFixed(0)}% ของเป้า</span>
+                </div>
+                <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
+                  <div className={`h-full ${annual.pctOfTarget >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, annual.pctOfTarget)}%` }} />
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  YTD {baht(annual.ytdNett)} · คาดสิ้นปี <b className={annual.onTrack ? "text-emerald-600" : "text-amber-600"}>{baht(annual.projectedNett)}</b> ({annual.projectedPct.toFixed(0)}% ของเป้า) · {annual.onTrack ? "มีแนวโน้มถึงเป้าทั้งปี ✓" : "ต่ำกว่าเป้าทั้งปี ต้องเร่ง"}
+                </div>
+              </div>
             )}
           </div>
         )}

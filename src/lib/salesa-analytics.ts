@@ -4,7 +4,7 @@
 
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
 import type { MenuEntry } from "./salesa-parse";
-import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, itemUnitsRange, receiptItemSets, hasReceiptData, type DailyRow } from "./salesa-db";
+import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTarget, branchIdsWithTarget, type DailyRow } from "./salesa-db";
 
 function addDaysIso(iso: string, n: number): string {
   const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n);
@@ -452,6 +452,75 @@ export function targetProgress(target: number, mtdNett: number, throughDay: numb
     projectedPct: round2((projectedNett / target) * 100),
     onTrack: projectedNett >= target
   };
+}
+
+// ── Annual projection (owner 2026-09-20): full-year target = monthly × 12, vs
+// year-to-date sales and a run-rate projection to year end. ──────────────────
+export type AnnualProjection = {
+  year: number;
+  annualTarget: number;   // monthly target × 12
+  ytdNett: number;        // Σ nett, Jan 1 .. throughDate
+  pctOfTarget: number;
+  projectedNett: number;  // run-rate to Dec 31
+  projectedPct: number;
+  onTrack: boolean;
+  throughDate: string;
+  branchCount: number;    // 1 for a branch; N for the company roll-up
+};
+
+function daysInYear(y: number): number {
+  return ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365;
+}
+function dayOfYear(iso: string): number {
+  const y = Number(iso.slice(0, 4));
+  return Math.floor((Date.parse(`${iso}T00:00:00Z`) - Date.parse(`${y}-01-01T00:00:00Z`)) / 86_400_000) + 1;
+}
+
+/** Build an AnnualProjection from a combined annual target + YTD nett. */
+function annualFrom(year: number, annualTarget: number, ytdNett: number, todayIso: string, branchCount: number): AnnualProjection | null {
+  if (!(annualTarget > 0)) return null;
+  const doy = dayOfYear(todayIso);
+  const projectedNett = doy > 0 ? round2((ytdNett / doy) * daysInYear(year)) : ytdNett;
+  return {
+    year, annualTarget, ytdNett: round2(ytdNett),
+    pctOfTarget: round2((ytdNett / annualTarget) * 100),
+    projectedNett,
+    projectedPct: round2((projectedNett / annualTarget) * 100),
+    onTrack: projectedNett >= annualTarget,
+    throughDate: todayIso,
+    branchCount
+  };
+}
+
+/** Per-branch annual projection. Null when the branch has no monthly target. */
+export function annualProjection(branchId: number, todayIso: string): AnnualProjection | null {
+  const target = getMonthlyTarget(branchId);
+  if (target == null || target <= 0) return null;
+  const y = Number(todayIso.slice(0, 4));
+  const rows = listRange(branchId, `${y}-01-01`, todayIso).filter((d) => d.has_sales);
+  const ytd = rows.reduce((s, d) => s + d.nett, 0);
+  return annualFrom(y, target * 12, ytd, todayIso, 1);
+}
+
+/** Annual projection summed across the given branches (only those with a
+ *  target). Used for the ACCOUNTA company roll-up (scoped to a company's
+ *  branches) and, via companyAnnualProjection, for every targeted branch. */
+export function annualProjectionForBranches(branchIds: number[], todayIso: string): AnnualProjection | null {
+  const y = Number(todayIso.slice(0, 4));
+  let annualTarget = 0, ytd = 0, n = 0;
+  for (const id of branchIds) {
+    const target = getMonthlyTarget(id);
+    if (target == null || target <= 0) continue;
+    annualTarget += target * 12;
+    ytd += listRange(id, `${y}-01-01`, todayIso).filter((d) => d.has_sales).reduce((s, d) => s + d.nett, 0);
+    n++;
+  }
+  return annualFrom(y, annualTarget, ytd, todayIso, n);
+}
+
+/** Company-wide annual projection — every branch that has a target. */
+export function companyAnnualProjection(todayIso: string): AnnualProjection | null {
+  return annualProjectionForBranches(branchIdsWithTarget(), todayIso);
 }
 
 // ── A · weekday performance, D · discount insight, E · channel mix ──────────

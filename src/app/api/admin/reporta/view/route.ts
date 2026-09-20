@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
-import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle } from "@/lib/salesa-analytics";
+import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection } from "@/lib/salesa-analytics";
 import { salesPushPlan } from "@/lib/salesa-push";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
@@ -74,6 +74,7 @@ export function GET(req: Request) {
   const target = getMonthlyTarget(branchId);
   const monthTarget = target != null ? targetProgress(target, monthCompare.mtdNett, monthCompare.throughDay, year, month) : null;
   const monthSentAt = monthlySentAt(branchId, `${year}-${String(month).padStart(2, "0")}`);
+  const annual = annualProjection(branchId, todayIso);  // full-year (monthly×12) projection
   // Insight panels (channels / discount / marketing / receipt) can be viewed for
   // this month or the current ISO week (owner 2026-09-18). The top MTD/target/
   // weekday cards stay month-level.
@@ -92,5 +93,5 @@ export function GET(req: Request) {
     hasReceipt: d.has_receipt === 1,
     dailySentAt: d.daily_sent_at
   }));
-  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, insights, insightRange: range });
+  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, annual, insights, insightRange: range });
 }
