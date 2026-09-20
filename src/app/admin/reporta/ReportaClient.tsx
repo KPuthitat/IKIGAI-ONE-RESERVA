@@ -204,6 +204,11 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [pushDays, setPushDays] = useState(3);
   const [pushTarget, setPushTarget] = useState("");
+  // Staffing planner assumptions (owner 2026-09-20): labor cost target % of sales
+  // and monthly cost per head. Default 15% / ฿15,000 → every ฿100k of sales funds
+  // ~1 head. Adjustable on the fly.
+  const [laborPct, setLaborPct] = useState(15);
+  const [perHeadCost, setPerHeadCost] = useState(15000);
   const [plan, setPlan] = useState<SalesPushPlan | null>(null);
   const [planBusy, setPlanBusy] = useState(false);
   const [hasLineGroup, setHasLineGroup] = useState(true);
@@ -805,6 +810,85 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           </div>
         </div>
       )}
+
+      {/* Staffing planner (owner 2026-09-20): translate sales into an affordable
+          headcount (labor% ÷ cost/head), then per-weekday people from the 8-week
+          weekday averages, plus the peak hour to concentrate staff. Client-only —
+          derived from the month projection + weekday stats already loaded. */}
+      {monthCompare && monthCompare.throughDay > 0 && (() => {
+        const dim = new Date(year, month, 0).getDate();
+        const mtdAvg = monthCompare.mtdNett / monthCompare.throughDay;
+        const projected = mtdAvg * dim;
+        const laborFrac = laborPct / 100;
+        const budgetMonth = laborFrac * projected;
+        const roster = perHeadCost > 0 ? budgetMonth / perHeadCost : 0;
+        const WORKING_DAYS = 26;
+        const perHeadDaily = perHeadCost > 0 ? perHeadCost / WORKING_DAYS : 0;
+        const headsForSales = (sales: number) => perHeadDaily > 0 ? (laborFrac * sales) / perHeadDaily : 0;
+        const wk = weekdays.filter((w) => w.days > 0);
+        const maxHead = Math.max(1, ...wk.map((w) => headsForSales(w.avgNett)));
+        const peak = insights?.receipt?.peakHour ?? null;
+        return (
+          <div className="card space-y-3">
+            <div className="flex items-start gap-3">
+              <OwlMascot size={40} mood="thinking" className="shrink-0" ariaLabel="น้องฮูก" />
+              <div>
+                <h2 className="font-bold text-slate-800">อัตรากำลังที่เหมาะสม · ประเมินจากยอดขาย</h2>
+                <p className="text-xs text-slate-500 mt-0.5">อิงต้นทุนแรงงานเป็น % ของยอดขาย และค่าตอบแทนต่อคน/เดือน · คิดวันทำงาน {WORKING_DAYS} วัน/เดือน</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-sm">
+                <span className="block text-[11px] text-slate-500 mb-0.5">ต้นทุนแรงงาน (% ของยอดขาย)</span>
+                <input type="number" min={1} max={100} value={laborPct}
+                  onChange={(e) => setLaborPct(Math.min(100, Math.max(1, Math.floor(Number(e.target.value) || 1))))}
+                  className="w-24 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+              </label>
+              <label className="text-sm">
+                <span className="block text-[11px] text-slate-500 mb-0.5">ค่าตอบแทน/คน/เดือน (บาท)</span>
+                <input type="text" inputMode="numeric" value={perHeadCost ? perHeadCost.toLocaleString("th-TH") : ""}
+                  onChange={(e) => setPerHeadCost(Math.floor(Number(e.target.value.replace(/\D/g, "")) || 0))}
+                  className="w-32 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+              </label>
+            </div>
+
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-900">
+              คาดการณ์ยอดสิ้นเดือน <b>{baht(projected)}</b> · งบแรงงาน {laborPct}% = <b>{baht(budgetMonth)}</b>
+              <div className="mt-1">รับพนักงานได้ประมาณ <b className="text-emerald-700 text-lg">{roster.toFixed(1)} คน</b> <span className="text-emerald-700/70">(ค่าตอบแทน {intTh(perHeadCost)}/คน)</span></div>
+              <div className="text-[11px] text-emerald-700/70 mt-0.5">เฉลี่ยต่อวันเดือนนี้ {baht(mtdAvg)} → ~{headsForSales(mtdAvg).toFixed(1)} คน/วัน (ค่ากลาง)</div>
+            </div>
+
+            {wk.length > 0 && (
+              <div>
+                <div className="text-xs font-bold text-slate-600 mb-1">แนะนำจำนวนคนต่อวัน (ตามยอดเฉลี่ยแต่ละวัน 8 สัปดาห์)</div>
+                <div className="space-y-1">
+                  {wk.map((w) => {
+                    const h = headsForSales(w.avgNett);
+                    return (
+                      <div key={w.dow} className="flex items-center gap-2 text-sm">
+                        <span className="w-14 text-slate-500 shrink-0">{w.label}</span>
+                        <div className="flex-1 h-4 rounded bg-slate-100 overflow-hidden">
+                          <div className="h-full bg-emerald-400" style={{ width: `${Math.max(4, Math.min(100, (h / maxHead) * 100))}%` }} />
+                        </div>
+                        <span className="w-28 text-right text-slate-700 shrink-0"><b>{Math.max(1, Math.round(h))} คน</b> · {baht(w.avgNett)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {peak != null && (
+              <div className="text-xs text-slate-500 rounded-lg bg-slate-50 p-2.5">
+                ช่วงพีค <b className="text-emerald-600">{String(peak).padStart(2, "0")}:00</b> — จัดคนให้เยอะช่วงนี้ (ดูกราฟยอดขาย/บิลตามชั่วโมงด้านล่าง)
+              </div>
+            )}
+
+            <p className="text-[10px] text-slate-400">* เป็นประมาณการช่วยตัดสินใจ ใช้คู่กับหน้างานจริง — ปรับ % และค่าตอบแทนให้ตรงกับร้านได้</p>
+          </div>
+        );
+      })()}
 
       {/* Insights: weekday pattern (A, rolling 8w) + channel mix (E) + discount ROI (D) */}
       {days.length > 0 && (
