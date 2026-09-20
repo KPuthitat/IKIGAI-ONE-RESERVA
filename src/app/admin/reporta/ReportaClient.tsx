@@ -624,7 +624,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       {/* Day analysis — moved to the top (owner 2026-09-19: บทวิเคราะห์ขึ้นบน) */}
       {selDate && daily && (
         <div className="card space-y-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center justify-center sm:justify-between gap-3 flex-wrap">
             <NavStepper eyebrow="สรุปยอดขายรายวัน" label={daily.dateLabel}
               onPrev={() => gotoDay(-1)} onNext={() => gotoDay(1)}
               prevDisabled={dayIdx <= 0} nextDisabled={dayIdx < 0 || dayIdx >= days.length - 1}
@@ -712,7 +712,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
 
       {/* Weekly */}
       <div className="card space-y-3">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center justify-center sm:justify-between gap-2 flex-wrap">
           <h2 className="font-bold text-slate-800">สรุปรายสัปดาห์ (จันทร์–อาทิตย์)</h2>
           <div className="flex items-center gap-2 flex-wrap">
             <NavStepper eyebrow="สัปดาห์" label={weekly?.label ?? "—"}
@@ -726,7 +726,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         </div>
         {weekly && (
           <>
-            <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center justify-center sm:justify-between gap-2 flex-wrap">
               <div className="text-sm text-slate-600">{weekly.label} · รวม {weekly.dayCount} วัน {weeklySentAt ? "· ✓ ส่งแล้ว" : ""}</div>
               <button onClick={() => sendWeekly(weekly.weekStart)} disabled={!hasLineGroup || weekly.dayCount === 0} className="btn-success text-sm px-4 py-2 disabled:opacity-50">
                 {weeklySentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
@@ -780,7 +780,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       {/* Analytics period toggle (owner 2026-09-18): view the insight panels for
           this month or the current ISO week. */}
       {days.length > 0 && (
-        <div className="flex items-end justify-between gap-2 flex-wrap pt-1">
+        <div className="flex items-end justify-center sm:justify-between gap-2 flex-wrap pt-1">
           <div>
             <h2 className="font-bold text-slate-800">การวิเคราะห์ภาพรวม (เชิงลึก)</h2>
             {insightRange && <p className="text-xs text-slate-500 mt-0.5">ช่วง{nowLabel}: {insightRange.rangeLabel}</p>}
