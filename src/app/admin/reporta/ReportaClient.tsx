@@ -104,6 +104,30 @@ type MonthlyAnalytics = {
   topItems: MenuRank[]; topCategories: MenuRank[];
 };
 
+/** Modern rounded ← [eyebrow / label] → stepper, shared by the day/week/month
+ *  card headers so every "top of the box" navigator looks the same and never
+ *  wraps its label on mobile (owner 2026-09-20). */
+function NavStepper({ eyebrow, label, onPrev, onNext, prevDisabled, nextDisabled, prevTitle, nextTitle }: {
+  eyebrow: string; label: string; onPrev: () => void; onNext: () => void;
+  prevDisabled?: boolean; nextDisabled?: boolean; prevTitle?: string; nextTitle?: string;
+}) {
+  const btn = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-slate-800 hover:shadow-sm disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:shadow-none transition";
+  return (
+    <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50/60 p-1">
+      <button type="button" onClick={onPrev} disabled={prevDisabled} title={prevTitle} aria-label={prevTitle} className={btn}>
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 6l-6 6 6 6" /></svg>
+      </button>
+      <div className="px-2 text-center leading-tight min-w-[8.5rem]">
+        <div className="text-[9px] uppercase tracking-[1.5px] text-slate-400">{eyebrow}</div>
+        <div className="font-bold text-slate-800 text-[14px]">{label}</div>
+      </div>
+      <button type="button" onClick={onNext} disabled={nextDisabled} title={nextTitle} aria-label={nextTitle} className={btn}>
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 6l6 6-6 6" /></svg>
+      </button>
+    </div>
+  );
+}
+
 function MenuList({ title, list, muted }: { title: string; list: MenuRank[]; muted?: boolean }) {
   if (!list.length) return null;
   return (
@@ -473,10 +497,10 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           the per-day list collapsed by default, so managing/picking days is close
           to where you import; month header + target progress + monthly send stay. */}
       <div className="card space-y-3">
-        <div className="flex items-center justify-between">
-          <button onClick={() => shiftMonth(-1)} className="btn-secondary text-sm px-3 py-1.5">←</button>
-          <h2 className="font-bold text-slate-800">{TH_MONTHS[month]} {year + 543}</h2>
-          <button onClick={() => shiftMonth(1)} className="btn-secondary text-sm px-3 py-1.5">→</button>
+        <div className="flex items-center justify-center">
+          <NavStepper eyebrow="เดือน" label={`${TH_MONTHS[month]} ${year + 543}`}
+            onPrev={() => shiftMonth(-1)} onNext={() => shiftMonth(1)}
+            prevTitle="เดือนก่อน" nextTitle="เดือนถัดไป" />
         </div>
 
         {/* Month-level cumulative comparisons (owner 2026-09-17). */}
@@ -578,23 +602,10 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       {selDate && daily && (
         <div className="card space-y-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            {/* Modern date navigator (owner 2026-09-20): rounded ← [date] → group */}
-            <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50/60 p-1">
-              <button onClick={() => gotoDay(-1)} disabled={dayIdx <= 0}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-slate-800 hover:shadow-sm disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:shadow-none transition"
-                title="วันก่อนหน้า" aria-label="วันก่อนหน้า">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 6l-6 6 6 6" /></svg>
-              </button>
-              <div className="px-2 text-center leading-tight min-w-[9rem]">
-                <div className="text-[9px] uppercase tracking-[1.5px] text-slate-400">สรุปยอดขายรายวัน</div>
-                <div className="font-bold text-slate-800 text-[15px]">{daily.dateLabel}</div>
-              </div>
-              <button onClick={() => gotoDay(1)} disabled={dayIdx < 0 || dayIdx >= days.length - 1}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-slate-800 hover:shadow-sm disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:shadow-none transition"
-                title="วันถัดไป" aria-label="วันถัดไป">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 6l6 6-6 6" /></svg>
-              </button>
-            </div>
+            <NavStepper eyebrow="สรุปยอดขายรายวัน" label={daily.dateLabel}
+              onPrev={() => gotoDay(-1)} onNext={() => gotoDay(1)}
+              prevDisabled={dayIdx <= 0} nextDisabled={dayIdx < 0 || dayIdx >= days.length - 1}
+              prevTitle="วันก่อนหน้า" nextTitle="วันถัดไป" />
             <div className="flex items-center gap-2">
               {daily.row.has_sales === 1 && (
                 <button onClick={() => sendDaily(daily.date)} disabled={!hasLineGroup}
@@ -680,10 +691,14 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       <div className="card space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h2 className="font-bold text-slate-800">สรุปรายสัปดาห์ (จันทร์–อาทิตย์)</h2>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setWeekStart(addDays(weekStart, -7))} className="btn-secondary text-sm px-3 py-1.5">← สัปดาห์ก่อนหน้า</button>
-            <button onClick={() => setWeekStart(mondayOf(todayBkk()))} className="btn-secondary text-sm px-3 py-1.5">สัปดาห์นี้</button>
-            <button onClick={() => setWeekStart(addDays(weekStart, 7))} className="btn-secondary text-sm px-3 py-1.5">สัปดาห์ถัดไป →</button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <NavStepper eyebrow="สัปดาห์" label={weekly?.label ?? "—"}
+              onPrev={() => setWeekStart(addDays(weekStart, -7))} onNext={() => setWeekStart(addDays(weekStart, 7))}
+              prevTitle="สัปดาห์ก่อนหน้า" nextTitle="สัปดาห์ถัดไป" />
+            <button type="button" onClick={() => setWeekStart(mondayOf(todayBkk()))}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-800 rounded-full border border-slate-200 px-3 py-2 hover:bg-slate-50 transition">
+              สัปดาห์นี้
+            </button>
           </div>
         </div>
         {weekly && (
