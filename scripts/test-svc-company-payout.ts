@@ -173,6 +173,15 @@ process.env.DATABASE_PATH = TMP;
   const octr = sc.computeMonthlySvcSummary(RB, "2026-10");
   ok("resigned member is gone by October (last day already passed)", !octr.rows.some((r) => r.userId === res));
 
+  // ── "ตรวจแล้ว" per-line review sign-off (owner 2026-09-20) ──
+  ok("no review by default", sc.listSvcLineReviews("2026-08").size === 0);
+  sc.setSvcLineReview("2026-08", res, true, uid);
+  ok("review recorded for the month", sc.listSvcLineReviews("2026-08").has(res));
+  ok("review carries the reviewer name", sc.listSvcLineReviews("2026-08").get(res)?.reviewedByName != null);
+  ok("review is scoped to its month (Sept empty)", !sc.listSvcLineReviews("2026-09").has(res));
+  sc.setSvcLineReview("2026-08", res, false, uid);
+  ok("review can be cleared", !sc.listSvcLineReviews("2026-08").has(res));
+
   console.log(`\nsvc company-payout test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);

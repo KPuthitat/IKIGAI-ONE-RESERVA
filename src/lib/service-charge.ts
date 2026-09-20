@@ -1221,6 +1221,43 @@ export function setSvcForfeitExemption(args: {
   }
 }
 
+// ── Per-line "ตรวจแล้ว" review sign-off (owner 2026-09-20) ───────────────────
+// A reviewer ticks a row once they've verified that month's calculation for a
+// person. Touches no money — a checklist marker only; absence = not reviewed.
+
+export type SvcLineReview = { reviewedAt: string; reviewedByName: string | null };
+
+/** Reviewed (user → who/when) for a month, for rendering the ✓ ตรวจแล้ว state. */
+export function listSvcLineReviews(yearMonth: string): Map<number, SvcLineReview> {
+  const rows = getDb().prepare(`
+    SELECT r.user_id AS userId, r.reviewed_at AS reviewedAt,
+           u.display_name AS byName, u.title_prefix AS byPrefix
+    FROM svc_line_reviews r
+    LEFT JOIN users u ON u.id = r.reviewed_by
+    WHERE r.year_month = ?
+  `).all(yearMonth) as Array<{ userId: number; reviewedAt: string; byName: string | null; byPrefix: string | null }>;
+  const m = new Map<number, SvcLineReview>();
+  for (const r of rows) {
+    m.set(r.userId, { reviewedAt: r.reviewedAt, reviewedByName: r.byName ? nameWithPrefix(r.byPrefix, r.byName) : null });
+  }
+  return m;
+}
+
+/** Toggle the "ตรวจแล้ว" mark for a (month, user). */
+export function setSvcLineReview(yearMonth: string, userId: number, reviewed: boolean, byUserId: number): void {
+  const db = getDb();
+  if (reviewed) {
+    db.prepare(`
+      INSERT INTO svc_line_reviews (year_month, user_id, reviewed_at, reviewed_by)
+      VALUES (?, ?, datetime('now'), ?)
+      ON CONFLICT(year_month, user_id) DO UPDATE SET
+        reviewed_at = datetime('now'), reviewed_by = excluded.reviewed_by
+    `).run(yearMonth, userId, byUserId);
+  } else {
+    db.prepare("DELETE FROM svc_line_reviews WHERE year_month = ? AND user_id = ?").run(yearMonth, userId);
+  }
+}
+
 export type SvcDeductionItem = { id: number; amount: number; reason: string | null };
 
 /** All ad-hoc SVC deductions for a month, grouped by user (owner 2026-08-20). */
