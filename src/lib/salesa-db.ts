@@ -5,6 +5,7 @@
 
 import { getDb } from "./db";
 import type { SalesCloseUp, SalesOverview, SalesReceipt, PayEntry, TypeEntry, MenuEntry } from "./salesa-parse";
+import { groupLabel, pairKey, findMergeCandidates, type MergeCandidate } from "./salesa-names";
 
 export type DailyRow = {
   branch_id: number;
@@ -165,6 +166,154 @@ export function existingKinds(branchId: number, date: string): { sales: boolean;
   return { sales: !!r?.has_sales, menu: !!r?.has_menu, receipt: !!r?.has_receipt };
 }
 
+// ── Menu-name aliasing (owner 2026-09-20) ──────────────────────────────────
+// A branch may rename a dish over time; once the owner confirms two spellings
+// are the same item they share a `root`, and reads below fold members together
+// under a joined display label. Non-destructive: the raw rows keep their names,
+// so a merge is fully reversible (delete the group).
+
+/** name → display label for a branch, from confirmed alias groups. Names not in
+ *  any group are absent (they resolve to themselves). Range-independent — built
+ *  from the whole alias table — so a group's label is identical in every view
+ *  and period (keeping cross-period matching, e.g. momentum, correct). */
+function aliasLabelMap(branchId: number): Map<string, string> {
+  const rows = getDb().prepare(
+    "SELECT name, root FROM salesa_menu_alias WHERE branch_id = ?"
+  ).all(branchId) as Array<{ name: string; root: string }>;
+  if (!rows.length) return new Map();
+  const byRoot = new Map<string, string[]>();
+  for (const r of rows) { const a = byRoot.get(r.root) ?? []; a.push(r.name); byRoot.set(r.root, a); }
+  const out = new Map<string, string>();
+  for (const members of byRoot.values()) {
+    const label = groupLabel(members);
+    for (const m of members) out.set(m, label);
+  }
+  return out;
+}
+
+export type MenuGroup = { root: string; members: string[]; label: string };
+
+/** Confirmed "same dish" groups for a branch. */
+export function listMenuGroups(branchId: number): MenuGroup[] {
+  const rows = getDb().prepare(
+    "SELECT name, root FROM salesa_menu_alias WHERE branch_id = ? ORDER BY root, name"
+  ).all(branchId) as Array<{ name: string; root: string }>;
+  const byRoot = new Map<string, string[]>();
+  for (const r of rows) { const a = byRoot.get(r.root) ?? []; a.push(r.name); byRoot.set(r.root, a); }
+  return [...byRoot.entries()]
+    .map(([root, members]) => ({ root, members, label: groupLabel(members) }))
+    .sort((a, b) => a.label.localeCompare(b.label, "th"));
+}
+
+/** Distinct item names for a branch, across both the menu-revenue ranking and
+ *  the per-bill receipt items (the two namespaces the reports aggregate). */
+export function distinctItemNames(branchId: number): string[] {
+  return (getDb().prepare(
+    `SELECT name FROM salesa_menu WHERE branch_id = ? AND kind = 'item'
+     UNION
+     SELECT name FROM salesa_receipt_items WHERE branch_id = ?`
+  ).all(branchId, branchId) as Array<{ name: string }>).map((r) => r.name);
+}
+
+/** Per raw-name totals (revenue + units) — context for the merge review UI. */
+export function rawNameStats(branchId: number): Map<string, { nett: number; units: number }> {
+  const m = new Map<string, { nett: number; units: number }>();
+  const bump = (name: string, nett: number, units: number) => {
+    const e = m.get(name) ?? { nett: 0, units: 0 };
+    e.nett += nett; e.units += units; m.set(name, e);
+  };
+  for (const r of getDb().prepare(
+    "SELECT name, SUM(nett) AS nett FROM salesa_menu WHERE branch_id = ? AND kind = 'item' GROUP BY name"
+  ).all(branchId) as Array<{ name: string; nett: number }>) bump(r.name, r.nett, 0);
+  for (const r of getDb().prepare(
+    "SELECT name, SUM(qty) AS units FROM salesa_receipt_items WHERE branch_id = ? GROUP BY name"
+  ).all(branchId) as Array<{ name: string; units: number }>) bump(r.name, 0, r.units);
+  return m;
+}
+
+function ignoredPairKeys(branchId: number): Set<string> {
+  return new Set((getDb().prepare(
+    "SELECT pair_key FROM salesa_menu_pair_ignored WHERE branch_id = ?"
+  ).all(branchId) as Array<{ pair_key: string }>).map((r) => r.pair_key));
+}
+
+export type MergeSuggestion = MergeCandidate & {
+  aStats: { nett: number; units: number };
+  bStats: { nett: number; units: number };
+};
+
+/** Suggest pairs of item names that might be the same dish, most-confident
+ *  first, excluding pairs already merged or marked "not the same". */
+export function suggestMenuMerges(branchId: number, limit = 40): MergeSuggestion[] {
+  const names = distinctItemNames(branchId);
+  const decided = ignoredPairKeys(branchId);
+  // Never re-suggest two names already in the same confirmed group.
+  for (const g of listMenuGroups(branchId)) {
+    for (let i = 0; i < g.members.length; i++)
+      for (let j = i + 1; j < g.members.length; j++)
+        decided.add(pairKey(g.members[i], g.members[j]));
+  }
+  const stats = rawNameStats(branchId);
+  return findMergeCandidates(names, decided, limit).map((c) => ({
+    ...c,
+    aStats: stats.get(c.a) ?? { nett: 0, units: 0 },
+    bStats: stats.get(c.b) ?? { nett: 0, units: 0 }
+  }));
+}
+
+/** Confirm a set of names are one dish (union-find on `root`). Reuses an
+ *  existing group's root when any selected name already belongs to one, so
+ *  merging into or across groups collapses them into a single group. */
+export function mergeMenuNames(branchId: number, names: string[], userId: number): { root: string } | null {
+  const clean = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
+  if (clean.length < 2) return null;
+  const db = getDb();
+  const tx = db.transaction(() => {
+    const q = db.prepare("SELECT root FROM salesa_menu_alias WHERE branch_id = ? AND name = ?");
+    const roots = new Set<string>();
+    for (const n of clean) {
+      const r = q.get(branchId, n) as { root: string } | undefined;
+      if (r) roots.add(r.root);
+    }
+    const pickStable = (xs: string[]) =>
+      [...xs].sort((a, b) => (a.length - b.length) || a.localeCompare(b, "th"))[0];
+    const root = roots.size ? pickStable([...roots]) : pickStable(clean);
+    if (roots.size) {
+      const upd = db.prepare("UPDATE salesa_menu_alias SET root = ? WHERE branch_id = ? AND root = ?");
+      for (const r of roots) if (r !== root) upd.run(root, branchId, r);
+    }
+    const ins = db.prepare(
+      `INSERT INTO salesa_menu_alias (branch_id, name, root, decided_by) VALUES (?, ?, ?, ?)
+       ON CONFLICT(branch_id, name) DO UPDATE SET root = excluded.root, decided_by = excluded.decided_by, decided_at = datetime('now')`
+    );
+    for (const n of clean) ins.run(branchId, n, root, userId);
+    ins.run(branchId, root, root, userId); // the root is a member of its own group
+    // A merge overrides any earlier "not the same" decision among these names.
+    const delIgnore = db.prepare("DELETE FROM salesa_menu_pair_ignored WHERE branch_id = ? AND pair_key = ?");
+    for (let i = 0; i < clean.length; i++)
+      for (let j = i + 1; j < clean.length; j++)
+        delIgnore.run(branchId, pairKey(clean[i], clean[j]));
+    return root;
+  });
+  return { root: tx() as string };
+}
+
+/** Record that two names are NOT the same dish (so the detector stops suggesting
+ *  them). Harmless no-op if they're already grouped. */
+export function ignoreMenuPair(branchId: number, a: string, b: string, userId: number): void {
+  getDb().prepare(
+    `INSERT INTO salesa_menu_pair_ignored (branch_id, pair_key, decided_by) VALUES (?, ?, ?)
+     ON CONFLICT(branch_id, pair_key) DO NOTHING`
+  ).run(branchId, pairKey(a, b), userId);
+}
+
+/** Dissolve a confirmed group (un-merge) — reads revert to per-name counts. */
+export function unmergeMenuGroup(branchId: number, root: string): number {
+  return getDb().prepare(
+    "DELETE FROM salesa_menu_alias WHERE branch_id = ? AND root = ?"
+  ).run(branchId, root).changes as number;
+}
+
 // ── Reads ────────────────────────────────────────────────────────────────
 
 export function getDaily(branchId: number, date: string): DailyRow | null {
@@ -188,22 +337,46 @@ export function listMonth(branchId: number, year: number, month: number): DailyR
 
 export function getMenu(branchId: number, date: string): { items: MenuEntry[]; categories: MenuEntry[] } {
   const rows = getDb().prepare(
-    "SELECT kind, name, nett FROM salesa_menu WHERE branch_id = ? AND sale_date = ? ORDER BY rank ASC"
-  ).all(branchId, date) as Array<{ kind: string; name: string; nett: number }>;
-  return {
-    items: rows.filter((r) => r.kind === "item").map((r) => ({ name: r.name, nett: r.nett })),
-    categories: rows.filter((r) => r.kind === "category").map((r) => ({ name: r.name, nett: r.nett }))
+    "SELECT kind, name, nett, rank FROM salesa_menu WHERE branch_id = ? AND sale_date = ? ORDER BY rank ASC"
+  ).all(branchId, date) as Array<{ kind: string; name: string; nett: number; rank: number }>;
+  const map = aliasLabelMap(branchId);
+  // Fold merged spellings within the day, keeping the best (lowest) rank so the
+  // display order is preserved. Aliasing is an ITEM concern only — categories
+  // keep their raw names (the alias map is built from item/receipt names).
+  const fold = (kind: "item" | "category"): MenuEntry[] => {
+    const agg = new Map<string, { nett: number; rank: number }>();
+    for (const r of rows) {
+      if (r.kind !== kind) continue;
+      const label = kind === "item" ? (map.get(r.name) ?? r.name) : r.name;
+      const cur = agg.get(label);
+      if (cur) { cur.nett += r.nett; cur.rank = Math.min(cur.rank, r.rank); }
+      else agg.set(label, { nett: r.nett, rank: r.rank });
+    }
+    return [...agg.entries()]
+      .sort((a, b) => a[1].rank - b[1].rank)
+      .map(([name, v]) => ({ name, nett: v.nett }));
   };
+  return { items: fold("item"), categories: fold("category") };
 }
 
-/** Menu revenue aggregated over [start, end] (for the weekly card). */
+/** Menu revenue aggregated over [start, end] (for the weekly card), with merged
+ *  spellings folded under their shared display label. */
 export function menuRange(branchId: number, start: string, end: string, kind: "item" | "category"): MenuEntry[] {
   const rows = getDb().prepare(
     `SELECT name, SUM(nett) AS nett FROM salesa_menu
      WHERE branch_id = ? AND kind = ? AND sale_date BETWEEN ? AND ?
-     GROUP BY name ORDER BY nett DESC`
+     GROUP BY name`
   ).all(branchId, kind, start, end) as Array<{ name: string; nett: number }>;
-  return rows.map((r) => ({ name: r.name, nett: Math.round((r.nett + Number.EPSILON) * 100) / 100 }));
+  // Aliasing is an item concern only; categories keep their raw names.
+  const map = kind === "item" ? aliasLabelMap(branchId) : new Map<string, string>();
+  const agg = new Map<string, number>();
+  for (const r of rows) {
+    const label = map.get(r.name) ?? r.name;
+    agg.set(label, (agg.get(label) ?? 0) + r.nett);
+  }
+  return [...agg.entries()]
+    .map(([name, nett]) => ({ name, nett: Math.round((nett + Number.EPSILON) * 100) / 100 }))
+    .sort((a, b) => b.nett - a.nett);
 }
 
 // ── Receipt reads (owner 2026-09-18: hourly + basket, excl STAFF) ────────────
@@ -218,18 +391,33 @@ export function hourlyReceipts(branchId: number, start: string, end: string): Ar
     .map((r) => ({ hour: r.hour, bills: r.bills, nett: Math.round((r.nett + Number.EPSILON) * 100) / 100 }));
 }
 
-/** Units sold per item over [start, end], excluding staff bills. */
+/** Units sold per item over [start, end], excluding staff bills, with merged
+ *  spellings folded under their shared display label. Folds at the bill level so
+ *  a single bill listing two spellings of one dish counts as one bill, not two
+ *  (units still sum). */
 export function itemUnitsRange(branchId: number, start: string, end: string): Array<{ name: string; units: number; bills: number }> {
-  return getDb().prepare(
-    `SELECT i.name AS name, SUM(i.qty) AS units, COUNT(DISTINCT i.bill_no) AS bills
+  const rows = getDb().prepare(
+    `SELECT i.name AS name, i.bill_no AS bill, SUM(i.qty) AS qty
      FROM salesa_receipt_items i
      JOIN salesa_receipts r ON r.branch_id = i.branch_id AND r.sale_date = i.sale_date AND r.bill_no = i.bill_no
      WHERE i.branch_id = ? AND i.sale_date BETWEEN ? AND ? AND r.is_staff = 0
-     GROUP BY i.name ORDER BY units DESC`
-  ).all(branchId, start, end) as Array<{ name: string; units: number; bills: number }>;
+     GROUP BY i.name, i.sale_date, i.bill_no`
+  ).all(branchId, start, end) as Array<{ name: string; bill: string; qty: number }>;
+  const map = aliasLabelMap(branchId);
+  const agg = new Map<string, { units: number; bills: Set<string> }>();
+  for (const r of rows) {
+    const label = map.get(r.name) ?? r.name;
+    const e = agg.get(label) ?? { units: 0, bills: new Set<string>() };
+    e.units += r.qty; e.bills.add(r.bill); agg.set(label, e);
+  }
+  return [...agg.entries()]
+    .map(([name, e]) => ({ name, units: e.units, bills: e.bills.size }))
+    .sort((a, b) => b.units - a.units);
 }
 
-/** Per-bill item name lists over [start, end], excluding staff bills (basket). */
+/** Per-bill item name lists over [start, end], excluding staff bills (basket).
+ *  Names fold to their merged label and are de-duplicated within a bill, so a
+ *  bill listing two spellings of one dish counts it once. */
 export function receiptItemSets(branchId: number, start: string, end: string): string[][] {
   const rows = getDb().prepare(
     `SELECT i.bill_no AS bill, i.name AS name
@@ -237,9 +425,14 @@ export function receiptItemSets(branchId: number, start: string, end: string): s
      JOIN salesa_receipts r ON r.branch_id = i.branch_id AND r.sale_date = i.sale_date AND r.bill_no = i.bill_no
      WHERE i.branch_id = ? AND i.sale_date BETWEEN ? AND ? AND r.is_staff = 0`
   ).all(branchId, start, end) as Array<{ bill: string; name: string }>;
-  const byBill = new Map<string, string[]>();
-  for (const r of rows) { const a = byBill.get(r.bill) ?? []; a.push(r.name); byBill.set(r.bill, a); }
-  return [...byBill.values()];
+  const map = aliasLabelMap(branchId);
+  const byBill = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const s = byBill.get(r.bill) ?? new Set<string>();
+    s.add(map.get(r.name) ?? r.name);
+    byBill.set(r.bill, s);
+  }
+  return [...byBill.values()].map((s) => [...s]);
 }
 
 export function hasReceiptData(branchId: number, start: string, end: string): boolean {

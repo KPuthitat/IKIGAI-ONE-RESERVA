@@ -97,6 +97,10 @@ type SalesPushPlan = {
 };
 type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
 type Annual = { year: number; annualTarget: number; ytdNett: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean; throughDate: string; branchCount: number };
+// Menu-name merging (owner 2026-09-20): similar spellings that might be one dish.
+type NameStat = { nett: number; units: number };
+type MergeSuggestion = { a: string; b: string; score: number; reason: "exact" | "contains" | "fuzzy"; aStats: NameStat; bStats: NameStat };
+type MergeGroup = { root: string; members: string[]; label: string };
 type MonthlyAnalytics = {
   year: number; month: number; ym: string; label: string; dayCount: number;
   totalNett: number; totalBills: number; totalPax: number; totalDiscount: number;
@@ -226,6 +230,11 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [pin, setPin] = useState<null | { title: string; preview?: ReactNode; run: (pin: string) => Promise<{ ok: boolean; message?: string }> }>(null);
   const [cardColor, setCardColor] = useState(defaultColor);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Menu-name merging (owner 2026-09-20).
+  const [mergeSuggestions, setMergeSuggestions] = useState<MergeSuggestion[]>([]);
+  const [mergeGroups, setMergeGroups] = useState<MergeGroup[]>([]);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [showMerged, setShowMerged] = useState(false);
   const [picked, setPicked] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
@@ -257,8 +266,43 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     if (r.ok) { setWeekly(r.weekly); setWeeklySentAt(r.weeklySentAt); }
   }, []);
 
+  // Menu-name merging (owner 2026-09-20): pull the possible-duplicate suggestions
+  // and the already-merged groups. Best-effort — never blocks the dashboard.
+  const loadMerges = useCallback(async () => {
+    try {
+      const r = await fetch("/api/admin/reporta/menu-aliases").then((x) => x.json());
+      if (r.ok) { setMergeSuggestions(r.suggestions ?? []); setMergeGroups(r.groups ?? []); }
+    } catch { /* ignore */ }
+  }, []);
+
+  // Apply a merge decision, then refresh both the suggestions and the analytics
+  // (numbers change once names fold together). The POST returns fresh state.
+  const decideMerge = async (
+    body: { action: "merge"; names: string[] } | { action: "ignore"; a: string; b: string } | { action: "unmerge"; root: string }
+  ) => {
+    setMergeBusy(true);
+    try {
+      const r = await fetch("/api/admin/reporta/menu-aliases", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+      }).then((x) => x.json());
+      if (r.ok) {
+        setMergeSuggestions(r.suggestions ?? []); setMergeGroups(r.groups ?? []);
+        // Fold takes effect across every view — refresh what's on screen.
+        await loadMonth();
+        await loadWeek(weekStart);
+        if (selDate) await loadDay(selDate);
+        if (body.action === "merge") setMsg({ kind: "ok", text: "รวมเป็นเมนูเดียวแล้ว · ยอดถูกนับรวมกันทุกหน้า" });
+        else if (body.action === "unmerge") setMsg({ kind: "ok", text: "ยกเลิกการรวมแล้ว" });
+      } else {
+        setMsg({ kind: "err", text: r.message ?? r.error ?? "ทำรายการไม่สำเร็จ" });
+      }
+    } catch { setMsg({ kind: "err", text: "ทำรายการไม่สำเร็จ" }); }
+    setMergeBusy(false);
+  };
+
   useEffect(() => { loadMonth(); }, [loadMonth]);
   useEffect(() => { loadWeek(weekStart); }, [weekStart, loadWeek]);
+  useEffect(() => { loadMerges(); }, [loadMerges]);
 
   // Default the day-analysis to the latest day that has data whenever the month
   // loads/changes — the analysis sits at the top now, so the owner shouldn't
@@ -279,6 +323,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     await loadMonth();
     await loadWeek(weekStart);
     if (selDate) await loadDay(selDate);
+    await loadMerges();   // re-check for newly similar menu names
     setAnalyzing(false);
     setMsg({ kind: "ok", text: "วิเคราะห์ใหม่จากข้อมูลล่าสุดแล้ว" });
   };
@@ -318,6 +363,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         }
         setPicked([]);
         if (fileRef.current) fileRef.current.value = "";
+        loadMerges();   // a new file may introduce a renamed spelling to reconcile
         // Jump the whole page to the imported file's month, so the list, weekly
         // and insights follow the data just added — not whatever month was open
         // (owner 2026-09-19: import August → show August, not September).
@@ -799,6 +845,63 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Menu-name merging (owner 2026-09-20): when the POS shows a dish under a
+          new spelling, offer to fold it into the original so sales aren't split
+          and double-counted. Non-blocking — the owner confirms each pair. */}
+      {(mergeSuggestions.length > 0 || mergeGroups.length > 0) && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h2 className="font-bold text-slate-800">ชื่อเมนูที่อาจเป็นตัวเดียวกัน{mergeSuggestions.length > 0 ? ` (${mergeSuggestions.length})` : ""}</h2>
+              <p className="text-xs text-slate-500 mt-0.5">ถ้ามีการตั้งชื่อใหม่ ระบบจะถามเพื่อรวมยอดให้เป็นเมนูเดียว จะได้ไม่ถูกนับแยกกัน</p>
+            </div>
+            {mergeGroups.length > 0 && (
+              <button type="button" onClick={() => setShowMerged((s) => !s)} className="text-sm text-brand hover:underline shrink-0">
+                {showMerged ? "ซ่อนที่รวมแล้ว" : `รวมแล้ว ${mergeGroups.length} รายการ`}
+              </button>
+            )}
+          </div>
+
+          {mergeSuggestions.length === 0 ? (
+            <p className="text-sm text-slate-400">ตอนนี้ไม่พบชื่อเมนูที่อาจซ้ำกัน</p>
+          ) : (
+            <ul className="space-y-2">
+              {mergeSuggestions.map((s) => (
+                <li key={`${s.a}|${s.b}`} className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div className="text-sm text-slate-700 min-w-0">
+                      <div className="font-semibold text-slate-800 break-words">{s.a} <span className="font-normal text-slate-400">↔</span> {s.b}</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5 break-words">
+                        {s.a}: {baht(s.aStats.nett)} · {intTh(s.aStats.units)} ครั้ง — {s.b}: {baht(s.bStats.nett)} · {intTh(s.bStats.units)} ครั้ง
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button type="button" disabled={mergeBusy} onClick={() => decideMerge({ action: "merge", names: [s.a, s.b] })}
+                        className="btn-primary text-xs px-3 py-1.5 disabled:opacity-50">รวมเป็นเมนูเดียว</button>
+                      <button type="button" disabled={mergeBusy} onClick={() => decideMerge({ action: "ignore", a: s.a, b: s.b })}
+                        className="btn-secondary text-xs px-3 py-1.5 disabled:opacity-50">คนละเมนู</button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {showMerged && mergeGroups.length > 0 && (
+            <div className="pt-2 border-t border-slate-100 space-y-2">
+              <div className="text-xs font-semibold text-slate-500">เมนูที่รวมแล้ว</div>
+              {mergeGroups.map((g) => (
+                <div key={g.root} className="flex items-center justify-between gap-2">
+                  <div className="text-sm text-slate-700 break-words min-w-0">{g.label}</div>
+                  <button type="button" disabled={mergeBusy} onClick={() => decideMerge({ action: "unmerge", root: g.root })}
+                    className="text-xs text-slate-500 hover:text-rose-600 shrink-0">ยกเลิกรวม</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
