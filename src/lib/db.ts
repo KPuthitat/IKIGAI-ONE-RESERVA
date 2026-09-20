@@ -3067,6 +3067,21 @@ function runMigrations(db: Database.Database): void {
       reviewed_by INTEGER REFERENCES users(id),
       PRIMARY KEY (year_month, user_id)
     );
+    -- Manual lump-sum meeting fee (เบี้ยประชุมเหมาจ่าย, owner 2026-09-20): until
+    -- meeting-time is tracked, the approver types a per-person gross amount for a
+    -- month; it rides that month's service-charge payout (payslip / bank CSV /
+    -- accounta) exactly like a computed meeting fee, WHT applied. One row per
+    -- (user, month); amount is GROSS (pre-WHT).
+    CREATE TABLE IF NOT EXISTS svc_manual_meeting_fees (
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      year_month  TEXT NOT NULL,
+      amount      REAL NOT NULL,
+      note        TEXT,
+      created_by  INTEGER REFERENCES users(id),
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, year_month)
+    );
+    CREATE INDEX IF NOT EXISTS idx_svc_manual_meeting_fees_month ON svc_manual_meeting_fees(year_month);
   `);
 
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────

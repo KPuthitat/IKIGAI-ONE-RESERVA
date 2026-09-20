@@ -19,6 +19,7 @@ import {
   isSharedSvcMonth,
   isManualSvcMonth,
   listSvcLineReviews,
+  listManualMeetingFees,
   SVC_STAFF_SHARE_RATIO,
   SVC_COMPANY_SHARE_RATIO
 } from "@/lib/service-charge";
@@ -28,6 +29,7 @@ import SvcGrossOverrideEditor from "./SvcGrossOverrideEditor";
 import CompanySvcCalcModal from "./CompanySvcCalcModal";
 import SvcForfeitExemptButton from "../SvcForfeitExemptButton";
 import SvcReviewButton from "../SvcReviewButton";
+import SvcMeetingFeeEditor from "../SvcMeetingFeeEditor";
 import SvcDeductionEditor from "../SvcDeductionEditor";
 import OwlMascot from "../../../../components/OwlMascot";
 
@@ -76,6 +78,9 @@ export default function CompanyServiceChargePage({
   // "ตรวจแล้ว" sign-off state per person for this month (owner 2026-09-20).
   const reviews = listSvcLineReviews(month);
   const reviewedCount = summary.rows.filter((r) => reviews.has(r.userId)).length;
+  // Manual lump-sum meeting fees for the month (owner 2026-09-20) — paid WITH the
+  // service charge; the amount here is gross (pre-WHT).
+  const meetingFees = listManualMeetingFees(month);
 
   // Company-wide payout (close/pay/post to ACCOUNTA, split per branch) — only in
   // shared "รวมกอง" mode (owner 2026-09-03). In that mode the per-branch page hides
@@ -365,6 +370,14 @@ export default function CompanyServiceChargePage({
                                 yearMonth={month}
                                 reviewed={reviews.has(r.userId)}
                                 reviewedByName={reviews.get(r.userId)?.reviewedByName ?? null}
+                                canEdit={canManagePayout}
+                              />
+                              <SvcMeetingFeeEditor
+                                userId={r.userId}
+                                yearMonth={month}
+                                displayName={r.displayName}
+                                amount={meetingFees.get(r.userId)?.amount ?? 0}
+                                note={meetingFees.get(r.userId)?.note ?? null}
                                 canEdit={canManagePayout}
                               />
                               <SvcDeductionEditor
