@@ -75,6 +75,7 @@ export default function CompanyServiceChargePage({
   const canManagePayout = userCanViewPayroll(user);
   // "ตรวจแล้ว" sign-off state per person for this month (owner 2026-09-20).
   const reviews = listSvcLineReviews(month);
+  const reviewedCount = summary.rows.filter((r) => reviews.has(r.userId)).length;
 
   // Company-wide payout (close/pay/post to ACCOUNTA, split per branch) — only in
   // shared "รวมกอง" mode (owner 2026-09-03). In that mode the per-branch page hides
@@ -242,9 +243,17 @@ export default function CompanyServiceChargePage({
 
       {/* Distribution */}
       <div className="card">
-        <h2 className="font-bold text-slate-800 text-sm mb-3">
-          ส่วนแบ่งพนักงาน · ทั้งบริษัท
-        </h2>
+        <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+          <h2 className="font-bold text-slate-800 text-sm">
+            ส่วนแบ่งพนักงาน · ทั้งบริษัท
+          </h2>
+          {/* ตรวจแล้ว X/Y คน (owner 2026-09-20) — mirrors the payroll page. */}
+          {summary.rows.length > 0 && (
+            <span className={`text-sm font-medium ${reviewedCount === summary.rows.length ? "text-emerald-600" : "text-slate-500"}`}>
+              {reviewedCount === summary.rows.length ? "✓ " : ""}ตรวจแล้ว {reviewedCount}/{summary.rows.length} คน
+            </span>
+          )}
+        </div>
         {summary.rows.length === 0 ? (
           <div className="text-center py-10">
             <OwlMascot size={80} mood="thinking" />
