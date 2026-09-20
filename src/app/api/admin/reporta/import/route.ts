@@ -3,6 +3,7 @@ import { requirePermission } from "@/lib/auth";
 import { isSalesaBranch, upsertDaily, upsertMenu, upsertReceipts, getMerchantName, existingKinds } from "@/lib/salesa-db";
 import { parseSalesFile, type SalesFileParse } from "@/lib/salesa-parse";
 import { getDb } from "@/lib/db";
+import { thaiDate } from "@/lib/revshare";
 
 // REPORTA import — staff (admin / หัวหน้างาน with reporta.manage) upload the POS
 // "Close up" (ยอดขาย) and/or "Overview" (เมนู) .xlsx exports. Each file is
@@ -51,6 +52,17 @@ export async function POST(req: Request) {
       parsed = parseSalesFile(Buffer.from(await file.arrayBuffer()));
     } catch (e) {
       return NextResponse.json({ error: "parse_failed", message: `${file.name}: ${(e as Error).message}` }, { status: 422 });
+    }
+    // Single-day guard (owner 2026-09-20): the POS "Date:" header must be ONE
+    // day. A file exported for a range (e.g. 15–20 ก.ย. in one file) would save
+    // its whole total under the start date and skew every daily/weekly figure,
+    // so reject it and save nothing — re-export one day per file.
+    const doc = parsed.kind === "close_up" ? parsed.closeUp : parsed.kind === "overview" ? parsed.overview : parsed.receipt;
+    if (doc.dateEnd && doc.dateEnd !== doc.date) {
+      return NextResponse.json({
+        error: "multi_day_file",
+        message: `ไฟล์นี้มีหลายวันในไฟล์เดียว (${thaiDate(doc.date)} – ${thaiDate(doc.dateEnd)}) — กรุณาส่งออกเป็นไฟล์ละ 1 วัน แล้วนำเข้าใหม่: ${file.name}`
+      }, { status: 422 });
     }
     const merchant = parsed.kind === "close_up" ? parsed.closeUp.merchant : parsed.kind === "overview" ? parsed.overview.merchant : parsed.receipt.merchant;
     parsedFiles.push({ name: file.name, parsed, merchant });
