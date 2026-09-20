@@ -258,7 +258,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   // when it equals the current state (setState-to-same-value doesn't re-fire the
   // load effect) — e.g. importing another day of the month already on screen.
   const loadMonth = useCallback(async (y: number = year, m: number = month) => {
-    const r = await fetch(`/api/admin/reporta/view?year=${y}&month=${m}&period=${panelPeriod}`).then((x) => x.json());
+    const r = await fetch(`/api/admin/reporta/view?year=${y}&month=${m}&period=${panelPeriod}`, { cache: "no-store" }).then((x) => x.json());
     if (r.ok) {
       setDays(r.view.days); setHasLineGroup(r.hasLineGroup); setMonthCompare(r.monthCompare ?? null);
       setWeekdays(r.weekdays ?? []); setDiscount(r.discount ?? null); setChannels(r.channels ?? null);
@@ -270,12 +270,12 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
 
   const loadDay = useCallback(async (date: string) => {
     setSelDate(date); setDaily(null);
-    const r = await fetch(`/api/admin/reporta/view?date=${date}`).then((x) => x.json());
+    const r = await fetch(`/api/admin/reporta/view?date=${date}`, { cache: "no-store" }).then((x) => x.json());
     if (r.ok) { setDaily(r.daily); if (r.cardColor) setCardColor(r.cardColor); } else setMsg({ kind: "err", text: r.message ?? "โหลดข้อมูลวันไม่สำเร็จ" });
   }, []);
 
   const loadWeek = useCallback(async (ws: string) => {
-    const r = await fetch(`/api/admin/reporta/view?week=${ws}`).then((x) => x.json());
+    const r = await fetch(`/api/admin/reporta/view?week=${ws}`, { cache: "no-store" }).then((x) => x.json());
     if (r.ok) { setWeekly(r.weekly); setWeeklySentAt(r.weeklySentAt); }
   }, []);
 
@@ -283,7 +283,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   // and the already-merged groups. Best-effort — never blocks the dashboard.
   const loadMerges = useCallback(async () => {
     try {
-      const r = await fetch("/api/admin/reporta/menu-aliases").then((x) => x.json());
+      const r = await fetch("/api/admin/reporta/menu-aliases", { cache: "no-store" }).then((x) => x.json());
       if (r.ok) { setMergeSuggestions(r.suggestions ?? []); setMergeGroups(r.groups ?? []); }
     } catch { /* ignore */ }
   }, []);
@@ -320,7 +320,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     const seq = ++festReqRef.current;
     setFestBusy(true);
     try {
-      const r = await fetch(`/api/admin/reporta/view?festivals=1&year=${y}`).then((x) => x.json());
+      const r = await fetch(`/api/admin/reporta/view?festivals=1&year=${y}`, { cache: "no-store" }).then((x) => x.json());
       if (seq !== festReqRef.current) return; // a newer year request superseded this one
       if (r.ok) setFestData(r.festivals);
     } catch { /* ignore */ } finally {
@@ -479,7 +479,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const sendMonthly = async (y: number, m: number) => {
     // Fetch the monthly rollup so the modal can preview the exact card.
     const ym = `${y}-${String(m).padStart(2, "0")}`;
-    const pv = await fetch(`/api/admin/reporta/view?monthly=${ym}`).then((x) => x.json()).catch(() => null);
+    const pv = await fetch(`/api/admin/reporta/view?monthly=${ym}`, { cache: "no-store" }).then((x) => x.json()).catch(() => null);
     const monthly: MonthlyAnalytics | null = pv?.ok ? pv.monthly : null;
     setPin({
       title: `ส่งสรุปเดือน ${TH_MONTHS[m]} ${y + 543}`,
@@ -497,7 +497,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     const target = Math.floor(Number(pushTarget.replace(/[, ]/g, "")) || 0);
     if (!pushDays || !target) { setMsg({ kind: "err", text: "กรอกจำนวนวันและยอดเป้าหมายก่อน" }); return; }
     setPlanBusy(true); setMsg(null);
-    const r = await fetch(`/api/admin/reporta/view?push=1&days=${pushDays}&target=${target}`).then((x) => x.json()).catch(() => null);
+    const r = await fetch(`/api/admin/reporta/view?push=1&days=${pushDays}&target=${target}`, { cache: "no-store" }).then((x) => x.json()).catch(() => null);
     setPlanBusy(false);
     if (r?.ok) setPlan(r.plan);
     else setMsg({ kind: "err", text: r?.message ?? "วางแผนไม่สำเร็จ" });
