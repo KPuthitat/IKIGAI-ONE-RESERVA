@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { companyFinancialYear, type CompanyFinancialYear, companyOverviewMonth } from "@/lib/accounta-db";
+import { annualProjectionForBranches } from "@/lib/salesa-analytics";
 import { fmtMoney } from "@/lib/format";
 import { TH_MONTHS_FULL } from "@/lib/revshare";
 
@@ -99,6 +100,11 @@ export default function CompanyOverviewPage({
     ? Math.round((ov.totals.sales / elapsedDays) * daysInMonth * 100) / 100
     : null;
 
+  // Full-year projection across this company's branches (owner 2026-09-20):
+  // annual target = each branch's monthly target × 12, vs YTD sales + run-rate.
+  const companyBranchIds = (getDb().prepare("SELECT id FROM branches WHERE company_id = ?").all(companyId) as Array<{ id: number }>).map((b) => b.id);
+  const annual = annualProjectionForBranches(companyBranchIds, todayBkk());
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -123,6 +129,27 @@ export default function CompanyOverviewPage({
           ตัวเลขรวมทุกสาขาของบริษัทนี้ · ใช้ติดตามภายใน ไม่ใช่เอกสารยื่นภาษีอย่างเป็นทางการ
         </p>
       </div>
+
+      {/* ══ ประมาณการเป้าทั้งปี (รวมสาขา) — owner 2026-09-20 ══ */}
+      {annual && (
+        <div className="card space-y-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="font-bold text-slate-800">ประมาณการเป้าทั้งปี {annual.year + 543} · รวมสาขา</h2>
+            <span className={`text-sm font-bold ${annual.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{annual.pctOfTarget.toFixed(0)}% ของเป้า</span>
+          </div>
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
+            <span>เป้าทั้งปี <b>{fmtMoney(annual.annualTarget)}</b></span>
+            <span>ทำได้แล้ว (YTD) <b className="text-emerald-700">{fmtMoney(annual.ytdNett)}</b></span>
+          </div>
+          <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
+            <div className={`h-full ${annual.pctOfTarget >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, annual.pctOfTarget)}%` }} />
+          </div>
+          <div className="text-xs text-slate-500">
+            คาดสิ้นปี <b className={annual.onTrack ? "text-emerald-600" : "text-amber-600"}>{fmtMoney(annual.projectedNett)}</b> ({annual.projectedPct.toFixed(0)}% ของเป้า) · {annual.onTrack ? "มีแนวโน้มถึงเป้าทั้งปี ✓" : "ต่ำกว่าเป้าทั้งปี ต้องเร่ง"}
+          </div>
+          <div className="text-[11px] text-slate-400">เป้า = เป้ารายเดือนของแต่ละสาขา × 12 ({annual.branchCount} สาขาที่ตั้งเป้า) · คาดสิ้นปีจากอัตราเฉลี่ยต่อวันปีนี้</div>
+        </div>
+      )}
 
       {/* ══ สรุปเดือน (live) — owner 2026-07-29 ══ */}
       <div className="flex items-center justify-between gap-2 flex-wrap">

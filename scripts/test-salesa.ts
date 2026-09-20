@@ -432,6 +432,26 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("existingKinds receipt true after receipt", sdb.existingKinds(bid6, "2026-09-16").receipt === true);
   ok("existingKinds other date still all false", (() => { const e = sdb.existingKinds(bid6, "2026-09-17"); return !e.sales && !e.menu && !e.receipt; })());
 
+  // ── 11) annualProjection (owner 2026-09-20): annual target = monthly × 12 ──
+  const mkDay = (bid: number, d: string, nett: number) => sdb.upsertDaily(bid, uid, { date: d, dateEnd: d, merchant: "RY", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 10, pax: 18, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / 10, avgPax: 1.8, avgSalesPax: nett / 18, payments: [], types: [], sources: [] });
+  const bid7 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('r7','REST7')").run().lastInsertRowid);
+  sdb.setMonthlyTarget(bid7, 100000);
+  mkDay(bid7, "2026-01-15", 50000);
+  const ap = analytics.annualProjection(bid7, "2026-01-31");
+  ok("annual target = monthly × 12", ap?.annualTarget === 1200000);
+  ok("annual ytd = 50000", ap?.ytdNett === 50000);
+  ok("annual projected run-rate (31d → 365)", ap != null && near(ap.projectedNett, (50000 / 31) * 365));
+  ok("annual pct of target ≈ 4.17", ap != null && near(ap.pctOfTarget, (50000 / 1200000) * 100));
+  const bidNoTgt = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('rnt','RESTNT')").run().lastInsertRowid);
+  ok("annual no target → null", analytics.annualProjection(bidNoTgt, "2026-01-31") === null);
+  const bid8 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('r8','REST8')").run().lastInsertRowid);
+  sdb.setMonthlyTarget(bid8, 200000);
+  mkDay(bid8, "2026-01-20", 30000);
+  const co = analytics.annualProjectionForBranches([bid7, bid8, bidNoTgt], "2026-01-31");
+  ok("company annual target = (100k+200k)×12", co?.annualTarget === 3600000);
+  ok("company annual ytd = 80000", co?.ytdNett === 80000);
+  ok("company branchCount counts only targeted branches (2)", co?.branchCount === 2);
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
