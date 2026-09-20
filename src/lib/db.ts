@@ -2044,6 +2044,31 @@ function runMigrations(db: Database.Database): void {
       card_color     TEXT,          -- per-branch LINE card header colour (owner 2026-09-17); NULL = default
       updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    -- Menu-name merging (owner 2026-09-20): a branch may rename a dish over time
+    -- (e.g. "ตับหวาน" → "ตับหวานอัลตราสมูธ"). Once the owner confirms two spellings
+    -- are the same item, every member name maps to a shared root; reports
+    -- aggregate by root and display all members joined ("ตับหวาน / ตับหวานอัลตราสมูธ").
+    -- Non-destructive: raw salesa_menu / salesa_receipt_items rows keep their
+    -- original names; the map is applied at read time, so a merge is reversible.
+    CREATE TABLE IF NOT EXISTS salesa_menu_alias (
+      branch_id  INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      name       TEXT NOT NULL,   -- a spelling as it appears in the POS export
+      root       TEXT NOT NULL,   -- the group key this name belongs to
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (branch_id, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_salesa_alias_root ON salesa_menu_alias(branch_id, root);
+    -- Pairs the owner explicitly marked as NOT the same dish, so the "possible
+    -- duplicate" detector never suggests them again. pair_key is the two
+    -- normalized names, smaller first, joined by a NUL (see salesa-names.ts).
+    CREATE TABLE IF NOT EXISTS salesa_menu_pair_ignored (
+      branch_id  INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      pair_key   TEXT NOT NULL,
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (branch_id, pair_key)
+    );
   `);
   // Columns added after salesa_settings first shipped — ALTER for existing
   // installs (owner 2026-09-17). Idempotent.

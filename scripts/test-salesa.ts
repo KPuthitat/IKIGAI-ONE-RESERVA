@@ -455,6 +455,60 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   // Each branch projected on its own span (bid7 Jan15→17d, bid8 Jan20→12d) then summed.
   ok("company projection = sum of per-branch projections", co != null && near(co.projectedNett, (50000 + (50000 / 17) * 334) + (30000 + (30000 / 12) * 334)));
 
+  // ── 12) menu-name merging (owner 2026-09-20): "ตับหวาน" vs "ตับหวานอัลตราสมูธ" ──
+  const names = await import("../src/lib/salesa-names");
+  ok("similarity: one contains the other → 'contains'", names.nameSimilarity("ตับหวาน", "ตับหวานอัลตราสมูธ").reason === "contains");
+  ok("similarity: identical after normalize → 'exact'", names.nameSimilarity("  โค้ก ", "โค้ก").reason === "exact");
+  ok("similarity: unrelated → 'none'", names.nameSimilarity("ข้าวสวย", "ปลาทูทอด").reason === "none");
+  ok("groupLabel joins shortest-first", names.groupLabel(["ตับหวานอัลตราสมูธ", "ตับหวาน"]) === "ตับหวาน / ตับหวานอัลตราสมูธ");
+  ok("pairKey is order-independent", names.pairKey("a", "b") === names.pairKey("b", "a"));
+  ok("editDistance basic", names.editDistance("kitten", "sitting") === 3);
+
+  const bidM = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('rm','RESTM')").run().lastInsertRowid);
+  sdb.upsertMenu(bidM, uid, { date: "2026-09-10", dateEnd: "2026-09-10", merchant: "RM", categories: [], items: [{ name: "ตับหวาน", nett: 300 }] });
+  sdb.upsertMenu(bidM, uid, { date: "2026-09-12", dateEnd: "2026-09-12", merchant: "RM", categories: [], items: [{ name: "ตับหวานอัลตราสมูธ", nett: 200 }, { name: "ข้าวสวย", nett: 50 }] });
+  ok("before merge: two separate item lines", (() => {
+    const r = sdb.menuRange(bidM, "2026-09-01", "2026-09-30", "item");
+    return r.some((x) => x.name === "ตับหวาน") && r.some((x) => x.name === "ตับหวานอัลตราสมูธ");
+  })());
+  ok("suggestMenuMerges surfaces the similar pair", (() => {
+    const s = sdb.suggestMenuMerges(bidM);
+    return s.some((p) => [p.a, p.b].includes("ตับหวาน") && [p.a, p.b].includes("ตับหวานอัลตราสมูธ"));
+  })());
+  sdb.mergeMenuNames(bidM, ["ตับหวาน", "ตับหวานอัลตราสมูธ"], uid);
+  ok("after merge: folded under joined label, nett summed (300+200)", (() => {
+    const r = sdb.menuRange(bidM, "2026-09-01", "2026-09-30", "item");
+    const g = r.find((x) => x.name === "ตับหวาน / ตับหวานอัลตราสมูธ");
+    return !!g && near(g.nett, 500) && !r.some((x) => x.name === "ตับหวานอัลตราสมูธ");
+  })());
+  ok("merged pair no longer suggested", !sdb.suggestMenuMerges(bidM).some((p) => [p.a, p.b].includes("ตับหวาน")));
+  ok("listMenuGroups shows the group with both members", (() => {
+    const g = sdb.listMenuGroups(bidM);
+    return g.length === 1 && g[0].members.length === 2 && g[0].label === "ตับหวาน / ตับหวานอัลตราสมูธ";
+  })());
+  sdb.upsertMenu(bidM, uid, { date: "2026-09-14", dateEnd: "2026-09-14", merchant: "RM", categories: [], items: [{ name: "ตับหวาน", nett: 100 }, { name: "ตับหวานอัลตราสมูธ", nett: 40 }] });
+  ok("getMenu folds same-day spellings (100+40)", (() => {
+    const m = sdb.getMenu(bidM, "2026-09-14");
+    const g = m.items.find((i) => i.name === "ตับหวาน / ตับหวานอัลตราสมูธ");
+    return !!g && near(g.nett, 140) && m.items.filter((i) => i.name.includes("ตับหวาน")).length === 1;
+  })());
+  const rbufM = parse.parseSalesFile(receiptBuf("15/09/2026", "RM", [
+    { time: "15/09/2026 12:00:00", no: "1", table: "T1", gross: "300", discount: "0", nett: "300", payment: "Cash", items: "1x ตับหวาน,1x ข้าวสวย" },
+    { time: "15/09/2026 13:00:00", no: "2", table: "T2", gross: "200", discount: "0", nett: "200", payment: "Cash", items: "2x ตับหวานอัลตราสมูธ" }
+  ]));
+  if (rbufM.kind === "receipt") sdb.upsertReceipts(bidM, uid, rbufM.receipt);
+  ok("itemUnitsRange folds units across spellings (1+2=3, bills=2)", (() => {
+    const g = sdb.itemUnitsRange(bidM, "2026-09-01", "2026-09-30").find((x) => x.name === "ตับหวาน / ตับหวานอัลตราสมูธ");
+    return !!g && g.units === 3 && g.bills === 2;
+  })());
+  sdb.unmergeMenuGroup(bidM, sdb.listMenuGroups(bidM)[0].root);
+  ok("after unmerge: names split again", (() => {
+    const r = sdb.menuRange(bidM, "2026-09-01", "2026-09-30", "item");
+    return r.some((x) => x.name === "ตับหวาน") && r.some((x) => x.name === "ตับหวานอัลตราสมูธ");
+  })());
+  sdb.ignoreMenuPair(bidM, "ตับหวาน", "ตับหวานอัลตราสมูธ", uid);
+  ok("ignored pair is not suggested again", !sdb.suggestMenuMerges(bidM).some((p) => [p.a, p.b].includes("ตับหวาน") && [p.a, p.b].includes("ตับหวานอัลตราสมูธ")));
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
