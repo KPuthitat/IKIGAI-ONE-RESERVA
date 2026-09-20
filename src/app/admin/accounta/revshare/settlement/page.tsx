@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { isRevshareBranch, getPartner, previewSettlement, monthPickerOptions } from "@/lib/revshare-db";
+import { isRevshareBranch, getPartner, previewSettlement, monthPickerOptions, partnerCategorySalesForMonths } from "@/lib/revshare-db";
 import SettlementClient from "./SettlementClient";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +37,12 @@ export default function RevshareSettlementPage({ searchParams }: { searchParams:
   const preview = previewSettlement(partner.id, branchId, year, month, months.length ? months : undefined)!;
   const monthOptions = monthPickerOptions(partner.id, branchId, year, month, 6);
 
+  // Category breakdown for the partner's marketing team (จ้อจี้ phase 3) — summed
+  // over exactly the months this settlement covers (a skipped month isn't
+  // over-counted the way a single min→max range would be).
+  const covered = preview.months.length ? preview.months : [`${year}-${String(month).padStart(2, "0")}`];
+  const categories = partnerCategorySalesForMonths(branchId, partner.pos_categories, covered);
+
   const seller = getDb().prepare(
     `SELECT b.name, b.reg_address, b.tax_branch_code, b.contact_phone, c.name_th AS company_name
      FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?`
@@ -56,7 +62,7 @@ export default function RevshareSettlementPage({ searchParams }: { searchParams:
         key={`${year}-${month}-${preview.months.join(",")}`}
         partner={{ id: partner.id, name: partner.name, venue: partner.venue, pos_categories: partner.pos_categories, vat_enabled: partner.vat_enabled, line_group_id: partner.line_group_id }}
         seller={{ name: seller.name, company: seller.company_name, address: seller.reg_address, taxBranchCode: seller.tax_branch_code, phone: seller.contact_phone }}
-        initial={preview} year={year} month={month} monthOptions={monthOptions}
+        initial={preview} year={year} month={month} monthOptions={monthOptions} categories={categories}
       />
     </div>
   );

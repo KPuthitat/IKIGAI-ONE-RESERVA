@@ -18,6 +18,9 @@ export type StatementPdfData = {
     avgGpPct: number; vatAmount: number; whtAmount: number; netAmount: number;
   };
   breakdown: Array<{ label: string; sales: number; roundGP: number }>;
+  // Sales split by POS category for the partner's marketing team (owner 2026-09-21,
+  // จ้อจี้ phase 2). Optional — omitted when there's no ANALYTICA menu data.
+  categories?: Array<{ name: string; sales: number }>;
 };
 
 const FONT_REG = path.join(process.cwd(), "public", "fonts", "LINESeedSansTH-Regular.ttf");
@@ -100,6 +103,42 @@ export function generateStatementPdf(d: StatementPdfData): Promise<Buffer> {
       line("หักภาษี ณ ที่จ่าย 3%", "−" + baht(r.whtAmount), false, "#a32d2d");
       y += 4; doc.moveTo(left, y).lineTo(right, y).strokeColor("#bbb").lineWidth(0.8).stroke(); y += 8;
       line("ยอดสุทธิ", baht(r.netAmount), true, "#0f6e56");
+
+      // Sales split by category (owner 2026-09-21, จ้อจี้ phase 2) — analytics for
+      // the partner's marketing team; top 12 categories + "อื่นๆ".
+      const cats = (d.categories ?? []).filter((c) => c.sales > 0);
+      if (cats.length) {
+        const catTotal = cats.reduce((s, c) => s + c.sales, 0);
+        const TOP = 12;
+        const shown = cats.slice(0, TOP);
+        const restSales = cats.slice(TOP).reduce((s, c) => s + c.sales, 0);
+        const rowsN = shown.length + (restSales > 0 ? 1 : 0);
+        const needed = 40 + rowsN * 15 + 20;
+        if (y + needed > doc.page.height - doc.page.margins.bottom) { doc.addPage(); y = doc.page.margins.top; }
+        else { y += 14; }
+        doc.font("th-b").fontSize(11).fillColor("#281a0e").text("ยอดขายแยกตามหมวด (สำหรับวิเคราะห์การตลาด)", left, y); y = doc.y + 4;
+        doc.moveTo(left, y).lineTo(right, y).strokeColor("#bbb").lineWidth(0.8).stroke(); y += 6;
+        doc.font("th-b").fontSize(9).fillColor("#281a0e");
+        doc.text("หมวด", left + 3, y); doc.text("ยอดขาย", right - 230, y, { width: 110, align: "right" }); doc.text("สัดส่วน", right - 110, y, { width: 110, align: "right" });
+        y += 16; doc.moveTo(left, y).lineTo(right, y).strokeColor("#ddd").lineWidth(0.5).stroke(); y += 4;
+        doc.font("th").fontSize(9).fillColor("#333");
+        const bottomLimit = () => doc.page.height - doc.page.margins.bottom - 20;
+        const catRow = (name: string, sales: number) => {
+          // A wrapping name can exceed the estimate; guard each row so it never
+          // runs under the fixed disclaimer footer.
+          if (y > bottomLimit()) { doc.addPage(); y = doc.page.margins.top; }
+          doc.font("th").fontSize(9).fillColor("#333");
+          doc.text(name, left + 3, y, { width: contentW - 240 });
+          const nameBottom = doc.y;
+          doc.text(baht(sales), right - 230, y, { width: 110, align: "right" });
+          doc.text(catTotal > 0 ? `${((sales / catTotal) * 100).toFixed(1)}%` : "—", right - 110, y, { width: 110, align: "right" });
+          y = Math.max(nameBottom, doc.y) + 4;
+        };
+        for (const c of shown) catRow(c.name, c.sales);
+        if (restSales > 0) catRow(`อื่นๆ (${cats.length - TOP} หมวด)`, restSales);
+        if (y > bottomLimit()) { doc.addPage(); y = doc.page.margins.top; }
+        doc.font("th").fontSize(8).fillColor("#999").text("ยอดขายรวมแยกตามหมวดจากระบบ ANALYTICA (รวม VAT · คนละฐานกับยอดคิดส่วนแบ่ง) · ไว้ให้ทีมการตลาดวางแผน", left, y + 2, { width: contentW });
+      }
 
       doc.font("th").fontSize(8).fillColor("#999").text(
         "เอกสารนี้ใช้ติดตามภายใน ไม่ใช่เอกสารทางภาษีอย่างเป็นทางการ", left, doc.page.height - doc.page.margins.bottom - 14, { width: contentW, align: "center" }
