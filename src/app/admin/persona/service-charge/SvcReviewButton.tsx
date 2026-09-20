@@ -57,7 +57,7 @@ export default function SvcReviewButton({
     <button type="button" onClick={() => set(true)} disabled={busy}
       className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 text-slate-500 hover:bg-slate-50 hover:text-slate-700 font-medium whitespace-nowrap disabled:opacity-50"
       title="ทำเครื่องหมายว่าตรวจสอบรายการคำนวณของคนนี้แล้ว">
-      {busy ? "…" : "ตรวจแล้ว?"}{err ? " (ลองใหม่)" : ""}
+      {busy ? "…" : "ตรวจแล้ว"}{err ? " (ลองใหม่)" : ""}
     </button>
   );
 }
