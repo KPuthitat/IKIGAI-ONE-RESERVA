@@ -20,7 +20,7 @@ export type EmployeeRow = {
   // shows "ดูลิงก์เชิญ" (re-display original onboard link), active shows
   // password-reset + LINE-rebind affordances. Disabled rows are filtered
   // out at the page-server query level so they never reach this client.
-  status: "active" | "pending_invite" | "disabled";
+  status: "active" | "pending_invite" | "disabled" | "resigned" | "terminated";
   title_prefix: string | null;
   nickname_th: string | null;
   gender: "male" | "female" | null;
@@ -124,8 +124,15 @@ export type RoleLite = { id: number; name: string; permissions: string[] };
 export default function EmployeesClient({
   employees, allBranches, grants, editableBranchIds,
   currentUserRole, canViewPayroll,
-  allRoles = [], roleIdsByUser = {}
+  allRoles = [], roleIdsByUser = {},
+  statusFilter = "active", formerCount = 0, showTest = false
 }: {
+  /** Employment-status view (owner 2026-09-20): "active" = current staff,
+   *  "former" = resigned/terminated leavers, "all" = both. URL-driven so the
+   *  server query changes; the chips below navigate by setting ?status=. */
+  statusFilter?: "active" | "former" | "all";
+  formerCount?: number;
+  showTest?: boolean;
   employees: EmployeeRow[];
   allBranches: BranchLite[];
   grants: Array<{ user_id: number; branch_id: number; is_primary?: number; hourly_rate?: number | null; daily_rate?: number | null }>;
@@ -358,6 +365,27 @@ export default function EmployeesClient({
             </button>
           ))}
         </div>
+        {/* Employment-status filter (owner 2026-09-20) — reach FORMER employees
+            (resigned/terminated) to fix lingering settings after they leave.
+            URL-driven so the server re-queries; preserves the test-account view. */}
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-slate-500 mr-1">สถานะการจ้าง:</span>
+          {([["active", "ทำงานอยู่"], ["former", `ออกแล้ว${formerCount ? ` (${formerCount})` : ""}`], ["all", "ทั้งหมด"]] as const).map(([key, label]) => {
+            const q = new URLSearchParams();
+            if (key !== "active") q.set("status", key);
+            if (showTest) q.set("show_test", "1");
+            const href = `/admin/persona/employees${q.toString() ? `?${q.toString()}` : ""}`;
+            const active = statusFilter === key;
+            return (
+              <Link key={key} href={href}
+                className={`text-xs px-2.5 py-1 rounded-full border transition ${
+                  active ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                }`}>
+                {label}
+              </Link>
+            );
+          })}
+        </div>
         <div className="flex items-center gap-1">
           <label htmlFor="emp-sort" className="text-xs text-slate-500 mr-1">
             {t("admin.persona.employees.sortBy")}:
@@ -413,7 +441,14 @@ export default function EmployeesClient({
                     )}
                   </td>
                   <td className="py-2 pr-3">
-                    <div className="font-medium text-slate-800">{nameWithPrefix(u.title_prefix, u.display_name)}</div>
+                    <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
+                      {nameWithPrefix(u.title_prefix, u.display_name)}
+                      {(u.status === "resigned" || u.status === "terminated") && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600 font-medium whitespace-nowrap">
+                          {u.status === "resigned" ? "ลาออกแล้ว" : "เลิกจ้างแล้ว"}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-slate-400">@{u.username}</div>
                     {incomplete && (
                       <div className="text-xs text-amber-700 mt-0.5">

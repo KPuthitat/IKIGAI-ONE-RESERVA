@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default function AdminEmployeesPage({
   searchParams
 }: {
-  searchParams: { show_test?: string };
+  searchParams: { show_test?: string; status?: string };
 }) {
   const user = requireAdmin();
   const lang = getLang();
@@ -24,6 +24,17 @@ export default function AdminEmployeesPage({
   // Show test accounts only when explicitly toggled via ?show_test=1.
   // Default: hide them so the list shows only operational staff.
   const showTest = searchParams.show_test === "1";
+  // Employment status filter (owner 2026-09-20): admins need to reach FORMER
+  // employees (resigned/terminated) to fix lingering settings — e.g. cancel a
+  // group-insurance deduction after someone has left. Default shows current
+  // staff; "former" shows leavers; "all" shows both. Soft-deleted ('disabled')
+  // accounts stay hidden from this UI.
+  const empStatus: "active" | "former" | "all" =
+    searchParams.status === "former" ? "former" : searchParams.status === "all" ? "all" : "active";
+  const statusWhere =
+    empStatus === "former" ? "u.status IN ('resigned', 'terminated')"
+      : empStatus === "all" ? "u.status != 'disabled'"
+        : "u.status IN ('active', 'pending_invite')";
 
   if (!user.activeBranchId) {
     return (
@@ -57,7 +68,7 @@ export default function AdminEmployeesPage({
            CASE WHEN u.resignation_unlocked_at IS NULL THEN 0 ELSE 1 END AS resign_unlocked
     FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
-    WHERE u.status NOT IN ('disabled', 'resigned', 'terminated')
+    WHERE ${statusWhere}
       ${showTest ? "" : "AND u.is_test_account = 0"}
     ORDER BY
       -- Sort by employee_code (admin uses this as the canonical staff
@@ -92,6 +103,14 @@ export default function AdminEmployeesPage({
     SELECT COUNT(*) AS n FROM users u
     INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
     WHERE u.status NOT IN ('disabled', 'resigned', 'terminated') AND u.is_test_account = 1
+  `).get(branch.id) as { n: number }).n;
+
+  // Count of former employees (resigned/terminated) at this branch, so the
+  // status filter can show a badge even from the default (current-staff) view.
+  const formerCount = (db.prepare(`
+    SELECT COUNT(*) AS n FROM users u
+    INNER JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+    WHERE u.status IN ('resigned', 'terminated') ${showTest ? "" : "AND u.is_test_account = 0"}
   `).get(branch.id) as { n: number }).n;
 
   // All branches + every listed employee's memberships — drives the
@@ -189,6 +208,9 @@ export default function AdminEmployeesPage({
         </div>
       )}
       <EmployeesClient
+        statusFilter={empStatus}
+        formerCount={formerCount}
+        showTest={showTest}
         employees={safeEmployees}
         allBranches={allBranches}
         grants={grants}
