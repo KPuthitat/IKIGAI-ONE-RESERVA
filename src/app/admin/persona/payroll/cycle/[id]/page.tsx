@@ -10,6 +10,7 @@ import { nameWithPrefix } from "@/lib/name";
 import { resolveCompanyCycle } from "@/lib/payroll-cycle";
 import CompanyCycleActions from "./CompanyCycleActions";
 import PtBreakdownTable from "./PtBreakdownTable";
+import LineReviewToggle from "./LineReviewToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -154,6 +155,41 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
     grossByUserBranchObj[uid] = Object.fromEntries(m);
   }
 
+  // ── "ตรวจแล้ว" sign-off state (owner 2026-09-21) ──────────────────────────
+  // Review is per line (period + user); a person on the cycle can span two
+  // branch-periods. Scope it to exactly the rows the tables render and the owner
+  // ticks — the SAME filter as empRows — so the per-person toggle, the cycle
+  // counter, and the finalize gate all agree (no counted line without a toggle).
+  // Only DRAFT periods are reviewable (finalized/paid lines are frozen).
+  const draftSibIds = siblings.filter((s) => s.status === "draft").map((s) => s.id);
+  const draftPeriodIdsByUser: Record<number, number[]> = {};
+  const reviewedByUser: Record<number, boolean> = {};
+  let reviewDraftUsers = 0, reviewDoneUsers = 0;
+  if (draftSibIds.length > 0) {
+    const revRows = db.prepare(`
+      SELECT pl.user_id, pl.period_id, pl.reviewed_at
+      FROM payroll_lines pl
+      WHERE pl.period_id IN (${draftSibIds.map(() => "?").join(",")})
+        AND NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0)
+    `).all(...draftSibIds) as Array<{ user_id: number; period_id: number; reviewed_at: string | null }>;
+    const pidsByUser = new Map<number, Set<number>>();   // distinct draft period ids per user
+    const totalByUser = new Map<number, number>();
+    const reviewedByCount = new Map<number, number>();
+    for (const r of revRows) {
+      if (!pidsByUser.has(r.user_id)) pidsByUser.set(r.user_id, new Set());
+      pidsByUser.get(r.user_id)!.add(r.period_id);
+      totalByUser.set(r.user_id, (totalByUser.get(r.user_id) ?? 0) + 1);
+      if (r.reviewed_at != null) reviewedByCount.set(r.user_id, (reviewedByCount.get(r.user_id) ?? 0) + 1);
+    }
+    for (const [uid, pids] of pidsByUser) {
+      draftPeriodIdsByUser[uid] = [...pids];
+      const done = (reviewedByCount.get(uid) ?? 0) === (totalByUser.get(uid) ?? 0);
+      reviewedByUser[uid] = done;
+      reviewDraftUsers++;
+      if (done) reviewDoneUsers++;
+    }
+  }
+
   // Combined status counts.
   const n = siblings.length;
   const nFinalized = siblings.filter((s) => s.status === "finalized" || s.status === "paid").length;
@@ -206,6 +242,11 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
                 <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
                   <td className="py-2 pr-3">
                     <div className="font-medium text-slate-800">{nameWithPrefix(r.title_prefix, r.display_name)}</div>
+                    <LineReviewToggle
+                      userId={r.user_id}
+                      draftPeriodIds={draftPeriodIdsByUser[r.user_id] ?? []}
+                      reviewed={reviewedByUser[r.user_id] ?? false}
+                    />
                   </td>
                   {multiBranch && branchCols.map((b) => {
                     const v = perB.get(b.id) ?? 0;
@@ -291,6 +332,8 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
           status: s.status,
           posted: s.posted_at != null
         }))}
+        reviewDoneUsers={reviewDoneUsers}
+        reviewDraftUsers={reviewDraftUsers}
       />
 
       {/* Per-branch periods */}
@@ -353,6 +396,8 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
           grossByUserBranch={grossByUserBranchObj}
           branchByPeriod={branchByPeriodObj}
           multiBranch={multiBranch}
+          draftPeriodIdsByUser={draftPeriodIdsByUser}
+          reviewedByUser={reviewedByUser}
         />
       )}
       {empTable(t(lang, "admin.persona.payroll.cycle.other"), "ประกันสังคม (ในระบบ)", "text-slate-600", otherRows.filter((r) => r.salary_tax_mode_snapshot !== "wht"))}

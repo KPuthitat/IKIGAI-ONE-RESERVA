@@ -14,11 +14,13 @@ type CascadeResult = { period_id: number; branch: string | null; ok: boolean; sk
 // hits POST /cycle/[id] which loops the same guarded per-period op — finalize
 // needs the PIN, pay/post gate on status, each branch posts to its own books.
 export default function CompanyCycleActions({
-  lang, repId, siblings
+  lang, repId, siblings, reviewDoneUsers, reviewDraftUsers
 }: {
   lang: Lang;
   repId: number;
   siblings: Sib[];
+  reviewDoneUsers: number;
+  reviewDraftUsers: number;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -32,6 +34,9 @@ export default function CompanyCycleActions({
 
   const n = siblings.length;
   const anyDraft = siblings.some((s) => s.status === "draft");
+  // Finalize is gated on a full "ตรวจแล้ว" sign-off, same as the per-branch round
+  // (owner 2026-09-02: ยังตรวจไม่ครบ ห้ามปิดยอด — กันพลาด).
+  const allReviewed = reviewDraftUsers === 0 || reviewDoneUsers >= reviewDraftUsers;
   const anyFinalized = siblings.some((s) => s.status === "finalized");
   const anyPaidUnposted = siblings.some((s) => s.status === "paid" && !s.posted);
   const anyPosted = siblings.some((s) => s.posted);
@@ -70,13 +75,19 @@ export default function CompanyCycleActions({
   return (
     <div className="card border-l-4 border-brand/40">
       <h2 className="font-semibold text-slate-700 mb-1">{t(lang, "admin.persona.payroll.cycle.actionsTitle")}</h2>
-      <p className="text-xs text-slate-500 mb-3">{t(lang, "admin.persona.payroll.cycle.actionsNote")}</p>
+      <p className="text-xs text-slate-500 mb-2">{t(lang, "admin.persona.payroll.cycle.actionsNote")}</p>
+      {anyDraft && reviewDraftUsers > 0 && (
+        <p className={`text-xs mb-3 font-medium ${allReviewed ? "text-emerald-600" : "text-amber-600"}`}>
+          {allReviewed ? "✓ " : ""}ตรวจแล้ว {reviewDoneUsers}/{reviewDraftUsers} คน{allReviewed ? " · พร้อมปิดยอด" : " — ต้องตรวจให้ครบก่อนปิดยอด"}
+        </p>
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
         <button
           type="button"
           onClick={() => setPinOpen(true)}
-          disabled={busy !== null || !anyDraft}
+          disabled={busy !== null || !anyDraft || !allReviewed}
+          title={anyDraft && !allReviewed ? `ยังตรวจไม่ครบ (${reviewDoneUsers}/${reviewDraftUsers}) — ต้องกด "ตรวจแล้ว" ให้ครบทุกคนก่อนปิดยอด` : undefined}
           className="btn-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {busy === "finalize_all" ? "..." : "✓ " + t(lang, "admin.persona.payroll.cycle.finalizeAll")}

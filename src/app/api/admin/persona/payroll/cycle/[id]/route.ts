@@ -59,8 +59,24 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       );
     }
     const stmt = db.prepare(`UPDATE payroll_periods SET status='finalized', finalized_by=?, finalized_at=? WHERE id=? AND status='draft'`);
+    // A "ตรวจแล้ว" sign-off gate before a branch closes (owner 2026-09-02: กันพลาด).
+    // Count with the SAME filter as the cycle page's employee tables (drop
+    // unconfigured FT), so a branch the admin ticked complete on that page maps
+    // 1:1 here. A branch that isn't fully reviewed is skipped (the rest still
+    // close), never silently finalized.
+    const revStmt = db.prepare(
+      `SELECT COUNT(*) AS total, SUM(CASE WHEN pl.reviewed_at IS NULL THEN 1 ELSE 0 END) AS unreviewed
+       FROM payroll_lines pl
+       WHERE pl.period_id = ? AND NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0)`
+    );
     for (const s of siblings) {
       if (s.status !== "draft") { results.push({ period_id: s.id, branch: s.branch_name, ok: false, skipped: s.status }); continue; }
+      const rs = revStmt.get(s.id) as { total: number; unreviewed: number | null };
+      const unreviewed = rs.unreviewed ?? 0;
+      if (rs.total === 0 || unreviewed > 0) {
+        results.push({ period_id: s.id, branch: s.branch_name, ok: false, skipped: rs.total === 0 ? "ไม่มีรายการ" : `ตรวจไม่ครบ (เหลือ ${unreviewed})` });
+        continue;
+      }
       try { stmt.run(user.id, nowIso, s.id); results.push({ period_id: s.id, branch: s.branch_name, ok: true }); }
       catch (e) { results.push({ period_id: s.id, branch: s.branch_name, ok: false, error: (e as Error).message }); }
     }
