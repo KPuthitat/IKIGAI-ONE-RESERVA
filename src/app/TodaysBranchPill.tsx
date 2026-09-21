@@ -28,6 +28,14 @@ export default function TodaysBranchPill({
   const pathname = usePathname() || "";
   if (pathname === pickerPath || pathname.startsWith(pickerPath + "/")) return null;
 
+  // Where to land after switching branch. A deep, branch-scoped DETAIL page (e.g.
+  // a payroll period /admin/persona/payroll/<id>) belongs to the OLD branch, so
+  // returning there after a switch shows another branch's record. Collapse those
+  // to their section home so we always land on the new branch's main page
+  // (owner 2026-09-21). Extend COLLAPSE_ROOTS as more detail sections appear.
+  const COLLAPSE_ROOTS = ["/admin/persona/payroll"];
+  const nextTarget = COLLAPSE_ROOTS.find((r) => pathname.startsWith(r + "/")) ?? pathname;
+
   // Shared topbar-control shell so the branch pill matches the view-switch
   // button (owner 2026-08: same look + balanced). h-10 rounded-xl on the dark
   // gradient.
@@ -63,7 +71,7 @@ export default function TodaysBranchPill({
     </>
   );
   return hasChoice ? (
-    <Link href={`${pickerPath}?next=${encodeURIComponent(pathname)}`} className={`${shell} hover:bg-white/[0.16] transition-colors`}>
+    <Link href={`${pickerPath}?next=${encodeURIComponent(nextTarget)}`} className={`${shell} hover:bg-white/[0.16] transition-colors`}>
       {inner}
     </Link>
   ) : (
