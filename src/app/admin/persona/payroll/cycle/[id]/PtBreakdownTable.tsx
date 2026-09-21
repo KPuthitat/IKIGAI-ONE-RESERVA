@@ -12,6 +12,7 @@ import { useLang } from "@/lib/LangProvider";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
 import { apiUrl } from "@/lib/url";
+import LineReviewToggle from "./LineReviewToggle";
 
 type PtRow = {
   user_id: number;
@@ -54,7 +55,8 @@ function fmtDay(date: string): string {
 }
 
 export default function PtBreakdownTable({
-  rows, periodIdsByUser, branchCols, grossByUserBranch, branchByPeriod, multiBranch
+  rows, periodIdsByUser, branchCols, grossByUserBranch, branchByPeriod, multiBranch,
+  draftPeriodIdsByUser, reviewedByUser
 }: {
   rows: PtRow[];
   periodIdsByUser: Record<number, number[]>;
@@ -62,6 +64,8 @@ export default function PtBreakdownTable({
   grossByUserBranch: Record<number, Record<number, number>>;
   branchByPeriod: Record<number, string>;
   multiBranch: boolean;
+  draftPeriodIdsByUser: Record<number, number[]>;
+  reviewedByUser: Record<number, boolean>;
 }) {
   const { t } = useLang();
   const [openUser, setOpenUser] = useState<Set<number>>(new Set());
@@ -149,6 +153,13 @@ export default function PtBreakdownTable({
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">{t("admin.persona.employees.taxMode.whtTag")}</span>
                       )}
                     </button>
+                    <div>
+                      <LineReviewToggle
+                        userId={r.user_id}
+                        draftPeriodIds={draftPeriodIdsByUser[r.user_id] ?? []}
+                        reviewed={reviewedByUser[r.user_id] ?? false}
+                      />
+                    </div>
                   </td>
                   {multiBranch && branchCols.map((b) => {
                     const v = perB[b.id] ?? 0;
