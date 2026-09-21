@@ -616,6 +616,24 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("yearbars: allowedBranchIds scopes to that branch only",
     yb.branches.length === 1 && yb.branches[0].branchId === bidBar);
 
+  // ── 16b) full-year DAILY bars (owner 2026-09-21): one bar per calendar day. ──
+  const dbars = analytics.annualBranchDailyBars(2026, "2026-09-20", [bidBar]);
+  ok("dailybars: dayCount = day-of-year of today (Sep 20 → 263)", dbars.dayCount === 263 && dbars.startIso === "2026-01-01");
+  ok("dailybars: each sale day maps to its index; empty days are null", (() => {
+    const b = dbars.branches.find((x) => x.branchId === bidBar);
+    if (!b) return false;
+    const idx = (iso: string) => Math.floor((Date.UTC(2026, Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))) - Date.UTC(2026, 0, 1)) / 86_400_000);
+    return b.values[idx("2026-01-10")] === 10000 && b.values[idx("2026-02-14")] === 30000
+      && b.values[idx("2026-09-03")] === 5000 && b.values[idx("2026-01-11")] === null;
+  })());
+  ok("dailybars: total + peak day (Feb 14) + avg over 5 days", (() => {
+    const b = dbars.branches.find((x) => x.branchId === bidBar);
+    if (!b) return false;
+    const feb14 = Math.floor((Date.UTC(2026, 1, 14) - Date.UTC(2026, 0, 1)) / 86_400_000);
+    return b.total === 70000 && b.peakIdx === feb14 && b.avgPerDay === 14000;
+  })());
+  ok("dailybars: past year spans all 365 days", analytics.annualBranchDailyBars(2025, "2026-09-20").dayCount === 365);
+
   // ── 17) company overview (owner 2026-09-21): cross-branch roll-up — company
   // MTD total, same-period MoM compare, per-branch rows, company target. ──
   const fputC = (bid: number, d: string, nett: number, bills: number, pax: number) => sdb.upsertDaily(bid, uid, { date: d, dateEnd: d, merchant: "CO", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: bills, pax, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / bills, avgPax: pax / bills, avgSalesPax: nett / pax, payments: [], types: [], sources: [] });

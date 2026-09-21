@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
-import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars } from "@/lib/salesa-analytics";
+import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars } from "@/lib/salesa-analytics";
 import { salesPushPlan } from "@/lib/salesa-push";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
@@ -51,6 +51,14 @@ export function GET(req: Request) {
     const yy = Number(sp.get("year")) || bkkNow().year;
     const allowed = user.role === "super_admin" ? null : [branchId];
     return NextResponse.json({ ok: true, yearbars: annualBranchBars(yy, todayIsoY, allowed) });
+  }
+
+  // Full-year per-branch DAILY bars (owner 2026-09-21) — ~365 bars, same scoping.
+  if (sp.get("dailybars") != null) {
+    const todayIsoD = todayBkkIso();
+    const dy = Number(sp.get("year")) || bkkNow().year;
+    const allowed = user.role === "super_admin" ? null : [branchId];
+    return NextResponse.json({ ok: true, dailybars: annualBranchDailyBars(dy, todayIsoD, allowed) });
   }
 
   const date = sp.get("date") ?? "";

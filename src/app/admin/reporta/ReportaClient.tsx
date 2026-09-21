@@ -104,6 +104,9 @@ type FestivalData = { year: number; branches: Array<{ id: number; name: string }
 // Full-year growth bars (owner 2026-09-21): per branch, monthly nett across the year.
 type YearBar = { branchId: number; branchName: string; months: Array<number | null>; total: number; growthPct: number | null; peakMonth: number | null };
 type YearBarsData = { year: number; monthCount: number; branches: YearBar[] };
+// Full-year DAILY bars (owner 2026-09-21): one bar per day across the year.
+type DayBar = { branchId: number; branchName: string; values: Array<number | null>; total: number; peakIdx: number | null; avgPerDay: number | null };
+type DayBarsData = { year: number; dayCount: number; startIso: string; branches: DayBar[] };
 // Menu-name merging (owner 2026-09-20): similar spellings that might be one dish.
 type NameStat = { nett: number; units: number };
 type MergeSuggestion = { a: string; b: string; score: number; reason: "exact" | "contains" | "fuzzy"; aStats: NameStat; bStats: NameStat };
@@ -254,6 +257,12 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [ybData, setYbData] = useState<YearBarsData | null>(null);
   const ybReqRef = useRef(0);
   const [ybBusy, setYbBusy] = useState(false);
+  // Full-year DAILY bars (owner 2026-09-21) — lazy-loaded on expand.
+  const [dbOpen, setDbOpen] = useState(false);
+  const [dbYear, setDbYear] = useState(Number(initial.slice(0, 4)));
+  const [dbData, setDbData] = useState<DayBarsData | null>(null);
+  const dbReqRef = useRef(0);
+  const [dbBusy, setDbBusy] = useState(false);
   const [picked, setPicked] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
@@ -368,6 +377,29 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     const y = ybYear + delta;
     setYbYear(y);
     if (ybOpen) loadYearBars(y);
+  };
+
+  // Full-year DAILY bars (owner 2026-09-21) — lazy, ~365-bar yearly query.
+  const loadDailyBars = useCallback(async (y: number) => {
+    const seq = ++dbReqRef.current;
+    setDbBusy(true);
+    try {
+      const r = await fetch(`/api/admin/reporta/view?dailybars=1&year=${y}`, { cache: "no-store" }).then((x) => x.json());
+      if (seq !== dbReqRef.current) return;
+      if (r.ok) setDbData(r.dailybars);
+    } catch { /* ignore */ } finally {
+      if (seq === dbReqRef.current) setDbBusy(false);
+    }
+  }, []);
+  const toggleDailyBars = () => {
+    const next = !dbOpen;
+    setDbOpen(next);
+    if (next && (!dbData || dbData.year !== dbYear)) loadDailyBars(dbYear);
+  };
+  const stepDbYear = (delta: number) => {
+    const y = dbYear + delta;
+    setDbYear(y);
+    if (dbOpen) loadDailyBars(y);
   };
 
   useEffect(() => { loadMonth(); }, [loadMonth]);
@@ -1124,6 +1156,86 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                   <p className="text-[11px] text-slate-400">แท่ง = ยอดขายสุทธิรายเดือน (เลข 1–12 = เดือน) · เขียวเข้ม = เดือนที่ยอดสูงสุด · % = เทียบเดือนแรก↔เดือนล่าสุดที่มีข้อมูล</p>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Full-year DAILY bars (owner 2026-09-21): one bar per calendar day
+          (~365) per branch, for a fine-grained view of the whole year. Lazy. */}
+      {(
+        <div className="card">
+          <button type="button" onClick={toggleDailyBars} className="w-full flex items-center justify-between gap-2 text-left">
+            <div>
+              <h2 className="font-bold text-slate-800">ยอดขายรายวัน — ทั้งปี</h2>
+              <p className="text-xs text-slate-500 mt-0.5">กราฟแท่งยอดขายสุทธิรายวันของแต่ละสาขา หนึ่งแท่งต่อหนึ่งวัน (ทั้งปี ~365 แท่ง)</p>
+            </div>
+            <span className="text-slate-400 text-sm shrink-0">{dbOpen ? "▲ ซ่อน" : "▼ ดู"}</span>
+          </button>
+          {dbOpen && (
+            <div className="mt-3 space-y-4">
+              <NavStepper eyebrow="ปี" label={`${dbYear + 543}`}
+                onPrev={() => stepDbYear(-1)} onNext={() => stepDbYear(1)} nextDisabled={dbYear >= Number(todayBkk().slice(0, 4))} />
+              {dbBusy ? (
+                <p className="text-sm text-slate-400 text-center py-4">กำลังโหลด…</p>
+              ) : !dbData || dbData.branches.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลยอดขายในปีนี้</p>
+              ) : (() => {
+                // Thai label for a day index (0 = Jan 1 of the chart's year).
+                // Precompute each day's Thai label ONCE (not per bar per render) —
+                // the droplet is small and this panel draws ~365 bars per branch.
+                const dayLabels: string[] = [];
+                for (let i = 0; i < dbData.dayCount; i++) {
+                  const d = new Date(Date.UTC(dbData.year, 0, 1) + i * 86_400_000);
+                  dayLabels.push(`${d.getUTCDate()} ${TH_MONTHS[d.getUTCMonth() + 1]}`);
+                }
+                // Month label segments, each flex-weighted by its day count so the
+                // labels line up under the equal-width daily bars.
+                const monthSegs: Array<{ m: number; days: number }> = [];
+                let remaining = dbData.dayCount;
+                for (let m = 1; m <= 12 && remaining > 0; m++) {
+                  const dim = new Date(Date.UTC(dbData.year, m, 0)).getUTCDate();
+                  const days = Math.min(dim, remaining);
+                  monthSegs.push({ m, days });
+                  remaining -= days;
+                }
+                return (
+                  <div className="space-y-5">
+                    {dbData.branches.map((b) => {
+                      let peak = 1;
+                      for (const v of b.values) if (v != null && v > peak) peak = v;
+                      return (
+                        <div key={b.branchId}>
+                          <div className="flex items-baseline justify-between gap-2 mb-1 flex-wrap">
+                            <span className="text-sm font-semibold text-slate-800">{b.branchName}</span>
+                            <span className="text-xs text-slate-500">
+                              รวม {baht(b.total)}
+                              {b.avgPerDay != null && <span className="ml-2">· เฉลี่ย/วันขาย {baht(b.avgPerDay)}</span>}
+                              {b.peakIdx != null && b.values[b.peakIdx] != null && (
+                                <span className="ml-2 text-emerald-600 font-medium">· สูงสุด {dayLabels[b.peakIdx]} ({baht(b.values[b.peakIdx] as number)})</span>
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex items-end h-28 bg-slate-50/60 rounded">
+                            {b.values.map((v, i) => (
+                              <div key={i} className={`flex-1 min-w-0 ${b.peakIdx === i ? "bg-emerald-600" : "bg-emerald-400/80"}`}
+                                style={{ height: v == null ? "0%" : `${Math.max(1, (v / peak) * 100)}%` }}
+                                title={`${dayLabels[i]}: ${v == null ? "ไม่มีข้อมูล" : baht(v)}`} />
+                            ))}
+                          </div>
+                          <div className="flex mt-1">
+                            {monthSegs.map((s) => (
+                              <div key={s.m} style={{ flexGrow: s.days, flexBasis: 0 }}
+                                className="text-center text-[9px] text-slate-400 border-l border-slate-200 first:border-l-0">{s.m}</div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <p className="text-[11px] text-slate-400">แท่ง = ยอดขายสุทธิรายวัน (1 แท่ง = 1 วัน · เลข 1–12 = เดือน) · เขียวเข้ม = วันที่ยอดสูงสุด · ชี้ที่แท่งเพื่อดูยอดรายวัน</p>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

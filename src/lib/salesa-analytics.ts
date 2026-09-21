@@ -1257,3 +1257,59 @@ export function annualBranchBars(year: number, todayIso: string, allowedBranchId
 
   return { year, monthCount, branches: out };
 }
+
+// ── Full-year DAILY bars (owner 2026-09-21) ──────────────────────────────────
+// Per branch, one bar per calendar day across the year (Jan 1 → Dec 31, or → today
+// for the current year) — ~365 bars for a fine-grained view of the whole year.
+// null = a day with no imported sales. Same role scoping as the monthly bars.
+
+export type BranchYearDailyBars = {
+  branchId: number; branchName: string;
+  values: Array<number | null>; // index 0 = Jan 1 ... ; null = no data that day
+  total: number;
+  peakIdx: number | null;       // index of the biggest day
+  avgPerDay: number | null;     // over days that have data
+};
+export type AnnualBranchDailyBars = { year: number; dayCount: number; startIso: string; branches: BranchYearDailyBars[] };
+
+export function annualBranchDailyBars(year: number, todayIso: string, allowedBranchIds?: number[] | null): AnnualBranchDailyBars {
+  const db = getDb();
+  const yr = String(year);
+  const startIso = `${yr}-01-01`;
+  const startMs = Date.UTC(year, 0, 1);
+  const isThisYear = year === Number(todayIso.slice(0, 4));
+  const endMs = isThisYear
+    ? Date.UTC(Number(todayIso.slice(0, 4)), Number(todayIso.slice(5, 7)) - 1, Number(todayIso.slice(8, 10)))
+    : Date.UTC(year, 11, 31);
+  const dayCount = Math.max(1, Math.floor((endMs - startMs) / 86_400_000) + 1);
+
+  const branches = branchesWithSalesInYear(yr, allowedBranchIds);
+  if (!branches.length) return { year, dayCount, startIso, branches: [] };
+
+  const bids = branches.map((b) => b.id);
+  const rows = db.prepare(`
+    SELECT branch_id AS b, sale_date AS d, SUM(nett) AS n
+    FROM salesa_daily
+    WHERE substr(sale_date, 1, 4) = ? AND has_sales = 1 AND nett > 0
+      AND branch_id IN (${bids.map(() => "?").join(",")})
+    GROUP BY branch_id, sale_date
+  `).all(yr, ...bids) as Array<{ b: number; d: string; n: number }>;
+  const byBranchDay = new Map<number, number>(); // key = branchId * 512 + dayIdx  (512 > 366)
+  for (const r of rows) {
+    const t = Date.UTC(Number(r.d.slice(0, 4)), Number(r.d.slice(5, 7)) - 1, Number(r.d.slice(8, 10)));
+    const idx = Math.floor((t - startMs) / 86_400_000);
+    if (idx >= 0 && idx < dayCount) byBranchDay.set(r.b * 512 + idx, round2(r.n));
+  }
+
+  const out: BranchYearDailyBars[] = branches.map((br) => {
+    const values: Array<number | null> = [];
+    for (let i = 0; i < dayCount; i++) values.push(byBranchDay.has(br.id * 512 + i) ? (byBranchDay.get(br.id * 512 + i) as number) : null);
+    const active = values.map((v, i) => ({ v, i })).filter((x) => x.v != null) as Array<{ v: number; i: number }>;
+    const total = round2(active.reduce((s, x) => s + x.v, 0));
+    const peak = active.reduce<{ v: number; i: number } | null>((best, x) => (!best || x.v > best.v ? x : best), null);
+    const avgPerDay = active.length ? round2(total / active.length) : null;
+    return { branchId: br.id, branchName: br.name, values, total, peakIdx: peak ? peak.i : null, avgPerDay };
+  }).filter((b) => b.total > 0);
+
+  return { year, dayCount, startIso, branches: out };
+}
