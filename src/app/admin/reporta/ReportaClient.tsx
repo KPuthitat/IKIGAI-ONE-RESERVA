@@ -245,20 +245,21 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [mergeGroups, setMergeGroups] = useState<MergeGroup[]>([]);
   const [mergeBusy, setMergeBusy] = useState(false);
   const [showMerged, setShowMerged] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);   // collapsed by default (owner 2026-09-21)
   // Festival / important-day analysis (owner 2026-09-20) — lazy-loaded on expand.
   const [festOpen, setFestOpen] = useState(false);
   const [festYear, setFestYear] = useState(Number(initial.slice(0, 4)));
   const [festData, setFestData] = useState<FestivalData | null>(null);
   const festReqRef = useRef(0);
   const [festBusy, setFestBusy] = useState(false);
-  // Full-year growth bars (owner 2026-09-21) — lazy-loaded on expand.
-  const [ybOpen, setYbOpen] = useState(false);
+  // Full-year growth bars (owner 2026-09-21) — shown by default (owner 2026-09-21).
+  const [ybOpen, setYbOpen] = useState(true);
   const [ybYear, setYbYear] = useState(Number(initial.slice(0, 4)));
   const [ybData, setYbData] = useState<YearBarsData | null>(null);
   const ybReqRef = useRef(0);
   const [ybBusy, setYbBusy] = useState(false);
-  // Full-year DAILY bars (owner 2026-09-21) — lazy-loaded on expand.
-  const [dbOpen, setDbOpen] = useState(false);
+  // Full-year DAILY bars (owner 2026-09-21) — shown by default (owner 2026-09-21).
+  const [dbOpen, setDbOpen] = useState(true);
   const [dbYear, setDbYear] = useState(Number(initial.slice(0, 4)));
   const [dbData, setDbData] = useState<DayBarsData | null>(null);
   const dbReqRef = useRef(0);
@@ -405,6 +406,9 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   useEffect(() => { loadMonth(); }, [loadMonth]);
   useEffect(() => { loadWeek(weekStart); }, [weekStart, loadWeek]);
   useEffect(() => { loadMerges(); }, [loadMerges]);
+  // The full-year growth + daily charts are open by default (owner 2026-09-21),
+  // so load them once on mount rather than waiting for a toggle.
+  useEffect(() => { loadYearBars(ybYear); loadDailyBars(dbYear); }, [loadYearBars, loadDailyBars]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Default the day-analysis to the latest day that has data whenever the month
   // loads/changes — the analysis sits at the top now, so the owner shouldn't
@@ -899,16 +903,17 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               className="text-xs font-semibold text-slate-500 hover:text-slate-800 rounded-full border border-slate-200 px-3 py-2 hover:bg-slate-50 transition">
               สัปดาห์นี้
             </button>
+            {/* Send-to-execs stays on the top line next to the week stepper (owner 2026-09-21). */}
+            {weekly && (
+              <button onClick={() => sendWeekly(weekly.weekStart)} disabled={!hasLineGroup || weekly.dayCount === 0} className="btn-success text-sm px-4 py-2 disabled:opacity-50">
+                {weeklySentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
+              </button>
+            )}
           </div>
         </div>
         {weekly && (
           <>
-            <div className="flex items-center justify-center sm:justify-between gap-2 flex-wrap">
-              <div className="text-sm text-slate-600">{weekly.label} · รวม {weekly.dayCount} วัน {weeklySentAt ? "· ✓ ส่งแล้ว" : ""}</div>
-              <button onClick={() => sendWeekly(weekly.weekStart)} disabled={!hasLineGroup || weekly.dayCount === 0} className="btn-success text-sm px-4 py-2 disabled:opacity-50">
-                {weeklySentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
-              </button>
-            </div>
+            <div className="text-sm text-slate-600">{weekly.label} · รวม {weekly.dayCount} วัน {weeklySentAt ? "· ✓ ส่งแล้ว" : ""}</div>
             {weekly.dayCount === 0 ? (
               <p className="text-sm text-slate-400">ยังไม่มีข้อมูลยอดขายในสัปดาห์นี้</p>
             ) : (
@@ -984,19 +989,23 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           and double-counted. Non-blocking — the owner confirms each pair. */}
       {(mergeSuggestions.length > 0 || mergeGroups.length > 0) && (
         <div className="card space-y-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
+          <button type="button" onClick={() => setMergeOpen((o) => !o)} className="w-full flex items-center justify-between gap-2 text-left">
             <div>
               <h2 className="font-bold text-slate-800">ชื่อเมนูที่อาจเป็นตัวเดียวกัน{mergeSuggestions.length > 0 ? ` (${mergeSuggestions.length})` : ""}</h2>
               <p className="text-xs text-slate-500 mt-0.5">ถ้ามีการตั้งชื่อใหม่ ระบบจะถามเพื่อรวมยอดให้เป็นเมนูเดียว จะได้ไม่ถูกนับแยกกัน</p>
             </div>
-            {mergeGroups.length > 0 && (
+            <span className="text-slate-400 text-sm shrink-0">{mergeOpen ? "▲ ซ่อน" : "▼ ดู"}</span>
+          </button>
+
+          {mergeOpen && mergeGroups.length > 0 && (
+            <div className="flex justify-end">
               <button type="button" onClick={() => setShowMerged((s) => !s)} className="text-sm text-brand hover:underline shrink-0">
                 {showMerged ? "ซ่อนที่รวมแล้ว" : `รวมแล้ว ${mergeGroups.length} รายการ`}
               </button>
-            )}
-          </div>
+            </div>
+          )}
 
-          {mergeSuggestions.length === 0 ? (
+          {mergeOpen && (mergeSuggestions.length === 0 ? (
             <p className="text-sm text-slate-400">ตอนนี้ไม่พบชื่อเมนูที่อาจซ้ำกัน</p>
           ) : (
             <ul className="space-y-2">
@@ -1019,9 +1028,9 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                 </li>
               ))}
             </ul>
-          )}
+          ))}
 
-          {showMerged && mergeGroups.length > 0 && (
+          {mergeOpen && showMerged && mergeGroups.length > 0 && (
             <div className="pt-2 border-t border-slate-100 space-y-2">
               <div className="text-xs font-semibold text-slate-500">เมนูที่รวมแล้ว</div>
               {mergeGroups.map((g) => (
