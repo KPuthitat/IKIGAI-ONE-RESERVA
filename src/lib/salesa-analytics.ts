@@ -584,12 +584,7 @@ export function companyOverview(branchIds: number[], year: number, month: number
   const mm = String(month).padStart(2, "0");
   const isCurrentMonth = todayIso.startsWith(`${year}-${mm}`);
 
-  const brows = branchIds.length
-    ? (db.prepare(
-        `SELECT id, name, display_order AS ord FROM branches WHERE id IN (${branchIds.map(() => "?").join(",")})`
-      ).all(...branchIds) as Array<{ id: number; name: string; ord: number }>)
-    : [];
-  brows.sort((a, b) => (a.ord - b.ord) || a.name.localeCompare(b.name, "th"));
+  const brows = orderedBranches(branchIds);
   const ids = brows.map((b) => b.id);
 
   // Window: current month → through today; a past month → through the latest day
@@ -644,6 +639,60 @@ export function companyOverview(branchIds: number[], year: number, month: number
   // projection). Browsing a past year → no annual card, not stale current-year.
   const annual = year === Number(todayIso.slice(0, 4)) ? annualProjectionForBranches(ids, todayIso) : null;
   return { year, month, throughDay, isCurrentMonth, branchCount: brows.length, total, target, targetedBranchCount: targetedCount, annual, branches: rows };
+}
+
+// Ordered company branches (id + name), sorted by display order then name.
+function orderedBranches(branchIds: number[]): Array<{ id: number; name: string }> {
+  if (!branchIds.length) return [];
+  return (getDb().prepare(
+    `SELECT id, name, display_order AS ord FROM branches WHERE id IN (${branchIds.map(() => "?").join(",")})`
+  ).all(...branchIds) as Array<{ id: number; name: string; ord: number }>)
+    .sort((a, b) => (a.ord - b.ord) || a.name.localeCompare(b.name, "th"))
+    .map((b) => ({ id: b.id, name: b.name }));
+}
+
+// ── Company weekly same-period compare (owner 2026-09-21) ────────────────────
+// This ISO week (Mon..today) vs the previous week's identical day-window, summed
+// across the company, with a same-store % (only branches with data both weeks).
+export type CompanyWeekRow = { branchId: number; branchName: string; nett: number; prevNett: number | null; wowPct: number | null };
+export type CompanyWeekCompare = {
+  weekStart: string; throughIso: string; dayCount: number;
+  total: { nett: number; prevNett: number | null; wowPct: number | null; bills: number; pax: number };
+  branches: CompanyWeekRow[];
+};
+export function companyWeekCompare(branchIds: number[], todayIso: string): CompanyWeekCompare {
+  const db = getDb();
+  const weekStart = mondayOf(todayIso);
+  const weekEnd = addDaysIso(weekStart, 6);
+  const throughIso = todayIso < weekEnd ? todayIso : weekEnd;   // partial current week → through today
+  const dayCount = Math.round((Date.parse(`${throughIso}T00:00:00Z`) - Date.parse(`${weekStart}T00:00:00Z`)) / 86_400_000) + 1;
+  const prevStart = addDaysIso(weekStart, -7);
+  const prevThrough = addDaysIso(throughIso, -7);
+  const aggStmt = db.prepare(
+    "SELECT SUM(nett) AS nett, SUM(bill_count) AS bills, SUM(pax) AS pax FROM salesa_daily WHERE branch_id = ? AND has_sales = 1 AND sale_date BETWEEN ? AND ?"
+  );
+  const rangeAgg = (bid: number, s: string, e: string): { nett: number; bills: number; pax: number } | null => {
+    const r = aggStmt.get(bid, s, e) as { nett: number | null; bills: number | null; pax: number | null };
+    return r.nett == null ? null : { nett: round2(r.nett), bills: r.bills ?? 0, pax: r.pax ?? 0 };
+  };
+  const rows: CompanyWeekRow[] = [];
+  let tNett = 0, tBills = 0, tPax = 0, cmpCur = 0, cmpPrev = 0, anyCmp = false;
+  for (const b of orderedBranches(branchIds)) {
+    const cur = rangeAgg(b.id, weekStart, throughIso);
+    const prev = rangeAgg(b.id, prevStart, prevThrough);
+    const nett = cur?.nett ?? 0;
+    const prevNett = prev?.nett ?? null;
+    // Skip branches with no sales in either week (never-imported / decommissioned).
+    if (nett <= 0 && prevNett == null) continue;
+    rows.push({ branchId: b.id, branchName: b.name, nett, prevNett, wowPct: relPct(nett, prevNett) });
+    tNett += nett; tBills += cur?.bills ?? 0; tPax += cur?.pax ?? 0;
+    if (cur && prev) { cmpCur += cur.nett; cmpPrev += prev.nett; anyCmp = true; }
+  }
+  return {
+    weekStart, throughIso, dayCount,
+    total: { nett: round2(tNett), prevNett: anyCmp ? round2(cmpPrev) : null, wowPct: anyCmp ? relPct(cmpCur, cmpPrev) : null, bills: tBills, pax: tPax },
+    branches: rows
+  };
 }
 
 // ── A · weekday performance, D · discount insight, E · channel mix ──────────
