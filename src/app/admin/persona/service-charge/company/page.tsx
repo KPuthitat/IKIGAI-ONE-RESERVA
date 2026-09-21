@@ -326,10 +326,10 @@ export default function CompanyServiceChargePage({
                               gross={r.grossAllocation} original={r.grossOriginal ?? null}
                               overridden={!!r.grossOverridden} canEdit={canEditGross} />
                           </td>
-                          <td className={`py-2 pr-3 text-right font-bold ${
-                            r.forfeited ? "text-rose-500 line-through" : "text-emerald-700"
-                          }`}>
-                            {fmtMoney(r.netPayout)}
+                          <td className="py-2 pr-3 text-right align-top">
+                            <div className={`font-bold ${r.forfeited ? "text-rose-500 line-through" : "text-emerald-700"}`}>
+                              {fmtMoney(r.netPayout)}
+                            </div>
                             {!r.forfeited && (r.foodClawback > 0 || r.otherDeductions > 0 || r.groupInsurance > 0 || r.taxMode === "wht") && (
                               <span className="block whitespace-nowrap text-[9px] font-normal text-rose-500 leading-tight">
                                 {[
@@ -340,6 +340,24 @@ export default function CompanyServiceChargePage({
                                 ].filter(Boolean).join(" · ")}
                               </span>
                             )}
+                            {/* เบี้ยประชุม + รายการหัก อยู่ติดยอดสุทธิ (ปรับยอดสุทธิโดยตรง) — owner 2026-09-21 */}
+                            <div className="flex flex-wrap items-center justify-end gap-1 mt-1.5">
+                              <SvcMeetingFeeEditor
+                                userId={r.userId}
+                                yearMonth={month}
+                                displayName={r.displayName}
+                                amount={meetingFees.get(r.userId)?.amount ?? 0}
+                                note={meetingFees.get(r.userId)?.note ?? null}
+                                canEdit={canManagePayout}
+                              />
+                              <SvcDeductionEditor
+                                userId={r.userId}
+                                yearMonth={month}
+                                displayName={r.displayName}
+                                items={r.otherDeductionItems}
+                                canEdit={canManagePayout}
+                              />
+                            </div>
                           </td>
                           <td className="py-2 pr-3">
                             {r.exempted ? (
@@ -364,27 +382,12 @@ export default function CompanyServiceChargePage({
                             )}
                           </td>
                           <td className="py-2 pr-3 text-right align-middle">
-                            <div className="flex flex-wrap items-center justify-end gap-1.5 min-w-[150px]">
+                            <div className="flex flex-wrap items-center justify-end gap-1.5">
                               <SvcReviewButton
                                 userId={r.userId}
                                 yearMonth={month}
                                 reviewed={reviews.has(r.userId)}
                                 reviewedByName={reviews.get(r.userId)?.reviewedByName ?? null}
-                                canEdit={canManagePayout}
-                              />
-                              <SvcMeetingFeeEditor
-                                userId={r.userId}
-                                yearMonth={month}
-                                displayName={r.displayName}
-                                amount={meetingFees.get(r.userId)?.amount ?? 0}
-                                note={meetingFees.get(r.userId)?.note ?? null}
-                                canEdit={canManagePayout}
-                              />
-                              <SvcDeductionEditor
-                                userId={r.userId}
-                                yearMonth={month}
-                                displayName={r.displayName}
-                                items={r.otherDeductionItems}
                                 canEdit={canManagePayout}
                               />
                               <CompanySvcCalcModal
