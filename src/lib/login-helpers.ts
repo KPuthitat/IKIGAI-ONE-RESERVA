@@ -8,7 +8,7 @@
 
 import { cookies } from "next/headers";
 import { getDb, type UserRole } from "./db";
-import { createSession } from "./auth";
+import { createSession, isAdminCapableById, clearAdminUnlocked } from "./auth";
 
 export type AccountStateError = {
   error: string;
@@ -61,22 +61,17 @@ export function finalizeLogin(
   db.prepare("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?").run(userId);
   createSession(userId, null);
 
-  // EVERY account — super_admin included — auto-lands in STAFF mode on login,
-  // with NO exception (owner 2026-09-20: "บังคับเลยให้ทุกบัญชีเข้า auto login
-  // โหมดพนักงานก่อน แล้วก็ค่อยให้กด PIN เข้าโหมดผู้ดูแลระบบ ป้องกันปัญหา"). Nobody
-  // is dropped straight into the admin console anymore — you clock in like any
-  // employee first, then deliberately PIN into admin view via the mode toggle.
-  // This prevents accidentally operating in admin mode. os_view is only a view
-  // preference; every admin page still enforces RBAC server-side.
-  //
-  // `role` is unused now that landing is unconditional, but kept in the
-  // signature so both login entry points share one shape.
-  void role;
-  const landsOnAdmin = false;
+  // Admin-capable accounts land on the ADMIN side first (owner 2026-09-21:
+  // "ควรจะเป็นสิทธิ์ผู้ดูแลระบบก่อนเสมอ"). They don't drop into the console directly —
+  // the admin layout's PIN gate intercepts and requires the 4-digit PIN every
+  // entry, including right after login. Capability is resolved the SAME way the
+  // gate resolves it (isAdminCapableById), so a branch-less admin isn't stranded
+  // on the admin side. Everyone else lands in staff mode as before.
+  const landsOnAdmin = isAdminCapableById(userId, role);
 
-  // Everyone starts in staff view; entering admin is a deliberate, PIN-gated
-  // switch. os_view is a view preference only — every admin page still enforces
-  // requireAdmin()/requirePermission() server-side.
+  // A stale admin unlock must never carry across a login — a fresh session always
+  // re-prompts the PIN. os_view starts "staff"; the PIN gate flips it to "admin".
+  clearAdminUnlocked();
   cookies().set("os_view", "staff", {
     httpOnly: false,
     sameSite: "lax",

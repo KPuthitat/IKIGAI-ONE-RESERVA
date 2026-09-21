@@ -1,4 +1,6 @@
-import { getSessionUser, userCanViewPayroll, canModule } from "@/lib/auth";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { getSessionUser, userCanViewPayroll, canModule, isAdminCapable, isAdminUnlocked } from "@/lib/auth";
 import { getDb, getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -33,6 +35,17 @@ export const dynamic = "force-dynamic";
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = getSessionUser();
   if (!user) return <>{children}</>;
+
+  // Admin mode is PIN-gated on every entry (owner 2026-09-21). The /admin/unlock
+  // PIN page renders bare (no chrome) and is exempt; any admin-capable user who
+  // hasn't unlocked this session is bounced there. Once unlocked, no redirect
+  // fires while navigating admin, so staff↔admin moves never bounce.
+  const rawPath = headers().get("x-pathname") ?? "";
+  if (rawPath.split("?")[0] === "/admin/unlock") return <>{children}</>;
+  if (isAdminCapable(user) && !isAdminUnlocked(user)) {
+    redirect(`/admin/unlock?next=${encodeURIComponent(rawPath || "/admin")}`);
+  }
+
   const lang = getLang();
 
   // Today's-branch pill in the topbar — same pattern staff has, so
@@ -466,7 +479,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               />
             )}
             {canSwitchView && (
-              <AdminModeToggle view="admin" defaultView="staff" className="flex-1 md:flex-none" />
+              <AdminModeToggle view="admin" className="flex-1 md:flex-none" />
             )}
           </div>
 

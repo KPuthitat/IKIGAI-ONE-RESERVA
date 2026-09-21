@@ -45,6 +45,7 @@ export function destroySession(): void {
   const id = cookies().get(SESSION_COOKIE)?.value;
   if (id) getDb().prepare("DELETE FROM sessions WHERE id = ?").run(id);
   cookies().set(SESSION_COOKIE, "", { path: COOKIE_PATH, maxAge: 0 });
+  clearAdminUnlocked();   // never let an admin unlock outlive the session (owner 2026-09-21)
 }
 
 export function getSessionUser(): SessionUser | null {
@@ -345,4 +346,51 @@ export function setClinicalUnlocked(userId: number): void {
     secure: process.env.NODE_ENV === "production",
     path: COOKIE_PATH, maxAge: 8 * 3600
   });
+}
+
+// ── Admin-mode PIN unlock (owner 2026-09-21) ─────────────────────────────────
+// Entering the admin console requires the user's 4-digit PIN. The unlock is an
+// httpOnly cookie = the user's id (JS can't read/forge it via document.cookie),
+// set only by the server on a verified PIN — the same shape as the clinical
+// mj_unlock cookie above. It is EXPLICITLY cleared on login, logout, and when
+// switching back to staff view, so those transitions always re-prompt; an 8h
+// maxAge is a backstop for an abandoned session (mirrors mj_unlock). The admin
+// layout enforces it.
+const ADMIN_UNLOCK_COOKIE = "os_admin_unlock";
+export function isAdminUnlocked(user: SessionUser): boolean {
+  return cookies().get(ADMIN_UNLOCK_COOKIE)?.value === String(user.id);
+}
+export function setAdminUnlocked(userId: number): void {
+  cookies().set(ADMIN_UNLOCK_COOKIE, String(userId), {
+    httpOnly: true, sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: COOKIE_PATH, maxAge: 8 * 3600
+  });
+}
+export function clearAdminUnlocked(): void {
+  cookies().set(ADMIN_UNLOCK_COOKIE, "", {
+    httpOnly: true, sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: COOKIE_PATH, maxAge: 0
+  });
+}
+/** Whether this user may enter the admin console at all (super_admin, a
+ *  branch-admin, or any RBAC-granted user). Mirrors the layout's canSwitchView. */
+export function isAdminCapable(user: SessionUser): boolean {
+  return user.role === "super_admin"
+    || (user.role === "admin" && user.adminBranchIds.length > 0)
+    || user.permissions.length > 0;
+}
+/** Same predicate as isAdminCapable but resolved from a userId+role at login
+ *  time (before a SessionUser exists). Kept in lockstep so login landing and the
+ *  admin-layout gate agree on who is admin-capable (owner 2026-09-21). */
+export function isAdminCapableById(userId: number, role: string): boolean {
+  if (role === "super_admin") return true;
+  if (role === "admin") {
+    const hasAdminBranch = getDb()
+      .prepare("SELECT 1 FROM user_branches WHERE user_id = ? AND is_admin = 1 LIMIT 1")
+      .get(userId) != null;
+    if (hasAdminBranch) return true;
+  }
+  return getUserPermissions(userId).length > 0;
 }
