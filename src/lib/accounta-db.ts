@@ -2041,6 +2041,84 @@ function companySalesForRange(branchIds: number[], start: string, end: string): 
   return round2(branchIds.reduce((s, bid) => s + branchSalesForRange(bid, start, end), 0));
 }
 
+// ── Company cost structure — "กฎ 100%" (owner 2026-09-21) ────────────────────
+// Per branch (+ company roll-up) for a month: ACCOUNTA sales = 100%, then each
+// cost bucket as % of sales — COG (GD) / ค่าแรง (LB) / ค่าธรรมเนียม·GP (FC) /
+// รายจ่ายอื่นๆ (opex, excl CapEx CP + loan LN) — and net profit %. COG% is flagged
+// against the branch's configured %COG ceiling (branches.material_budget_pct).
+export type BranchCostStructure = {
+  branchId: number; name: string;
+  sales: number; cog: number; labor: number; fees: number; otherOpex: number; netProfit: number;
+  cogPct: number | null; laborPct: number | null; feesPct: number | null; otherPct: number | null; netPct: number | null;
+  cogCeilingPct: number | null; cogOverCeiling: boolean;
+};
+export type CompanyCostStructure = { month: string; branches: BranchCostStructure[]; total: BranchCostStructure };
+
+export function companyCostStructure(companyId: number, month: string, today?: string): CompanyCostStructure {
+  const db = getDb();
+  const [y, m] = month.split("-").map(Number);
+  const start = `${month}-01`;
+  const end = `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
+  // The %COG ceiling is defined against TARGET (full-month) sales, but here COG% is
+  // measured against ACTUAL sales-to-date. Mid-month that denominator is only partial
+  // while restock bills have already accrued, so the ratio inflates and would paint
+  // red spuriously. Only flag over-ceiling once the whole month has elapsed. (owner
+  // 2026-09-21 — เทียบ COG% กับเพดาน)
+  const nowIso = today ?? new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const monthComplete = nowIso > end;
+  const nameToCode = new Map(listCategories().map((c) => [c.name, c.code]));
+
+  // Bucket a set of {category-name → amount} rows into COG/LB/FC/other (CapEx + loan excluded).
+  const bucketize = (cats: Array<{ cat: string; amt: number }>) => {
+    let cog = 0, labor = 0, fees = 0, otherOpex = 0;
+    for (const c of cats) {
+      const code = nameToCode.get(c.cat) ?? "";
+      if (code === "CP" || code === "LN") continue;   // exclude CapEx + loan from opex
+      if (code === "GD") cog += c.amt;
+      else if (code === "LB") labor += c.amt;
+      else if (code === "FC") fees += c.amt;
+      else otherOpex += c.amt;
+    }
+    return { cog: round2(cog), labor: round2(labor), fees: round2(fees), otherOpex: round2(otherOpex) };
+  };
+  const catRows = (whereBranch: string, ...params: Array<number | string>) => db.prepare(
+    `SELECT COALESCE(category,'') AS cat, COALESCE(SUM(amount_total),0) AS amt FROM accounta_expenses WHERE review_status = 'confirmed' AND ${whereBranch} AND bill_date BETWEEN ? AND ? GROUP BY COALESCE(category,'')`
+  ).all(...params, start, end) as Array<{ cat: string; amt: number }>;
+
+  const branches = db.prepare(
+    "SELECT id, name, material_quota_enabled AS en, material_budget_pct AS ceil FROM branches WHERE company_id = ? ORDER BY display_order, name COLLATE NOCASE"
+  ).all(companyId) as Array<{ id: number; name: string; en: number; ceil: number | null }>;
+
+  const pctOf = (part: number, whole: number): number | null => whole > 0 ? round2((part / whole) * 100) : null;
+  const rows: BranchCostStructure[] = branches.map((b) => {
+    const sales = branchSalesForRange(b.id, start, end);
+    const { cog, labor, fees, otherOpex } = bucketize(catRows("branch_id = ?", b.id));
+    const netProfit = round2(sales - (cog + labor + fees + otherOpex));
+    const cogPct = pctOf(cog, sales);
+    const cogCeilingPct = b.en && b.ceil != null && b.ceil > 0 ? b.ceil : null;
+    return {
+      branchId: b.id, name: b.name, sales, cog, labor, fees, otherOpex, netProfit,
+      cogPct, laborPct: pctOf(labor, sales), feesPct: pctOf(fees, sales), otherPct: pctOf(otherOpex, sales), netPct: pctOf(netProfit, sales),
+      cogCeilingPct, cogOverCeiling: monthComplete && cogPct != null && cogCeilingPct != null && cogPct > cogCeilingPct
+    };
+  });
+
+  // Company-scoped bills booked to no branch (branch_id IS NULL) — WHT/SSO, accountant
+  // fee, bank charges, legacy payroll — belong to the company roll-up, not any branch.
+  const co = bucketize(catRows("branch_id IS NULL AND company_id = ?", companyId));
+  const sum = (f: (r: BranchCostStructure) => number) => round2(rows.reduce((s, r) => s + f(r), 0));
+  const tSales = sum((r) => r.sales);
+  const tCog = round2(sum((r) => r.cog) + co.cog), tLabor = round2(sum((r) => r.labor) + co.labor);
+  const tFees = round2(sum((r) => r.fees) + co.fees), tOther = round2(sum((r) => r.otherOpex) + co.otherOpex);
+  const tNet = round2(tSales - (tCog + tLabor + tFees + tOther));
+  const total: BranchCostStructure = {
+    branchId: 0, name: "รวมบริษัท", sales: tSales, cog: tCog, labor: tLabor, fees: tFees, otherOpex: tOther, netProfit: tNet,
+    cogPct: pctOf(tCog, tSales), laborPct: pctOf(tLabor, tSales), feesPct: pctOf(tFees, tSales), otherPct: pctOf(tOther, tSales), netPct: pctOf(tNet, tSales),
+    cogCeilingPct: null, cogOverCeiling: false
+  };
+  return { month, branches: rows, total };
+}
+
 /** ภาพรวมการเงินระดับบริษัท ต่อ 1 ปีปฏิทิน (รวมทุกสาขาของ companyId). */
 export function companyFinancialYear(companyId: number, year: number): CompanyFinancialYear {
   const db = getDb();
