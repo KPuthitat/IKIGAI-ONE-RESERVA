@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requirePermission } from "@/lib/auth";
+import { requirePermission, canModule } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu } from "@/lib/salesa-analytics";
 import { fmtMoney } from "@/lib/format";
@@ -83,6 +83,9 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <Link href="/admin/reporta" className="text-sm text-slate-500 hover:text-brand">← กลับ ANALYTICA (รายสาขา)</Link>
+        {canModule(user, "accounta.manage") && (
+          <Link href="/admin/accounta/company" className="text-sm text-brand hover:underline">โครงสร้างต้นทุน · กฎ 100% (ACCOUNTA รวมบริษัท) →</Link>
+        )}
       </div>
       <div>
         <h1 className="text-2xl font-bold text-slate-800">ภาพรวมบริษัท · รวมทุกสาขา</h1>

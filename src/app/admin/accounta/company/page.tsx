@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companyFinancialYear, type CompanyFinancialYear, companyOverviewMonth } from "@/lib/accounta-db";
+import { companyFinancialYear, type CompanyFinancialYear, companyOverviewMonth, companyCostStructure } from "@/lib/accounta-db";
 import { annualProjectionForBranches } from "@/lib/salesa-analytics";
 import { fmtMoney } from "@/lib/format";
 import { TH_MONTHS_FULL } from "@/lib/revshare";
@@ -49,6 +49,16 @@ function Delta({ now, prev, goodUp = true }: { now: number; prev: number; goodUp
       {up ? "▲" : "▼"} {Math.abs(pct)}% <span className="text-slate-400">vs เดือนก่อน</span>
     </span>
   );
+}
+
+// A % cell for the 100%-rule table. `tone`: cog-over → red (COG above ceiling),
+// profit → green/red by sign, default → slate.
+function Ratio({ v, tone }: { v: number | null; tone?: "cog-over" | "profit" }) {
+  if (v == null) return <span className="text-slate-300">—</span>;
+  const cls = tone === "cog-over" ? "text-rose-600 font-semibold"
+    : tone === "profit" ? (v >= 0 ? "text-emerald-700 font-semibold" : "text-rose-600 font-semibold")
+    : "text-slate-600";
+  return <span className={cls}>{v.toFixed(1)}%</span>;
 }
 
 export default function CompanyOverviewPage({
@@ -104,6 +114,9 @@ export default function CompanyOverviewPage({
   // annual target = each branch's monthly target × 12, vs YTD sales + run-rate.
   const companyBranchIds = (getDb().prepare("SELECT id FROM branches WHERE company_id = ?").all(companyId) as Array<{ id: number }>).map((b) => b.id);
   const annual = annualProjectionForBranches(companyBranchIds, todayBkk());
+  // กฎ 100% — โครงสร้างต้นทุนเป็น % ของยอดขาย ต่อสาขา (owner 2026-09-21).
+  const cost = companyCostStructure(companyId, month, todayBkk());
+  const costMonthComplete = month < nowMonth;
 
   return (
     <div className="space-y-4">
@@ -247,6 +260,61 @@ export default function CompanyOverviewPage({
             </tr>
           </tfoot>
         </table>
+      </div>
+
+      {/* กฎ 100% — โครงสร้างต้นทุนเป็น % ของยอดขาย ต่อสาขา (owner 2026-09-21) */}
+      <div className="card">
+        <h3 className="font-bold text-slate-800 mb-1">โครงสร้างต้นทุน · กฎ 100% ({thMonthLabel(month)})</h3>
+        <p className="text-[11px] text-slate-400 mb-2">
+          ยอดขาย = 100% · ต้นทุนแต่ละก้อนเป็น % ของยอดขาย (ไม่รวม CapEx/เงินกู้) · COG% ที่เกินเพดานจะเป็นสีแดง
+          {!costMonthComplete && <span className="block text-amber-600">* เดือนนี้ยังไม่จบ — แสดง % ตามยอดขายถึงวันนี้ ยังไม่ตัดสินว่าเกินเพดาน (รอสิ้นเดือน)</span>}
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm tabular-nums">
+            <thead><tr className="text-[11px] text-slate-400 border-b border-slate-200">
+              <th className="text-left py-1.5 pr-2">สาขา</th>
+              <th className="text-right py-1.5 px-2">ยอดขาย</th>
+              <th className="text-right py-1.5 px-2">COG%</th>
+              <th className="text-right py-1.5 px-2">ค่าแรง%</th>
+              <th className="text-right py-1.5 px-2">ค่าธรรมเนียม%</th>
+              <th className="text-right py-1.5 px-2">อื่นๆ%</th>
+              <th className="text-right py-1.5 pl-2">กำไร%</th>
+            </tr></thead>
+            <tbody>
+              {cost.branches.map((b) => (
+                <tr key={b.branchId} className="border-b border-slate-50">
+                  <td className="text-left py-1.5 pr-2 text-slate-700">{b.name}</td>
+                  <td className="text-right py-1.5 px-2 text-slate-600">{fmtMoney(b.sales)}</td>
+                  <td className="text-right py-1.5 px-2">
+                    <Ratio v={b.cogPct} tone={b.cogOverCeiling ? "cog-over" : undefined} />
+                    {b.cogCeilingPct != null && <span className="block text-[10px] text-slate-400">เพดาน {b.cogCeilingPct}%</span>}
+                  </td>
+                  <td className="text-right py-1.5 px-2"><Ratio v={b.laborPct} /></td>
+                  <td className="text-right py-1.5 px-2"><Ratio v={b.feesPct} /></td>
+                  <td className="text-right py-1.5 px-2"><Ratio v={b.otherPct} /></td>
+                  <td className="text-right py-1.5 pl-2">
+                    <Ratio v={b.netPct} tone="profit" />
+                    {b.netPct == null && b.netProfit !== 0 && (
+                      <span className={`block text-[10px] ${b.netProfit < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtMoney(b.netProfit)}</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 font-bold text-slate-800">
+                <td className="text-left py-2 pr-2">รวมบริษัท</td>
+                <td className="text-right py-2 px-2">{fmtMoney(cost.total.sales)}</td>
+                <td className="text-right py-2 px-2"><Ratio v={cost.total.cogPct} /></td>
+                <td className="text-right py-2 px-2"><Ratio v={cost.total.laborPct} /></td>
+                <td className="text-right py-2 px-2"><Ratio v={cost.total.feesPct} /></td>
+                <td className="text-right py-2 px-2"><Ratio v={cost.total.otherPct} /></td>
+                <td className="text-right py-2 pl-2"><Ratio v={cost.total.netPct} tone="profit" /></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <p className="text-[11px] text-slate-400 mt-2">ต้นทุน = บิลที่ยืนยันแล้วในเดือน · COG=วัตถุดิบ(GD) · ค่าแรง=เงินเดือน(LB) · ค่าธรรมเนียม=GP/แพลตฟอร์ม(FC) · กำไร = ยอดขาย − ต้นทุนดำเนินงานทั้งหมด</p>
       </div>
 
       {/* Panel 3 — tax this month + company payables */}

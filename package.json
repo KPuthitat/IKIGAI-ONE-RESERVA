@@ -19,6 +19,7 @@
     "test:salesa": "node --import tsx scripts/test-salesa.ts",
     "test:meetings": "node --import tsx scripts/test-exec-meetings.ts",
     "test:branch-cost": "node --import tsx scripts/test-branch-cost.ts",
+    "test:company-cost": "node --import tsx scripts/test-company-cost.ts",
     "test:payroll": "node --import tsx scripts/test-payroll.ts",
     "test:payroll-summary": "node --import tsx scripts/test-payroll-summary-doc.ts",
     "test:referral": "node --import tsx scripts/test-referral.ts",
