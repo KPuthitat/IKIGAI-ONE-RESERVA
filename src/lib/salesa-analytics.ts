@@ -14,15 +14,6 @@ function addDaysIso(iso: string, n: number): string {
 function daysInMonth(y: number, m: number): number {
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
-/** Same day-of-month, previous month. Null when that day doesn't exist there
- *  (e.g. the 31st has no counterpart in a 30-day month). */
-function sameDayLastMonthIso(iso: string): string | null {
-  const [y, m, d] = iso.split("-").map(Number);
-  const pm = m === 1 ? 12 : m - 1;
-  const py = m === 1 ? y - 1 : y;
-  if (d > daysInMonth(py, pm)) return null;
-  return `${py}-${String(pm).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-}
 const TH_WEEKDAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 function thaiWeekday(iso: string): string {
   return TH_WEEKDAYS[new Date(`${iso}T00:00:00Z`).getUTCDay()];
@@ -124,12 +115,24 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
   const row = getDaily(branchId, date);
   if (!row) return null;
 
-  // Same weekday last week (−7d) and same day-of-month last month.
+  // Same weekday last week (−7d) for a day-to-day compare; and the same-period
+  // MONTH-TO-DATE cumulative (day 1..today) vs the previous month's identical
+  // window — owner 2026-09-21: เทียบ "ยอดสะสม 20 วันแรก" กับเดือนก่อน ไม่ใช่เทียบ
+  // ยอดวันที่ 20 วันเดียว.
+  const dom = Number(date.slice(8, 10));
+  const dY = Number(date.slice(0, 4)), dM = Number(date.slice(5, 7));
+  const pmM = dM === 1 ? 12 : dM - 1, pmY = dM === 1 ? dY - 1 : dY;
   const wowRow = getDaily(branchId, addDaysIso(date, -7));
-  const momIso = sameDayLastMonthIso(date);
-  const momRow = momIso ? getDaily(branchId, momIso) : null;
   const wowHasData = !!wowRow && wowRow.has_sales === 1;
-  const momHasData = !!momRow && momRow.has_sales === 1;
+  const curAgg = aggMtd(branchId, dY, dM, dom);      // 1..today this month
+  const prevAgg = aggMtd(branchId, pmY, pmM, dom);   // 1..same day last month
+  const momHasData = !!curAgg && !!prevAgg;
+  const cumVal = (agg: MtdAgg, key: string): number =>
+    key === "bills" ? agg.bills
+      : key === "pax" ? agg.pax
+      : key === "avgBill" ? (agg.bills > 0 ? agg.nett / agg.bills : 0)
+      : key === "avgHead" ? (agg.pax > 0 ? agg.nett / agg.pax : 0)
+      : agg.nett;
 
   const defs: Array<{ key: string; label: string; kind: "baht" | "int"; get: (d: DailyRow) => number }> = [
     { key: "nett", label: "ยอดขายสุทธิ", kind: "baht", get: (d) => d.nett },
@@ -143,7 +146,7 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
     return {
       key: m.key, label: m.label, value, kind: m.kind,
       wowPct: wowHasData ? relPct(value, m.get(wowRow!)) : null,
-      momPct: momHasData ? relPct(value, m.get(momRow!)) : null
+      momPct: momHasData ? relPct(cumVal(curAgg!, m.key), cumVal(prevAgg!, m.key)) : null
     };
   });
 
@@ -151,7 +154,6 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
   const items = menu.items.map((m, i) => ({ ...m, rank: i + 1 }));
   const cats = menu.categories.map((m, i) => ({ ...m, rank: i + 1 }));
   const unitsByName = new Map(itemUnitsRange(branchId, date, date).map((u) => [u.name, u.units]));
-  const dom = Number(date.slice(8, 10));
   const weekdayTh = thaiWeekday(date);
   const discountPct = pct(Math.abs(row.discount), row.gross);
   const voidPct = pct(row.void_amount, row.gross);
@@ -166,8 +168,8 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
     voidPct,
     weekdayTh,
     dom,
-    wowLabel: `${weekdayTh}ที่แล้ว`,
-    momLabel: `วันที่ ${dom} เดือนก่อน`,
+    wowLabel: `วัน${weekdayTh}ที่แล้ว`,
+    momLabel: `สะสม ${dom} วันแรก · เดือนก่อน`,
     wowHasData,
     momHasData,
     metrics,
@@ -177,7 +179,7 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
     bottomItems: items.length > topN ? attachUnits(items.slice(-topN).reverse(), unitsByName) : [],
     topCategories: cats.slice(0, topN),
     peakHour,
-    advice: dailyAdvice({ metrics, wowHasData, wowLabel: `${weekdayTh}ที่แล้ว`, momHasData, momLabel: `วันที่ ${dom} เดือนก่อน`, discountPct, voidPct, topItems, peakHour })
+    advice: dailyAdvice({ metrics, wowHasData, wowLabel: `วัน${weekdayTh}ที่แล้ว`, momHasData, momLabel: `สะสม ${dom} วันแรก · เดือนก่อน`, discountPct, voidPct, topItems, peakHour })
   };
 }
 
