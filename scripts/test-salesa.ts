@@ -626,11 +626,12 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     return b.values[idx("2026-01-10")] === 10000 && b.values[idx("2026-02-14")] === 30000
       && b.values[idx("2026-09-03")] === 5000 && b.values[idx("2026-01-11")] === null;
   })());
-  ok("dailybars: total + peak day (Feb 14) + avg over 5 days", (() => {
+  ok("dailybars: total + peak (Feb 14) + low (Sep 3, 5000) + avg over 5 days", (() => {
     const b = dbars.branches.find((x) => x.branchId === bidBar);
     if (!b) return false;
     const feb14 = Math.floor((Date.UTC(2026, 1, 14) - Date.UTC(2026, 0, 1)) / 86_400_000);
-    return b.total === 70000 && b.peakIdx === feb14 && b.avgPerDay === 14000;
+    const sep3 = Math.floor((Date.UTC(2026, 8, 3) - Date.UTC(2026, 0, 1)) / 86_400_000);
+    return b.total === 70000 && b.peakIdx === feb14 && b.lowIdx === sep3 && b.avgPerDay === 14000;
   })());
   ok("dailybars: past year spans all 365 days", analytics.annualBranchDailyBars(2025, "2026-09-20").dayCount === 365);
 
