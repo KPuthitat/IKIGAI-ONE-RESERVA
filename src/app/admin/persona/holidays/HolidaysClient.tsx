@@ -248,100 +248,114 @@ function HolidayModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div
-        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-5 space-y-3"
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="font-semibold text-slate-800">
-          {existing ? t("admin.persona.holidays.editTitle") : t("admin.persona.holidays.addTitle")}
-        </h3>
-
-        <div>
-          <label className="label">{t("admin.persona.holidays.col.date")}</label>
-          <input
-            type="date" className="input" value={date}
-            onChange={(e) => setDate(e.target.value)}
-            disabled={Boolean(existing)}
-          />
-          {existing && <p className="text-xs text-slate-500 mt-1">{t("admin.persona.holidays.dateImmutable")}</p>}
-        </div>
-        <div>
-          <label className="label">{t("admin.persona.holidays.col.nameTh")}</label>
-          <input className="input" value={nameTh} onChange={(e) => setNameTh(e.target.value)} maxLength={200} />
-        </div>
-        <div>
-          <label className="label">{t("admin.persona.holidays.col.nameEn")}</label>
-          <input className="input" value={nameEn} onChange={(e) => setNameEn(e.target.value)} maxLength={200} />
+        {/* Header (owner 2026-09-21: modal covers holidays, special days AND
+            pay-premium days — the title + subtitle now say so). */}
+        <div className="px-5 pt-5 pb-3 border-b border-slate-100">
+          <h3 className="font-semibold text-slate-800">
+            {existing ? t("admin.persona.holidays.editTitle") : t("admin.persona.holidays.addTitle")}
+          </h3>
+          <p className="text-xs text-slate-400 mt-0.5">วันหยุด · วันสำคัญ · วันจ่ายพิเศษ — ตั้งค่าได้ในที่เดียว</p>
         </div>
 
-        <label className="flex items-start gap-2 text-sm cursor-pointer">
-          <span className="mt-0.5">
-            <Switch checked={isWorkday} onChange={setIsWorkday} />
-          </span>
-          <span className="text-slate-700">
-            {t("admin.persona.holidays.isWorkdayLabel")}
-          </span>
-        </label>
-
-        <label className="flex items-start gap-2 text-sm cursor-pointer">
-          <span className="mt-0.5">
-            <Switch checked={ptSpecial} onChange={setPtSpecial} />
-          </span>
-          <span className="text-slate-700">
-            วันพิเศษพนักงานพาร์ทไทม์ (จ่ายค่าตอบแทน 1.5 เท่า)
-            <span className="block text-[11px] text-slate-400">
-              แยกจากวันหยุดราชการ — บริษัทกำหนด ~13 วัน/ปี · วันหยุดราชการทั่วไปไม่ได้เรทพิเศษ
-            </span>
-          </span>
-        </label>
-
-        <label className="flex items-start gap-2 text-sm cursor-pointer">
-          <span className="mt-0.5">
-            <Switch checked={doublePay} onChange={setDoublePay} />
-          </span>
-          <span className="text-slate-700">
-            วันจ่ายสองเท่า (พนักงานทุกคน จ่าย 2 เท่า)
-            <span className="block text-[11px] text-slate-400">
-              พนักงานทุกคนที่ทำงานวันนี้ได้ทั้งค่าตอบแทนฐานและค่าล่วงเวลา ×2 · มีผลเฉพาะวันที่ตั้งไว้
-            </span>
-          </span>
-        </label>
-
-        {(ptSpecial || doublePay) && branches.length > 0 && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
-            <div className="text-sm font-medium text-slate-700">
-              สาขาที่ใช้เรทพิเศษวันนี้
-              <span className="block text-[11px] font-normal text-slate-400">
-                ไม่เลือกสาขาใดเลย = มีผลทุกสาขา · เลือกบางสาขา = มีผลเฉพาะสาขาที่เลือก (คลินิกกับร้านอาหารกำหนดคนละวันได้)
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {branches.map((b) => {
-                const on = scopeIds.has(b.id);
-                return (
-                  <button
-                    key={b.id} type="button" onClick={() => toggleBranch(b.id)}
-                    className={`text-xs px-3 py-1.5 rounded-full border transition ${
-                      on ? "bg-brand text-white border-brand" : "bg-white text-slate-600 border-slate-300 hover:border-brand"
-                    }`}
-                  >
-                    {b.name}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[11px] text-slate-500">
-              {scopeIds.size === 0
-                ? "ตอนนี้: มีผลทุกสาขา"
-                : `ตอนนี้: เฉพาะ ${branches.filter((b) => scopeIds.has(b.id)).map((b) => b.name).join(", ")}`}
-            </p>
+        {/* Scrollable body — never pushes the buttons off small screens. */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          <div>
+            <label className="label">{t("admin.persona.holidays.col.date")}</label>
+            <input
+              type="date" className="input" value={date}
+              onChange={(e) => setDate(e.target.value)}
+              disabled={Boolean(existing)}
+            />
+            {existing && <p className="text-xs text-slate-500 mt-1">{t("admin.persona.holidays.dateImmutable")}</p>}
           </div>
-        )}
+          <div>
+            <label className="label">{t("admin.persona.holidays.col.nameTh")}</label>
+            <input className="input" value={nameTh} onChange={(e) => setNameTh(e.target.value)} maxLength={200} />
+          </div>
+          <div>
+            <label className="label">{t("admin.persona.holidays.col.nameEn")}</label>
+            <input className="input" value={nameEn} onChange={(e) => setNameEn(e.target.value)} maxLength={200} />
+          </div>
 
-        {err && <div className="text-rose-600 text-sm">{err}</div>}
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <span className="mt-0.5">
+              <Switch checked={isWorkday} onChange={setIsWorkday} />
+            </span>
+            <span className="text-slate-700">
+              {t("admin.persona.holidays.isWorkdayLabel")}
+            </span>
+          </label>
 
-        <div className="flex gap-2 pt-2">
+          {/* Pay premiums grouped so the two rates read together (owner 2026-09-21). */}
+          <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+            <div className="text-xs font-semibold text-slate-500">การจ่ายพิเศษตามวัน (เลือกได้)</div>
+
+            <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <span className="mt-0.5">
+                <Switch checked={ptSpecial} onChange={setPtSpecial} />
+              </span>
+              <span className="text-slate-700">
+                วันพิเศษพนักงานพาร์ทไทม์ <span className="font-medium text-emerald-700">(จ่าย 1.5 เท่า)</span>
+                <span className="block text-[11px] text-slate-400">
+                  แยกจากวันหยุดราชการ — บริษัทกำหนด ~13 วัน/ปี · วันหยุดราชการทั่วไปไม่ได้เรทพิเศษ
+                </span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <span className="mt-0.5">
+                <Switch checked={doublePay} onChange={setDoublePay} />
+              </span>
+              <span className="text-slate-700">
+                วันจ่ายสองเท่า พนักงานทุกคน <span className="font-medium text-emerald-700">(จ่าย 2 เท่า)</span>
+                <span className="block text-[11px] text-slate-400">
+                  พนักงานทุกคนที่ทำงานวันนี้ได้ทั้งค่าตอบแทนฐานและค่าล่วงเวลา ×2 · มีผลเฉพาะวันที่ตั้งไว้
+                </span>
+              </span>
+            </label>
+
+            {(ptSpecial || doublePay) && branches.length > 0 && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                <div className="text-sm font-medium text-slate-700">
+                  สาขาที่ใช้เรทพิเศษวันนี้
+                  <span className="block text-[11px] font-normal text-slate-400">
+                    ไม่เลือกสาขาใดเลย = มีผลทุกสาขา · เลือกบางสาขา = มีผลเฉพาะสาขาที่เลือก (คลินิกกับร้านอาหารกำหนดคนละวันได้)
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {branches.map((b) => {
+                    const on = scopeIds.has(b.id);
+                    return (
+                      <button
+                        key={b.id} type="button" onClick={() => toggleBranch(b.id)}
+                        className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                          on ? "bg-brand text-white border-brand" : "bg-white text-slate-600 border-slate-300 hover:border-brand"
+                        }`}
+                      >
+                        {b.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  {scopeIds.size === 0
+                    ? "ตอนนี้: มีผลทุกสาขา"
+                    : `ตอนนี้: เฉพาะ ${branches.filter((b) => scopeIds.has(b.id)).map((b) => b.name).join(", ")}`}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {err && <div className="text-rose-600 text-sm">{err}</div>}
+        </div>
+
+        {/* Sticky footer — always visible even when the body scrolls. */}
+        <div className="flex gap-2 px-5 py-4 border-t border-slate-100">
           <button type="button" onClick={onClose} disabled={busy}
-            className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
+            className="flex-1 py-2.5 rounded-full border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
             {t("common.cancel")}
           </button>
           <button type="button" onClick={save} disabled={busy}
