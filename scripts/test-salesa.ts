@@ -190,7 +190,7 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("daily discountPct = |−2105|/15201", near(a16.discountPct ?? 0, (2105 / 15201) * 100));
   ok("daily metrics has 5 headings", a16.metrics.length === 5 && a16.metrics.map((m) => m.key).join(",") === "nett,bills,pax,avgBill,avgHead");
   ok("no WoW/MoM baseline → null (this dataset)", a16.metrics.every((m) => m.wowPct === null && m.momPct === null));
-  ok("weekday/dom labels", a16.weekdayTh === "พุธ" && a16.wowLabel === "พุธที่แล้ว" && a16.momLabel === "วันที่ 16 เดือนก่อน");
+  ok("weekday/dom labels", a16.weekdayTh === "พุธ" && a16.wowLabel === "วันพุธที่แล้ว" && a16.momLabel === "สะสม 16 วันแรก · เดือนก่อน");
   ok("daily top item = คอหมูย่าง", a16.topItems[0]?.name === "คอหมูย่าง");
   ok("daily bottom item = ข้าวเหนียว (lowest)", a16.bottomItems[0]?.name === "ข้าวเหนียว");
   // advice: discount ~13.8% (≥8 → warning) + top-earning menu highlight; no
@@ -234,20 +234,22 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / bills, avgPax: pax / bills,
     avgSalesPax: nett / pax, payments: [], types: [], sources: []
   });
-  put("2026-09-16", 14658, 23, 43);   // target (Wed)
-  put("2026-09-09", 13000, 21, 40);   // same weekday last week
-  put("2026-08-16", 14000, 24, 45);   // same day-of-month last month
+  put("2026-09-16", 14658, 23, 43);   // target (Wed) — MTD 1..16 this month
+  put("2026-09-09", 13000, 21, 40);   // same weekday last week (also in MTD)
+  put("2026-08-16", 14000, 24, 45);   // last month's 1..16 window (only day)
   put("2025-09-05", 50000, 80, 150);  // last year, same month (for YoY MTD)
 
   const a2 = analytics.dailyAnalytics(bid2, "2026-09-16")!;
   const bills2 = a2.metrics.find((m) => m.key === "bills")!;
   const pax2 = a2.metrics.find((m) => m.key === "pax")!;
-  ok("WoW bills vs พุธที่แล้ว (23 vs 21)", near(bills2.wowPct ?? 0, ((23 - 21) / 21) * 100));
-  ok("MoM bills vs วันที่16เดือนก่อน (23 vs 24)", near(bills2.momPct ?? 0, ((23 - 24) / 24) * 100));
+  ok("WoW bills vs วันพุธที่แล้ว (23 vs 21)", near(bills2.wowPct ?? 0, ((23 - 21) / 21) * 100));
+  // MoM now compares cumulative 1–16: this month bills 23+21=44 vs last month 24.
+  ok("MoM bills cumulative 1–16 (44 vs 24)", near(bills2.momPct ?? 0, ((44 - 24) / 24) * 100));
   ok("WoW pax (43 vs 40)", near(pax2.wowPct ?? 0, ((43 - 40) / 40) * 100));
-  ok("MoM pax (43 vs 45)", near(pax2.momPct ?? 0, ((43 - 45) / 45) * 100));
-  // nett 14658 vs พุธที่แล้ว 13000 = +12.8% → positive trend headline first.
-  ok("advice trend headline WoW-up", a2.advice[0]?.startsWith("ยอดขายสูงกว่าพุธที่แล้ว"));
+  // pax cumulative 1–16: 43+40=83 vs 45.
+  ok("MoM pax cumulative 1–16 (83 vs 45)", near(pax2.momPct ?? 0, ((83 - 45) / 45) * 100));
+  // nett 14658 vs วันพุธที่แล้ว 13000 = +12.8% → positive trend headline first.
+  ok("advice trend headline WoW-up", a2.advice[0]?.startsWith("ยอดขายสูงกว่าวันพุธที่แล้ว"));
 
   const mc = analytics.monthComparison(bid2, 2026, 9, "2026-09-30");
   const mtd = 14658 + 13000; // Sept days ≤30 with sales
