@@ -651,6 +651,21 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   // Past year → no annual roll-up (projection only makes sense for the current year).
   ok("company: past-year view has no annual roll-up", analytics.companyOverview([bidCA, bidCB], 2025, 9, "2026-09-20").annual === null);
 
+  // ── 18) company weekly same-period compare (owner 2026-09-21): this ISO week
+  // Mon..today vs the previous week's identical day-window. ──
+  const bidWA = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('wka','WK-A',1)").run().lastInsertRowid);
+  const bidWB = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('wkb','WK-B',2)").run().lastInsertRowid);
+  fputC(bidWA, "2026-09-15", 12000, 10, 15);  // this week (Mon 14..Wed 16)
+  fputC(bidWB, "2026-09-16", 8000, 6, 9);      // this week, B only
+  fputC(bidWA, "2026-09-08", 10000, 8, 12);    // last week same window (Mon 07..Wed 09)
+  const cwk = analytics.companyWeekCompare([bidWA, bidWB], "2026-09-16");
+  ok("week: window Mon..today (09-14..09-16, 3 วัน)", cwk.weekStart === "2026-09-14" && cwk.throughIso === "2026-09-16" && cwk.dayCount === 3);
+  ok("week: company nett 20000, same-store WoW +20% (12000 vs 10000)", cwk.total.nett === 20000 && cwk.total.prevNett === 10000 && cwk.total.wowPct === 20);
+  ok("week: WA +20% (12000 vs 10000), WB has no prior week", (() => {
+    const a = cwk.branches.find((b) => b.branchId === bidWA), b = cwk.branches.find((x) => x.branchId === bidWB);
+    return !!a && a.nett === 12000 && a.prevNett === 10000 && a.wowPct === 20 && !!b && b.nett === 8000 && b.prevNett === null && b.wowPct === null;
+  })());
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

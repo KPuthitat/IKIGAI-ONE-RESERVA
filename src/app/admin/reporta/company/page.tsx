@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companyOverview } from "@/lib/salesa-analytics";
+import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis } from "@/lib/salesa-analytics";
 import { fmtMoney } from "@/lib/format";
 
 // ANALYTICA · ภาพรวมบริษัท (รวมทุกสาขา) — owner 2026-09-21. ยอดขายรวมบริษัท +
@@ -57,6 +57,13 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
 
   const companyBranchIds = (db.prepare("SELECT id FROM branches WHERE company_id = ?").all(companyId) as Array<{ id: number }>).map((b) => b.id);
   const ov = companyOverview(companyBranchIds, year, month, today);
+  // Phase 2 (owner 2026-09-21): weekly same-period compare, full-year growth
+  // bars and festival uplift — all company-scoped. Growth/festival are for the
+  // current year regardless of the month picker (they're whole-year views).
+  const wk = companyWeekCompare(companyBranchIds, today);
+  const bars = annualBranchBars(year, today, companyBranchIds);
+  const fest = festivalAnalysis(year, today, companyBranchIds);
+  const thDate = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return `${d} ${TH_MONTHS[m]}`; };
 
   const prev = shiftMonth(year, month, -1);
   const next = shiftMonth(year, month, 1);
@@ -195,9 +202,103 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
             <p className="text-[11px] text-slate-400 mt-2">
               ทำได้ = ยอดขายสะสมถึงวันที่ {ov.throughDay} ÷ เป้าทั้งเดือน
               {ov.target ? ` · แถวรวม “ทำได้” นับเฉพาะ ${ov.targetedBranchCount} สาขาที่ตั้งเป้า (฿${baht(ov.target.mtdNett)} ÷ ฿${baht(ov.target.target)})` : ""}
-              {" · การเติบโต/เทศกาล/เมนูรวมบริษัท จะตามมาในเฟสถัดไป"}
             </p>
           </div>
+
+          {/* Weekly same-period compare (owner 2026-09-21) */}
+          {wk.branches.length > 0 && (
+          <div className="card space-y-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="text-sm font-bold text-slate-800">สัปดาห์นี้ เทียบสัปดาห์ก่อน (ช่วงเวลาเดียวกัน)</div>
+              <div className="text-[11px] text-slate-400">{thDate(wk.weekStart)}–{thDate(wk.throughIso)} · {wk.dayCount} วัน</div>
+            </div>
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <span className="text-xl font-bold text-slate-800 tabular-nums">฿{baht(wk.total.nett)}</span>
+              <span className="text-sm"><Pct pct={wk.total.wowPct} /></span>
+              {wk.total.prevNett != null && <span className="text-[11px] text-slate-400">สัปดาห์ก่อน ฿{baht(wk.total.prevNett)}</span>}
+              <span className="text-[11px] text-slate-400">· {wk.total.bills.toLocaleString("th-TH")} บิล · {wk.total.pax.toLocaleString("th-TH")} คน</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm tabular-nums">
+                <thead><tr className="text-[11px] text-slate-400 border-b border-slate-200">
+                  <th className="text-left py-1.5 pr-2">สาขา</th><th className="text-right py-1.5 px-2">สัปดาห์นี้</th>
+                  <th className="text-right py-1.5 px-2">สัปดาห์ก่อน</th><th className="text-right py-1.5 pl-2">เทียบ</th>
+                </tr></thead>
+                <tbody>
+                  {wk.branches.map((b) => (
+                    <tr key={b.branchId} className="border-b border-slate-50">
+                      <td className="py-1.5 pr-2 text-slate-700">{b.branchName}</td>
+                      <td className="py-1.5 px-2 text-right font-semibold text-slate-700">฿{baht(b.nett)}</td>
+                      <td className="py-1.5 px-2 text-right text-slate-500">{b.prevNett != null ? `฿${baht(b.prevNett)}` : "—"}</td>
+                      <td className="py-1.5 pl-2 text-right"><Pct pct={b.wowPct} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-slate-400">% รวมเทียบเฉพาะสาขาที่มีข้อมูลทั้งสองสัปดาห์ · แสดงเฉพาะสาขาที่มียอดขายในสัปดาห์ที่เทียบ</p>
+          </div>
+          )}
+
+          {/* Full-year growth bars per branch (owner 2026-09-21), company-scoped */}
+          {bars.branches.length > 0 && (
+            <div className="card space-y-3">
+              <div className="text-sm font-bold text-slate-800">เทรนด์การเติบโตทั้งปี {year + 543} — รายเดือนแต่ละสาขา</div>
+              {bars.branches.map((b) => {
+                const peak = Math.max(1, ...b.months.map((v) => v ?? 0));
+                return (
+                  <div key={b.branchId}>
+                    <div className="flex items-baseline justify-between gap-2 mb-1">
+                      <span className="text-sm font-semibold text-slate-800">{b.branchName}</span>
+                      <span className="text-xs text-slate-500">รวม ฿{baht(b.total)}{b.growthPct != null && <span className="ml-2"><Pct pct={b.growthPct} /></span>}</span>
+                    </div>
+                    <div className="flex items-end gap-1 h-20">
+                      {b.months.map((v, i) => (
+                        <div key={i} className="flex-1 flex flex-col items-center justify-end h-full" title={`${TH_MONTHS[i + 1]}: ${v == null ? "ไม่มีข้อมูล" : `฿${baht(v)}`}`}>
+                          <div className={`w-full rounded-t ${b.peakMonth === i + 1 ? "bg-emerald-500" : "bg-emerald-300"}`} style={{ height: v == null ? "0%" : `${Math.max(2, (v / peak) * 100)}%` }} />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-1 mt-1">{b.months.map((_, i) => <div key={i} className="flex-1 text-center text-[9px] text-slate-400">{i + 1}</div>)}</div>
+                  </div>
+                );
+              })}
+              <p className="text-[11px] text-slate-400">แท่ง = ยอดขายสุทธิรายเดือน (เลข 1–12 = เดือน) · เขียวเข้ม = เดือนสูงสุด · % = เดือนแรก↔เดือนล่าสุดที่มีข้อมูล</p>
+            </div>
+          )}
+
+          {/* Festival / important-day uplift (owner 2026-09-21), company-scoped */}
+          {fest.rows.length > 0 && (
+            <div className="card">
+              <div className="text-sm font-bold text-slate-800 mb-2">วันสำคัญ / เทศกาล {year + 543} — เทียบยอดขายแต่ละสาขา</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead><tr className="text-[11px] text-slate-500 border-b border-slate-200">
+                    <th className="text-left py-2 pr-3">วันสำคัญ</th>
+                    {fest.branches.map((b) => <th key={b.id} className="text-right py-2 px-2 whitespace-nowrap">{b.name}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {fest.rows.map((row) => (
+                      <tr key={row.date} className="border-b border-slate-100 align-top">
+                        <td className="py-2 pr-3"><div className="font-medium text-slate-800">{row.nameTh}</div><div className="text-[11px] text-slate-400">{row.dateLabel}</div></td>
+                        {row.branches.map((c) => (
+                          <td key={c.branchId} className="py-2 px-2 text-right">
+                            {c.sales == null ? <span className="text-slate-300">—</span> : (
+                              <>
+                                <div className="font-semibold text-slate-700 tabular-nums">฿{baht(c.sales)}</div>
+                                {c.upliftPct != null && <div className="text-[11px]"><Pct pct={c.upliftPct} /></div>}
+                              </>
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2">▲/▼ = ยอดวันนั้นเทียบกับยอดขายเฉลี่ยต่อวันของสาขาในเดือนเดียวกัน</p>
+            </div>
+          )}
         </>
       )}
     </div>
