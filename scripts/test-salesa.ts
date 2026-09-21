@@ -666,6 +666,21 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     return !!a && a.nett === 12000 && a.prevNett === 10000 && a.wowPct === 20 && !!b && b.nett === 8000 && b.prevNett === null && b.wowPct === null;
   })());
 
+  // ── 19) company top menu / categories รวมทุกสาขา (owner 2026-09-21) ──
+  const bidM1 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('tm1','TM-1')").run().lastInsertRowid);
+  const bidM2 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('tm2','TM-2')").run().lastInsertRowid);
+  sdb.upsertMenu(bidM1, uid, { date: "2026-09-10", dateEnd: "2026-09-10", merchant: "TM1", categories: [{ name: "ต้ม", nett: 100 }], items: [{ name: "ต้มยำ", nett: 100 }] });
+  sdb.upsertMenu(bidM2, uid, { date: "2026-09-11", dateEnd: "2026-09-11", merchant: "TM2", categories: [{ name: "ต้ม", nett: 50 }, { name: "ผัด", nett: 80 }], items: [{ name: "ต้มยำ", nett: 50 }, { name: "ผัดไทย", nett: 80 }] });
+  const tm = analytics.companyTopMenu([bidM1, bidM2], "2026-09-01", "2026-09-30");
+  ok("topmenu: ต้มยำ merged across 2 branches (150), ผัดไทย 80 (1 branch)", (() => {
+    const a = tm.items[0], b = tm.items[1];
+    return a.name === "ต้มยำ" && a.nett === 150 && a.branchCount === 2 && b.name === "ผัดไทย" && b.nett === 80 && b.branchCount === 1;
+  })());
+  ok("topmenu: category ต้ม 150 (2), ผัด 80 (1)", (() => {
+    const a = tm.categories[0], b = tm.categories[1];
+    return a.name === "ต้ม" && a.nett === 150 && a.branchCount === 2 && b.name === "ผัด" && b.nett === 80 && b.branchCount === 1;
+  })());
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

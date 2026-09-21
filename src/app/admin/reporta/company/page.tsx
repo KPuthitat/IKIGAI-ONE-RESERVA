@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis } from "@/lib/salesa-analytics";
+import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu } from "@/lib/salesa-analytics";
 import { fmtMoney } from "@/lib/format";
 
 // ANALYTICA · ภาพรวมบริษัท (รวมทุกสาขา) — owner 2026-09-21. ยอดขายรวมบริษัท +
@@ -64,6 +64,13 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
   const bars = annualBranchBars(year, today, companyBranchIds);
   const fest = festivalAnalysis(year, today, companyBranchIds);
   const thDate = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return `${d} ${TH_MONTHS[m]}`; };
+  // Top menu / categories รวมทุกสาขา. Window = 1..today for the current month, the
+  // FULL month for a past month (matches the per-branch monthly view, and doesn't
+  // depend on daily has_sales — a menu-only import still shows).
+  const mmp = String(month).padStart(2, "0");
+  const isCurMonth = year === nowY && month === nowM;
+  const menuDay = isCurMonth ? Number(today.slice(8, 10)) : new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const menu = companyTopMenu(companyBranchIds, `${year}-${mmp}-01`, `${year}-${mmp}-${String(menuDay).padStart(2, "0")}`);
 
   const prev = shiftMonth(year, month, -1);
   const next = shiftMonth(year, month, 1);
@@ -297,6 +304,42 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                 </table>
               </div>
               <p className="text-[11px] text-slate-400 mt-2">▲/▼ = ยอดวันนั้นเทียบกับยอดขายเฉลี่ยต่อวันของสาขาในเดือนเดียวกัน</p>
+            </div>
+          )}
+
+          {/* Top menu / categories รวมทุกสาขา (owner 2026-09-21) */}
+          {(menu.items.length > 0 || menu.categories.length > 0) && (
+            <div className="card">
+              <div className="text-sm font-bold text-slate-800 mb-1">ขายดีรวมทุกสาขา — {TH_MONTHS[month]} {year + 543}{isCurMonth ? ` (วันที่ 1–${menuDay})` : ""}</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <div className="text-xs font-semibold text-slate-500 mb-1">เมนูทำรายได้สูงสุด</div>
+                  {menu.items.length === 0 ? <p className="text-xs text-slate-400">ยังไม่มีข้อมูลเมนู</p> : (
+                    <div className="space-y-1">
+                      {menu.items.map((it, i) => (
+                        <div key={it.name} className="flex items-baseline justify-between gap-2 text-sm">
+                          <span className="text-slate-700 truncate">{i + 1}. {it.name}{it.branchCount > 1 && <span className="text-[10px] text-slate-400 ml-1">({it.branchCount} สาขา)</span>}</span>
+                          <span className="tabular-nums text-slate-600 whitespace-nowrap">฿{baht(it.nett)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-slate-500 mb-1">หมวดทำรายได้สูงสุด</div>
+                  {menu.categories.length === 0 ? <p className="text-xs text-slate-400">ยังไม่มีข้อมูลหมวด</p> : (
+                    <div className="space-y-1">
+                      {menu.categories.map((c, i) => (
+                        <div key={c.name} className="flex items-baseline justify-between gap-2 text-sm">
+                          <span className="text-slate-700 truncate">{i + 1}. {c.name}{c.branchCount > 1 && <span className="text-[10px] text-slate-400 ml-1">({c.branchCount} สาขา)</span>}</span>
+                          <span className="tabular-nums text-slate-600 whitespace-nowrap">฿{baht(c.nett)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2">ยอดขายสุทธิรวมทุกสาขาในบริษัท · แสดงสูงสุด 8 อันดับ · (N สาขา) = ขายที่กี่สาขา</p>
             </div>
           )}
         </>
