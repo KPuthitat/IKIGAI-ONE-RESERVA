@@ -695,6 +695,31 @@ export function companyWeekCompare(branchIds: number[], todayIso: string): Compa
   };
 }
 
+// ── Company top menu / categories (owner 2026-09-21) ─────────────────────────
+// Best-selling items and categories over [start, end], summed across every
+// company branch. Merge key is the EXACT item/category name as menuRange returns
+// it per branch (after that branch's own alias folding) — branches that spell the
+// same dish differently stay separate. branchCount = how many branches sold it.
+export type CompanyMenuRank = { name: string; nett: number; branchCount: number };
+export type CompanyTopMenu = { start: string; end: string; items: CompanyMenuRank[]; categories: CompanyMenuRank[] };
+export function companyTopMenu(branchIds: number[], start: string, end: string, topN = 8): CompanyTopMenu {
+  const agg = (kind: "item" | "category"): CompanyMenuRank[] => {
+    const m = new Map<string, { nett: number; branches: Set<number> }>();
+    for (const id of branchIds) {
+      for (const r of menuRange(id, start, end, kind)) {
+        if (r.nett <= 0) continue;
+        const e = m.get(r.name) ?? { nett: 0, branches: new Set<number>() };
+        e.nett += r.nett; e.branches.add(id); m.set(r.name, e);
+      }
+    }
+    return [...m.entries()]
+      .map(([name, v]) => ({ name, nett: round2(v.nett), branchCount: v.branches.size }))
+      .sort((a, b) => (b.nett - a.nett) || a.name.localeCompare(b.name, "th"))  // stable tie-break
+      .slice(0, topN);
+  };
+  return { start, end, items: agg("item"), categories: agg("category") };
+}
+
 // ── A · weekday performance, D · discount insight, E · channel mix ──────────
 
 export type WeekdayStat = { dow: number; label: string; avgNett: number; days: number; avgBills: number };
