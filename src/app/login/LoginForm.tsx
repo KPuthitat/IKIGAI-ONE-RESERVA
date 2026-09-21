@@ -85,14 +85,13 @@ export default function LoginForm({
         setErr(data.error || t("login.error.generic"));
         return;
       }
-      // Landing (owner 2026-09-20): EVERY account — super_admin included — lands
-      // in staff mode through the STAFF branch picker → /staff. Admins reach the
-      // console by deliberately PIN-switching to admin view afterward, so nobody
-      // is dropped straight into /admin (lands_on_admin is always false now). The
-      // picker auto-skips when there's a single eligible branch, so single-branch
-      // users feel no extra step. A deep-link target (a tapped LINE card →
-      // /login?next=…) is passed through the picker so it forwards there after the
-      // branch is chosen, instead of demanding a branch mid-jump.
+      // Landing (owner 2026-09-21): admin-capable accounts (lands_on_admin=true)
+      // go through the ADMIN branch picker → /admin, where the admin layout's PIN
+      // gate requires the 4-digit PIN before the console renders. Everyone else
+      // lands in staff mode through the staff picker. Both pickers auto-skip when
+      // there's a single eligible branch, so single-branch users feel no extra
+      // step. A deep-link target (a tapped LINE card → /login?next=…) is passed
+      // through the picker so it forwards there after the branch is chosen.
       const pickerBase = data.lands_on_admin
         ? "/admin/branch-picker"
         : (data.branchCount ?? 0) >= 1

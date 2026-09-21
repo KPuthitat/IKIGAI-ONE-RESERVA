@@ -269,7 +269,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
               />
             )}
             {canSwitchView && (
-              <AdminModeToggle view={adminView ? "admin" : "staff"} defaultView={defaultView} className="flex-1 md:flex-none" />
+              <AdminModeToggle view={adminView ? "admin" : "staff"} className="flex-1 md:flex-none" />
             )}
           </div>
 

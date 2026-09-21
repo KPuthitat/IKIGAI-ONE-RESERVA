@@ -31,13 +31,9 @@ function writeView(v: "admin" | "staff") {
 }
 
 export default function AdminModeToggle({
-  view, defaultView = "staff", className = ""
+  view, className = ""
 }: {
   view?: "admin" | "staff";
-  /** This user's home mode (owner 2026-06-11): super_admin → "admin",
-   *  everyone else → "staff". Switching INTO the non-default mode requires
-   *  the user's PIN; returning to the default mode is free. */
-  defaultView?: "admin" | "staff";
   /** Extra classes from the layout (e.g. flex-1 for balanced widths). */
   className?: string;
 }) {
@@ -62,8 +58,14 @@ export default function AdminModeToggle({
     ? (lang === "en" ? "Staff view" : "มุมมองพนักงาน")
     : (lang === "en" ? "Admin view" : "มุมมองผู้ดูแลระบบ");
 
-  function navigate(to: "admin" | "staff") {
+  async function navigate(to: "admin" | "staff") {
     writeView(to);
+    if (to === "staff") {
+      // Leaving admin clears the PIN unlock so returning re-prompts the PIN
+      // (owner 2026-09-21). Best-effort — the httpOnly cookie can only be
+      // cleared server-side.
+      try { await fetch(apiUrl("/api/auth/lock-admin"), { method: "POST" }); } catch { /* ignore */ }
+    }
     // Owner 2026-06-10: every mode switch goes through the branch picker
     // first, so you always confirm which branch you're working in before
     // touching a module. The pickers auto-skip when there's only one
@@ -74,15 +76,15 @@ export default function AdminModeToggle({
   }
 
   function go() {
-    // Returning to the home mode is free; entering the NON-default mode
-    // requires a PIN (owner 2026-06-11).
-    if (target === defaultView) { navigate(target); return; }
-    setPinOpen(true);
+    // Entering admin always requires the PIN; leaving admin is free
+    // (owner 2026-09-21).
+    if (target === "admin") { setPinOpen(true); return; }
+    void navigate("staff");
   }
 
-  // PinPromptModal submit — verify the PIN server-side, then switch.
+  // PinPromptModal submit — verify the PIN and unlock admin server-side, then switch.
   async function verifyAndSwitch(pin: string): Promise<{ ok: true } | { ok: false; message: string }> {
-    const res = await fetch(apiUrl("/api/auth/verify-pin"), {
+    const res = await fetch(apiUrl("/api/auth/unlock-admin"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pin })

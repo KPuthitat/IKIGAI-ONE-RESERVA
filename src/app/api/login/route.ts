@@ -108,9 +108,9 @@ export async function POST(req: Request) {
 
   const { branchCount, landsOnAdmin } = finalizeLogin(authedUserId, authedRole);
 
-  // `lands_on_admin` is always false now (owner 2026-09-20): every account —
-  // super_admin included — lands on the staff picker and PIN-switches into admin
-  // view deliberately. The field is kept in the response shape for the client.
+  // `lands_on_admin` is true for admin-privileged accounts (owner 2026-09-21):
+  // they land on the admin picker, where the admin layout's PIN gate requires
+  // the 4-digit PIN before the console renders. Everyone else lands on staff.
   return NextResponse.json({
     ok: true,
     role: tabRole,
