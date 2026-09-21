@@ -181,6 +181,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/discipline", label: t(lang, "admin.persona.nav.discipline") }
       ]
     },
+    // ANALYTICA — contextual section (owner 2026-09-21). Shown inside
+    // /admin/reporta. The company roll-up + LINE-group settings live here.
+    ...(canModule(user, "reporta.manage") ? [{
+      label: "ANALYTICA",
+      pathPrefix: "/admin/reporta",
+      items: [
+        { href: "/admin/reporta", label: "วิเคราะห์รายสาขา" },
+        { href: "/admin/reporta/company", label: "ภาพรวมบริษัท (รวมสาขา)" },
+        { href: "/admin/reporta/settings", label: "ตั้งค่ากลุ่ม LINE" }
+      ]
+    }] : []),
     // ACCOUNTA — contextual section (owner 2026-06-25). Shown when inside
     // /admin/accounta. The เอกสารรอลงบัญชี inbox + สิทธิ์ matrix live here.
     ...(canModule(user, "accounta.manage") ? [{
