@@ -136,7 +136,9 @@ export function generateStatementPdf(d: StatementPdfData): Promise<Buffer> {
         };
         for (const c of shown) catRow(c.name, c.sales);
         if (restSales > 0) catRow(`อื่นๆ (${cats.length - TOP} หมวด)`, restSales);
-        if (y > bottomLimit()) { doc.addPage(); y = doc.page.margins.top; }
+        // Leave room for a possibly-wrapping 2-line note ABOVE the fixed footer
+        // (drawn at pageH − bottom − 14); move to a new page if it wouldn't fit.
+        if (y + 30 > doc.page.height - doc.page.margins.bottom - 16) { doc.addPage(); y = doc.page.margins.top; }
         doc.font("th").fontSize(8).fillColor("#999").text("ยอดขายรวมแยกตามหมวดจากระบบ ANALYTICA (รวม VAT · คนละฐานกับยอดคิดส่วนแบ่ง) · ไว้ให้ทีมการตลาดวางแผน", left, y + 2, { width: contentW });
       }
 

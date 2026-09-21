@@ -614,6 +614,41 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("yearbars: allowedBranchIds scopes to that branch only",
     yb.branches.length === 1 && yb.branches[0].branchId === bidBar);
 
+  // ── 17) company overview (owner 2026-09-21): cross-branch roll-up — company
+  // MTD total, same-period MoM compare, per-branch rows, company target. ──
+  const fputC = (bid: number, d: string, nett: number, bills: number, pax: number) => sdb.upsertDaily(bid, uid, { date: d, dateEnd: d, merchant: "CO", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: bills, pax, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / bills, avgPax: pax / bills, avgSalesPax: nett / pax, payments: [], types: [], sources: [] });
+  const bidCA = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('coa','CO-A',1)").run().lastInsertRowid);
+  const bidCB = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('cob','CO-B',2)").run().lastInsertRowid);
+  sdb.setMonthlyTarget(bidCA, 100000);
+  fputC(bidCA, "2026-09-05", 10000, 8, 12); fputC(bidCA, "2026-09-20", 5000, 4, 6); // Sept 1–20 = 15000
+  fputC(bidCA, "2026-08-10", 20000, 10, 15);                                          // Aug 1–20 = 20000 (prev same)
+  fputC(bidCB, "2026-09-15", 8000, 6, 9);                                             // Sept = 8000, no Aug
+  const cov = analytics.companyOverview([bidCA, bidCB], 2026, 9, "2026-09-20");
+  ok("company: window through today (Sep 20)", cov.throughDay === 20 && cov.isCurrentMonth === true && cov.branchCount === 2);
+  ok("company: total MTD = 23000, bills=18", cov.total.mtdNett === 23000 && cov.total.bills === 18);
+  // Same-store: B has no prior-month data → excluded from the % compare, so the
+  // company MoM reflects A only (15000 vs 20000 = −25%), not the inflated +15%.
+  ok("company: same-store prev = 20000, MoM = −25% (new branch excluded)", cov.total.prevSameNett === 20000 && cov.total.momPct === -25);
+  ok("company: today total (rows on 20 Sep) = 5000", cov.total.todayNett === 5000);
+  ok("company: only A is targeted, company target = 100000", cov.targetedBranchCount === 1 && cov.target != null && cov.target.target === 100000);
+  ok("company: branch A row (MTD 15000, MoM −25%, ทำได้ 15%)", (() => {
+    const a = cov.branches.find((b) => b.branchId === bidCA);
+    return !!a && a.mtdNett === 15000 && a.prevSameNett === 20000 && a.momPct === -25 && a.monthTarget === 100000 && a.pctOfTarget === 15 && a.todayNett === 5000;
+  })());
+  ok("company: branch B row (no prev, no target)", (() => {
+    const b = cov.branches.find((x) => x.branchId === bidCB);
+    return !!b && b.mtdNett === 8000 && b.prevSameNett === null && b.momPct === null && b.monthTarget === null && b.todayNett === 0;
+  })());
+  ok("company: branches ordered A before B (display_order)", (() => {
+    const ids = cov.branches.map((b) => b.branchId);
+    return ids.indexOf(bidCA) < ids.indexOf(bidCB);
+  })());
+  // Past month → window through the latest imported day (Aug: A imported the 10th).
+  const covAug = analytics.companyOverview([bidCA, bidCB], 2026, 8, "2026-09-20");
+  ok("company: past month window = max imported day (Aug 10)", covAug.throughDay === 10 && covAug.isCurrentMonth === false && covAug.total.mtdNett === 20000);
+  // Past year → no annual roll-up (projection only makes sense for the current year).
+  ok("company: past-year view has no annual roll-up", analytics.companyOverview([bidCA, bidCB], 2025, 9, "2026-09-20").annual === null);
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

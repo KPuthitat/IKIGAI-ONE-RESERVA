@@ -556,6 +556,94 @@ export function companyAnnualProjection(todayIso: string): AnnualProjection | nu
   return annualProjectionForBranches(branchIdsWithTarget(), todayIso);
 }
 
+// ── Company overview (owner 2026-09-21) ──────────────────────────────────────
+// Cross-branch roll-up for the ANALYTICA company page: each branch's month-to-
+// date sales over ONE shared same-period window (day 1..throughDay), summed to a
+// company total and compared to the previous month's identical window; plus the
+// company monthly-target progress and the full-year projection roll-up.
+
+export type CompanyBranchRow = {
+  branchId: number; branchName: string;
+  mtdNett: number; prevSameNett: number | null; momPct: number | null;
+  bills: number; pax: number;
+  todayNett: number | null;
+  monthTarget: number | null; pctOfTarget: number | null; // MTD ÷ full-month target
+};
+export type CompanyOverview = {
+  year: number; month: number; throughDay: number; isCurrentMonth: boolean; branchCount: number;
+  total: { mtdNett: number; prevSameNett: number | null; momPct: number | null; bills: number; pax: number; todayNett: number | null };
+  target: TargetProgress | null; targetedBranchCount: number;
+  annual: AnnualProjection | null;
+  branches: CompanyBranchRow[];
+};
+
+export function companyOverview(branchIds: number[], year: number, month: number, todayIso: string): CompanyOverview {
+  const db = getDb();
+  const mm = String(month).padStart(2, "0");
+  const isCurrentMonth = todayIso.startsWith(`${year}-${mm}`);
+
+  const brows = branchIds.length
+    ? (db.prepare(
+        `SELECT id, name, display_order AS ord FROM branches WHERE id IN (${branchIds.map(() => "?").join(",")})`
+      ).all(...branchIds) as Array<{ id: number; name: string; ord: number }>)
+    : [];
+  brows.sort((a, b) => (a.ord - b.ord) || a.name.localeCompare(b.name, "th"));
+  const ids = brows.map((b) => b.id);
+
+  // Window: current month → through today; a past month → through the latest day
+  // ANY branch imported (matches monthComparison's maxImported so the per-branch
+  // page and this page agree, and the prev-month baseline uses the same window).
+  let throughDay: number;
+  if (isCurrentMonth) throughDay = Number(todayIso.slice(8, 10));
+  else if (!ids.length) throughDay = 0;
+  else {
+    const r = db.prepare(
+      `SELECT MAX(sale_date) AS d FROM salesa_daily WHERE has_sales = 1 AND substr(sale_date,1,7) = ? AND branch_id IN (${ids.map(() => "?").join(",")})`
+    ).get(`${year}-${mm}`, ...ids) as { d: string | null } | undefined;
+    throughDay = r?.d ? Number(r.d.slice(8, 10)) : 0;
+  }
+  const pm = month === 1 ? 12 : month - 1;
+  const pmY = month === 1 ? year - 1 : year;
+
+  const rows: CompanyBranchRow[] = [];
+  let tMtd = 0, tBills = 0, tPax = 0, tToday = 0, anyToday = false;
+  // Same-store compare: only branches with data in BOTH windows count toward the
+  // company MoM %, so a newly-opened branch doesn't inflate the trend.
+  let cmpCur = 0, cmpPrev = 0, anyCmp = false;
+  let tTargetSum = 0, tMtdTargeted = 0, targetedCount = 0;
+  for (const b of brows) {
+    const cur = throughDay > 0 ? aggMtd(b.id, year, month, throughDay) : null;
+    const prev = throughDay > 0 ? aggMtd(b.id, pmY, pm, throughDay) : null;
+    const mtdNett = cur?.nett ?? 0;
+    const prevSameNett = prev?.nett ?? null;
+    const bills = cur?.bills ?? 0;
+    const pax = cur?.pax ?? 0;
+    const todayNett = isCurrentMonth
+      ? round2(listRange(b.id, todayIso, todayIso).filter((d) => d.has_sales).reduce((s, d) => s + d.nett, 0))
+      : null;
+    const monthTarget = getMonthlyTarget(b.id);
+    const pctOfTarget = monthTarget && monthTarget > 0 ? round2((mtdNett / monthTarget) * 100) : null;
+    rows.push({ branchId: b.id, branchName: b.name, mtdNett, prevSameNett, momPct: relPct(mtdNett, prevSameNett), bills, pax, todayNett, monthTarget, pctOfTarget });
+    tMtd += mtdNett; tBills += bills; tPax += pax;
+    if (cur && prev) { cmpCur += cur.nett; cmpPrev += prev.nett; anyCmp = true; }
+    if (todayNett != null) { tToday += todayNett; anyToday = true; }
+    if (monthTarget && monthTarget > 0) { tTargetSum += monthTarget; tMtdTargeted += mtdNett; targetedCount++; }
+  }
+
+  const total = {
+    mtdNett: round2(tMtd),
+    prevSameNett: anyCmp ? round2(cmpPrev) : null,   // comparable (same-store) prev
+    momPct: anyCmp ? relPct(cmpCur, cmpPrev) : null, // comparable current vs prev
+    bills: tBills, pax: tPax,
+    todayNett: isCurrentMonth ? round2(anyToday ? tToday : 0) : null
+  };
+  const target = tTargetSum > 0 ? targetProgress(tTargetSum, tMtdTargeted, throughDay, year, month) : null;
+  // Annual roll-up only makes sense for the current year (it's a YTD + run-rate
+  // projection). Browsing a past year → no annual card, not stale current-year.
+  const annual = year === Number(todayIso.slice(0, 4)) ? annualProjectionForBranches(ids, todayIso) : null;
+  return { year, month, throughDay, isCurrentMonth, branchCount: brows.length, total, target, targetedBranchCount: targetedCount, annual, branches: rows };
+}
+
 // ── A · weekday performance, D · discount insight, E · channel mix ──────────
 
 export type WeekdayStat = { dow: number; label: string; avgNett: number; days: number; avgBills: number };
