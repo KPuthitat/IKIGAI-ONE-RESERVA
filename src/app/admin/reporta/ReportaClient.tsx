@@ -105,7 +105,7 @@ type FestivalData = { year: number; branches: Array<{ id: number; name: string }
 type YearBar = { branchId: number; branchName: string; months: Array<number | null>; total: number; growthPct: number | null; peakMonth: number | null };
 type YearBarsData = { year: number; monthCount: number; branches: YearBar[] };
 // Full-year DAILY bars (owner 2026-09-21): one bar per day across the year.
-type DayBar = { branchId: number; branchName: string; values: Array<number | null>; total: number; peakIdx: number | null; avgPerDay: number | null };
+type DayBar = { branchId: number; branchName: string; values: Array<number | null>; total: number; peakIdx: number | null; lowIdx: number | null; avgPerDay: number | null };
 type DayBarsData = { year: number; dayCount: number; startIso: string; branches: DayBar[] };
 // Menu-name merging (owner 2026-09-20): similar spellings that might be one dish.
 type NameStat = { nett: number; units: number };
@@ -1199,40 +1199,53 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                   monthSegs.push({ m, days });
                   remaining -= days;
                 }
+                // Don't squeeze a year into the screen (owner 2026-09-21): give
+                // each day a fixed width and let the chart scroll left↔right. The
+                // content is centered (mx-auto) when it's narrower than the card.
+                const DAY_PX = 7;          // width of one day column (bar + gap)
+                const chartW = dbData.dayCount * DAY_PX;
                 return (
-                  <div className="space-y-5">
+                  <div className="space-y-6">
                     {dbData.branches.map((b) => {
-                      let peak = 1;
-                      for (const v of b.values) if (v != null && v > peak) peak = v;
+                      const hi = b.peakIdx != null ? (b.values[b.peakIdx] as number) : null;
+                      const lo = b.lowIdx != null ? (b.values[b.lowIdx] as number) : null;
+                      const peak = hi ?? 1;
+                      // Only show a distinct "lowest" when it isn't the same single day as the peak.
+                      const showLow = lo != null && b.lowIdx !== b.peakIdx;
                       return (
                         <div key={b.branchId}>
-                          <div className="flex items-baseline justify-between gap-2 mb-1 flex-wrap">
-                            <span className="text-sm font-semibold text-slate-800">{b.branchName}</span>
-                            <span className="text-xs text-slate-500">
-                              รวม {baht(b.total)}
-                              {b.avgPerDay != null && <span className="ml-2">· เฉลี่ย/วันขาย {baht(b.avgPerDay)}</span>}
-                              {b.peakIdx != null && b.values[b.peakIdx] != null && (
-                                <span className="ml-2 text-emerald-600 font-medium">· สูงสุด {dayLabels[b.peakIdx]} ({baht(b.values[b.peakIdx] as number)})</span>
-                              )}
-                            </span>
+                          <div className="mb-1.5">
+                            <div className="text-sm font-semibold text-slate-800">{b.branchName}</div>
+                            <div className="text-xs text-slate-500 flex flex-wrap gap-x-2 gap-y-0.5">
+                              <span>รวม <span className="font-medium text-slate-700">{baht(b.total)}</span></span>
+                              {b.avgPerDay != null && <span>· เฉลี่ย/วันขาย {baht(b.avgPerDay)}</span>}
+                              {hi != null && <span className="text-emerald-600 font-medium">· สูงสุด {dayLabels[b.peakIdx as number]} ({baht(hi)})</span>}
+                              {showLow && <span className="text-rose-500 font-medium">· ต่ำสุด {dayLabels[b.lowIdx as number]} ({baht(lo as number)})</span>}
+                            </div>
                           </div>
-                          <div className="flex items-end h-28 bg-slate-50/60 rounded">
-                            {b.values.map((v, i) => (
-                              <div key={i} className={`flex-1 min-w-0 ${b.peakIdx === i ? "bg-emerald-600" : "bg-emerald-400/80"}`}
-                                style={{ height: v == null ? "0%" : `${Math.max(1, (v / peak) * 100)}%` }}
-                                title={`${dayLabels[i]}: ${v == null ? "ไม่มีข้อมูล" : baht(v)}`} />
-                            ))}
-                          </div>
-                          <div className="flex mt-1">
-                            {monthSegs.map((s) => (
-                              <div key={s.m} style={{ flexGrow: s.days, flexBasis: 0 }}
-                                className="text-center text-[9px] text-slate-400 border-l border-slate-200 first:border-l-0">{s.m}</div>
-                            ))}
+                          <div className="overflow-x-auto pb-1">
+                            <div className="mx-auto" style={{ width: chartW }}>
+                              <div className="flex items-end h-32 bg-slate-50/70 rounded">
+                                {b.values.map((v, i) => (
+                                  <div key={i} className="h-full flex items-end shrink-0 px-[0.5px]" style={{ width: DAY_PX }}
+                                    title={`${dayLabels[i]}: ${v == null ? "ไม่มีข้อมูล" : baht(v)}`}>
+                                    <div className={`w-full rounded-t-sm ${b.peakIdx === i ? "bg-emerald-600" : b.lowIdx === i ? "bg-rose-400" : "bg-emerald-400"}`}
+                                      style={{ height: v == null ? "0%" : `${Math.max(1, (v / peak) * 100)}%` }} />
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex mt-1">
+                                {monthSegs.map((s) => (
+                                  <div key={s.m} style={{ width: s.days * DAY_PX }}
+                                    className="shrink-0 text-center text-[10px] text-slate-400 border-l border-slate-200 first:border-l-0">{s.m}</div>
+                                ))}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       );
                     })}
-                    <p className="text-[11px] text-slate-400">แท่ง = ยอดขายสุทธิรายวัน (1 แท่ง = 1 วัน · เลข 1–12 = เดือน) · เขียวเข้ม = วันที่ยอดสูงสุด · ชี้ที่แท่งเพื่อดูยอดรายวัน</p>
+                    <p className="text-[11px] text-slate-400">แท่ง = ยอดขายสุทธิรายวัน (1 แท่ง = 1 วัน · เลข 1–12 = เดือน) · <span className="text-emerald-600">เขียวเข้ม = วันสูงสุด</span> · <span className="text-rose-500">แดง = วันต่ำสุด</span> · เลื่อนซ้าย–ขวาเพื่อดูทั้งปี · ชี้ที่แท่งเพื่อดูยอดรายวัน</p>
                   </div>
                 );
               })()}

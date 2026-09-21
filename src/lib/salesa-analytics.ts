@@ -1267,7 +1267,8 @@ export type BranchYearDailyBars = {
   branchId: number; branchName: string;
   values: Array<number | null>; // index 0 = Jan 1 ... ; null = no data that day
   total: number;
-  peakIdx: number | null;       // index of the biggest day
+  peakIdx: number | null;       // index of the biggest selling day
+  lowIdx: number | null;        // index of the smallest selling day (days with sales only)
   avgPerDay: number | null;     // over days that have data
 };
 export type AnnualBranchDailyBars = { year: number; dayCount: number; startIso: string; branches: BranchYearDailyBars[] };
@@ -1305,10 +1306,17 @@ export function annualBranchDailyBars(year: number, todayIso: string, allowedBra
     const values: Array<number | null> = [];
     for (let i = 0; i < dayCount; i++) values.push(byBranchDay.has(br.id * 512 + i) ? (byBranchDay.get(br.id * 512 + i) as number) : null);
     const active = values.map((v, i) => ({ v, i })).filter((x) => x.v != null) as Array<{ v: number; i: number }>;
-    const total = round2(active.reduce((s, x) => s + x.v, 0));
-    const peak = active.reduce<{ v: number; i: number } | null>((best, x) => (!best || x.v > best.v ? x : best), null);
+    let total = 0;
+    let peak: { v: number; i: number } | null = null;
+    let low: { v: number; i: number } | null = null;
+    for (const x of active) {
+      total += x.v;
+      if (!peak || x.v > peak.v) peak = x;
+      if (!low || x.v < low.v) low = x;
+    }
+    total = round2(total);
     const avgPerDay = active.length ? round2(total / active.length) : null;
-    return { branchId: br.id, branchName: br.name, values, total, peakIdx: peak ? peak.i : null, avgPerDay };
+    return { branchId: br.id, branchName: br.name, values, total, peakIdx: peak ? peak.i : null, lowIdx: low ? low.i : null, avgPerDay };
   }).filter((b) => b.total > 0);
 
   return { year, dayCount, startIso, branches: out };
