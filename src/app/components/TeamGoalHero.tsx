@@ -56,34 +56,78 @@ export default function TeamGoalHero({
     return () => clearTimeout(t);
   }, [pct]);
 
+  const remaining = Math.max(0, target - mtd);
+  const over = Math.max(0, mtd - target);
+
+  // Match the ACCOUNTA daybook "ยอดขายเทียบเป้า" card style (owner 2026-09-21):
+  // light gradient, target artwork, amber below target / emerald once reached.
+  const c = reached
+    ? {
+        border: "border-emerald-200", grad: "from-emerald-50 to-white",
+        badge: "bg-emerald-600/10 text-emerald-700", title: "text-emerald-900",
+        hero: "text-emerald-700", strong: "text-emerald-700",
+        track: "bg-emerald-100", fill: "bg-emerald-500", foot: "text-emerald-800",
+        artwork: "text-emerald-100"
+      }
+    : {
+        border: "border-amber-200", grad: "from-amber-50 to-white",
+        badge: "bg-amber-600/10 text-amber-700", title: "text-amber-900",
+        hero: "text-amber-700", strong: "text-amber-700",
+        track: "bg-amber-100", fill: "bg-amber-500", foot: "text-amber-800",
+        artwork: "text-amber-100"
+      };
+
   return (
-    <div className="rounded-2xl p-5 text-white shadow-md bg-gradient-to-br from-sky-800 via-sky-700 to-sky-600">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-[1.5px] text-white/70">เป้ายอดขายสาขา · เดือนนี้</div>
-        <div className="text-sm font-bold text-white/90">{branchName}</div>
-      </div>
+    <div className={`relative overflow-hidden rounded-2xl border ${c.border} bg-gradient-to-br ${c.grad} p-4 sm:p-5 shadow-sm`}>
+      {/* decorative artwork — a soft oversized target in the corner */}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
+        className={`pointer-events-none absolute -right-5 -top-5 h-28 w-28 ${c.artwork}`}>
+        <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
+      </svg>
 
-      <div className="mt-2 flex items-end gap-3 flex-wrap">
-        <div className="text-5xl font-black leading-none tabular-nums text-white">{pct.toFixed(0)}%</div>
-        <div className="pb-1 text-sm text-white/90">
-          <div>฿{baht0(mtd)} <span className="text-white/60">/ ฿{baht0(target)}</span></div>
-          <div className="text-[11px] text-white/60">ทำได้แล้ว (ถึงวันที่ {throughDay})</div>
+      <div className="relative">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${c.badge}`}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" />
+              </svg>
+            </span>
+            <h2 className={`font-bold ${c.title}`}>เป้ายอดขายสาขา · เดือนนี้</h2>
+          </div>
+          <span className={`shrink-0 rounded-full border ${c.border} bg-white/70 px-2.5 py-0.5 text-[11px] font-medium ${c.foot} max-w-[45%] truncate`}>{branchName}</span>
         </div>
-      </div>
 
-      <div className="mt-3 h-3 rounded-full bg-black/25 overflow-hidden">
-        <div className={`h-full rounded-full transition-[width] duration-1000 ease-out ${reached ? "bg-sky-200" : "bg-white"}`} style={{ width: `${Math.max(2, w)}%` }} />
-      </div>
+        {/* Hero — the headline % */}
+        <div className="mt-3 flex items-baseline gap-2 flex-wrap">
+          <span className={`text-4xl font-extrabold tracking-tight tabular-nums ${c.hero}`}>{pct.toFixed(0)}%</span>
+          <span className="text-xs text-slate-500">ของเป้าเดือนนี้</span>
+        </div>
 
-      <div className="mt-2 flex items-center justify-between gap-2 flex-wrap text-[11px] text-white/75">
-        <span>คาดสิ้นเดือน ฿{baht0(projected)} ({projectedPct.toFixed(0)}% ของเป้า)</span>
-        <span className={`rounded-full px-2 py-0.5 font-semibold ${onTrack || reached ? "bg-white/20 text-white" : "bg-amber-400/90 text-amber-950"}`}>
-          {reached ? "เกินเป้าแล้ว" : onTrack ? "มีลุ้นถึงเป้า" : "ต่ำกว่าเป้า"}
-        </span>
-      </div>
+        {/* Progress — month-to-date sales vs monthly target */}
+        <div className="mt-3">
+          <div className="mb-1 flex items-center justify-between gap-2 text-[11px]">
+            <span className="text-slate-500">ทำได้ <span className={`font-semibold ${c.strong}`}>฿{baht0(mtd)}</span> <span className="text-slate-400">(ถึงวันที่ {throughDay})</span></span>
+            <span className="text-slate-500">เป้าเดือนนี้ ฿{baht0(target)}</span>
+          </div>
+          <div className={`h-2.5 overflow-hidden rounded-full ${c.track}`}>
+            <div className={`h-full rounded-full transition-[width] duration-1000 ease-out ${c.fill}`} style={{ width: `${Math.max(2, w)}%` }} />
+          </div>
+          <div className={`mt-1 text-right text-[11px] font-medium ${c.foot}`}>
+            {reached ? `เกินเป้า ฿${baht0(over)}` : `เหลืออีก ฿${baht0(remaining)} ถึงเป้า`}
+          </div>
+        </div>
 
-      <div className="mt-3 min-h-[1.25rem] text-sm font-semibold text-white">
-        {msg}
+        {/* Month-end projection + status */}
+        <div className="mt-3 flex items-center justify-between gap-2 flex-wrap text-[11px] text-slate-500">
+          <span>คาดสิ้นเดือน ฿{baht0(projected)} ({projectedPct.toFixed(0)}% ของเป้า)</span>
+          <span className={`rounded-full px-2 py-0.5 font-semibold ${onTrack || reached ? c.badge : "bg-amber-500/15 text-amber-800"}`}>
+            {reached ? "เกินเป้าแล้ว" : onTrack ? "มีลุ้นถึงเป้า" : "ต่ำกว่าเป้า"}
+          </span>
+        </div>
+
+        {/* Rotating leadership message to the branch team */}
+        <div className={`mt-3 min-h-[1.25rem] text-sm font-semibold ${c.title}`}>{msg}</div>
       </div>
     </div>
   );
