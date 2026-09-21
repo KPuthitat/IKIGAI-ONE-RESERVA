@@ -55,7 +55,10 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
     const hasLunch = Boolean(form.lunch_break_start && form.lunch_break_end);
     const payload = {
       ...form,
-      opens_on: form.status === "coming_soon" && form.opens_on ? form.opens_on : null,
+      // Keep the open date for OPEN branches too (owner 2026-09-21) — it's the
+      // reference for annual-target proration of a newly-opened branch, not just
+      // a "coming soon" countdown. Only a closed branch clears it.
+      opens_on: form.status !== "closed" && form.opens_on ? form.opens_on : null,
       closed_weekdays: form.closed_weekdays.length > 0 ? JSON.stringify(form.closed_weekdays) : null,
       lunch_break_start: hasLunch ? form.lunch_break_start : null,
       lunch_break_end: hasLunch ? form.lunch_break_end : null,
@@ -126,12 +129,16 @@ export default function SettingsClient({ branch }: { branch: Branch }) {
           <p className="text-xs text-rose-600 mt-1">{t("admin.settings.status.closedHint")}</p>
         )}
       </div>
-      {form.status === "coming_soon" && (
+      {form.status !== "closed" && (
         <div>
-          <label className="label">{t("admin.settings.field.opensOn")}</label>
+          <label className="label">{form.status === "open" ? "วันเปิดร้านจริง (วันแรก)" : t("admin.settings.field.opensOn")}</label>
           <input type="date" className="input" value={form.opens_on}
             onChange={(e) => setForm({ ...form, opens_on: e.target.value })} />
-          <p className="text-xs text-slate-500 mt-1">{t("admin.settings.opensOnHint")}</p>
+          <p className="text-xs text-slate-500 mt-1">
+            {form.status === "open"
+              ? "ใช้คิดเป้าทั้งปีของสาขาที่เพิ่งเปิด — ระบบจะ prorate เป้าตามจำนวนวันที่เปิดจริง (วันเปิด → 31 ธ.ค.) ในหน้า ANALYTICA · เว้นว่างได้ถ้าเปิดมาก่อนปีนี้"
+              : t("admin.settings.opensOnHint")}
+          </p>
         </div>
       )}
       <div>
