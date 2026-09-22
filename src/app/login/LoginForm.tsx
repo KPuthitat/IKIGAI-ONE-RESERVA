@@ -85,13 +85,13 @@ export default function LoginForm({
         setErr(data.error || t("login.error.generic"));
         return;
       }
-      // Landing (owner 2026-09-21): admin-capable accounts (lands_on_admin=true)
-      // go through the ADMIN branch picker → /admin, where the admin layout's PIN
-      // gate requires the 4-digit PIN before the console renders. Everyone else
-      // lands in staff mode through the staff picker. Both pickers auto-skip when
-      // there's a single eligible branch, so single-branch users feel no extra
-      // step. A deep-link target (a tapped LINE card → /login?next=…) is passed
-      // through the picker so it forwards there after the branch is chosen.
+      // Landing (owner 2026-09-22): EVERY account lands in staff mode through the
+      // staff branch picker → /staff (lands_on_admin is always false). Admins reach
+      // the console by tapping "มุมมองผู้ดูแลระบบ" and entering their PIN afterward,
+      // so nobody is dropped straight into /admin. The picker auto-skips when there's
+      // a single eligible branch, so single-branch users feel no extra step. A
+      // deep-link target (a tapped LINE card → /login?next=…) is passed through the
+      // picker so it forwards there after the branch is chosen.
       const pickerBase = data.lands_on_admin
         ? "/admin/branch-picker"
         : (data.branchCount ?? 0) >= 1
