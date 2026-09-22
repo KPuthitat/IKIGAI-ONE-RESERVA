@@ -3,18 +3,22 @@
 // A distinct module from การประชุม (manager reports, see meetings.ts): an admin
 // schedules an after-hours executive meeting and invites specific staff. Only
 // invitees may join. Attendance is timed (join → end) OUTSIDE the work clock —
-// it never touches time_entries — and pays เบี้ยประชุม like OT: 50 บาท per
-// completed 15-minute block (owner 2026-09-07). Taxable. A per-person
+// it never touches time_entries — and pays a FLAT เบี้ยประชุม of 200 บาท/ชม.
+// (50 บาท per completed 15-minute block, rounded down like OT blocks — but a
+// flat rate, NOT the person's OT rate; owner 2026-09-07, clarified 2026-09-25).
+// Taxable. A per-person
 // meeting_fee_exempt flag (on users) drops the fee for execs. This file is the
 // shared data layer for the admin management page, the staff join/minutes flow,
 // the AI summary and the SERVICE-CHARGE payout integration.
 
 import { getDb } from "./db";
 
-// เบี้ยประชุม rate — like OT: 50 บาท ต่อทุก 15 นาที, rounded DOWN to completed
-// 15-minute blocks (owner 2026-09-07: "ให้เหมือนโอที แต่ทุก 15 นาที 50 บาท").
-// Mirrors the payroll OT block rule (Math.floor(minutes/15) × rate). Kept here so
-// the join/end flow and the SVC payout agree.
+// เบี้ยประชุม rate — a FLAT 50 บาท ต่อทุก 15 นาที (= 200 บาท/ชม.), rounded DOWN
+// to completed 15-minute blocks (owner 2026-09-07: "ให้เหมือนโอที แต่ทุก 15 นาที
+// 50 บาท" — "เหมือนโอที" means the block-rounding METHOD, not the OT rate; the
+// amount is the same flat rate for everyone regardless of wage). Borrows the
+// payroll OT block rule (Math.floor(minutes/15) × rate). Kept here so the
+// join/end flow and the SVC payout agree.
 export const MEETING_FEE_PER_15MIN = 50;
 
 export function meetingFeeForMinutes(minutes: number): number {

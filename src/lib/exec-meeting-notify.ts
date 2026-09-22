@@ -25,7 +25,10 @@ function dateLabelTh(ymd: string): string {
 const WJ = "\u2060";
 const NBSP = "\u00A0";
 const feeLabel = `ทุก${NBSP}15${NBSP}นาที${NBSP}${MEETING_FEE_PER_15MIN}${NBSP}บาท`;
-const feeNote = `(คิดเป็น${WJ}บล็อก${WJ}15${WJ}นาที${WJ}เหมือน${WJ}โอที)`;
+// Describe the ROUNDING (per completed 15-min block, rounded down) without
+// invoking OT — the fee is a flat 200 บาท/ชม., not the OT rate, and staff were
+// never promised OT-equivalent pay (owner 2026-09-25).
+const feeNote = `(นับ${WJ}เป็น${WJ}ช่วง${WJ}ละ${WJ}15${WJ}นาที${WJ}ปัดลง)`;
 
 // วาระที่ตั้งไว้ล่วงหน้า — shown on the card so invitees can prepare (owner
 // 2026-09-02). Each topic is a numbered line; blank list renders nothing.
