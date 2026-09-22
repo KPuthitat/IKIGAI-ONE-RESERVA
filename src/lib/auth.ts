@@ -354,13 +354,13 @@ export function setClinicalUnlocked(userId: number): void {
 // read it, so admin mode can never be forced by a persisted JS cookie — which is
 // what used to leave a LINE session-resume stuck in admin (the old JS-writable
 // os_view cookie is now gone). Value = the user's id, set only by the server on a
-// verified PIN. It is cleared on login, logout, and switch-to-staff, and carries
-// a SHORT server-side TTL (2h) that reliably expires regardless of how a mobile
-// in-app webview treats session cookies — so an abandoned or resumed session
-// falls back to STAFF on its own. Owner 2026-09-22: "เข้าระบบแล้วต้องเป็นสิทธิ์
-// พนักงานเท่านั้น ... ไม่ว่าจะด้วยเหตุผลใดก็ตาม".
+// verified PIN. It is a SESSION cookie (no maxAge) so it dies when the app / LINE
+// webview is closed — every fresh app open comes back as STAFF and admin must be
+// re-entered with the PIN (owner 2026-09-22: "ถ้าปิดแอพ กด PIN ใหม่ทุกครั้ง ... ทุก
+// ครั้งที่เข้าโปรแกรมจะต้องเป็นโหมดพนักงาน"). The persistent login session is a separate
+// cookie, so closing the app keeps you logged in but drops you to staff. It is
+// also cleared explicitly on login, logout, and switch-to-staff.
 const ADMIN_UNLOCK_COOKIE = "os_admin_unlock";
-const ADMIN_UNLOCK_TTL_S = 2 * 3600;
 export function isAdminUnlocked(user: SessionUser): boolean {
   return cookies().get(ADMIN_UNLOCK_COOKIE)?.value === String(user.id);
 }
@@ -368,7 +368,7 @@ export function setAdminUnlocked(userId: number): void {
   cookies().set(ADMIN_UNLOCK_COOKIE, String(userId), {
     httpOnly: true, sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
-    path: COOKIE_PATH, maxAge: ADMIN_UNLOCK_TTL_S
+    path: COOKIE_PATH   // session cookie — no maxAge → cleared when the app closes
   });
 }
 export function clearAdminUnlocked(): void {

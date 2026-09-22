@@ -63,10 +63,10 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   const isAdminUser = isAdminCapable(user);
   // Admin mode is driven ONLY by the httpOnly PIN-unlock (owner 2026-09-22:
   // "เข้าระบบแล้วต้องเป็นสิทธิ์พนักงานเท่านั้น"). Everyone is a staff view until they
-  // tap "มุมมองผู้ดูแลระบบ" and enter their PIN; the unlock is a short-TTL httpOnly
-  // cookie cleared on login/logout/switch, so a LINE session-resume (no fresh
-  // login) comes back as staff. A stale view cookie can no longer force admin
-  // mode. When unlocked, top-level module links point at /admin so the
+  // tap "มุมมองผู้ดูแลระบบ" and enter their PIN; the unlock is an httpOnly SESSION
+  // cookie (dies when the app closes) also cleared on login/logout/switch, so
+  // every fresh app open comes back as staff. A stale view cookie can no longer
+  // force admin mode. When unlocked, top-level module links point at /admin so the
   // admin can jump across console pages; INVENTA stays under /staff (its home).
   const adminView = isAdminUser && isAdminUnlocked(user);
   const modBase = adminView ? "/admin" : "/staff";
