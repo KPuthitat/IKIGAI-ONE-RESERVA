@@ -17,6 +17,8 @@ const HDATE = /^\d{4}-\d{2}-\d{2}$/;
 const Patch = z.object({
   title: z.string().min(1).max(200).optional(),
   meeting_date: z.string().regex(HDATE).optional(),
+  // "YYYY-MM-DDTHH:MM" or null (date-only). Rejects malformed values silently dropping the time.
+  scheduled_at: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).nullable().optional(),
   company_wide: z.boolean().optional(),
   agenda_topics: z.array(z.string().max(300)).max(50).optional(),
   status: z.enum(["scheduled", "active", "ended", "closed"]).optional(),
@@ -58,6 +60,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const changed = updateExecMeeting(id, {
     title: d.title,
     meeting_date: d.meeting_date,
+    scheduled_at: d.scheduled_at,
     branch_id,
     agenda_topics: d.agenda_topics,
     status: d.status as ExecMeetingStatus | undefined

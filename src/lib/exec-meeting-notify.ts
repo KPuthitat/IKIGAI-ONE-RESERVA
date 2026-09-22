@@ -46,7 +46,13 @@ function agendaBlock(topics: string[]): Record<string, unknown>[] {
   ];
 }
 
-function inviteFlex(title: string, ymd: string, topics: string[]): LineMessage {
+// "2026-09-25T14:30" → "14:30" (start time), or null when no time was set.
+function timeFromScheduled(scheduledAt: string | null | undefined): string | null {
+  const m = /T(\d{2}:\d{2})/.exec(scheduledAt ?? "");
+  return m ? m[1] : null;
+}
+
+function inviteFlex(title: string, ymd: string, topics: string[], timeLabel: string | null): LineMessage {
   return {
     type: "flex",
     altText: `เชิญประชุม: ${title} (${dateLabelTh(ymd)})`,
@@ -58,7 +64,7 @@ function inviteFlex(title: string, ymd: string, topics: string[]): LineMessage {
         contents: [
           { type: "text", text: "เชิญเข้าร่วมประชุมผู้บริหาร", weight: "bold", size: "sm", color: "#a06820" },
           { type: "text", text: title, weight: "bold", size: "lg", wrap: true, color: "#281a0e" },
-          { type: "text", text: `วันที่ ${dateLabelTh(ymd)}`, size: "sm", color: "#8a7761" },
+          { type: "text", text: `วันที่ ${dateLabelTh(ymd)}${timeLabel ? ` · เวลา ${timeLabel} น.` : ""}`, size: "sm", color: "#8a7761" },
           ...agendaBlock(topics),
           { type: "separator", color: "#efe7d9", margin: "lg" },
           { type: "text", text: "กดเข้าสู่ระบบ แล้วกดเข้าร่วมประชุม", size: "sm", color: "#4a3f30", wrap: true, margin: "lg" },
@@ -85,29 +91,35 @@ function inviteFlex(title: string, ymd: string, topics: string[]): LineMessage {
   };
 }
 
-export async function notifyMeetingInvitees(meetingId: number, userIds: number[]): Promise<void> {
+/** Push the (latest) invite card to the given users. Returns how many LINE
+ *  messages were actually delivered — 0 when the platform OA isn't configured
+ *  or nobody has a bound LINE account. Callers that don't care can ignore it. */
+export async function notifyMeetingInvitees(meetingId: number, userIds: number[]): Promise<number> {
   const ids = Array.from(new Set(userIds.filter((n) => Number.isInteger(n) && n > 0)));
-  if (ids.length === 0) return;
+  if (ids.length === 0) return 0;
   const platform = getPlatformChannel();
-  if (!isChannelReady(platform) || !platform?.channel_token) return;
+  if (!isChannelReady(platform) || !platform?.channel_token) return 0;
   const token = platform.channel_token;
 
   const db = getDb();
-  const m = db.prepare("SELECT title, meeting_date, agenda_topics FROM exec_meetings WHERE id = ?")
-    .get(meetingId) as { title: string; meeting_date: string; agenda_topics: string | null } | undefined;
-  if (!m) return;
-  const flex = inviteFlex(m.title, m.meeting_date, parseAgendaTopics(m.agenda_topics));
+  const m = db.prepare("SELECT title, meeting_date, scheduled_at, agenda_topics FROM exec_meetings WHERE id = ?")
+    .get(meetingId) as { title: string; meeting_date: string; scheduled_at: string | null; agenda_topics: string | null } | undefined;
+  if (!m) return 0;
+  const flex = inviteFlex(m.title, m.meeting_date, parseAgendaTopics(m.agenda_topics), timeFromScheduled(m.scheduled_at));
 
   const rows = db.prepare(
     `SELECT line_user_id FROM users WHERE id IN (${ids.map(() => "?").join(",")})`
   ).all(...ids) as Array<{ line_user_id: string | null }>;
+  let sent = 0;
   for (const r of rows) {
     if (!r.line_user_id?.trim()) continue;
     try {
       const res = await sendLinePush(token, { to: r.line_user_id, messages: [flex] });
-      if (!res.ok) console.warn("exec-meeting invite push failed", res.error);
+      if (res.ok) sent += 1;
+      else console.warn("exec-meeting invite push failed", res.error);
     } catch (e) {
       console.warn("exec-meeting invite push threw", e);
     }
   }
+  return sent;
 }

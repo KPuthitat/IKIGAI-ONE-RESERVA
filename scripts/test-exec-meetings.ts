@@ -50,6 +50,14 @@ process.env.DATABASE_PATH = TMP;
   const mid = em.createExecMeeting({ title: "ประชุมทดสอบ", meeting_date: "2026-09-02", branch_id: null, invitee_user_ids: [uid, execU], created_by: uid });
   ok("gating: ยังไม่เปิด → join ไม่ได้", em.joinMeeting(mid, uid) === "meeting_not_active");
 
+  // reschedule: date + time persist and read back (owner 2026-09-25)
+  em.updateExecMeeting(mid, { meeting_date: "2026-09-03", scheduled_at: "2026-09-03T14:30" });
+  ok("reschedule: meeting_date + scheduled_at เก็บและอ่านได้", (() => {
+    const dd = em.getExecMeeting(mid);
+    return dd?.meeting_date === "2026-09-03" && dd?.scheduled_at === "2026-09-03T14:30";
+  })());
+  ok("re-notify: getMeetingInvitees คืนผู้ได้รับเชิญครบสำหรับส่งซ้ำ", em.getMeetingInvitees(mid).length === 2);
+
   em.updateExecMeeting(mid, { status: "active" });
   ok("gating: คนไม่ได้เชิญ → join ไม่ได้", em.joinMeeting(mid, other) === "not_invited");
   ok("join: ผู้ได้รับเชิญเข้าร่วมได้", em.joinMeeting(mid, uid) === null);

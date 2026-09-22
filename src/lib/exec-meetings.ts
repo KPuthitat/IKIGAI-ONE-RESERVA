@@ -311,6 +311,7 @@ export function setInvitees(meetingId: number, userIds: number[]): void {
 export function updateExecMeeting(id: number, d: {
   title?: string;
   meeting_date?: string;
+  scheduled_at?: string | null;   // "YYYY-MM-DDTHH:MM" (start time), or null for no time
   branch_id?: number | null;
   agenda_topics?: string[];
   status?: ExecMeetingStatus;
@@ -320,6 +321,7 @@ export function updateExecMeeting(id: number, d: {
   const vals: unknown[] = [];
   if (d.title !== undefined) { sets.push("title = ?"); vals.push(d.title.trim()); }
   if (d.meeting_date !== undefined) { sets.push("meeting_date = ?"); vals.push(d.meeting_date); }
+  if (d.scheduled_at !== undefined) { sets.push("scheduled_at = ?"); vals.push(d.scheduled_at); }
   if (d.branch_id !== undefined) { sets.push("branch_id = ?"); vals.push(d.branch_id); }
   if (d.agenda_topics !== undefined) { sets.push("agenda_topics = ?"); vals.push(JSON.stringify(normalizeTopics(d.agenda_topics))); }
   if (d.status !== undefined) { sets.push("status = ?"); vals.push(d.status); }

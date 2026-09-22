@@ -20,12 +20,30 @@ type MeetingRow = {
   id: number;
   title: string;
   meeting_date: string;
+  scheduled_at: string | null;
   branch_name: string | null;
   status: "scheduled" | "active" | "ended" | "closed";
   invitee_count: number;
   joined_count: number;
   ended_count: number;
 };
+
+// "2026-09-25T14:30" → "14:30", else null.
+function timeOf(scheduledAt: string | null): string | null {
+  const m = /T(\d{2}:\d{2})/.exec(scheduledAt ?? "");
+  return m ? m[1] : null;
+}
+
+// Re-send the LINE invite to all current invitees; maps the result to one Thai
+// message so the list button and the detail modal report it identically.
+async function postRenotify(id: number): Promise<{ ok: boolean; text: string }> {
+  try {
+    const res = await fetch(apiUrl(`/api/admin/persona/exec-meetings/${id}/notify`), { method: "POST" });
+    const j = await res.json().catch(() => ({}));
+    if (j?.ok) return { ok: true, text: `ส่งแจ้งเตือนซ้ำแล้ว · ${j.count} คน` };
+    return { ok: false, text: j?.message ?? (j?.error === "no_invitees" ? "ยังไม่มีผู้ได้รับเชิญ" : "ส่งแจ้งเตือนไม่สำเร็จ") };
+  } catch { return { ok: false, text: "เชื่อมต่อไม่ได้" }; }
+}
 
 const STATUS_LABEL: Record<MeetingRow["status"], string> = {
   scheduled: "ตั้งไว้",
@@ -87,6 +105,7 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
 
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(bkkToday());
+  const [time, setTime] = useState("");   // optional HH:MM start time
   const [companyWide, setCompanyWide] = useState(false);
   const [topics, setTopics] = useState<string[]>([]);
   const [invited, setInvited] = useState<Set<number>>(new Set());
@@ -133,14 +152,15 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: title.trim(), meeting_date: date, company_wide: companyWide,
+          title: title.trim(), meeting_date: date, scheduled_at: time ? `${date}T${time}` : null,
+          company_wide: companyWide,
           agenda_topics: topics.map((t) => t.trim()).filter(Boolean),
           invitee_user_ids: Array.from(invited)
         })
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
-        setTitle(""); setInvited(new Set()); setCompanyWide(false); setTopics([]);
+        setTitle(""); setInvited(new Set()); setCompanyWide(false); setTopics([]); setTime("");
         setMsg({ kind: "ok", text: "สร้างการประชุมแล้ว" });
         startTransition(() => router.refresh());
       } else {
@@ -164,6 +184,15 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
     startTransition(() => router.refresh());
   }
 
+  // Re-send the LINE invite to every current invitee — after a reschedule, an
+  // added วาระ, or any edit (owner 2026-09-25). The card is rebuilt server-side
+  // from the meeting's latest date/time/agenda.
+  async function renotify(id: number) {
+    if (!confirm("ส่งแจ้งเตือนซ้ำเข้า LINE ให้ผู้ได้รับเชิญทุกคน?")) return;
+    const r = await postRenotify(id);
+    setMsg({ kind: r.ok ? "ok" : "err", text: r.text });
+  }
+
   return (
     <div className="space-y-5">
       {/* Create */}
@@ -176,8 +205,13 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
               placeholder="เช่น ประชุมผู้บริหารประจำสัปดาห์" />
           </div>
           <div>
-            <label className="label">วันที่ประชุม</label>
-            <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+            <label className="label">วันที่ · เวลาประชุม</label>
+            <div className="flex gap-2">
+              <input type="date" className="input flex-1" value={date} onChange={(e) => setDate(e.target.value)} />
+              <input type="time" className="input w-28 shrink-0" value={time} onChange={(e) => setTime(e.target.value)}
+                aria-label="เวลาประชุม" />
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">เวลาไม่บังคับ — ใส่ไว้จะแสดงบนการ์ดเชิญ LINE</div>
           </div>
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -314,7 +348,9 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
                 {meetings.map((m) => (
                   <tr key={m.id} className="border-b last:border-0 hover:bg-slate-50">
                     <td className="py-2 pr-3 font-medium text-slate-800">{m.title}</td>
-                    <td className="py-2 pr-3 text-slate-600 whitespace-nowrap">{m.meeting_date}</td>
+                    <td className="py-2 pr-3 text-slate-600 whitespace-nowrap">
+                      {m.meeting_date}{timeOf(m.scheduled_at) && <span className="text-slate-400"> · {timeOf(m.scheduled_at)} น.</span>}
+                    </td>
                     <td className="py-2 pr-3 text-slate-500">{m.branch_name ?? "ทั้งบริษัท"}</td>
                     <td className="py-2 pr-3">
                       <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${STATUS_STYLE[m.status]}`}>{STATUS_LABEL[m.status]}</span>
@@ -328,6 +364,9 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
                       )}
                       {m.status === "active" && (
                         <button type="button" onClick={() => setStatus(m.id, "ended")} className="text-xs text-amber-600 hover:underline mr-3">ปิดประชุม</button>
+                      )}
+                      {(m.status === "scheduled" || m.status === "active") && (
+                        <button type="button" onClick={() => renotify(m.id)} className="text-xs text-sky-600 hover:underline mr-3">ส่งแจ้งเตือนซ้ำ</button>
                       )}
                       <button type="button" onClick={() => setDetailId(m.id)} className="text-xs text-brand hover:underline mr-3">รายละเอียด/สรุป</button>
                       <button type="button" onClick={() => remove(m.id)} className="text-xs text-rose-500 hover:underline">ลบ</button>
@@ -354,7 +393,7 @@ type Invitee = {
   minutes_complete: boolean; items: MinuteItem[];
 };
 type Detail = {
-  id: number; title: string; meeting_date: string; status: string;
+  id: number; title: string; meeting_date: string; scheduled_at: string | null; status: string;
   ai_summary: string | null; ai_checklist: string | null; ai_carryover: string | null; summarized_at: string | null;
   ai_in_tokens: number | null; ai_out_tokens: number | null; ai_cost_baht: number | null; ai_model: string | null;
   ai_status: string | null; ai_error: string | null;
@@ -366,12 +405,21 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
   const [d, setD] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // Editable preset วาระ — allowed until the meeting starts (owner 2026-09-02).
+  // Editable preset วาระ + วันเวลา — allowed until the meeting starts (owner 2026-09-02/25).
   const [topics, setTopics] = useState<string[]>([]);
+  const [mDate, setMDate] = useState("");
+  const [mTime, setMTime] = useState("");
   const [savingTopics, setSavingTopics] = useState(false);
   const [topicsMsg, setTopicsMsg] = useState<string | null>(null);
+  const [notifyMsg, setNotifyMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const polling = useRef(false);
+
+  async function doRenotify() {
+    if (!confirm("ส่งแจ้งเตือนซ้ำเข้า LINE ให้ผู้ได้รับเชิญทุกคน?")) return;
+    setNotifyMsg(null);
+    setNotifyMsg(await postRenotify(meetingId));
+  }
 
   async function fetchDetail(): Promise<Detail | null> {
     const res = await fetch(apiUrl(`/api/admin/persona/exec-meetings/${meetingId}`));
@@ -380,7 +428,7 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
   }
   async function load(): Promise<Detail | null> {
     const m = await fetchDetail();
-    if (m) { setD(m); setTopics(m.agenda_topics ?? []); }
+    if (m) { setD(m); setTopics(m.agenda_topics ?? []); setMDate(m.meeting_date); setMTime(timeOf(m.scheduled_at) ?? ""); }
     return m;
   }
   // The summary runs in the background — poll the meeting until it finishes.
@@ -406,15 +454,21 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [meetingId]);
 
+  // Save the reschedule (date + optional time) and the preset วาระ together.
   async function saveTopics() {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(mDate)) { setTopicsMsg("วันที่ไม่ถูกต้อง"); return; }
     setSavingTopics(true); setTopicsMsg(null);
     try {
       const res = await fetch(apiUrl(`/api/admin/persona/exec-meetings/${meetingId}`), {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agenda_topics: topics.map((t) => t.trim()).filter(Boolean) })
+        body: JSON.stringify({
+          meeting_date: mDate,
+          scheduled_at: mTime ? `${mDate}T${mTime}` : null,
+          agenda_topics: topics.map((t) => t.trim()).filter(Boolean)
+        })
       });
       const j = await res.json().catch(() => ({}));
-      if (j?.ok) { setTopicsMsg("บันทึกวาระแล้ว"); await load(); }
+      if (j?.ok) { setTopicsMsg("บันทึกแล้ว — กด “ส่งแจ้งเตือนซ้ำ” เพื่อแจ้งผู้ได้รับเชิญ"); await load(); }
       else setTopicsMsg(j?.error === "no_change" ? "ไม่มีการเปลี่ยนแปลง" : (j?.message ?? j?.error ?? "บันทึกไม่สำเร็จ"));
     } catch { setTopicsMsg("เชื่อมต่อไม่ได้"); }
     finally { setSavingTopics(false); }
@@ -449,19 +503,31 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
             <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="font-bold text-slate-800">{d.title}</div>
-                <div className="text-xs text-slate-500">{d.meeting_date}</div>
+                <div className="text-xs text-slate-500">{d.meeting_date}{timeOf(d.scheduled_at) && ` · ${timeOf(d.scheduled_at)} น.`}</div>
               </div>
               <div className="flex items-center gap-3">
+                {(d.status === "scheduled" || d.status === "active") && (
+                  <button type="button" onClick={doRenotify} className="text-xs text-sky-600 hover:underline whitespace-nowrap">ส่งแจ้งเตือนซ้ำ</button>
+                )}
                 <a href={apiUrl(`/api/admin/persona/exec-meetings/${meetingId}/pdf`)} target="_blank" rel="noopener noreferrer"
                   className="text-xs text-brand hover:underline whitespace-nowrap">ดาวน์โหลด PDF</a>
                 <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
               </div>
             </div>
+            {notifyMsg && <div className={`text-xs -mt-2 ${notifyMsg.ok ? "text-emerald-600" : "text-rose-600"}`}>{notifyMsg.text}</div>}
 
             {/* Preset วาระ — editable until the meeting starts, read-only after. */}
             {d.status === "scheduled" ? (
               <div className="rounded-xl border border-[#EFE4D3] bg-[#faf5ec] p-3 space-y-2">
-                <div className="flex items-center justify-between">
+                {/* Reschedule (owner 2026-09-25): เลื่อนวัน/เวลาได้จนกว่าจะเปิดประชุม */}
+                <div>
+                  <span className="text-xs font-semibold text-slate-600">วัน · เวลาประชุม (เลื่อนได้จนกว่าจะเปิดประชุม)</span>
+                  <div className="flex gap-2 mt-1">
+                    <input type="date" className="input flex-1" value={mDate} onChange={(e) => setMDate(e.target.value)} />
+                    <input type="time" className="input w-28 shrink-0" value={mTime} onChange={(e) => setMTime(e.target.value)} aria-label="เวลาประชุม" />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-1">
                   <span className="text-xs font-semibold text-slate-600">วาระที่กำหนด (แก้ไข/เพิ่มได้จนกว่าจะเปิดประชุม)</span>
                   <button type="button" className="text-xs text-brand hover:underline"
                     onClick={() => setTopics((prev) => [...prev, ""])}>+ เพิ่มวาระ</button>
@@ -484,7 +550,7 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
                 <div className="flex items-center gap-3 pt-1">
                   <button type="button" onClick={saveTopics} disabled={savingTopics}
                     className="btn-secondary text-xs disabled:opacity-50">
-                    {savingTopics ? "..." : "บันทึกวาระ"}
+                    {savingTopics ? "..." : "บันทึกการแก้ไข"}
                   </button>
                   {topicsMsg && <span className="text-xs text-slate-500">{topicsMsg}</span>}
                 </div>
