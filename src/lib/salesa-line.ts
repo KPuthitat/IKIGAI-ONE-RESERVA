@@ -5,7 +5,7 @@
 
 import { sendLinePush } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
-import type { DailyAnalytics, WeeklyAnalytics, MonthlyAnalytics } from "./salesa-analytics";
+import type { DailyAnalytics, WeeklyAnalytics, MonthlyAnalytics, CompanyOverview } from "./salesa-analytics";
 import type { SalesPushPlan } from "./salesa-push";
 
 type FlexMsg = { type: "flex"; altText: string; contents: unknown };
@@ -286,6 +286,82 @@ export function salesaPushFlex(p: SalesPushPlan, meta: DailyCardMeta): FlexMsg {
       header: header("แผนผลักดันยอดขาย · คำแนะนำจากน้องฮูก", `${p.days} วัน · ${meta.branchName}`, meta.color),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("สรุปโดยระบบ IKIGAI OS · แผนดันยอดระยะสั้น")
+    }
+  };
+}
+
+// ── ภาพรวมบริษัท รวมทุกสาขา (owner 2026-09-25) ───────────────────────────────
+export type CompanyCardMeta = { companyName: string; monthLabel: string; operator: string; color: string };
+
+/** Company-wide sales summary card for the HOD group: total MTD sales + MoM,
+ *  monthly + annual target progress, and a per-branch line-up. Mirrors the
+ *  ANALYTICA company page (owner 2026-09-25). */
+export function salesaCompanyFlex(ov: CompanyOverview, meta: CompanyCardMeta): FlexMsg {
+  const t = ov.total;
+  const momLine = t.prevSameNett == null
+    ? { type: "text", text: "เทียบเดือนก่อน: ยังไม่มีข้อมูลเทียบ", size: "xxs", color: "#bbbbbb", wrap: true }
+    : { type: "text", size: "xxs", wrap: true, contents: [
+        { type: "span", text: "เทียบเดือนก่อน ", color: "#999999" }, pctSpan(t.momPct),
+        { type: "span", text: `  (${baht(t.prevSameNett)})`, color: "#bbbbbb" }
+      ] };
+
+  const body: unknown[] = [
+    { type: "text", text: `รวม ${ov.branchCount} สาขา · สรุปโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true },
+    sep,
+    kv(`ยอดขายรวม (วันที่ 1–${ov.throughDay})`, baht(t.mtdNett), { bold: true, color: "#0f7a4f", size: "md" }),
+    momLine,
+    kv("จำนวนบิลรวม", `${intTh(t.bills)} บิล`, { size: "xs" }),
+    kv("ลูกค้ารวม", `${intTh(t.pax)} คน`, { size: "xs" }),
+    ...(ov.isCurrentMonth && t.todayNett != null ? [kv("ยอดขายวันนี้ (รวมสาขา)", baht(t.todayNett), { size: "xs" })] : [])
+  ];
+
+  if (ov.target) {
+    body.push(sep);
+    body.push(kv(`เป้ารายเดือนรวม (${ov.targetedBranchCount} สาขา)`, baht(ov.target.target), { size: "xs" }));
+    body.push({ type: "text", size: "xxs", wrap: true, contents: [
+      { type: "span", text: "ทำได้ ", color: "#999999" },
+      { type: "span", text: `${ov.target.pctOfTarget.toFixed(0)}% ของเป้า`, color: ov.target.pctOfTarget >= 100 ? "#0f7a4f" : "#1a1a2e" },
+      { type: "span", text: `  ·  คาดสิ้นเดือน ${baht(ov.target.projectedNett)} (${ov.target.projectedPct.toFixed(0)}%)`, color: ov.target.onTrack ? "#0f7a4f" : "#b8860b" }
+    ] });
+  }
+  if (ov.annual) {
+    body.push(kv(`เป้าทั้งปี ${ov.annual.year + 543}`, baht(ov.annual.annualTarget), { size: "xs" }));
+    body.push({ type: "text", size: "xxs", wrap: true, contents: [
+      { type: "span", text: "YTD ", color: "#999999" },
+      { type: "span", text: `${baht(ov.annual.ytdNett)} (${ov.annual.pctOfTarget.toFixed(0)}%)`, color: ov.annual.pctOfTarget >= 100 ? "#0f7a4f" : "#1a1a2e" },
+      { type: "span", text: `  ·  คาดสิ้นปี ${ov.annual.projectedPct.toFixed(0)}%`, color: ov.annual.onTrack ? "#0f7a4f" : "#b8860b" }
+    ] });
+  }
+
+  if (ov.branches.length) {
+    body.push(sep);
+    body.push({ type: "text", text: "เทียบรายสาขา", size: "xs", weight: "bold", color: "#0e2724", margin: "sm" });
+    for (const b of [...ov.branches].sort((a, z) => z.mtdNett - a.mtdNett)) {
+      body.push({ type: "box", layout: "horizontal", contents: [
+        { type: "text", text: b.branchName, size: "xs", color: "#333333", flex: 5, wrap: true },
+        { type: "text", size: "xs", align: "end", flex: 5, wrap: true, contents: [
+          { type: "span", text: `${baht(b.mtdNett)}  `, color: "#1a1a2e" }, pctSpan(b.momPct),
+          ...(b.pctOfTarget != null ? [{ type: "span", text: `  · ${b.pctOfTarget.toFixed(0)}% เป้า`, color: "#999999" }] : [])
+        ] }
+      ] });
+    }
+  }
+
+  return {
+    type: "flex",
+    altText: `ภาพรวมบริษัท ${meta.monthLabel} · ${meta.companyName} · ${baht(t.mtdNett)}`,
+    contents: {
+      type: "bubble", size: "giga",
+      header: {
+        type: "box", layout: "vertical", backgroundColor: meta.color, paddingAll: "16px", spacing: "xs",
+        contents: [
+          { type: "text", text: "IKIGAI OS · ภาพรวมบริษัท", size: "xxs", color: "#ffffff99" },
+          { type: "text", text: meta.companyName, size: "lg", weight: "bold", color: "#ffffff", wrap: true },
+          { type: "text", text: `รวมทุกสาขา · ${meta.monthLabel}`, size: "xs", color: "#ffffffcc", wrap: true }
+        ]
+      },
+      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
+      footer: footer("สรุปโดยระบบ IKIGAI OS · ภาพรวมบริษัทรวมทุกสาขา")
     }
   };
 }
