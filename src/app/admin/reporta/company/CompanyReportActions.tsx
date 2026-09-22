@@ -10,9 +10,9 @@ export default function CompanyReportActions({ year, month }: { year: number; mo
   const pdfHref = apiUrl(`/api/admin/reporta/company/pdf?year=${year}&month=${month}`);
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
+    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
       <a href={pdfHref} target="_blank" rel="noopener noreferrer"
-        className="btn-secondary text-sm px-3 py-1.5">ดาวน์โหลด PDF</a>
+        className="btn-secondary text-sm px-3 py-1.5 text-center">ดาวน์โหลด PDF</a>
       <button type="button" onClick={() => setOpen(true)}
         className="btn-primary text-sm px-3 py-1.5">ส่งการ์ดเข้ากลุ่ม HOD</button>
       {open && <SendPinModal year={year} month={month} onClose={() => setOpen(false)} />}
