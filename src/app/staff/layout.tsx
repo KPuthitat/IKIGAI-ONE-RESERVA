@@ -182,13 +182,13 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   // detection; `href` may be a branch-picker gate URL. In admin-view the
   // module links point at /admin (modBase) so an admin is never stranded.
   const homeBase = adminView ? "/admin" : "/staff";
-  // Full admins (super_admin, or an admin with a per-branch admin grant) see
-  // their COMPLETE module set in the top bar even in staff view (owner
-  // 2026-09-19: "โมดูลบนท้อปบาร์ควรมีครบ"), each linking to its /admin page.
-  // Scoped to real admins — NOT permission-only staffers — so a staffer with a
-  // delegated permission keeps their PERSONA/RESERVA self-service tabs.
-  const showFullModuleBar =
-    user.role === "super_admin" || (user.role === "admin" && user.adminBranchIds.length > 0);
+  // The full admin module set (each linking to its /admin page) shows ONLY in
+  // admin mode — i.e. after the user PIN-unlocked this session (owner 2026-09-22:
+  // staff mode must stay staff-rights; entering admin needs the PIN). In staff
+  // mode everyone, admins included, sees the staff self-service tabs. Driven by
+  // adminView (isAdminCapable && isAdminUnlocked), so it can never route a
+  // staff-mode admin to /admin and trap them at the PIN gate.
+  const showFullModuleBar = adminView;
   const moduleTabs: ModuleTab[] = [
     { key: "home", label: t(lang, "sidebar.modulePicker"), href: homeBase, base: homeBase, exact: true },
     ...(showFullModuleBar
