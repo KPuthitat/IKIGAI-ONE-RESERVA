@@ -15,7 +15,8 @@ const Body = z.object({
   title: z.string().min(1).max(200),
   meeting_date: z.string().regex(HDATE),
   company_wide: z.boolean().optional(),
-  scheduled_at: z.string().max(40).nullable().optional(),
+  // "YYYY-MM-DDTHH:MM" (naive Bangkok wall-clock start time) or null for date-only.
+  scheduled_at: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).nullable().optional(),
   agenda_topics: z.array(z.string().max(300)).max(50).optional(),
   invitee_user_ids: z.array(z.number().int().positive()).max(200).default([])
 });

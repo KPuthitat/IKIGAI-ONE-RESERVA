@@ -1622,14 +1622,14 @@ function EditModal({
                   </span>
                 </span>
               </label>
-              {/* ผู้บริหารระดับสูง (C-level) — ติ๊กเลือกด่วนในหน้าประชุมผู้บริหาร (owner 2026-09-25). */}
+              {/* ผู้บริหารระดับสูง (C-level) — ตัวเลือกด่วนในหน้าประชุมผู้บริหาร (owner 2026-09-25). */}
               <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 cursor-pointer hover:bg-slate-50">
                 <input type="checkbox" className="mt-0.5" checked={cLevel}
                   onChange={(e) => setCLevel(e.target.checked)} />
                 <span className="text-sm text-slate-700">
                   ผู้บริหารระดับสูง (C-level)
                   <span className="block text-xs text-slate-500">
-                    ใช้ติ๊กเลือกด่วน &ldquo;C-level&rdquo; เวลาเชิญประชุมผู้บริหาร (ไม่ใช่สิทธิ์การใช้งาน)
+                    ใช้สำหรับเลือกกลุ่ม &ldquo;C-level&rdquo; อย่างรวดเร็วเมื่อเชิญประชุมผู้บริหาร (ไม่ใช่สิทธิ์การใช้งานระบบ)
                   </span>
                 </span>
               </label>
