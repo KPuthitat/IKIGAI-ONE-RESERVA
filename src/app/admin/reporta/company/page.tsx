@@ -4,6 +4,7 @@ import { requirePermission, canModule } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu } from "@/lib/salesa-analytics";
 import { fmtMoney } from "@/lib/format";
+import CompanyReportActions from "./CompanyReportActions";
 
 // ANALYTICA · ภาพรวมบริษัท (รวมทุกสาขา) — owner 2026-09-21. ยอดขายรวมบริษัท +
 // เทียบรายสาขา + เทียบเดือนนี้↔เดือนก่อน (ช่วงเวลาเดียวกัน) + เป้าเดือน/ทั้งปี.
@@ -88,9 +89,12 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
           <Link href="/admin/accounta/company" className="text-sm text-brand hover:underline">โครงสร้างต้นทุน · กฎ 100% (ACCOUNTA รวมบริษัท) →</Link>
         )}
       </div>
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">ภาพรวมบริษัท · รวมทุกสาขา</h1>
-        <p className="text-sm text-slate-500 mt-1">ยอดขายรวมบริษัท เทียบรายสาขา และเทียบเดือนนี้กับเดือนก่อนในช่วงเวลาเดียวกัน</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">ภาพรวมบริษัท · รวมทุกสาขา</h1>
+          <p className="text-sm text-slate-500 mt-1">ยอดขายรวมบริษัท เทียบรายสาขา และเทียบเดือนนี้กับเดือนก่อนในช่วงเวลาเดียวกัน</p>
+        </div>
+        {ov.branchCount > 0 && <CompanyReportActions year={year} month={month} />}
       </div>
 
       {/* Month switcher */}
