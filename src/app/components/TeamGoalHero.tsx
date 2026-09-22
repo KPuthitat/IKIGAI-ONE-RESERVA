@@ -126,8 +126,9 @@ export default function TeamGoalHero({
           </span>
         </div>
 
-        {/* Rotating leadership message to the branch team */}
-        <div className={`mt-3 min-h-[1.25rem] text-sm font-semibold ${c.title}`}>{msg}</div>
+        {/* Rotating leadership message — kept to a single line (owner 2026-09-22);
+            a message longer than the width is ellipsised, full text on tap/hover. */}
+        <div className={`mt-3 min-h-[1.25rem] text-sm font-semibold truncate ${c.title}`} title={msg}>{msg}</div>
       </div>
     </div>
   );
