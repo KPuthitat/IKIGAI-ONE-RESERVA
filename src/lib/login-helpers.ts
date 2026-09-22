@@ -8,7 +8,7 @@
 
 import { cookies } from "next/headers";
 import { getDb, type UserRole } from "./db";
-import { createSession, isAdminCapableById, clearAdminUnlocked } from "./auth";
+import { createSession, clearAdminUnlocked } from "./auth";
 
 export type AccountStateError = {
   error: string;
@@ -61,16 +61,17 @@ export function finalizeLogin(
   db.prepare("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?").run(userId);
   createSession(userId, null);
 
-  // Admin-capable accounts land on the ADMIN side first (owner 2026-09-21:
-  // "ควรจะเป็นสิทธิ์ผู้ดูแลระบบก่อนเสมอ"). They don't drop into the console directly —
-  // the admin layout's PIN gate intercepts and requires the 4-digit PIN every
-  // entry, including right after login. Capability is resolved the SAME way the
-  // gate resolves it (isAdminCapableById), so a branch-less admin isn't stranded
-  // on the admin side. Everyone else lands in staff mode as before.
-  const landsOnAdmin = isAdminCapableById(userId, role);
+  // EVERYONE — admin-capable or not — lands in STAFF mode by default (owner
+  // 2026-09-22: "ทุกคน...จะต้องเข้าใช้งานในโหมดพนักงานเสมอ เป็น default"). All main
+  // modules + submenus run under staff rights until the user deliberately taps
+  // "มุมมองผู้ดูแลระบบ" and enters their PIN, which flips os_view to admin and
+  // routes every module to the admin portal. Returning to staff is free.
+  // `role` is unused now that landing is unconditional; kept for the shared shape.
+  void role;
+  const landsOnAdmin = false;
 
   // A stale admin unlock must never carry across a login — a fresh session always
-  // re-prompts the PIN. os_view starts "staff"; the PIN gate flips it to "admin".
+  // starts in staff mode and re-prompts the PIN to enter admin.
   clearAdminUnlocked();
   cookies().set("os_view", "staff", {
     httpOnly: false,

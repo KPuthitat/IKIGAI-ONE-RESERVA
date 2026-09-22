@@ -108,9 +108,9 @@ export async function POST(req: Request) {
 
   const { branchCount, landsOnAdmin } = finalizeLogin(authedUserId, authedRole);
 
-  // `lands_on_admin` is true for admin-privileged accounts (owner 2026-09-21):
-  // they land on the admin picker, where the admin layout's PIN gate requires
-  // the 4-digit PIN before the console renders. Everyone else lands on staff.
+  // `lands_on_admin` is always false (owner 2026-09-22): every account lands in
+  // staff mode; admins enter the console by tapping "มุมมองผู้ดูแลระบบ" + PIN. The
+  // field is kept in the response shape for the client.
   return NextResponse.json({
     ok: true,
     role: tabRole,
