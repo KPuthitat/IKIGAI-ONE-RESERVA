@@ -73,6 +73,9 @@ const Body = z.object({
   receives_service_charge: z.number().int().min(0).max(1).optional(),
   // 2026-09-02 — ยกเว้นเบี้ยประชุม: 1 = exec attends meetings but is not paid.
   meeting_fee_exempt: z.number().int().min(0).max(1).optional(),
+  // 2026-09-25 — ผู้บริหารระดับสูง (C-level): manually-assigned flag that powers
+  // the "C-level" quick-select chip in the exec-meeting invitee picker.
+  is_c_level: z.number().int().min(0).max(1).optional(),
   // 2026-05-30 — PDPA payroll-access grant. Only super_admin may set
   // this; the server gate strips it for everyone else (below).
   can_view_payroll:   z.number().int().min(0).max(1).optional(),
@@ -373,6 +376,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("receives_service_charge");
   // ยกเว้นเบี้ยประชุม — 0/1 boolean (owner 2026-09-02).
   addField("meeting_fee_exempt");
+  // ผู้บริหารระดับสูง (C-level) — 0/1 boolean (owner 2026-09-25).
+  addField("is_c_level");
   // PDPA payroll-access grant — only present in parsed.data when
   // operator is super_admin (stripped above for everyone else).
   addField("can_view_payroll");

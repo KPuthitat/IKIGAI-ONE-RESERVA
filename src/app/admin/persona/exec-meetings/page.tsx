@@ -28,8 +28,9 @@ export default function ExecMeetingsPage() {
   const branchIds = branches.map((b) => b.id);
   const staffRows = branchIds.length > 0
     ? (db.prepare(`
-        SELECT u.id, u.display_name, u.title_prefix,
+        SELECT u.id, u.display_name, u.title_prefix, u.role,
                COALESCE(u.meeting_fee_exempt, 0) AS fee_exempt,
+               COALESCE(u.is_c_level, 0) AS is_c_level,
                COALESCE(
                  (SELECT ub.branch_id FROM user_branches ub WHERE ub.user_id = u.id AND ub.is_primary = 1
                     AND ub.branch_id IN (${branchIds.map(() => "?").join(",")}) LIMIT 1),
@@ -43,7 +44,7 @@ export default function ExecMeetingsPage() {
           AND EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = u.id
                       AND ub.branch_id IN (${branchIds.map(() => "?").join(",")}))
         ORDER BY u.display_name COLLATE NOCASE
-      `).all(...branchIds, ...branchIds, ...branchIds) as Array<{ id: number; display_name: string; title_prefix: string | null; fee_exempt: number; branch_id: number | null }>)
+      `).all(...branchIds, ...branchIds, ...branchIds) as Array<{ id: number; display_name: string; title_prefix: string | null; role: string; fee_exempt: number; is_c_level: number; branch_id: number | null }>)
     : [];
 
   // Department (แผนก) = the person's org-chart placement at that branch, so the
@@ -62,7 +63,8 @@ export default function ExecMeetingsPage() {
     const branchId = s.branch_id ?? (branchIds[0] ?? 0);
     return {
       id: s.id, display_name: s.display_name, title_prefix: s.title_prefix,
-      fee_exempt: s.fee_exempt === 1, branchId,
+      fee_exempt: s.fee_exempt === 1, isCLevel: s.is_c_level === 1, isAdmin: s.role === "admin",
+      branchId,
       department: deptOf.get(`${s.id}|${branchId}`) ?? null
     };
   });
