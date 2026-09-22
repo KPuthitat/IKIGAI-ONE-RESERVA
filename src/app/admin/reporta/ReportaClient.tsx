@@ -591,7 +591,10 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   };
 
   return (
-    <div className="space-y-4">
+    // Cap the single column to a comfortable reading width and center it, so the
+    // dashboard doesn't sprawl across a wide desktop; full width on mobile
+    // (owner 2026-09-22 — UX/UI ให้เหมาะกับอุปกรณ์).
+    <div className="space-y-4 max-w-5xl mx-auto w-full">
       {!hasLineGroup && (
         <div className="card bg-amber-50 border-amber-200 text-sm text-amber-800">
           ⚠️ ยังไม่ได้ตั้งกลุ่ม LINE หัวหน้างาน — ปุ่มส่งสรุปจะยังใช้ไม่ได้ · <a href="/admin/reporta/settings" className="underline font-semibold">ไปตั้งค่า</a>
@@ -744,7 +747,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               {!monthComplete && <span className="text-xs text-amber-600">นำเข้าไฟล์ให้ครบทั้งเดือนก่อนส่ง (ขาด {missing} วัน)</span>}
               <button onClick={() => sendMonthly(year, month)} disabled={!hasLineGroup || !monthComplete}
                 title={!monthComplete ? "นำเข้าไฟล์ให้ครบทั้งเดือนก่อน" : undefined}
-                className="btn-success text-sm px-4 py-2 disabled:opacity-50">
+                className="btn-success text-sm px-4 py-2 disabled:opacity-50 w-full sm:w-auto">
                 {monthSentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
               </button>
             </div>
