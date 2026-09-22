@@ -14,6 +14,31 @@ function todayBkk(): string {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 }
 
+// Downscale a captured photo to a ~1280px long-edge JPEG data-URL so uploads
+// stay small (the server caps at 2MB). Rejects non-images by resolving null.
+function downscaleToDataUrl(file: File, maxEdge = 1280, quality = 0.7): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith("image/")) return resolve(null);
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve(null);
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
 export default function WasteClient({
   items, rows, showReportLink
 }: {
@@ -30,8 +55,19 @@ export default function WasteClient({
   const [reason, setReason] = useState<WasteReason>("expired");
   const [wastedOn, setWastedOn] = useState(todayBkk());
   const [note, setNote] = useState("");
+  const [photo, setPhoto] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [zoom, setZoom] = useState<string | null>(null);
+
+  async function onPickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";   // allow re-picking the same file
+    if (!file) return;
+    const data = await downscaleToDataUrl(file);
+    if (!data) { setMsg({ kind: "err", text: t("inv.waste.photoError") }); return; }
+    setPhoto(data);
+  }
 
   const selectedItem = items.find((i) => i.id === itemId) || null;
   const qtyNum = Number(qty);
@@ -45,15 +81,17 @@ export default function WasteClient({
       const res = await fetch(apiUrl("/api/inventa/waste"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item_id: itemId, qty: qtyNum, reason, note: note.trim() || undefined, wasted_on: wastedOn })
+        body: JSON.stringify({ item_id: itemId, qty: qtyNum, reason, note: note.trim() || undefined, wasted_on: wastedOn, photo: photo ?? undefined })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j?.ok) throw new Error(j?.error ?? "error");
       setMsg({ kind: "ok", text: t("inv.waste.saved") });
-      setQty(""); setNote("");
+      setQty(""); setNote(""); setPhoto(null);
       startTransition(() => router.refresh());
-    } catch {
-      setMsg({ kind: "err", text: t("inv.waste.saveError") });
+    } catch (e) {
+      // A rejected photo (too large / bad format) shouldn't look like a generic save failure.
+      const code = e instanceof Error ? e.message : "";
+      setMsg({ kind: "err", text: t(code.startsWith("photo_") ? "inv.waste.photoError" : "inv.waste.saveError") });
     } finally {
       setBusy(false);
     }
@@ -99,6 +137,24 @@ export default function WasteClient({
           <input className="input" value={note} maxLength={500} onChange={(e) => setNote(e.target.value)}
             placeholder={t("inv.waste.field.notePlaceholder")} />
         </label>
+        <div className="block">
+          <span className="label">{t("inv.waste.field.photo")}</span>
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="btn-ghost text-sm cursor-pointer">
+              {photo ? t("inv.waste.photoRetake") : t("inv.waste.photoAdd")}
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickPhoto} />
+            </label>
+            {photo && (
+              <>
+                <button type="button" onClick={() => setZoom(photo)} className="shrink-0">
+                  <img src={photo} alt="" className="h-14 w-14 rounded object-cover border border-slate-200" />
+                </button>
+                <button type="button" onClick={() => setPhoto(null)}
+                  className="text-xs text-rose-600 hover:underline">{t("inv.waste.photoRemove")}</button>
+              </>
+            )}
+          </div>
+        </div>
         <div className="flex items-center gap-3 flex-wrap">
           <button type="button" onClick={submit} disabled={!canSubmit}
             className="btn-primary text-sm disabled:opacity-50">
@@ -130,6 +186,7 @@ export default function WasteClient({
                 <th className="py-2 pr-3 text-right">{t("inv.waste.col.qty")}</th>
                 <th className="py-2 pr-3">{t("inv.waste.col.reason")}</th>
                 <th className="py-2 pr-3 text-right">{t("inv.waste.col.value")}</th>
+                <th className="py-2 pr-3">{t("inv.waste.col.photo")}</th>
                 <th className="py-2 pr-3">{t("inv.waste.col.by")}</th>
               </tr>
             </thead>
@@ -146,6 +203,13 @@ export default function WasteClient({
                     <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">{wasteReasonLabel(w.reason, lang)}</span>
                   </td>
                   <td className="py-2 pr-3 text-right tabular-nums text-rose-600">{fmtMoney(w.value)}</td>
+                  <td className="py-2 pr-3">
+                    {w.photoUrl ? (
+                      <button type="button" onClick={() => setZoom(w.photoUrl)} className="block">
+                        <img src={w.photoUrl} alt="" loading="lazy" className="h-10 w-10 rounded object-cover border border-slate-200" />
+                      </button>
+                    ) : <span className="text-slate-300">—</span>}
+                  </td>
                   <td className="py-2 pr-3 text-slate-500 whitespace-nowrap">{w.logged_by_name ?? "—"}</td>
                 </tr>
               ))}
@@ -153,6 +217,13 @@ export default function WasteClient({
           </table>
         )}
       </div>
+
+      {zoom && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setZoom(null)}>
+          <img src={zoom} alt="" className="max-h-full max-w-full rounded shadow-lg" />
+        </div>
+      )}
     </div>
   );
 }
