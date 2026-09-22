@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { requireUser, canModule } from "@/lib/auth";
+import { requireUser, canModule, isAdminCapable, isAdminUnlocked } from "@/lib/auth";
 import { ADMIN_MODULES } from "@/lib/admin-modules";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -58,13 +58,11 @@ export default function StaffHomePage({
   let mjEnrolled = false;
   try { mjEnrolled = !!getMyEnrollment(user as MjActor); } catch { mjEnrolled = false; }
 
-  // Full admins (super_admin, or an admin with a per-branch admin grant) see the
-  // COMPLETE module set on the landing — the same list as the top module bar —
-  // so nothing is missing (owner 2026-09-20: "เมนูยังขึ้นไม่ครบทุกโมดูล"). Everyone
-  // else sees their staff self-service modules. `key` matches what
-  // ModuleVisitTracker records so staff cards can order by usage.
-  const showFullModuleBar = user.role === "super_admin"
-    || (user.role === "admin" && user.adminBranchIds.length > 0);
+  // Admin module cards (linking to /admin/*) show ONLY in admin mode — after the
+  // user PIN-unlocked this session (owner 2026-09-22). In staff mode everyone,
+  // admins included, gets the staff self-service cards, so clicking a module in
+  // staff mode never bounces to the admin PIN gate.
+  const showFullModuleBar = isAdminCapable(user) && isAdminUnlocked(user);
   type Entry = { key: string; card: HubCardProps; pinLast?: boolean };
   const entries: (Entry | null)[] = showFullModuleBar
     ? ADMIN_MODULES
