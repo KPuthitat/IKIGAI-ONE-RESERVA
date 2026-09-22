@@ -8017,7 +8017,7 @@ function runMigrations(db: Database.Database): void {
       joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       ended_at TEXT,
       minutes INTEGER,                      -- rounded to whole minutes on end
-      fee_amount REAL,                      -- like OT: 50 บาท × floor(minutes/15) (0 if exempt)
+      fee_amount REAL,                      -- flat 50 บาท × floor(minutes/15), i.e. 200 บาท/ชม. — OT block rule, not OT rate (0 if exempt)
       fee_exempt INTEGER NOT NULL DEFAULT 0,-- snapshot of users.meeting_fee_exempt at end
       UNIQUE (meeting_id, user_id)
     );
