@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { z } from "zod";
 import { getSessionUser, setAdminUnlocked } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
@@ -8,9 +7,9 @@ import { rateLimit } from "@/lib/rate-limit";
 // POST /api/auth/unlock-admin  { pin }
 //
 // The single PIN gate for ENTERING admin mode (owner 2026-09-21). Verifies the
-// caller's 4-digit PIN, then sets the httpOnly os_admin_unlock cookie the admin
-// layout enforces plus the os_view=admin chrome preference. Used by the mode
-// toggle and the login-time /admin/unlock page. Kept separate from the generic
+// caller's 4-digit PIN, then sets the httpOnly os_admin_unlock cookie that both
+// layouts read as the source of truth for admin mode. Used by the mode toggle
+// and the login-time /admin/unlock page. Kept separate from the generic
 // /api/auth/verify-pin (which has no side effects) so presence checks elsewhere
 // never widen the admin window.
 
@@ -38,9 +37,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: status.reason }, { status: code });
   }
   setAdminUnlocked(user.id);
-  cookies().set("os_view", "admin", {
-    httpOnly: false, sameSite: "lax",
-    secure: process.env.NODE_ENV === "production", path: "/", maxAge: 31_536_000
-  });
   return NextResponse.json({ ok: true });
 }

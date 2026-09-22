@@ -6,7 +6,6 @@
 // two entry points can never silently diverge (e.g. LINE login letting a
 // resigned staff in because it forgot the status check).
 
-import { cookies } from "next/headers";
 import { getDb, type UserRole } from "./db";
 import { createSession, clearAdminUnlocked } from "./auth";
 
@@ -49,10 +48,9 @@ export function accountStateError(userId: number): AccountStateError | null {
   return null;
 }
 
-/** Stamp last_login_at, reset the os_view intent to the role's HOME mode
- *  (so crossing into the non-default mode re-prompts the PIN), and open a
- *  session cookie. Returns the routing hints the caller needs to land the
- *  user on the right branch picker. Mirrors the tail of /api/login. */
+/** Stamp last_login_at, clear any admin unlock (so a fresh login always starts
+ *  in staff mode), and open a session cookie. Returns the routing hints the
+ *  caller needs to land the user on the right branch picker. Mirrors /api/login. */
 export function finalizeLogin(
   userId: number,
   role: UserRole
@@ -64,8 +62,8 @@ export function finalizeLogin(
   // EVERYONE — admin-capable or not — lands in STAFF mode by default (owner
   // 2026-09-22: "ทุกคน...จะต้องเข้าใช้งานในโหมดพนักงานเสมอ เป็น default"). All main
   // modules + submenus run under staff rights until the user deliberately taps
-  // "มุมมองผู้ดูแลระบบ" and enters their PIN, which flips os_view to admin and
-  // routes every module to the admin portal. Returning to staff is free.
+  // "มุมมองผู้ดูแลระบบ" and enters their PIN — which sets the admin-unlock cookie
+  // that both layouts read. Returning to staff is free.
   // `role` is unused now that landing is unconditional; kept for the shared shape.
   void role;
   const landsOnAdmin = false;
@@ -73,13 +71,6 @@ export function finalizeLogin(
   // A stale admin unlock must never carry across a login — a fresh session always
   // starts in staff mode and re-prompts the PIN to enter admin.
   clearAdminUnlocked();
-  cookies().set("os_view", "staff", {
-    httpOnly: false,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 31_536_000
-  });
   const branchCount = (
     db.prepare("SELECT COUNT(*) AS n FROM user_branches WHERE user_id = ?").get(userId) as { n: number }
   ).n;
