@@ -5,8 +5,9 @@ import PinPromptModal from "@/app/components/PinPromptModal";
 import { apiUrl } from "@/lib/url";
 
 // The PIN gate shown before entering the admin console (owner 2026-09-21).
-// On a correct PIN, /api/auth/unlock-admin sets the httpOnly unlock cookie and
-// os_view=admin, then we forward to `next`. Cancelling drops to staff view.
+// On a correct PIN, /api/auth/unlock-admin sets the httpOnly os_admin_unlock
+// cookie (the source of truth for admin mode), then we forward to `next`.
+// Cancelling drops to staff view.
 export default function AdminUnlockClient({ next }: { next: string }) {
   const router = useRouter();
 

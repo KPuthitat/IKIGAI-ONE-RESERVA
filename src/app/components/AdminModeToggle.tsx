@@ -1,34 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useLang } from "@/lib/LangProvider";
 import { apiUrl } from "@/lib/url";
 import PinPromptModal from "./PinPromptModal";
 
 // A single view-switch button shown ONLY to users granted admin rights
-// (the layout decides whether to mount it). An admin is an employee
-// first — they live in employee view and tap this to enter the admin
-// console; super_admin can tap it the other way to preview what staff
-// see.
+// (the layout decides whether to mount it). Everyone is an employee first —
+// they live in employee view and tap this to enter the admin console.
 //
-// The chosen view is PERSISTED in the `os_view` cookie (owner 2026-06-08).
-// Why: INVENTA lives under /staff, so an admin opening it from the admin
-// console used to "fall" into staff view with no easy way back. Now the
-// cookie remembers the intent — the staff layout reads it and, for an
-// admin in "admin view", keeps the module links pointing at /admin so
-// they never get stranded. The layout passes the effective `view`; we
-// also re-sync the cookie to the portal actually being shown.
+// The real "am I in admin mode" state is the httpOnly os_admin_unlock cookie
+// (set by PIN, read by both layouts) — this button just drives the transition:
+// entering admin requires the PIN (unlock-admin), leaving is free (lock-admin).
+// The layout passes the effective `view` derived from that unlock.
 //
-//   In staff view  → "มุมมองผู้ดูแลระบบ"  (go to /admin,  chevron →)
+//   In staff view  → "มุมมองผู้ดูแลระบบ"  (PIN → /admin,  chevron →)
 //   In admin view  → "มุมมองพนักงาน"      (go to /staff,  chevron ←)
-
-const VIEW_COOKIE = "os_view";
-
-function writeView(v: "admin" | "staff") {
-  // 1 year, root path, lax — purely a UI preference, no sensitive data.
-  document.cookie = `${VIEW_COOKIE}=${v}; path=/; max-age=31536000; samesite=lax`;
-}
 
 export default function AdminModeToggle({
   view, className = ""
@@ -42,24 +30,18 @@ export default function AdminModeToggle({
   const { lang } = useLang();
   const [pinOpen, setPinOpen] = useState(false);
 
-  // Effective current view: the layout's cookie-aware prop wins; fall back
+  // Effective current view: the layout's unlock-aware prop wins; fall back
   // to the URL for safety if a caller doesn't pass it.
   const current: "admin" | "staff" =
     view ?? ((pathname === "/admin" || pathname.startsWith("/admin/")) ? "admin" : "staff");
   const inAdmin = current === "admin";
   const target: "admin" | "staff" = inAdmin ? "staff" : "admin";
 
-  // Keep the cookie in sync with the portal actually shown, so a fresh
-  // visit / bookmark to /admin marks the intent before the user clicks
-  // a cross-portal link (e.g. INVENTA → /staff/inventa).
-  useEffect(() => { writeView(current); }, [current]);
-
   const label = inAdmin
     ? (lang === "en" ? "Staff view" : "มุมมองพนักงาน")
     : (lang === "en" ? "Admin view" : "มุมมองผู้ดูแลระบบ");
 
   async function navigate(to: "admin" | "staff") {
-    writeView(to);
     if (to === "staff") {
       // Leaving admin clears the PIN unlock so returning re-prompts the PIN
       // (owner 2026-09-21). Best-effort — the httpOnly cookie can only be

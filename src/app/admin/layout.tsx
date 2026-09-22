@@ -440,10 +440,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   // Privileged users (super_admin, branch-admins, RBAC-granted staff) get
   // the STAFF/ADMIN view switch. Plain staff never see it.
-  const canSwitchView =
-    user.role === "super_admin" ||
-    (user.role === "admin" && user.adminBranchIds.length > 0) ||
-    user.permissions.length > 0;
+  const canSwitchView = isAdminCapable(user);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F6F0E5]">

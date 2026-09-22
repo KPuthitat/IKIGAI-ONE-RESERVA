@@ -1,5 +1,4 @@
-import { cookies } from "next/headers";
-import { getSessionUser, canModule } from "@/lib/auth";
+import { getSessionUser, canModule, isAdminUnlocked, isAdminCapable } from "@/lib/auth";
 import { ADMIN_MODULES } from "@/lib/admin-modules";
 import { getDb, getSystemSettings } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
@@ -61,25 +60,15 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   let mjEnrolled = false;
   try { mjEnrolled = !!getMyEnrollment(user as MjActor); } catch { mjEnrolled = false; }
 
-  // Persisted view intent (owner 2026-06-08). INVENTA lives under /staff,
-  // so an admin who is in "admin view" and opens INVENTA used to fall into
-  // staff view with no easy way back. The os_view cookie remembers the
-  // intent — when it's "admin", keep the top-level module links pointing at
-  // /admin so the admin can jump back to any console page (never stranded).
-  // Default (no cookie) = staff, preserving the "admin is an employee
-  // first" behaviour. INVENTA itself stays under /staff (that's its home).
-  const isAdminUser = user.role === "super_admin"
-    || (user.role === "admin" && user.adminBranchIds.length > 0)
-    || user.permissions.length > 0;
-  // Home mode is STAFF for everyone — super_admin included (owner 2026-09-20:
-  // every account auto-lands in staff mode; entering admin is a deliberate,
-  // PIN-gated switch). The os_view cookie overrides once the user switches, and
-  // switching INTO admin always requires the PIN since staff is now home.
-  const defaultView: "admin" | "staff" = "staff";
-  const viewCookie = cookies().get("os_view")?.value;
-  const effectiveView: "admin" | "staff" =
-    viewCookie === "admin" || viewCookie === "staff" ? viewCookie : defaultView;
-  const adminView = isAdminUser && effectiveView === "admin";
+  const isAdminUser = isAdminCapable(user);
+  // Admin mode is driven ONLY by the httpOnly PIN-unlock (owner 2026-09-22:
+  // "เข้าระบบแล้วต้องเป็นสิทธิ์พนักงานเท่านั้น"). Everyone is a staff view until they
+  // tap "มุมมองผู้ดูแลระบบ" and enter their PIN; the unlock is a short-TTL httpOnly
+  // cookie cleared on login/logout/switch, so a LINE session-resume (no fresh
+  // login) comes back as staff. A stale view cookie can no longer force admin
+  // mode. When unlocked, top-level module links point at /admin so the
+  // admin can jump across console pages; INVENTA stays under /staff (its home).
+  const adminView = isAdminUser && isAdminUnlocked(user);
   const modBase = adminView ? "/admin" : "/staff";
 
   // Branch-gate (owner 2026-06-11): block opening a module until a branch is

@@ -348,15 +348,19 @@ export function setClinicalUnlocked(userId: number): void {
   });
 }
 
-// ── Admin-mode PIN unlock (owner 2026-09-21) ─────────────────────────────────
-// Entering the admin console requires the user's 4-digit PIN. The unlock is an
-// httpOnly cookie = the user's id (JS can't read/forge it via document.cookie),
-// set only by the server on a verified PIN — the same shape as the clinical
-// mj_unlock cookie above. It is EXPLICITLY cleared on login, logout, and when
-// switching back to staff view, so those transitions always re-prompt; an 8h
-// maxAge is a backstop for an abandoned session (mirrors mj_unlock). The admin
-// layout enforces it.
+// ── Admin-mode PIN unlock (owner 2026-09-21, hardened 2026-09-22) ────────────
+// This httpOnly cookie is the SINGLE source of truth for "in admin mode": both
+// the staff layout (chrome + module routing) and the admin layout (page gate)
+// read it, so admin mode can never be forced by a persisted JS cookie — which is
+// what used to leave a LINE session-resume stuck in admin (the old JS-writable
+// os_view cookie is now gone). Value = the user's id, set only by the server on a
+// verified PIN. It is cleared on login, logout, and switch-to-staff, and carries
+// a SHORT server-side TTL (2h) that reliably expires regardless of how a mobile
+// in-app webview treats session cookies — so an abandoned or resumed session
+// falls back to STAFF on its own. Owner 2026-09-22: "เข้าระบบแล้วต้องเป็นสิทธิ์
+// พนักงานเท่านั้น ... ไม่ว่าจะด้วยเหตุผลใดก็ตาม".
 const ADMIN_UNLOCK_COOKIE = "os_admin_unlock";
+const ADMIN_UNLOCK_TTL_S = 2 * 3600;
 export function isAdminUnlocked(user: SessionUser): boolean {
   return cookies().get(ADMIN_UNLOCK_COOKIE)?.value === String(user.id);
 }
@@ -364,7 +368,7 @@ export function setAdminUnlocked(userId: number): void {
   cookies().set(ADMIN_UNLOCK_COOKIE, String(userId), {
     httpOnly: true, sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
-    path: COOKIE_PATH, maxAge: 8 * 3600
+    path: COOKIE_PATH, maxAge: ADMIN_UNLOCK_TTL_S
   });
 }
 export function clearAdminUnlocked(): void {
