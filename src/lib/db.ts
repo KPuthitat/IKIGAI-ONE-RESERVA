@@ -5721,6 +5721,7 @@ function runMigrations(db: Database.Database): void {
       reason TEXT NOT NULL DEFAULT 'other'
         CHECK (reason IN ('expired','damaged','spoiled','spill','prep_loss','contaminated','recall','lost','other')),
       note TEXT,
+      photo_path TEXT,
       wasted_on TEXT NOT NULL,
       logged_by INTEGER REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -5728,6 +5729,17 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_inventa_waste_branch
       ON inventa_waste(branch_id, wasted_on DESC);
   `);
+
+  // Evidence photo on a waste entry (owner 2026-09-22). Added after the table so
+  // a DB created by the first waste release (no photo_path) gets the column too.
+  {
+    const wCols = new Set(
+      (db.prepare("PRAGMA table_info(inventa_waste)").all() as Array<{ name: string }>).map((c) => c.name)
+    );
+    if (!wCols.has("photo_path")) {
+      db.exec("ALTER TABLE inventa_waste ADD COLUMN photo_path TEXT");
+    }
+  }
 
   // Public share token for the supplier-facing PO PDF (owner 2026-06-08).
   // A random token lets a supplier open the PDF (no login, cost hidden)

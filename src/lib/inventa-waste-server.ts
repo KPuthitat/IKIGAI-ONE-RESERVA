@@ -11,7 +11,8 @@ export type CreateWasteInput = {
   qty: number;
   reason: WasteReason;
   note?: string | null;
-  wastedOn: string;   // YYYY-MM-DD
+  wastedOn: string;        // YYYY-MM-DD
+  photoPath?: string | null;   // stored filename from saveWastePhoto, or null
 };
 
 /** Record a waste event. Snapshots the item's name/unit/cost so the entry keeps
@@ -25,11 +26,11 @@ export function createWaste(branchId: number | null, input: CreateWasteInput, us
   if (!item) return null;
 
   const info = db.prepare(`
-    INSERT INTO inventa_waste (branch_id, item_id, item_name, unit, unit_cost, qty, reason, note, wasted_on, logged_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO inventa_waste (branch_id, item_id, item_name, unit, unit_cost, qty, reason, note, photo_path, wasted_on, logged_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     branchId, input.itemId, item.name, item.unit, item.unit_cost ?? 0,
-    input.qty, input.reason, input.note?.trim() || null, input.wastedOn, userId
+    input.qty, input.reason, input.note?.trim() || null, input.photoPath ?? null, input.wastedOn, userId
   );
   return Number(info.lastInsertRowid);
 }
@@ -38,14 +39,18 @@ export function createWaste(branchId: number | null, input: CreateWasteInput, us
 export function listWaste(branchId: number | null, limit = 100): WasteRow[] {
   const rows = getDb().prepare(`
     SELECT w.id, w.item_id, w.item_name, w.unit, w.unit_cost, w.qty, w.reason, w.note,
-           w.wasted_on, w.created_at, u.display_name AS logged_by_name
+           w.photo_path, w.wasted_on, w.created_at, u.display_name AS logged_by_name
     FROM inventa_waste w
     LEFT JOIN users u ON u.id = w.logged_by
     WHERE w.branch_id IS ? OR w.branch_id = ?
     ORDER BY w.wasted_on DESC, w.id DESC
     LIMIT ?
-  `).all(branchId, branchId, limit) as Array<Omit<WasteRow, "value">>;
-  return rows.map((w) => ({ ...w, value: r2(w.qty * (w.unit_cost ?? 0)) }));
+  `).all(branchId, branchId, limit) as Array<Omit<WasteRow, "value" | "photoUrl"> & { photo_path: string | null }>;
+  return rows.map(({ photo_path, ...w }) => ({
+    ...w,
+    value: r2(w.qty * (w.unit_cost ?? 0)),
+    photoUrl: photo_path ? `/api/inventa/waste/photo/${w.id}` : null
+  }));
 }
 
 /** Monthly roll-up for the admin report: total value, by-reason, and top items. */

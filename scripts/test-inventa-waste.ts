@@ -42,6 +42,7 @@ process.env.DATABASE_PATH = TMP;
     return !!r && r.value === 300 && r.unit === "กล่อง" && r.item_name === "นมสด" && r.logged_by_name === "พนักงาน A";
   })());
   ok("note carried through", rows.find((x) => x.id === w2)?.note === "แตกตอนขน");
+  ok("photoUrl is null when no photo attached", rows.find((x) => x.id === w1)?.photoUrl === null);
 
   const sum = wasteSummary(A, "2026-09");
   ok("summary: total value 700, 3 events", sum.totalValue === 700 && sum.totalEvents === 3);
@@ -64,6 +65,11 @@ process.env.DATABASE_PATH = TMP;
 
   // Log-only: current_qty untouched.
   ok("log-only: item current_qty not decremented", (db.prepare("SELECT current_qty FROM inventa_items WHERE id = ?").get(it1) as { current_qty: number }).current_qty === 0);
+
+  // Photo evidence: a stored photoPath surfaces as a serving-route URL in listWaste.
+  const w4 = createWaste(A, { itemId: it2, qty: 1, reason: "spill", wastedOn: "2026-09-21", photoPath: "2026-09-21_ab12cd.jpg" }, uid);
+  const withPhoto = listWaste(A, 100).find((x) => x.id === w4);
+  ok("photoUrl points at the serving route when a photo is attached", withPhoto?.photoUrl === `/api/inventa/waste/photo/${w4}`);
 
   console.log(`\ninventa-waste test: ${passed} passed, ${failed} failed`);
   cleanup();

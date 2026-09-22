@@ -39,6 +39,7 @@ export type WasteRow = {
   reason: WasteReason;
   note: string | null;
   wasted_on: string;    // YYYY-MM-DD
+  photoUrl: string | null;   // serving-route URL, or null when no photo
   logged_by_name: string | null;
   created_at: string;
 };
