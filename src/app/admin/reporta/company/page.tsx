@@ -118,22 +118,22 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="card">
               <div className="text-xs text-slate-500">ยอดขายรวม (วันที่ 1–{ov.throughDay})</div>
-              <div className="text-xl font-bold text-slate-800 tabular-nums">฿{baht(t.mtdNett)}</div>
+              <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">฿{baht(t.mtdNett)}</div>
               <div className="text-[11px] mt-0.5">เทียบเดือนก่อน <Pct pct={t.momPct} />{t.prevSameNett != null ? <span className="text-slate-400"> (฿{baht(t.prevSameNett)})</span> : null}</div>
             </div>
             {ov.isCurrentMonth && (
               <div className="card">
                 <div className="text-xs text-slate-500">ยอดขายวันนี้ (รวมสาขา)</div>
-                <div className="text-xl font-bold text-slate-800 tabular-nums">฿{baht(t.todayNett ?? 0)}</div>
+                <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">฿{baht(t.todayNett ?? 0)}</div>
               </div>
             )}
             <div className="card">
               <div className="text-xs text-slate-500">จำนวนบิลรวม</div>
-              <div className="text-xl font-bold text-slate-800 tabular-nums">{t.bills.toLocaleString("th-TH")}</div>
+              <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">{t.bills.toLocaleString("th-TH")}</div>
             </div>
             <div className="card">
               <div className="text-xs text-slate-500">ลูกค้ารวม</div>
-              <div className="text-xl font-bold text-slate-800 tabular-nums">{t.pax.toLocaleString("th-TH")}</div>
+              <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">{t.pax.toLocaleString("th-TH")}</div>
             </div>
           </div>
           <p className="text-[11px] text-slate-400 -mt-1">เทียบวันที่ 1–{ov.throughDay} ของเดือนนี้ กับ 1–{ov.throughDay} ของเดือนก่อน (ช่วงเวลาเดียวกัน) · % เทียบเฉพาะสาขาที่มีข้อมูลทั้งสองเดือน (ไม่รวมสาขาเปิดใหม่)</p>
@@ -174,7 +174,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
               <table className="w-full text-sm tabular-nums">
                 <thead>
                   <tr className="text-[11px] text-slate-400 border-b border-slate-200">
-                    <th className="text-left py-1.5 pr-2">สาขา</th>
+                    <th className="text-left py-1.5 pr-2 sticky left-0 bg-white z-10">สาขา</th>
                     <th className="text-right py-1.5 px-2">ยอดขาย</th>
                     <th className="text-right py-1.5 px-2">เทียบเดือนก่อน</th>
                     <th className="text-right py-1.5 px-2">เป้าเดือน</th>
@@ -186,7 +186,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                 <tbody>
                   {ov.branches.map((b) => (
                     <tr key={b.branchId} className="border-b border-slate-50 align-top">
-                      <td className="py-2 pr-2">
+                      <td className="py-2 pr-2 sticky left-0 bg-white">
                         <div className="font-medium text-slate-700">{b.branchName}</div>
                         <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden mt-1 w-28">
                           <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${Math.max(2, (b.mtdNett / maxMtd) * 100)}%` }} />
@@ -203,7 +203,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-slate-200 font-bold">
-                    <td className="py-2 pr-2">รวมบริษัท</td>
+                    <td className="py-2 pr-2 sticky left-0 bg-white">รวมบริษัท</td>
                     <td className="py-2 px-2 text-right">฿{baht(t.mtdNett)}</td>
                     <td className="py-2 px-2 text-right"><Pct pct={t.momPct} /></td>
                     <td className="py-2 px-2 text-right text-slate-500">{ov.target ? `฿${baht(ov.target.target)}` : "—"}</td>
@@ -228,7 +228,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
               <div className="text-[11px] text-slate-400">{thDate(wk.weekStart)}–{thDate(wk.throughIso)} · {wk.dayCount} วัน</div>
             </div>
             <div className="flex items-baseline gap-3 flex-wrap">
-              <span className="text-xl font-bold text-slate-800 tabular-nums">฿{baht(wk.total.nett)}</span>
+              <span className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">฿{baht(wk.total.nett)}</span>
               <span className="text-sm"><Pct pct={wk.total.wowPct} /></span>
               {wk.total.prevNett != null && <span className="text-[11px] text-slate-400">สัปดาห์ก่อน ฿{baht(wk.total.prevNett)}</span>}
               <span className="text-[11px] text-slate-400">· {wk.total.bills.toLocaleString("th-TH")} บิล · {wk.total.pax.toLocaleString("th-TH")} คน</span>
@@ -236,13 +236,13 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
             <div className="overflow-x-auto">
               <table className="w-full text-sm tabular-nums">
                 <thead><tr className="text-[11px] text-slate-400 border-b border-slate-200">
-                  <th className="text-left py-1.5 pr-2">สาขา</th><th className="text-right py-1.5 px-2">สัปดาห์นี้</th>
+                  <th className="text-left py-1.5 pr-2 sticky left-0 bg-white z-10">สาขา</th><th className="text-right py-1.5 px-2">สัปดาห์นี้</th>
                   <th className="text-right py-1.5 px-2">สัปดาห์ก่อน</th><th className="text-right py-1.5 pl-2">เทียบ</th>
                 </tr></thead>
                 <tbody>
                   {wk.branches.map((b) => (
                     <tr key={b.branchId} className="border-b border-slate-50">
-                      <td className="py-1.5 pr-2 text-slate-700">{b.branchName}</td>
+                      <td className="py-1.5 pr-2 text-slate-700 sticky left-0 bg-white">{b.branchName}</td>
                       <td className="py-1.5 px-2 text-right font-semibold text-slate-700">฿{baht(b.nett)}</td>
                       <td className="py-1.5 px-2 text-right text-slate-500">{b.prevNett != null ? `฿${baht(b.prevNett)}` : "—"}</td>
                       <td className="py-1.5 pl-2 text-right"><Pct pct={b.wowPct} /></td>
