@@ -5227,6 +5227,11 @@ function runMigrations(db: Database.Database): void {
   // ประชุมผู้บริหาร (owner 2026-09-02): a per-person permanent exemption from
   // เบี้ยประชุม — an exec who attends but is not paid the meeting allowance.
   userCol("meeting_fee_exempt", "INTEGER NOT NULL DEFAULT 0");
+  // ผู้บริหารระดับสูง (owner 2026-09-25): a manually-assigned C-level flag. Not a
+  // permission — only powers the "C-level" quick-select chip in the exec-meeting
+  // invitee picker (and future exec-only broadcasts). Independent of role and of
+  // meeting_fee_exempt.
+  userCol("is_c_level", "INTEGER NOT NULL DEFAULT 0");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS mounjaro_enrollments (

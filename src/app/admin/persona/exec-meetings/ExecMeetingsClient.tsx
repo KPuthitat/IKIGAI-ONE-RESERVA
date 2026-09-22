@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useRef } from "react";
+import { useState, useTransition, useEffect, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
@@ -9,6 +9,8 @@ export type StaffLite = {
   display_name: string;
   title_prefix: string | null;
   fee_exempt: boolean;
+  isCLevel: boolean;
+  isAdmin: boolean;
   branchId: number;
   department: string | null;
 };
@@ -65,6 +67,20 @@ function bkkToday(): string {
   return bkk.toISOString().slice(0, 10);
 }
 
+// A quick-pick chip. Filled when its whole group is already selected.
+function ChipBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={`text-[11px] rounded-full border px-2.5 py-1 transition-colors ${
+        active
+          ? "bg-brand text-white border-brand"
+          : "bg-white text-slate-600 border-[#EFE4D3] hover:border-brand hover:text-brand"
+      }`}>
+      {children}
+    </button>
+  );
+}
+
 export default function ExecMeetingsClient({ staff, branches, meetings }: { staff: StaffLite[]; branches: BranchLite[]; meetings: MeetingRow[] }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -89,6 +105,24 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
       return next;
     });
   }
+
+  // Quick-pick chip: add a whole group at once, or clear it if it's already all
+  // selected (owner 2026-09-25 — C-level / ทุกคน / เฉพาะแอดมิน).
+  function toggleGroup(ids: number[]) {
+    setInvited((prev) => {
+      const next = new Set(prev);
+      const allIn = ids.length > 0 && ids.every((id) => next.has(id));
+      if (allIn) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  // Quick-pick groups, computed from the loaded staff (empty groups hide their chip).
+  const cLevelIds = staff.filter((s) => s.isCLevel).map((s) => s.id);
+  const adminIds = staff.filter((s) => s.isAdmin).map((s) => s.id);
+  const allIds = staff.map((s) => s.id);
+  const groupAllIn = (ids: number[]) => ids.length > 0 && ids.every((id) => invited.has(id));
 
   async function create() {
     if (!title.trim()) { setMsg({ kind: "err", text: "ใส่หัวข้อการประชุมก่อน" }); return; }
@@ -175,15 +209,30 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
         </div>
 
         <div>
-          <div className="label flex items-center justify-between">
+          <div className="label">
             <span>เลือกผู้ได้รับเชิญ ({invited.size})</span>
-            {staff.length > 0 && (
-              <button type="button" className="text-xs text-brand hover:underline"
-                onClick={() => setInvited(invited.size === staff.length ? new Set() : new Set(staff.map((s) => s.id)))}>
-                {invited.size === staff.length ? "ล้างทั้งหมด" : "เลือกทั้งหมด"}
-              </button>
-            )}
           </div>
+          {/* Quick-pick chips (owner 2026-09-25): เลือกด่วนทีละกลุ่ม แล้วค่อยปรับรายคน.
+              "ทุกคน" replaces the old select-all link — same action, plus filled-state
+              feedback. Each chip toggles its group (fills when the whole group is in). */}
+          {staff.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mb-2">
+              <span className="text-[11px] text-slate-400 mr-0.5">เลือกด่วน:</span>
+              {cLevelIds.length > 0 && (
+                <ChipBtn active={groupAllIn(cLevelIds)} onClick={() => toggleGroup(cLevelIds)}>
+                  C-level ({cLevelIds.length})
+                </ChipBtn>
+              )}
+              {adminIds.length > 0 && (
+                <ChipBtn active={groupAllIn(adminIds)} onClick={() => toggleGroup(adminIds)}>
+                  เฉพาะแอดมิน ({adminIds.length})
+                </ChipBtn>
+              )}
+              <ChipBtn active={groupAllIn(allIds)} onClick={() => toggleGroup(allIds)}>
+                ทุกคน ({allIds.length})
+              </ChipBtn>
+            </div>
+          )}
           {staff.length === 0 ? (
             <div className="text-xs text-slate-400">ไม่มีพนักงานในสาขานี้</div>
           ) : (
@@ -199,12 +248,7 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
                     <div className="flex items-center justify-between px-1 pb-1.5 mb-1 border-b border-[#EFE4D3]">
                       <span className="text-sm font-semibold text-brand">{b.name}</span>
                       <button type="button" className="text-[11px] text-slate-500 hover:text-brand"
-                        onClick={() => setInvited((prev) => {
-                          const next = new Set(prev);
-                          if (allIn) list.forEach((s) => next.delete(s.id));
-                          else list.forEach((s) => next.add(s.id));
-                          return next;
-                        })}>
+                        onClick={() => toggleGroup(list.map((s) => s.id))}>
                         {allIn ? "ล้างสาขานี้" : "เลือกสาขานี้"}
                       </button>
                     </div>
@@ -216,12 +260,7 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
                             <div className="flex items-center justify-between px-1">
                               <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{dept}</span>
                               <button type="button" className="text-[10px] text-slate-400 hover:text-brand"
-                                onClick={() => setInvited((prev) => {
-                                  const next = new Set(prev);
-                                  if (allDept) people.forEach((s) => next.delete(s.id));
-                                  else people.forEach((s) => next.add(s.id));
-                                  return next;
-                                })}>
+                                onClick={() => toggleGroup(people.map((s) => s.id))}>
                                 {allDept ? "ล้าง" : "เลือก"}
                               </button>
                             </div>
@@ -230,7 +269,7 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
                                 <label key={s.id} className="flex items-center gap-2 text-sm text-slate-700 rounded px-2 py-1 hover:bg-slate-50 cursor-pointer">
                                   <input type="checkbox" checked={invited.has(s.id)} onChange={() => toggleInvite(s.id)} />
                                   <span>{s.title_prefix ? `${s.title_prefix} ` : ""}{s.display_name}</span>
-                                  {s.fee_exempt && <span className="text-[10px] bg-violet-50 text-violet-600 border border-violet-200 rounded-full px-1.5">ยกเว้นเบี้ย</span>}
+                                  {s.fee_exempt && <span className="text-[10px] bg-violet-50 text-violet-600 border border-violet-200 rounded-full px-1.5">ไม่รับเบี้ยประชุม</span>}
                                 </label>
                               ))}
                             </div>
@@ -476,7 +515,7 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
                     <tr key={i.user_id} className="border-b last:border-0">
                       <td className="py-1.5 pr-2 text-slate-700">
                         {i.title_prefix ? `${i.title_prefix} ` : ""}{i.display_name}
-                        {i.fee_exempt && <span className="ml-1 text-[10px] text-violet-600">(ยกเว้นเบี้ย)</span>}
+                        {i.fee_exempt && <span className="ml-1 text-[10px] text-violet-600">(ไม่รับเบี้ยประชุม)</span>}
                       </td>
                       <td className="py-1.5 px-2">{i.ended_at ? "จบแล้ว" : i.joined_at ? "กำลังประชุม" : "—"}</td>
                       <td className="py-1.5 px-2">{i.minutes_complete ? "ครบ" : i.joined_at ? "ยังไม่ครบ" : "—"}</td>
