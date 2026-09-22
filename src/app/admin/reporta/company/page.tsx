@@ -80,7 +80,8 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
   const t = ov.total;
 
   return (
-    <div className="space-y-4">
+    // Centered reading width on desktop, full width on mobile (owner 2026-09-22).
+    <div className="space-y-4 max-w-5xl mx-auto w-full">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <Link href="/admin/reporta" className="text-sm text-slate-500 hover:text-brand">← กลับ ANALYTICA (รายสาขา)</Link>
         {canModule(user, "accounta.manage") && (
