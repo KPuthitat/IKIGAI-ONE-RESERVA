@@ -5705,6 +5705,28 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_inventa_order_audit_order
       ON inventa_order_audit(order_id, created_at DESC);
+
+    -- Waste log (owner 2026-09-22): a record of stock lost to spoilage/expiry/
+    -- breakage etc. LOG-ONLY — it never touches inventa_items.current_qty, so it
+    -- can't clash with the stock-count flow. item name/unit/cost are snapshotted
+    -- so a historical entry keeps its value even if the item changes later.
+    CREATE TABLE IF NOT EXISTS inventa_waste (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER REFERENCES branches(id),
+      item_id INTEGER REFERENCES inventa_items(id),
+      item_name TEXT NOT NULL,
+      unit TEXT,
+      unit_cost REAL NOT NULL DEFAULT 0,
+      qty REAL NOT NULL,
+      reason TEXT NOT NULL DEFAULT 'other'
+        CHECK (reason IN ('expired','damaged','spoiled','spill','prep_loss','contaminated','recall','lost','other')),
+      note TEXT,
+      wasted_on TEXT NOT NULL,
+      logged_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventa_waste_branch
+      ON inventa_waste(branch_id, wasted_on DESC);
   `);
 
   // Public share token for the supplier-facing PO PDF (owner 2026-06-08).
