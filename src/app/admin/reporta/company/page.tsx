@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requirePermission, canModule } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu } from "@/lib/salesa-analytics";
+import { getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import { fmtMoney } from "@/lib/format";
 import CompanyReportActions from "./CompanyReportActions";
 
@@ -94,7 +95,16 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
           <h1 className="text-2xl font-bold text-slate-800">ภาพรวมบริษัท · รวมทุกสาขา</h1>
           <p className="text-sm text-slate-500 mt-1">ยอดขายรวมบริษัท เทียบรายสาขา และเทียบเดือนนี้กับเดือนก่อนในช่วงเวลาเดียวกัน</p>
         </div>
-        {ov.branchCount > 0 && <CompanyReportActions year={year} month={month} />}
+        {ov.branchCount > 0 && (
+          <CompanyReportActions
+            year={year} month={month}
+            companyName={(db.prepare("SELECT name_th AS name FROM companies WHERE id = ?").get(companyId) as { name: string } | undefined)?.name ?? "บริษัท"}
+            monthLabel={`${TH_MONTHS[month]} ${year + 543}`}
+            operator={user.display_name}
+            color={getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR}
+            overview={ov}
+          />
+        )}
       </div>
 
       {/* Month switcher */}
