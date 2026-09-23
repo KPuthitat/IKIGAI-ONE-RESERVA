@@ -65,6 +65,28 @@ export {
   type SubmitFeedbackArgs
 } from "./feedback";
 
+// Review funnel (owner 2026-09-23) — public customer feedback → Google
+// review flow + reward-for-completion + admin หลังบ้าน read surface.
+export {
+  getReviewConfig,
+  saveReviewConfig,
+  setBranchGoogleUrl,
+  getBranchReviewInfo,
+  listBranchReviewInfo,
+  submitReview,
+  trackGoogleClick,
+  claimReward,
+  reviewSummary,
+  listReviews,
+  type ReviewConfig,
+  type BranchReviewInfo,
+  type SubmitReviewArgs,
+  type SubmitReviewResult,
+  type ReviewRow,
+  type ReviewSummary,
+  type ReviewTier
+} from "./reviews";
+
 // Persona tagging (Phase 7). recomputePersonaTag fires automatically
 // from endVisit; the bulk recompute is exposed for the nightly job.
 export {

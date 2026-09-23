@@ -1322,6 +1322,13 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("no_lunch_break_dates")) {
     db.exec("ALTER TABLE branches ADD COLUMN no_lunch_break_dates TEXT"); // '["2026-12-31"]'
   }
+  // INSIGNA review funnel (owner 2026-09-23): each branch has its own
+  // Google Business Profile, so the "write a review" deep link is
+  // per-branch. Prefer the writereview?placeid=… form so the customer
+  // lands straight on the star dialog. NULL = branch not wired yet.
+  if (!bnames2.has("google_review_url")) {
+    db.exec("ALTER TABLE branches ADD COLUMN google_review_url TEXT");
+  }
   // Display order — lower number = appears first in lists. NAMA is the
   // company flagship and should always come first; everything else falls
   // back to alphabetical via the secondary ORDER BY name.
@@ -3359,6 +3366,24 @@ function runMigrations(db: Database.Database): void {
   // called since the migration ran.
   if (!ssCols.some((c) => c.name === "last_cron_run_at")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN last_cron_run_at TEXT");
+  }
+  // INSIGNA review funnel config (owner 2026-09-23). Global switches for
+  // the customer feedback → Google review flow (per-branch Google URL
+  // lives on branches.google_review_url). reviews_enabled gates the
+  // public /f/[slug] page. review_reward_text is what the customer earns
+  // for COMPLETING the survey (not for a positive/Google review) — shown
+  // on the thank-you screen. review_high_threshold is the star cutoff
+  // (>= this = "high" tier → positive Google-review wording; below =
+  // "low" tier → apology + still shows the link but soft). NULL reward
+  // text = reward step hidden.
+  if (!ssCols.some((c) => c.name === "insigna_reviews_enabled")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN insigna_reviews_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!ssCols.some((c) => c.name === "insigna_review_reward_text")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN insigna_review_reward_text TEXT");
+  }
+  if (!ssCols.some((c) => c.name === "insigna_review_high_threshold")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN insigna_review_high_threshold INTEGER NOT NULL DEFAULT 4");
   }
   // RECRUITA form template (2026-06-01) — JSON describing the
   // standard application form. Lets admin toggle/rename/reorder the
@@ -7210,6 +7235,41 @@ function runMigrations(db: Database.Database): void {
       error                 TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_insigna_audit_received ON insigna_ingestion_audit(received_at);
+
+    -- 3.14 Review funnel (owner 2026-09-23). A standalone, PII-free
+    -- feedback flow the customer opens from a QR / LINE link after a
+    -- visit: rate 1-5 (+ optional axes + free-text), then EVERYONE is
+    -- offered the branch's Google review link — the wording just leans
+    -- positive on a high score and apologetic on a low one (NO gating:
+    -- routing only satisfied customers to Google violates Google policy,
+    -- so the link is shown to all; owner-confirmed 2026-09-23). The
+    -- reward is granted for completing the survey, never for a positive
+    -- or a Google review. This table carries no customer_hash and no
+    -- identity column, so it clears the PII lint on its own; the
+    -- comment field may contain incidental PII the customer types, the
+    -- same caveat as insigna_feedback.comment.
+    CREATE TABLE IF NOT EXISTS insigna_review_requests (
+      token             TEXT PRIMARY KEY,           -- random, unguessable; keys the reward + tracking
+      branch_id         INTEGER REFERENCES branches(id) ON DELETE SET NULL,
+      rating            INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+      food_rating       INTEGER CHECK (food_rating BETWEEN 1 AND 5),
+      service_rating    INTEGER CHECK (service_rating BETWEEN 1 AND 5),
+      ambience_rating   INTEGER CHECK (ambience_rating BETWEEN 1 AND 5),
+      return_intent     INTEGER CHECK (return_intent IN (0, 1)),  -- "จะกลับมาอีกไหม", optional
+      comment           TEXT,
+      tier              TEXT NOT NULL CHECK (tier IN ('high', 'low')),  -- routing bucket at submit time
+      routed_google     INTEGER NOT NULL DEFAULT 0,  -- did we surface the Google CTA (1 whenever URL configured)
+      clicked_google    INTEGER NOT NULL DEFAULT 0,  -- did they tap through to Google
+      reward_code       TEXT,                        -- issued on completion (survey), for next-visit claim
+      reward_claimed    INTEGER NOT NULL DEFAULT 0,
+      reward_claimed_at TEXT,
+      created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_review_created ON insigna_review_requests(created_at);
+    CREATE INDEX IF NOT EXISTS idx_insigna_review_branch ON insigna_review_requests(branch_id, created_at);
+    -- UNIQUE so a minted reward code is unambiguous at redemption. SQLite
+    -- allows many NULLs in a UNIQUE index, so no-reward rows are unaffected.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_insigna_review_reward ON insigna_review_requests(reward_code);
   `);
 
   // ── FEASIBILITY (project investment feasibility, owner 2026-06-16) ──
