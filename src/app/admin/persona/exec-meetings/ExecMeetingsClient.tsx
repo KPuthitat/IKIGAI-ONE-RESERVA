@@ -207,9 +207,15 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
           <div>
             <label className="label">วันที่ · เวลาประชุม</label>
             <div className="flex gap-2">
-              <input type="date" className="input flex-1" value={date} onChange={(e) => setDate(e.target.value)} />
-              <input type="time" className="input w-28 shrink-0" value={time} onChange={(e) => setTime(e.target.value)}
-                aria-label="เวลาประชุม" />
+              {/* wrappers carry the width — .input[type=date/time] forces width:100%
+                  (a type-selector that outranks w-* utilities), so size the box, not the input */}
+              <div className="flex-1 min-w-0">
+                <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+              <div className="w-32 shrink-0">
+                <input type="time" className="input" value={time} onChange={(e) => setTime(e.target.value)}
+                  aria-label="เวลาประชุม" />
+              </div>
             </div>
             <div className="text-[11px] text-slate-400 mt-0.5">เวลาไม่บังคับ — ใส่ไว้จะแสดงบนการ์ดเชิญ LINE</div>
           </div>
@@ -523,8 +529,13 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
                 <div>
                   <span className="text-xs font-semibold text-slate-600">วัน · เวลาประชุม (เลื่อนได้จนกว่าจะเปิดประชุม)</span>
                   <div className="flex gap-2 mt-1">
-                    <input type="date" className="input flex-1" value={mDate} onChange={(e) => setMDate(e.target.value)} />
-                    <input type="time" className="input w-28 shrink-0" value={mTime} onChange={(e) => setMTime(e.target.value)} aria-label="เวลาประชุม" />
+                    {/* size the wrapper, not the input — .input[type=date/time] pins width:100% */}
+                    <div className="flex-1 min-w-0">
+                      <input type="date" className="input" value={mDate} onChange={(e) => setMDate(e.target.value)} />
+                    </div>
+                    <div className="w-32 shrink-0">
+                      <input type="time" className="input" value={mTime} onChange={(e) => setMTime(e.target.value)} aria-label="เวลาประชุม" />
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center justify-between pt-1">
