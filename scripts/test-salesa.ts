@@ -680,18 +680,24 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ).run(bidRV, bidRV).lastInsertRowid);
   // paid July settlement: income = billed_gp 8000 + vat 560 = 8560
   db.prepare("INSERT INTO revshare_settlements (partner_id, settle_year, settle_month, op_month, billed_gp, vat_amount, status) VALUES (?,2026,7,7,8000,560,'paid')").run(rvPid);
-  // a DRAFT settlement (Aug) must never count
-  db.prepare("INSERT INTO revshare_settlements (partner_id, settle_year, settle_month, op_month, billed_gp, vat_amount, status) VALUES (?,2026,8,8,9999,0,'draft')").run(rvPid);
-  ok("revshare: helper returns settled income (8560), ignores draft", analytics.revshareIncomeForBranch(bidRV, 2026, 7) === 8560 && analytics.revshareIncomeForBranch(bidRV, 2026, 8) === 0);
+  // issued-but-not-paid (Aug) must NOT count — owner 2026-09-23: paid only
+  db.prepare("INSERT INTO revshare_settlements (partner_id, settle_year, settle_month, op_month, billed_gp, vat_amount, status) VALUES (?,2026,8,8,9999,0,'issued')").run(rvPid);
+  ok("revshare: helper counts PAID only (8560), ignores issued/draft", analytics.revshareIncomeForBranch(bidRV, 2026, 7) === 8560 && analytics.revshareIncomeForBranch(bidRV, 2026, 8) === 0);
   const rvOv = analytics.companyOverview([bidRV], 2026, 7, "2026-09-20");
-  ok("revshare: branch mtd = POS 30000 + settled 8560 = 38560", (() => {
+  ok("revshare: company branch mtd = POS 30000 + settled 8560 = 38560", (() => {
     const r = rvOv.branches[0];
     return r.mtdNett === 38560 && r.revshareIncome === 8560;
   })());
   ok("revshare: company total + revshareIncome include it", rvOv.total.mtdNett === 38560 && rvOv.revshareIncome === 8560);
-  ok("revshare: target% uses revshare-inclusive nett (38560/100000)", rvOv.target?.pctOfTarget === 38.56);
+  ok("revshare: company target% uses revshare-inclusive nett (38560/100000)", rvOv.target?.pctOfTarget === 38.56);
   ok("revshare: bills/pax untouched (POS only)", rvOv.total.bills === 10 && rvOv.total.pax === 15);
   ok("revshare: current-month view shows no revshare yet (not settled)", analytics.companyOverview([bidRV], 2026, 9, "2026-09-20").revshareIncome === 0);
+  // per-branch page: monthly total + annual YTD also fold in the settled revshare
+  const rvMonthly = analytics.monthlyAnalytics(bidRV, 2026, 7);
+  ok("revshare: per-branch monthly total = POS 30000 + 8560", rvMonthly.totalNett === 38560 && rvMonthly.revshareIncome === 8560);
+  ok("revshare: per-branch MoM % stays POS-only (July has no prev-month POS)", rvMonthly.prevMonthPct === null);
+  const rvAnnual = analytics.annualProjection(bidRV, "2026-09-20");
+  ok("revshare: per-branch annual YTD folds in settled revshare (30000+8560)", rvAnnual != null && rvAnnual.ytdNett === 38560);
 
   // ── 18) company weekly same-period compare (owner 2026-09-21): this ISO week
   // Mon..today vs the previous week's identical day-window. ──

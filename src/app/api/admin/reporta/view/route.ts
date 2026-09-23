@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
-import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars } from "@/lib/salesa-analytics";
+import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars, revshareIncomeForBranch, applyRevshareToTarget } from "@/lib/salesa-analytics";
 import { salesPushPlan } from "@/lib/salesa-push";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
@@ -99,8 +99,12 @@ export function GET(req: Request) {
   const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, "0")}`;
   const refIso = todayIso < monthEnd ? todayIso : monthEnd;
   const weekdays = weekdayStats(branchId, refIso);
+  // ส่วนแบ่งยอดขาย (RevShare) settled this month — folded into the target like the
+  // monthly total (owner 2026-09-23), added flat so it isn't run-rate-annualized.
+  const revshareIncome = revshareIncomeForBranch(branchId, year, month);
   const target = getMonthlyTarget(branchId);
-  const monthTarget = target != null ? targetProgress(target, monthCompare.mtdNett, monthCompare.throughDay, year, month) : null;
+  const tp = target != null ? targetProgress(target, monthCompare.mtdNett, monthCompare.throughDay, year, month) : null;
+  const monthTarget = tp ? applyRevshareToTarget(tp, revshareIncome) : null;
   const monthSentAt = monthlySentAt(branchId, `${year}-${String(month).padStart(2, "0")}`);
   const annual = annualProjection(branchId, todayIso);  // full-year (monthly×12) projection
   // Insight panels (channels / discount / marketing / receipt) can be viewed for
@@ -121,5 +125,5 @@ export function GET(req: Request) {
     hasReceipt: d.has_receipt === 1,
     dailySentAt: d.daily_sent_at
   }));
-  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, annual, insights, insightRange: range });
+  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, annual, revshareIncome, insights, insightRange: range });
 }

@@ -374,7 +374,8 @@ export type MonthlyAnalytics = {
   ym: string;
   label: string;               // "กันยายน 2569"
   dayCount: number;
-  totalNett: number;
+  totalNett: number;         // POS + settled RevShare (revshareIncome), for display
+  revshareIncome: number;    // ส่วนแบ่งยอดขาย folded into totalNett this month
   totalBills: number;
   totalPax: number;
   totalDiscount: number;
@@ -397,7 +398,11 @@ export function monthlyAnalytics(branchId: number, year: number, month: number, 
   const mm = String(month).padStart(2, "0");
   const end = `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`;
   const rows = listRange(branchId, `${year}-${mm}-01`, end).filter((d) => d.has_sales);
-  const totalNett = round2(rows.reduce((s, d) => s + d.nett, 0));
+  const posNett = round2(rows.reduce((s, d) => s + d.nett, 0));
+  // Settled ส่วนแบ่งยอดขาย (RevShare) folded into the displayed monthly total (owner
+  // 2026-09-23: must join the 3-file POS import). MoM/YoY % below stay POS-only.
+  const revshareIncome = revshareIncomeForBranch(branchId, year, month);
+  const totalNett = round2(posNett + revshareIncome);
   const totalBills = rows.reduce((s, d) => s + d.bill_count, 0);
   const totalPax = rows.reduce((s, d) => s + d.pax, 0);
   const totalDiscount = round2(rows.reduce((s, d) => s + d.discount, 0));
@@ -415,13 +420,15 @@ export function monthlyAnalytics(branchId: number, year: number, month: number, 
     year, month, ym: `${year}-${mm}`,
     label: `${TH_MONTHS_LOCAL[month]} ${year + 543}`,
     dayCount: rows.length,
-    totalNett, totalBills, totalPax, totalDiscount,
-    avgPerDay: rows.length ? round2(totalNett / rows.length) : null,
-    avgPerBill: totalBills > 0 ? round2(totalNett / totalBills) : null,
+    totalNett, revshareIncome, totalBills, totalPax, totalDiscount,
+    // Averages + MoM/YoY % stay on POS (a month-end lump isn't a per-day/per-bill
+    // figure and has no comparable day-window).
+    avgPerDay: rows.length ? round2(posNett / rows.length) : null,
+    avgPerBill: totalBills > 0 ? round2(posNett / totalBills) : null,
     bestDate: best?.sale_date ?? null,
     bestNett: best?.nett ?? null,
-    prevMonthNett, prevMonthPct: relPct(totalNett, prevMonthNett),
-    lastYearNett, lastYearPct: relPct(totalNett, lastYearNett),
+    prevMonthNett, prevMonthPct: relPct(posNett, prevMonthNett),
+    lastYearNett, lastYearPct: relPct(posNett, lastYearNett),
     topItems: attachUnits(items.slice(0, topN), unitsByName),
     topCategories: cats.slice(0, topN)
   };
@@ -480,13 +487,16 @@ export type AnnualProjection = {
 function branchYtdProjection(branchId: number, todayIso: string): { ytd: number; projected: number } {
   const y = Number(todayIso.slice(0, 4));
   const rows = listRange(branchId, `${y}-01-01`, todayIso).filter((d) => d.has_sales); // ascending
-  const ytd = rows.reduce((s, d) => s + d.nett, 0);
-  if (!rows.length) return { ytd: 0, projected: 0 };
+  const posYtd = rows.reduce((s, d) => s + d.nett, 0);
+  // Settled ส่วนแบ่งยอดขาย (RevShare) Jan..this month — actual income, added flat to
+  // YTD + projection (POS drives the run-rate; no future revshare is guessed).
+  const revYtd = revshareYtdForBranch(branchId, y, Number(todayIso.slice(5, 7)));
+  if (!rows.length) return { ytd: round2(revYtd), projected: round2(revYtd) };
   const day = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
   const spanDays = Math.max(1, day(todayIso) - day(rows[0].sale_date) + 1);
-  const dailyRate = ytd / spanDays;
+  const dailyRate = posYtd / spanDays;
   const remainingDays = Math.max(0, day(`${y}-12-31`) - day(todayIso));
-  return { ytd: round2(ytd), projected: round2(ytd + dailyRate * remainingDays) };
+  return { ytd: round2(posYtd + revYtd), projected: round2(posYtd + dailyRate * remainingDays + revYtd) };
 }
 
 const dayNum = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
@@ -538,18 +548,12 @@ export function annualProjection(branchId: number, todayIso: string): AnnualProj
  *  target contribute. Scoped to a company's branches by the caller. */
 export function annualProjectionForBranches(branchIds: number[], todayIso: string): AnnualProjection | null {
   const y = Number(todayIso.slice(0, 4));
-  const curMonth = Number(todayIso.slice(5, 7));
   let annualTarget = 0, fullYearTarget = 0, ytd = 0, projected = 0, n = 0, anyProrated = false;
   for (const id of branchIds) {
     const t = branchAnnualTarget(id, y);
     if (!t) continue;
-    const p = branchYtdProjection(id, todayIso);
-    // ส่วนแบ่งยอดขาย (RevShare) settled Jan..this month — actual income, so it adds
-    // to YTD and to the projection (settled-so-far, no future revshare guessed).
-    let revYtd = 0;
-    for (let m = 1; m <= curMonth; m++) revYtd += revshareIncomeForBranch(id, y, m);
-    annualTarget += t.annualTarget; fullYearTarget += t.fullYearTarget;
-    ytd += p.ytd + revYtd; projected += p.projected + revYtd; n++;
+    const p = branchYtdProjection(id, todayIso);   // includes settled RevShare YTD
+    annualTarget += t.annualTarget; fullYearTarget += t.fullYearTarget; ytd += p.ytd; projected += p.projected; n++;
     if (t.openedIso) anyProrated = true;
   }
   // Company view: openedIso is per-branch, so leave it null; `prorated` still
@@ -589,19 +593,47 @@ export type CompanyOverview = {
 
 /** ส่วนแบ่งยอดขาย (RevShare) income routed to a branch for a settle-month: the
  *  settled GP share the shop invoices the partner (billed GP + output VAT), for
- *  settlements that are issued or paid. Not in the POS Excel; transferred at
- *  month-end (owner 2026-09-23). Naturally 0 for the current month until it is
- *  settled. income_branch_id overrides the partner's home branch when set. */
+ *  settlements marked PAID (owner 2026-09-23: นับเมื่อจ่ายแล้ว — matches when
+ *  ACCOUNTA books the income). Not in the POS Excel; transferred at month-end.
+ *  Naturally 0 for the current month until it is paid. income_branch_id overrides
+ *  the partner's home branch when set. */
 export function revshareIncomeForBranch(branchId: number, year: number, month: number): number {
   const r = getDb().prepare(`
     SELECT COALESCE(SUM(s.billed_gp + s.vat_amount), 0) AS income
     FROM revshare_settlements s
     JOIN revshare_partners p ON p.id = s.partner_id
     WHERE s.settle_year = ? AND s.settle_month = ?
-      AND s.status IN ('issued', 'paid')
+      AND s.status = 'paid'
       AND COALESCE(p.income_branch_id, p.branch_id) = ?
   `).get(year, month, branchId) as { income: number } | undefined;
   return round2(r?.income ?? 0);
+}
+
+/** Settled RevShare income routed to a branch for months 1..throughMonth of a
+ *  year — the YTD figure, in one query (paid settlements only). */
+export function revshareYtdForBranch(branchId: number, year: number, throughMonth: number): number {
+  const r = getDb().prepare(`
+    SELECT COALESCE(SUM(s.billed_gp + s.vat_amount), 0) AS income
+    FROM revshare_settlements s
+    JOIN revshare_partners p ON p.id = s.partner_id
+    WHERE s.settle_year = ? AND s.settle_month <= ? AND s.status = 'paid'
+      AND COALESCE(p.income_branch_id, p.branch_id) = ?
+  `).get(year, throughMonth, branchId) as { income: number } | undefined;
+  return round2(r?.income ?? 0);
+}
+
+/** Add a settled RevShare lump FLAT onto a monthly target's MTD + projection (a
+ *  month-end amount is never run-rate-annualized). % of target includes it. */
+export function applyRevshareToTarget(target: TargetProgress, rev: number): TargetProgress {
+  if (!(rev > 0)) return target;
+  const mtd = round2(target.mtdNett + rev);
+  const projectedNett = round2(target.projectedNett + rev);
+  return {
+    ...target, mtdNett: mtd, projectedNett,
+    pctOfTarget: round2((mtd / target.target) * 100),
+    projectedPct: round2((projectedNett / target.target) * 100),
+    onTrack: projectedNett >= target.target
+  };
 }
 
 export function companyOverview(branchIds: number[], year: number, month: number, todayIso: string): CompanyOverview {
@@ -669,16 +701,7 @@ export function companyOverview(branchIds: number[], year: number, month: number
   // Project POS on its day-window, then add the settled revshare lump flat (a
   // month-end amount must not be run-rate-annualized). % of target includes it.
   let target = tTargetSum > 0 ? targetProgress(tTargetSum, tMtdTargetedPos, throughDay, year, month) : null;
-  if (target && tRevTargeted > 0) {
-    const mtd = round2(target.mtdNett + tRevTargeted);
-    const projectedNett = round2(target.projectedNett + tRevTargeted);
-    target = {
-      ...target, mtdNett: mtd, projectedNett,
-      pctOfTarget: round2((mtd / target.target) * 100),
-      projectedPct: round2((projectedNett / target.target) * 100),
-      onTrack: projectedNett >= target.target
-    };
-  }
+  if (target) target = applyRevshareToTarget(target, tRevTargeted);
   // Annual roll-up only makes sense for the current year (it's a YTD + run-rate
   // projection). Browsing a past year → no annual card, not stale current-year.
   const annual = year === Number(todayIso.slice(0, 4)) ? annualProjectionForBranches(ids, todayIso) : null;
