@@ -74,6 +74,9 @@ export {
   getBranchReviewInfo,
   listBranchReviewInfo,
   submitReview,
+  createReviewInvite,
+  resolveReviewInvite,
+  purgeExpiredReviewInvites,
   trackGoogleClick,
   claimReward,
   reviewSummary,
@@ -84,7 +87,8 @@ export {
   type SubmitReviewResult,
   type ReviewRow,
   type ReviewSummary,
-  type ReviewTier
+  type ReviewTier,
+  type ResolvedInvite
 } from "./reviews";
 
 // Persona tagging (Phase 7). recomputePersonaTag fires automatically

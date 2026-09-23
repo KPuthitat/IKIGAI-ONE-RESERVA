@@ -7236,18 +7236,18 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_insigna_audit_received ON insigna_ingestion_audit(received_at);
 
-    -- 3.14 Review funnel (owner 2026-09-23). A standalone, PII-free
-    -- feedback flow the customer opens from a QR / LINE link after a
-    -- visit: rate 1-5 (+ optional axes + free-text), then EVERYONE is
-    -- offered the branch's Google review link — the wording just leans
-    -- positive on a high score and apologetic on a low one (NO gating:
-    -- routing only satisfied customers to Google violates Google policy,
-    -- so the link is shown to all; owner-confirmed 2026-09-23). The
-    -- reward is granted for completing the survey, never for a positive
-    -- or a Google review. This table carries no customer_hash and no
-    -- identity column, so it clears the PII lint on its own; the
-    -- comment field may contain incidental PII the customer types, the
-    -- same caveat as insigna_feedback.comment.
+    -- 3.14 Review funnel (owner 2026-09-23). A feedback flow the customer
+    -- opens from a QR / LINE link after a visit: rate 1-5 (+ optional axes
+    -- + free-text), then EVERYONE is offered the branch's Google review
+    -- link — the wording just leans positive on a high score and
+    -- apologetic on a low one (NO gating: routing only satisfied customers
+    -- to Google violates Google policy, so the link is shown to all;
+    -- owner-confirmed 2026-09-23). The reward is granted for completing the
+    -- survey, never for a positive or a Google review. The only identity
+    -- link is the OPTIONAL customer_hash (the one-way INSIGNA pseudonym,
+    -- allowed by the lint) — no name/phone/email is ever stored; the
+    -- comment field may carry incidental PII the customer types, the same
+    -- caveat as insigna_feedback.comment.
     CREATE TABLE IF NOT EXISTS insigna_review_requests (
       token             TEXT PRIMARY KEY,           -- random, unguessable; keys the reward + tracking
       branch_id         INTEGER REFERENCES branches(id) ON DELETE SET NULL,
@@ -7257,6 +7257,13 @@ function runMigrations(db: Database.Database): void {
       ambience_rating   INTEGER CHECK (ambience_rating BETWEEN 1 AND 5),
       return_intent     INTEGER CHECK (return_intent IN (0, 1)),  -- "จะกลับมาอีกไหม", optional
       comment           TEXT,
+      -- Optional link to a returning customer WITHOUT storing PII: the
+      -- one-way INSIGNA pseudonym HMAC(line:<userId>) (owner 2026-09-23,
+      -- "พ่วง userID แต่ไม่เก็บชื่อ"). NULL for anonymous QR reviews. It's
+      -- the same customer_hash used across INSIGNA, so the PII lint allows
+      -- it; the raw LINE id is resolved from review_invites and hashed at
+      -- the call site, never stored here.
+      customer_hash     TEXT,
       tier              TEXT NOT NULL CHECK (tier IN ('high', 'low')),  -- routing bucket at submit time
       routed_google     INTEGER NOT NULL DEFAULT 0,  -- did we surface the Google CTA (1 whenever URL configured)
       clicked_google    INTEGER NOT NULL DEFAULT 0,  -- did they tap through to Google
@@ -7267,10 +7274,35 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_insigna_review_created ON insigna_review_requests(created_at);
     CREATE INDEX IF NOT EXISTS idx_insigna_review_branch ON insigna_review_requests(branch_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_insigna_review_customer ON insigna_review_requests(customer_hash);
     -- UNIQUE so a minted reward code is unambiguous at redemption. SQLite
     -- allows many NULLs in a UNIQUE index, so no-reward rows are unaffected.
     CREATE UNIQUE INDEX IF NOT EXISTS idx_insigna_review_reward ON insigna_review_requests(reward_code);
+
+    -- Review invite links (owner 2026-09-23). Maps an opaque token to the
+    -- LINE userId it was sent to, so a review opened from a LINE thank-you
+    -- card can be tied to that customer's INSIGNA pseudonym. This is an
+    -- OPERATIONAL table (like bookings) holding a raw line_user_id — NOT an
+    -- insigna_* table, by design: the id is resolved and hashed at submit,
+    -- and only the hash crosses into INSIGNA storage. Anonymous QR reviews
+    -- carry no token and never touch this table.
+    CREATE TABLE IF NOT EXISTS review_invites (
+      token         TEXT PRIMARY KEY,
+      line_user_id  TEXT NOT NULL,
+      branch_id     INTEGER REFERENCES branches(id) ON DELETE CASCADE,
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expires_at    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_review_invites_expires ON review_invites(expires_at);
   `);
+
+  // Idempotent add for DBs that created insigna_review_requests before the
+  // customer_hash column landed (owner 2026-09-23).
+  const rrCols = db.prepare("PRAGMA table_info(insigna_review_requests)").all() as Array<{ name: string }>;
+  if (!rrCols.some((c) => c.name === "customer_hash")) {
+    db.exec("ALTER TABLE insigna_review_requests ADD COLUMN customer_hash TEXT");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_insigna_review_customer ON insigna_review_requests(customer_hash)");
+  }
 
   // ── FEASIBILITY (project investment feasibility, owner 2026-06-16) ──
   // One row per project. `inputs` holds the whole assumptions/startup/cost

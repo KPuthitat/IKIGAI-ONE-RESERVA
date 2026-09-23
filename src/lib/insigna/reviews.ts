@@ -12,9 +12,12 @@
 //     customers to Google is review-gating, which Google prohibits.
 //     Owner-confirmed the compliant design 2026-09-23.
 //
-// Storage (insigna_review_requests) carries no customer_hash and no
-// identity column, so it stands apart from the pseudonymous visit
-// graph and clears the PII lint by itself.
+// Storage (insigna_review_requests) keeps no name/phone/email. Its only
+// identity link is the OPTIONAL customer_hash — the one-way INSIGNA
+// pseudonym HMAC(line:<userId>), set when the review is opened from a
+// LINE thank-you card and NULL for anonymous QR reviews. The raw LINE id
+// lives briefly in the operational review_invites table (not INSIGNA) and
+// is hashed at the call site; only the hash crosses into review storage.
 
 import crypto from "node:crypto";
 import { getDb } from "../db";
@@ -43,6 +46,7 @@ export type SubmitReviewArgs = {
   ambience_rating?: number | null;
   return_intent?: boolean | null;       // "จะกลับมาอีกไหม", optional
   comment?: string | null;
+  customer_hash?: string | null;        // INSIGNA pseudonym when identified via LINE; NULL for anonymous QR
 };
 
 export type SubmitReviewResult = {
@@ -63,6 +67,7 @@ export type ReviewRow = {
   ambience_rating: number | null;
   return_intent: number | null;
   comment: string | null;
+  customer_hash: string | null;
   tier: ReviewTier;
   routed_google: number;
   clicked_google: number;
@@ -186,8 +191,8 @@ export function submitReview(args: SubmitReviewArgs): SubmitReviewResult {
   db.prepare(`
     INSERT INTO insigna_review_requests
       (token, branch_id, rating, food_rating, service_rating, ambience_rating,
-       return_intent, comment, tier, routed_google, reward_code)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       return_intent, comment, customer_hash, tier, routed_google, reward_code)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     token,
     args.branch_id ?? null,
@@ -197,6 +202,7 @@ export function submitReview(args: SubmitReviewArgs): SubmitReviewResult {
     args.ambience_rating ?? null,
     args.return_intent == null ? null : (args.return_intent ? 1 : 0),
     args.comment?.trim() || null,
+    args.customer_hash ?? null,
     tier,
     googleUrl ? 1 : 0,
     rewardCode
@@ -216,6 +222,50 @@ export function submitReview(args: SubmitReviewArgs): SubmitReviewResult {
     reward_code: rewardCode,
     reward_text: cfg.reward_text
   };
+}
+
+// ── invite links (identify a review via LINE without storing PII) ───
+
+export type ResolvedInvite = { line_user_id: string; branch_id: number | null };
+
+/** Mint an opaque invite token for a LINE thank-you card. The token maps
+ *  to this customer's LINE userId in review_invites (operational table,
+ *  not INSIGNA); the id is hashed only at submit. Default TTL 30 days. */
+export function createReviewInvite(lineUserId: string, branchId: number | null, ttlDays = 30): string {
+  if (!lineUserId?.trim()) throw new Error("[INSIGNA] createReviewInvite: lineUserId required");
+  const token = crypto.randomBytes(12).toString("base64url");
+  const expiresAt = new Date(Date.now() + ttlDays * 86400000).toISOString();
+  getDb().prepare(`
+    INSERT INTO review_invites (token, line_user_id, branch_id, expires_at)
+    VALUES (?, ?, ?, ?)
+  `).run(token, lineUserId.trim(), branchId ?? null, expiresAt);
+  return token;
+}
+
+/** Resolve an invite token to its LINE userId (+ branch). Returns null
+ *  when unknown or expired — the review still records, just anonymously.
+ *  An expired row is deleted on encounter (its raw LINE id shouldn't
+ *  linger); reusable until it expires (a customer may reopen the link). */
+export function resolveReviewInvite(token: string): ResolvedInvite | null {
+  const db = getDb();
+  const row = db.prepare(
+    "SELECT line_user_id, branch_id, expires_at FROM review_invites WHERE token = ?"
+  ).get(token) as { line_user_id: string; branch_id: number | null; expires_at: string | null } | undefined;
+  if (!row) return null;
+  if (row.expires_at && row.expires_at < new Date().toISOString()) {
+    db.prepare("DELETE FROM review_invites WHERE token = ?").run(token);
+    return null;
+  }
+  return { line_user_id: row.line_user_id, branch_id: row.branch_id };
+}
+
+/** Delete expired invite rows so raw LINE ids don't accumulate past their
+ *  validity window. Wire into the nightly cron. Returns rows removed. */
+export function purgeExpiredReviewInvites(): number {
+  const res = getDb().prepare(
+    "DELETE FROM review_invites WHERE expires_at IS NOT NULL AND expires_at < ?"
+  ).run(new Date().toISOString());
+  return res.changes;
 }
 
 /** Mark that the customer tapped through to Google (conversion signal).
