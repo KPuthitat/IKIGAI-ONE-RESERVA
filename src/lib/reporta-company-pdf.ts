@@ -48,7 +48,7 @@ export function generateReportaCompanyPdf(ov: CompanyOverview, meta: ReportaComp
       doc.font("th").fontSize(12).fillColor("#d9c4a6")
         .text(`ภาพรวมบริษัท · รวมทุกสาขา · ${meta.monthLabel}`, left, 54, { width: W });
       doc.font("th").fontSize(8).fillColor("#b79a72")
-        .text(`ยอดขายวันที่ 1–${ov.throughDay} · เทียบช่วงเวลาเดียวกันของเดือนก่อน · ใช้ติดตามภายใน`, left, 72, { width: W });
+        .text(`ยอดขายวันที่ 1–${ov.throughDay} · เทียบช่วงเวลาเดียวกันของเดือนก่อน · ใช้ติดตามภายใน${ov.revshareIncome > 0 ? ` · รวมส่วนแบ่งยอดขายรายเดือน ฿${money(ov.revshareIncome)} (นอก POS)` : ""}`, left, 72, { width: W });
 
       // ── KPI cards ──
       let y = 112;

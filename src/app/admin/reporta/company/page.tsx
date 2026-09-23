@@ -130,6 +130,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
               <div className="text-xs text-slate-500">ยอดขายรวม (วันที่ 1–{ov.throughDay})</div>
               <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">฿{baht(t.mtdNett)}</div>
               <div className="text-[11px] mt-0.5">เทียบเดือนก่อน <Pct pct={t.momPct} />{t.prevSameNett != null ? <span className="text-slate-400"> (฿{baht(t.prevSameNett)})</span> : null}</div>
+              {ov.revshareIncome > 0 && <div className="text-[10px] text-violet-600 mt-0.5">รวมส่วนแบ่งยอดขายรายเดือน ฿{baht(ov.revshareIncome)} (นอก POS)</div>}
             </div>
             {ov.isCurrentMonth && (
               <div className="card">
@@ -146,7 +147,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
               <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">{t.pax.toLocaleString("th-TH")}</div>
             </div>
           </div>
-          <p className="text-[11px] text-slate-400 -mt-1">เทียบวันที่ 1–{ov.throughDay} ของเดือนนี้ กับ 1–{ov.throughDay} ของเดือนก่อน (ช่วงเวลาเดียวกัน) · % เทียบเฉพาะสาขาที่มีข้อมูลทั้งสองเดือน (ไม่รวมสาขาเปิดใหม่)</p>
+          <p className="text-[11px] text-slate-400 -mt-1">เทียบวันที่ 1–{ov.throughDay} ของเดือนนี้ กับ 1–{ov.throughDay} ของเดือนก่อน (ช่วงเวลาเดียวกัน) · % เทียบจากยอด POS ช่วงเวลาเดียวกัน (ไม่รวมส่วนแบ่งรายเดือน / ไม่รวมสาขาเปิดใหม่) · ยอดขายรวม/เป้า/YTD รวมส่วนแบ่งยอดขายที่ settle แล้ว</p>
 
           {/* Company monthly target */}
           {ov.target && (
@@ -201,6 +202,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                         <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden mt-1 w-28">
                           <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${Math.max(2, (b.mtdNett / maxMtd) * 100)}%` }} />
                         </div>
+                        {b.revshareIncome > 0 && <div className="text-[10px] text-violet-600 mt-0.5">+ ส่วนแบ่ง ฿{baht(b.revshareIncome)}</div>}
                       </td>
                       <td className="py-2 px-2 text-right font-semibold text-slate-700">฿{baht(b.mtdNett)}</td>
                       <td className="py-2 px-2 text-right"><Pct pct={b.momPct} /></td>
