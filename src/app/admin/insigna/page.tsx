@@ -114,6 +114,21 @@ export default function InsignaDashboard() {
         </div>
       </div>
 
+      {/* Review funnel entry (owner 2026-09-23) */}
+      <Link
+        href="/admin/insigna/reviews"
+        className="card flex items-center gap-3 hover:border-brand transition group"
+      >
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-500 text-xl">★</span>
+        <div className="flex-1">
+          <div className="font-bold text-slate-800">รีวิวลูกค้า · Review funnel</div>
+          <div className="text-xs text-slate-500">
+            ให้ลูกค้าประเมินในระบบ → ชวนรีวิว Google (ทุกคน) · ของแลกเมื่อกรอกครบ · คะแนนต่ำเก็บหลังบ้าน
+          </div>
+        </div>
+        <span className="text-slate-300 group-hover:text-brand">→</span>
+      </Link>
+
       {/* Sandbox — only super_admin can fire test events */}
       {user.role === "super_admin" && <Sandbox />}
 
