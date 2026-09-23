@@ -16,7 +16,8 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   const { getDb } = await import("../src/lib/db");
   const {
     getReviewConfig, saveReviewConfig, setBranchGoogleUrl, getBranchReviewInfo,
-    submitReview, trackGoogleClick, claimReward, reviewSummary, listReviews
+    submitReview, trackGoogleClick, claimReward, reviewSummary, listReviews,
+    createReviewInvite, resolveReviewInvite, purgeExpiredReviewInvites, hashLineUserId
   } = await import("../src/lib/insigna");
   const db = getDb();
 
@@ -123,6 +124,46 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
     const all = listReviews({ limit: 100 });
     return all.length === 4 && all[0].created_at >= all[all.length - 1].created_at;
   })());
+
+  // ── invite links (identify via LINE without storing PII) ──
+  const inv = createReviewInvite("Uabc123", A, 30);
+  ok("createReviewInvite returns a token + stores the row", (() => {
+    const row = db.prepare("SELECT line_user_id, branch_id FROM review_invites WHERE token = ?").get(inv) as { line_user_id: string; branch_id: number } | undefined;
+    return !!inv && row?.line_user_id === "Uabc123" && row?.branch_id === A;
+  })());
+  ok("resolveReviewInvite returns the LINE id + branch", (() => {
+    const r = resolveReviewInvite(inv);
+    return r?.line_user_id === "Uabc123" && r?.branch_id === A;
+  })());
+  ok("resolveReviewInvite unknown token → null", resolveReviewInvite("nope") === null);
+  ok("resolveReviewInvite expired token → null + deletes the row", (() => {
+    const expired = createReviewInvite("Uold", A, -1); // already expired
+    const res = resolveReviewInvite(expired);
+    const gone = db.prepare("SELECT 1 FROM review_invites WHERE token = ?").get(expired) === undefined;
+    return res === null && gone;
+  })());
+  ok("purgeExpiredReviewInvites drops expired, keeps valid", (() => {
+    createReviewInvite("Uexp1", A, -1);
+    createReviewInvite("Uexp2", A, -1);
+    const removed = purgeExpiredReviewInvites();
+    const validLeft = db.prepare("SELECT 1 FROM review_invites WHERE token = ?").get(inv) !== undefined;
+    return removed >= 2 && validLeft;
+  })());
+
+  // ── submit carries the customer_hash (identified review) ──
+  const idHash = hashLineUserId("Uabc123");
+  const idReview = submitReview({ branch_id: A, rating: 5, customer_hash: idHash });
+  ok("submitReview stores customer_hash when identified", (() => {
+    const row = db.prepare("SELECT customer_hash FROM insigna_review_requests WHERE token = ?").get(idReview.token) as { customer_hash: string | null };
+    return row.customer_hash === idHash && idHash.length === 64;
+  })());
+  ok("anonymous submit leaves customer_hash NULL", (() => {
+    const anon = submitReview({ branch_id: A, rating: 4 });
+    const row = db.prepare("SELECT customer_hash FROM insigna_review_requests WHERE token = ?").get(anon.token) as { customer_hash: string | null };
+    return row.customer_hash === null;
+  })());
+  ok("same LINE id → same hash (recognises a returning customer)", hashLineUserId("Uabc123") === idHash);
+  ok("hash reveals no PII (not the raw id)", !idHash.includes("Uabc123"));
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();

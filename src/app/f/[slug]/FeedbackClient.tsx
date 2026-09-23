@@ -46,8 +46,8 @@ function Stars({ value, onChange }: { value: number; onChange: (v: number) => vo
   );
 }
 
-export default function FeedbackClient({ branchSlug, branchName }: {
-  branchSlug: string; branchName: string;
+export default function FeedbackClient({ branchSlug, branchName, inviteToken }: {
+  branchSlug: string; branchName: string; inviteToken?: string | null;
 }) {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
@@ -68,7 +68,8 @@ export default function FeedbackClient({ branchSlug, branchName }: {
         body: JSON.stringify({
           branch_slug: branchSlug,
           rating,
-          comment: comment.trim() || null
+          comment: comment.trim() || null,
+          t: inviteToken ?? null
         })
       });
       const data = await res.json();

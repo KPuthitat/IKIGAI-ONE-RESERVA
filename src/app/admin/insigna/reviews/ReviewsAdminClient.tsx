@@ -135,7 +135,13 @@ export default function ReviewsAdminClient({
 
       {/* ── Per-branch Google link + QR link ── */}
       <div className="card lg:col-span-2 space-y-4">
-        <h2 className="text-sm font-bold text-slate-700">ลิงก์ Google review + ลิงก์แบบฟอร์มต่อสาขา</h2>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="text-sm font-bold text-slate-700">ลิงก์ Google review + ลิงก์แบบฟอร์มต่อสาขา</h2>
+          <a href="/admin/insigna/reviews/qr" target="_blank" rel="noopener noreferrer"
+            className="text-xs font-semibold text-brand hover:underline">
+            พิมพ์ QR ติดโต๊ะต่อสาขา ↗
+          </a>
+        </div>
         <p className="text-[11px] text-slate-400 -mt-2">
           ใช้ลิงก์เขียนรีวิวตรง <code className="bg-slate-100 px-1 rounded">https://search.google.com/local/writereview?placeid=…</code>
           {" "}(หา Place ID ได้จาก Google Business Profile) เพื่อให้ลูกค้าแตะแล้วเด้งหน้าดาวทันที

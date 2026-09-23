@@ -29,9 +29,15 @@ function safeDecode(raw: string): string {
   try { return decodeURIComponent(raw); } catch { return raw; }
 }
 
-export default function FeedbackPage({ params }: { params: { slug: string } }) {
+export default function FeedbackPage({
+  params, searchParams
+}: {
+  params: { slug: string };
+  searchParams: { t?: string };
+}) {
   const cfg = getReviewConfig();
   const branch = getBranchReviewInfo(safeDecode(params.slug ?? ""));
+  const inviteToken = typeof searchParams?.t === "string" ? searchParams.t : null;
 
   if (!cfg.enabled || !branch) {
     return (
@@ -49,7 +55,7 @@ export default function FeedbackPage({ params }: { params: { slug: string } }) {
 
   return (
     <Shell>
-      <FeedbackClient branchSlug={branch.branch_slug} branchName={branch.branch_name} />
+      <FeedbackClient branchSlug={branch.branch_slug} branchName={branch.branch_name} inviteToken={inviteToken} />
     </Shell>
   );
 }

@@ -140,6 +140,11 @@ function ReviewCard({ r, branchName, lowlight }: { r: ReviewRow; branchName?: st
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-amber-500 font-bold">{"★".repeat(r.rating)}<span className="text-slate-200">{"★".repeat(5 - r.rating)}</span></span>
         {branchName && <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{branchName}</span>}
+        {r.customer_hash && (
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-mono" title={r.customer_hash}>
+            ผูก LINE · {r.customer_hash.slice(0, 6)}
+          </span>
+        )}
         {r.clicked_google === 1 && <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">→ Google</span>}
         {r.reward_code && (
           <span className={`text-[11px] px-1.5 py-0.5 rounded font-mono ${r.reward_claimed ? "bg-slate-200 text-slate-400 line-through" : "bg-amber-100 text-amber-700"}`}>

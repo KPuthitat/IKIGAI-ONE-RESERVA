@@ -53,7 +53,8 @@ import { escalateStaleTier1, getSystemEscalationHours } from "@/lib/approval-tie
 import { notifyLeaveEvent } from "@/lib/approval-notify";
 import {
   rollupYesterday as insignaRollupYesterday,
-  recomputeAllChurn as insignaRecomputeAllChurn
+  recomputeAllChurn as insignaRecomputeAllChurn,
+  purgeExpiredReviewInvites
 } from "@/lib/insigna";
 import {
   buildExpiringLotsForBranch,
@@ -515,6 +516,16 @@ async function runCron(): Promise<NextResponse> {
     reportError(e, "cron selfie-purge", {});
   }
 
+  // Review-invite retention — drop expired invite rows so raw LINE ids
+  // (the only PII in review_invites) don't linger past their window.
+  let reviewInvitesPurged = 0;
+  try {
+    reviewInvitesPurged = purgeExpiredReviewInvites();
+  } catch (e) {
+    console.error("review invite purge error", e);
+    reportError(e, "cron review-invite-purge", {});
+  }
+
   // ── INSIGNA nightly jobs ────────────────────────────────────
   // Daily rollup + bulk churn recompute. Both are idempotent (the
   // rollup uses UPSERT on date+channel; churn rewrites churn_risk_score).
@@ -594,6 +605,7 @@ async function runCron(): Promise<NextResponse> {
     purged_old_bookings: purged,
     recruita_pdpa_purged: recruitaPurged,
     clock_selfies_purged: selfiesPurged,
+    review_invites_purged: reviewInvitesPurged,
     insigna_rollup: insignaRollup,
     insigna_churn: insignaChurn,
     inventa_expiry_alerts_sent: inventaExpiryAlertsSent
