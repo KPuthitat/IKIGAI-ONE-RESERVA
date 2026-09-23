@@ -13,6 +13,7 @@ import {
 import { getChannelByCode, getPlatformChannel } from "./messaging-channels";
 import { decryptSecret } from "./secret-vault";
 import { nameWithPrefix } from "./name";
+import { getReviewConfig, createReviewInvite } from "./insigna";
 
 // LINE message kinds we use. Loose typing is intentional — Flex contents are
 // large JSON blobs and the API spec already documents the shape.
@@ -1500,6 +1501,127 @@ export async function notifyCustomer(
   db.prepare(
     "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
   ).run(booking.id, type, "customer", res.ok ? "sent" : "failed", res.error ?? null);
+}
+
+// ── Review invite (INSIGNA Phase 2B, owner 2026-09-23) ──────────────
+
+/** Thank-you Flex card sent after a visit, inviting the customer to rate
+ *  the branch. The button carries a per-customer invite token so the
+ *  review is tied to their INSIGNA pseudonym (hash) without any PII. */
+export function reviewInviteFlex(args: {
+  branchName: string;
+  customerName?: string | null;
+  slug: string;
+  token: string;
+  publicBaseUrl: string;
+  headerColor?: string | null;
+  lang: "th" | "en";
+}): LineFlexMessage {
+  const th = args.lang !== "en";
+  const url = `${args.publicBaseUrl.replace(/\/+$/, "")}/f/${encodeURIComponent(args.slug)}?t=${encodeURIComponent(args.token)}`;
+  const headerColor = args.headerColor || COLOR_INK_700;
+  const title = th ? "ขอบคุณที่มาใช้บริการค่ะ" : "Thanks for visiting!";
+  const greet = args.customerName?.trim()
+    ? (th ? `คุณ${args.customerName.trim()}` : args.customerName.trim())
+    : null;
+  const invite = th
+    ? "รบกวนให้คะแนนสั้นๆ ไม่ถึงนาที ช่วยให้ร้านเราดีขึ้นมากเลยค่ะ"
+    : "A quick rating (under a minute) helps us get better.";
+  const btn = th ? "ให้คะแนนร้าน" : "Rate us";
+
+  const bubble = {
+    type: "bubble",
+    size: "giga",
+    header: {
+      type: "box", layout: "vertical", backgroundColor: headerColor, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: th ? "รีวิวร้าน" : "REVIEW", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        { type: "text", text: title, color: "#ffffff", size: "lg", weight: "bold", wrap: true, margin: "md" }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      contents: [
+        ...(greet ? [{ type: "text", text: greet, size: "sm", color: COLOR_TEXT_MUTED }] : []),
+        { type: "text", text: args.branchName, weight: "bold", size: "lg", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "separator", margin: "md", color: COLOR_DIVIDER },
+        { type: "text", text: invite, size: "sm", color: COLOR_TEXT_DARK, wrap: true, margin: "md" }
+      ]
+    },
+    footer: {
+      type: "box", layout: "vertical", paddingAll: "16px", paddingTop: "0px",
+      contents: [
+        {
+          type: "button", style: "primary", color: COLOR_BRAND, height: "sm",
+          action: { type: "uri", label: btn, uri: url }
+        }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: headerColor },
+      body: { backgroundColor: "#ffffff" },
+      footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
+    }
+  };
+
+  return {
+    type: "flex",
+    altText: th ? `ขอบคุณที่มา ${args.branchName} — ให้คะแนนร้านหน่อยนะคะ` : `Thanks for visiting ${args.branchName} — rate us!`,
+    contents: bubble
+  };
+}
+
+/** Send the review-invite card to a customer after their visit. Mints a
+ *  fresh invite token so the review ties back to this customer's INSIGNA
+ *  pseudonym. Fire-and-forget; skips silently when reviews are off, the
+ *  branch has no channel token, or the booking has no LINE userId. */
+export async function notifyReviewInvite(
+  branch: Branch, booking: Booking
+): Promise<{ ok: boolean; skipped?: string }> {
+  const db = getDb();
+
+  // Reviews globally off (the default state) → skip silently. Don't write a
+  // log row per completed booking while the feature is dormant.
+  if (!getReviewConfig().enabled) return { ok: false, skipped: "reviews_off" };
+
+  const logSkip = (reason: string) => db.prepare(
+    "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
+  ).run(booking.id, "review_invite", "customer", "skipped", reason);
+
+  const token = resolveBranchToken(branch);
+  if (!token || !booking.line_user_id) {
+    logSkip(!token ? "no channel token" : "no line_user_id");
+    return { ok: false, skipped: !token ? "no_token" : "no_line_user_id" };
+  }
+
+  // Idempotency: one invite card per booking. Guards a completed→revert→
+  // completed cycle and racing double-sends (a sent row already exists).
+  const already = db.prepare(
+    "SELECT 1 FROM notification_log WHERE booking_id = ? AND type = 'review_invite' AND status = 'sent' LIMIT 1"
+  ).get(booking.id);
+  if (already) return { ok: false, skipped: "already_sent" };
+
+  const inviteToken = createReviewInvite(booking.line_user_id, branch.id);
+  const flex = reviewInviteFlex({
+    branchName: branch.name,
+    customerName: booking.customer_name,
+    slug: branch.slug,
+    token: inviteToken,
+    publicBaseUrl: getPublicBaseUrl(),
+    headerColor: branch.brand_color,
+    lang: booking.lang === "en" ? "en" : "th"
+  });
+  const res = await sendLinePush(token, { to: booking.line_user_id, messages: [flex] });
+  db.prepare(
+    "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
+  ).run(booking.id, "review_invite", "customer", res.ok ? "sent" : "failed", res.error ?? null);
+  return { ok: res.ok };
 }
 
 export async function notifyStaff(

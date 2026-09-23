@@ -165,6 +165,17 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   ok("same LINE id → same hash (recognises a returning customer)", hashLineUserId("Uabc123") === idHash);
   ok("hash reveals no PII (not the raw id)", !idHash.includes("Uabc123"));
 
+  // ── LINE thank-you card (Phase 2B) ──
+  const { reviewInviteFlex } = await import("../src/lib/line");
+  const flex = reviewInviteFlex({
+    branchName: "NAMA", slug: "nama", token: "TOK-123",
+    publicBaseUrl: "https://ikigaimedihealth.com/", lang: "th", customerName: "สมชาย"
+  });
+  const flexStr = JSON.stringify(flex);
+  ok("reviewInviteFlex is a flex message", (flex as { type: string }).type === "flex");
+  ok("reviewInviteFlex button links to /f/<slug>?t=<token>", flexStr.includes("https://ikigaimedihealth.com/f/nama?t=TOK-123"));
+  ok("reviewInviteFlex greets the customer by name", flexStr.includes("สมชาย"));
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

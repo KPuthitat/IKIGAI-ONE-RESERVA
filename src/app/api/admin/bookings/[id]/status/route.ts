@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, type Booking, type Branch } from "@/lib/db";
-import { notifyCustomerCancelled } from "@/lib/line";
+import { notifyCustomerCancelled, notifyReviewInvite } from "@/lib/line";
 import {
   onBookingStatusChanged as insignaOnBookingStatusChanged,
   hashLineUserId,
@@ -64,6 +64,18 @@ export async function POST(
       notifyCustomerCancelled(branch, updated).catch((e) =>
         console.error("notify cancel error", e)
       );
+    }
+  }
+
+  // Review invite (INSIGNA Phase 2B): when the visit is marked completed
+  // and we have the customer's LINE, send the thank-you + rate-us card.
+  // Fire-and-forget; notifyReviewInvite self-skips when reviews are off.
+  if (parsed.data.status === "completed" && booking.status !== "completed" && booking.line_user_id) {
+    const branch = db.prepare("SELECT * FROM branches WHERE id = ?")
+      .get(booking.branch_id) as Branch | undefined;
+    if (branch) {
+      const updated = db.prepare("SELECT * FROM bookings WHERE id = ?").get(booking.id) as Booking;
+      notifyReviewInvite(branch, updated).catch((e) => console.error("review invite error", e));
     }
   }
 
