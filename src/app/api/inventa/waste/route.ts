@@ -20,7 +20,11 @@ const isPastDate = (s: string): boolean => {
 };
 
 const Body = z.object({
-  item_id: z.number().int().positive(),
+  // Either a stock item (item_id) OR an ad-hoc item (item_name + unit/cost).
+  item_id: z.number().int().positive().optional(),
+  item_name: z.string().max(200).optional(),
+  unit: z.string().max(40).optional(),
+  unit_cost: z.number().min(0).max(100_000_000).optional(),
   qty: z.number().positive(),
   reason: z.enum(["expired", "damaged", "spoiled", "spill", "prep_loss", "contaminated", "recall", "lost", "other"]),
   note: z.string().max(500).optional(),
@@ -30,7 +34,10 @@ const Body = z.object({
   // ~2MB of image is ~2.8MB of base64, so 3MB leaves headroom (server re-checks
   // the decoded bytes against its own 2MB cap). Matches the clock-selfie route.
   photo: z.string().max(3_000_000).optional()
-});
+}).refine(
+  (d) => d.item_id != null || (d.item_name != null && d.item_name.trim().length > 0),
+  { message: "item_required", path: ["item_name"] }
+);
 
 export async function POST(req: Request) {
   const user = getSessionUser();
@@ -50,11 +57,16 @@ export async function POST(req: Request) {
 
   const id = createWaste(
     user.activeBranchId ?? null,
-    { itemId: d.item_id, qty: d.qty, reason: d.reason, note: d.note ?? null, wastedOn: d.wasted_on, photoPath },
+    {
+      itemId: d.item_id ?? null,
+      itemName: d.item_name, unit: d.unit ?? null, unitCost: d.unit_cost ?? 0,
+      qty: d.qty, reason: d.reason, note: d.note ?? null, wastedOn: d.wasted_on, photoPath
+    },
     user.id
   );
   if (id == null) {
-    // Row rejected (item not in this branch) — don't orphan the photo we just wrote.
+    // Row rejected (stock item not in this branch, or blank ad-hoc name) — don't
+    // orphan the photo we just wrote.
     if (photoPath) removeWastePhoto(photoPath);
     return NextResponse.json({ error: "item_not_found" }, { status: 404 });
   }

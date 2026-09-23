@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLang } from "@/lib/LangProvider";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
-import { WASTE_REASONS, wasteReasonLabel, type WasteReason, type WasteRow } from "@/lib/inventa-waste";
+import { WASTE_REASONS, WASTE_UNITS, wasteReasonLabel, type WasteReason, type WasteRow } from "@/lib/inventa-waste";
 
 export type WasteItem = { id: number; name: string; unit: string | null; unit_cost: number };
 
@@ -50,7 +50,12 @@ export default function WasteClient({
   const router = useRouter();
   const [, startTransition] = useTransition();
 
+  const [mode, setMode] = useState<"list" | "adhoc">("list");
   const [itemId, setItemId] = useState<number | "">("");
+  // Ad-hoc item (not in the stock list) — owner 2026-09-23.
+  const [adhocName, setAdhocName] = useState("");
+  const [adhocUnit, setAdhocUnit] = useState("");
+  const [adhocCost, setAdhocCost] = useState("");
   const [qty, setQty] = useState("");
   const [reason, setReason] = useState<WasteReason>("expired");
   const [wastedOn, setWastedOn] = useState(todayBkk());
@@ -71,22 +76,28 @@ export default function WasteClient({
 
   const selectedItem = items.find((i) => i.id === itemId) || null;
   const qtyNum = Number(qty);
-  const canSubmit = itemId !== "" && qtyNum > 0 && !busy;
+  // The unit shown next to จำนวน: the stock item's, or the ad-hoc one.
+  const activeUnit = mode === "adhoc" ? adhocUnit : (selectedItem?.unit ?? "");
+  const hasItem = mode === "adhoc" ? adhocName.trim() !== "" : itemId !== "";
+  const canSubmit = hasItem && qtyNum > 0 && !busy;
 
   async function submit() {
     if (!canSubmit) return;
     setBusy(true);
     setMsg(null);
     try {
+      const body = mode === "adhoc"
+        ? { item_name: adhocName.trim(), unit: adhocUnit.trim() || undefined, unit_cost: adhocCost ? Number(adhocCost) : undefined }
+        : { item_id: itemId };
       const res = await fetch(apiUrl("/api/inventa/waste"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item_id: itemId, qty: qtyNum, reason, note: note.trim() || undefined, wasted_on: wastedOn, photo: photo ?? undefined })
+        body: JSON.stringify({ ...body, qty: qtyNum, reason, note: note.trim() || undefined, wasted_on: wastedOn, photo: photo ?? undefined })
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j?.ok) throw new Error(j?.error ?? "error");
       setMsg({ kind: "ok", text: t("inv.waste.saved") });
-      setQty(""); setNote(""); setPhoto(null);
+      setQty(""); setNote(""); setPhoto(null); setAdhocName(""); setAdhocUnit(""); setAdhocCost("");
       startTransition(() => router.refresh());
     } catch (e) {
       // A rejected photo (too large / bad format) shouldn't look like a generic save failure.
@@ -104,21 +115,48 @@ export default function WasteClient({
       {/* Entry form */}
       <div className="card space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="block">
+            <div className="label flex items-center justify-between">
+              <span>{t("inv.waste.field.item")}</span>
+              <button type="button" className="text-[11px] text-brand hover:underline"
+                onClick={() => setMode(mode === "list" ? "adhoc" : "list")}>
+                {mode === "list" ? t("inv.waste.addAdhocItem") : t("inv.waste.pickFromList")}
+              </button>
+            </div>
+            {mode === "list" ? (
+              <select className="input" value={itemId}
+                onChange={(e) => setItemId(e.target.value === "" ? "" : Number(e.target.value))}>
+                <option value="">{t("inv.waste.field.itemPlaceholder")}</option>
+                {items.map((i) => (
+                  <option key={i.id} value={i.id}>{i.name}{i.unit ? ` (${i.unit})` : ""}</option>
+                ))}
+              </select>
+            ) : (
+              <input className="input" value={adhocName} maxLength={200}
+                onChange={(e) => setAdhocName(e.target.value)} placeholder={t("inv.waste.adhocNamePlaceholder")} />
+            )}
+          </div>
           <label className="block">
-            <span className="label">{t("inv.waste.field.item")}</span>
-            <select className="input" value={itemId}
-              onChange={(e) => setItemId(e.target.value === "" ? "" : Number(e.target.value))}>
-              <option value="">{t("inv.waste.field.itemPlaceholder")}</option>
-              {items.map((i) => (
-                <option key={i.id} value={i.id}>{i.name}{i.unit ? ` (${i.unit})` : ""}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="label">{t("inv.waste.field.qty")}{selectedItem?.unit ? ` · ${selectedItem.unit}` : ""}</span>
+            <span className="label">{t("inv.waste.field.qty")}{activeUnit ? ` · ${activeUnit}` : ""}</span>
             <input className="input" type="number" inputMode="decimal" min="0" step="any"
               value={qty} onChange={(e) => setQty(e.target.value)} placeholder="0" />
           </label>
+          {mode === "adhoc" && (
+            <>
+              <label className="block">
+                <span className="label">{t("inv.waste.field.unit")}</span>
+                {/* input + datalist: pick a common unit or type any other. */}
+                <input className="input" list="waste-units" value={adhocUnit} maxLength={40}
+                  onChange={(e) => setAdhocUnit(e.target.value)} placeholder={t("inv.waste.unitPlaceholder")} />
+                <datalist id="waste-units">{WASTE_UNITS.map((u) => <option key={u} value={u} />)}</datalist>
+              </label>
+              <label className="block">
+                <span className="label">{t("inv.waste.field.unitCost")}</span>
+                <input className="input" type="number" inputMode="decimal" min="0" step="any"
+                  value={adhocCost} onChange={(e) => setAdhocCost(e.target.value)} placeholder="0" />
+              </label>
+            </>
+          )}
           <label className="block">
             <span className="label">{t("inv.waste.field.reason")}</span>
             <select className="input" value={reason} onChange={(e) => setReason(e.target.value as WasteReason)}>
