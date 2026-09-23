@@ -670,6 +670,29 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   // Past year → no annual roll-up (projection only makes sense for the current year).
   ok("company: past-year view has no annual roll-up", analytics.companyOverview([bidCA, bidCB], 2025, 9, "2026-09-20").annual === null);
 
+  // ── 17b) RevShare income into ANALYTICA (owner 2026-09-23): the ส่วนแบ่งยอดขาย
+  // that is settled (billed GP + VAT) is added to nett + target, NOT to the MoM %. ──
+  const bidRV = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('rv','RV',1)").run().lastInsertRowid);
+  sdb.setMonthlyTarget(bidRV, 100000);
+  fputC(bidRV, "2026-07-10", 30000, 10, 15);   // July POS nett = 30000 (a past, complete month)
+  const rvPid = Number(db.prepare(
+    "INSERT INTO revshare_partners (branch_id, name, start_date, income_branch_id) VALUES (?, 'จ้อจี้', '2026-01-01', ?)"
+  ).run(bidRV, bidRV).lastInsertRowid);
+  // paid July settlement: income = billed_gp 8000 + vat 560 = 8560
+  db.prepare("INSERT INTO revshare_settlements (partner_id, settle_year, settle_month, op_month, billed_gp, vat_amount, status) VALUES (?,2026,7,7,8000,560,'paid')").run(rvPid);
+  // a DRAFT settlement (Aug) must never count
+  db.prepare("INSERT INTO revshare_settlements (partner_id, settle_year, settle_month, op_month, billed_gp, vat_amount, status) VALUES (?,2026,8,8,9999,0,'draft')").run(rvPid);
+  ok("revshare: helper returns settled income (8560), ignores draft", analytics.revshareIncomeForBranch(bidRV, 2026, 7) === 8560 && analytics.revshareIncomeForBranch(bidRV, 2026, 8) === 0);
+  const rvOv = analytics.companyOverview([bidRV], 2026, 7, "2026-09-20");
+  ok("revshare: branch mtd = POS 30000 + settled 8560 = 38560", (() => {
+    const r = rvOv.branches[0];
+    return r.mtdNett === 38560 && r.revshareIncome === 8560;
+  })());
+  ok("revshare: company total + revshareIncome include it", rvOv.total.mtdNett === 38560 && rvOv.revshareIncome === 8560);
+  ok("revshare: target% uses revshare-inclusive nett (38560/100000)", rvOv.target?.pctOfTarget === 38.56);
+  ok("revshare: bills/pax untouched (POS only)", rvOv.total.bills === 10 && rvOv.total.pax === 15);
+  ok("revshare: current-month view shows no revshare yet (not settled)", analytics.companyOverview([bidRV], 2026, 9, "2026-09-20").revshareIncome === 0);
+
   // ── 18) company weekly same-period compare (owner 2026-09-21): this ISO week
   // Mon..today vs the previous week's identical day-window. ──
   const bidWA = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('wka','WK-A',1)").run().lastInsertRowid);

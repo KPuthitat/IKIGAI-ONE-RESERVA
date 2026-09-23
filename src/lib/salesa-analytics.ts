@@ -538,12 +538,18 @@ export function annualProjection(branchId: number, todayIso: string): AnnualProj
  *  target contribute. Scoped to a company's branches by the caller. */
 export function annualProjectionForBranches(branchIds: number[], todayIso: string): AnnualProjection | null {
   const y = Number(todayIso.slice(0, 4));
+  const curMonth = Number(todayIso.slice(5, 7));
   let annualTarget = 0, fullYearTarget = 0, ytd = 0, projected = 0, n = 0, anyProrated = false;
   for (const id of branchIds) {
     const t = branchAnnualTarget(id, y);
     if (!t) continue;
     const p = branchYtdProjection(id, todayIso);
-    annualTarget += t.annualTarget; fullYearTarget += t.fullYearTarget; ytd += p.ytd; projected += p.projected; n++;
+    // ส่วนแบ่งยอดขาย (RevShare) settled Jan..this month — actual income, so it adds
+    // to YTD and to the projection (settled-so-far, no future revshare guessed).
+    let revYtd = 0;
+    for (let m = 1; m <= curMonth; m++) revYtd += revshareIncomeForBranch(id, y, m);
+    annualTarget += t.annualTarget; fullYearTarget += t.fullYearTarget;
+    ytd += p.ytd + revYtd; projected += p.projected + revYtd; n++;
     if (t.openedIso) anyProrated = true;
   }
   // Company view: openedIso is per-branch, so leave it null; `prorated` still
@@ -567,6 +573,7 @@ export function companyAnnualProjection(todayIso: string): AnnualProjection | nu
 export type CompanyBranchRow = {
   branchId: number; branchName: string;
   mtdNett: number; prevSameNett: number | null; momPct: number | null;
+  revshareIncome: number;    // ส่วนแบ่งยอดขาย (RevShare) settled this month, already IN mtdNett
   bills: number; pax: number;
   todayNett: number | null;
   monthTarget: number | null; pctOfTarget: number | null; // MTD ÷ full-month target
@@ -574,10 +581,28 @@ export type CompanyBranchRow = {
 export type CompanyOverview = {
   year: number; month: number; throughDay: number; isCurrentMonth: boolean; branchCount: number;
   total: { mtdNett: number; prevSameNett: number | null; momPct: number | null; bills: number; pax: number; todayNett: number | null };
+  revshareIncome: number;    // company-wide ส่วนแบ่งยอดขาย added into total.mtdNett this month
   target: TargetProgress | null; targetedBranchCount: number;
   annual: AnnualProjection | null;
   branches: CompanyBranchRow[];
 };
+
+/** ส่วนแบ่งยอดขาย (RevShare) income routed to a branch for a settle-month: the
+ *  settled GP share the shop invoices the partner (billed GP + output VAT), for
+ *  settlements that are issued or paid. Not in the POS Excel; transferred at
+ *  month-end (owner 2026-09-23). Naturally 0 for the current month until it is
+ *  settled. income_branch_id overrides the partner's home branch when set. */
+export function revshareIncomeForBranch(branchId: number, year: number, month: number): number {
+  const r = getDb().prepare(`
+    SELECT COALESCE(SUM(s.billed_gp + s.vat_amount), 0) AS income
+    FROM revshare_settlements s
+    JOIN revshare_partners p ON p.id = s.partner_id
+    WHERE s.settle_year = ? AND s.settle_month = ?
+      AND s.status IN ('issued', 'paid')
+      AND COALESCE(p.income_branch_id, p.branch_id) = ?
+  `).get(year, month, branchId) as { income: number } | undefined;
+  return round2(r?.income ?? 0);
+}
 
 export function companyOverview(branchIds: number[], year: number, month: number, todayIso: string): CompanyOverview {
   const db = getDb();
@@ -603,15 +628,22 @@ export function companyOverview(branchIds: number[], year: number, month: number
   const pmY = month === 1 ? year - 1 : year;
 
   const rows: CompanyBranchRow[] = [];
-  let tMtd = 0, tBills = 0, tPax = 0, tToday = 0, anyToday = false;
+  let tMtd = 0, tBills = 0, tPax = 0, tToday = 0, anyToday = false, tRev = 0;
   // Same-store compare: only branches with data in BOTH windows count toward the
   // company MoM %, so a newly-opened branch doesn't inflate the trend.
   let cmpCur = 0, cmpPrev = 0, anyCmp = false;
-  let tTargetSum = 0, tMtdTargeted = 0, targetedCount = 0;
+  // Targeted-branch MTD is tracked POS vs revshare separately: the revshare lump
+  // is added FLAT to the projection (not run-rate-annualized by targetProgress).
+  let tTargetSum = 0, tMtdTargetedPos = 0, tRevTargeted = 0, targetedCount = 0;
   for (const b of brows) {
     const cur = throughDay > 0 ? aggMtd(b.id, year, month, throughDay) : null;
     const prev = throughDay > 0 ? aggMtd(b.id, pmY, pm, throughDay) : null;
-    const mtdNett = cur?.nett ?? 0;
+    const posNett = cur?.nett ?? 0;
+    // ส่วนแบ่งยอดขาย (RevShare) settled this month — added into the displayed nett,
+    // target and totals. Kept OUT of the same-period MoM % (below), which stays a
+    // pure POS day-window comparison (a month-end lump has no day window).
+    const revshareIncome = revshareIncomeForBranch(b.id, year, month);
+    const mtdNett = round2(posNett + revshareIncome);
     const prevSameNett = prev?.nett ?? null;
     const bills = cur?.bills ?? 0;
     const pax = cur?.pax ?? 0;
@@ -620,11 +652,11 @@ export function companyOverview(branchIds: number[], year: number, month: number
       : null;
     const monthTarget = getMonthlyTarget(b.id);
     const pctOfTarget = monthTarget && monthTarget > 0 ? round2((mtdNett / monthTarget) * 100) : null;
-    rows.push({ branchId: b.id, branchName: b.name, mtdNett, prevSameNett, momPct: relPct(mtdNett, prevSameNett), bills, pax, todayNett, monthTarget, pctOfTarget });
-    tMtd += mtdNett; tBills += bills; tPax += pax;
+    rows.push({ branchId: b.id, branchName: b.name, mtdNett, prevSameNett, momPct: relPct(posNett, prevSameNett), revshareIncome, bills, pax, todayNett, monthTarget, pctOfTarget });
+    tMtd += mtdNett; tBills += bills; tPax += pax; tRev += revshareIncome;
     if (cur && prev) { cmpCur += cur.nett; cmpPrev += prev.nett; anyCmp = true; }
     if (todayNett != null) { tToday += todayNett; anyToday = true; }
-    if (monthTarget && monthTarget > 0) { tTargetSum += monthTarget; tMtdTargeted += mtdNett; targetedCount++; }
+    if (monthTarget && monthTarget > 0) { tTargetSum += monthTarget; tMtdTargetedPos += posNett; tRevTargeted += revshareIncome; targetedCount++; }
   }
 
   const total = {
@@ -634,11 +666,23 @@ export function companyOverview(branchIds: number[], year: number, month: number
     bills: tBills, pax: tPax,
     todayNett: isCurrentMonth ? round2(anyToday ? tToday : 0) : null
   };
-  const target = tTargetSum > 0 ? targetProgress(tTargetSum, tMtdTargeted, throughDay, year, month) : null;
+  // Project POS on its day-window, then add the settled revshare lump flat (a
+  // month-end amount must not be run-rate-annualized). % of target includes it.
+  let target = tTargetSum > 0 ? targetProgress(tTargetSum, tMtdTargetedPos, throughDay, year, month) : null;
+  if (target && tRevTargeted > 0) {
+    const mtd = round2(target.mtdNett + tRevTargeted);
+    const projectedNett = round2(target.projectedNett + tRevTargeted);
+    target = {
+      ...target, mtdNett: mtd, projectedNett,
+      pctOfTarget: round2((mtd / target.target) * 100),
+      projectedPct: round2((projectedNett / target.target) * 100),
+      onTrack: projectedNett >= target.target
+    };
+  }
   // Annual roll-up only makes sense for the current year (it's a YTD + run-rate
   // projection). Browsing a past year → no annual card, not stale current-year.
   const annual = year === Number(todayIso.slice(0, 4)) ? annualProjectionForBranches(ids, todayIso) : null;
-  return { year, month, throughDay, isCurrentMonth, branchCount: brows.length, total, target, targetedBranchCount: targetedCount, annual, branches: rows };
+  return { year, month, throughDay, isCurrentMonth, branchCount: brows.length, total, revshareIncome: round2(tRev), target, targetedBranchCount: targetedCount, annual, branches: rows };
 }
 
 // Ordered company branches (id + name), sorted by display order then name.

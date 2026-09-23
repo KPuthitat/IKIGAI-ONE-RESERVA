@@ -312,7 +312,8 @@ export function salesaCompanyFlex(ov: CompanyOverview, meta: CompanyCardMeta): F
     momLine,
     kv("จำนวนบิลรวม", `${intTh(t.bills)} บิล`, { size: "xs" }),
     kv("ลูกค้ารวม", `${intTh(t.pax)} คน`, { size: "xs" }),
-    ...(ov.isCurrentMonth && t.todayNett != null ? [kv("ยอดขายวันนี้ (รวมสาขา)", baht(t.todayNett), { size: "xs" })] : [])
+    ...(ov.isCurrentMonth && t.todayNett != null ? [kv("ยอดขายวันนี้ (รวมสาขา)", baht(t.todayNett), { size: "xs" })] : []),
+    ...(ov.revshareIncome > 0 ? [{ type: "text", text: `รวมส่วนแบ่งยอดขายรายเดือน ${baht(ov.revshareIncome)} (นอก POS)`, size: "xxs", color: "#7c3aed", wrap: true }] : [])
   ];
 
   if (ov.target) {
