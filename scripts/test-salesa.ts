@@ -350,6 +350,20 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("monthly vs last year (2025-09 50000)", near(mo.lastYearPct ?? 0, ((27658 - 50000) / 50000) * 100));
   ok("monthly label full Thai", mo.label === "กันยายน 2569" && mo.ym === "2026-09");
 
+  // same-period MoM/YoY (owner 2026-09-23): prev-month days AFTER this month's
+  // last data day must be excluded (compare 1..throughDay, not full vs full).
+  const bidSP = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('sp','SP')").run().lastInsertRowid);
+  const upSP = (d: string, nett: number) => sdb.upsertDaily(bidSP, uid, {
+    date: d, dateEnd: d, merchant: "SP", nett, gross: nett, grossBeforeCharges: nett, discount: 0,
+    serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 1, pax: 1,
+    voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett, avgPax: 1, avgSalesPax: nett, payments: [], types: [], sources: []
+  });
+  upSP("2026-09-10", 10000);   // this month's last data day = 10
+  upSP("2026-08-05", 8000);    // Aug 1..10 = 8000
+  upSP("2026-08-20", 99999);   // Aug day 20 — AFTER Sept's day 10, must be excluded
+  const moSP = analytics.monthlyAnalytics(bidSP, 2026, 9);
+  ok("monthly MoM same-period: prev = Aug 1..10 (8000), excludes Aug 20", moSP.prevMonthNett === 8000 && near(moSP.prevMonthPct ?? 0, ((10000 - 8000) / 8000) * 100));
+
   const tp = analytics.targetProgress(60000, 30000, 15, 2026, 9)!;
   ok("target pctOfTarget 50%", near(tp.pctOfTarget, 50));
   ok("target projection 30000/15*30=60000", near(tp.projectedNett, 60000) && tp.onTrack === true);

@@ -1868,7 +1868,7 @@ function MonthlyPreview({ m, branchName, operator, color }: { m: MonthlyAnalytic
       {sepline}
       <PRow label="ยอดขายรวมทั้งเดือน" value={`${baht(m.totalNett)} บาท`} bold tone="green" />
       {m.revshareIncome > 0 && <div className="text-[10px] text-violet-600">รวมส่วนแบ่งยอดขายรายเดือน {baht(m.revshareIncome)} บาท (นอก POS)</div>}
-      <Cmp parts={[{ label: "เทียบเดือนก่อน", pct: m.prevMonthPct }, { label: "เทียบปีก่อน", pct: m.lastYearPct }]} />
+      <Cmp parts={[{ label: "เทียบเดือนก่อน (ช่วงเดียวกัน)", pct: m.prevMonthPct }, { label: "เทียบปีก่อน (ช่วงเดียวกัน)", pct: m.lastYearPct }]} />
       <PRow label="จำนวนบิลรวม" value={`${intTh(m.totalBills)} บิล`} />
       <PRow label="ลูกค้ารวม" value={`${intTh(m.totalPax)} คน`} />
       {m.avgPerDay != null && <PRow label="เฉลี่ยต่อวัน" value={`${baht(m.avgPerDay)} บาท`} />}
