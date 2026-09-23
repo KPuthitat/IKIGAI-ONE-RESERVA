@@ -44,7 +44,7 @@ export type MetricCompare = {
   value: number;
   kind: "baht" | "int";
   wowPct: number | null;    // vs same weekday last week (−7 days)
-  momPct: number | null;    // vs same day-of-month last month
+  momPct: number | null;    // vs same-period last month (cumulative MTD 1..this day)
 };
 
 export type DailyAnalytics = {
@@ -383,17 +383,17 @@ export type MonthlyAnalytics = {
   avgPerBill: number | null;
   bestDate: string | null;
   bestNett: number | null;
-  prevMonthNett: number | null;
-  prevMonthPct: number | null;
-  lastYearNett: number | null;
-  lastYearPct: number | null;
+  prevMonthNett: number | null;   // prev month, same 1..throughDay window
+  prevMonthPct: number | null;     // vs same-period prev month
+  lastYearNett: number | null;     // last year same month, same 1..throughDay window
+  lastYearPct: number | null;      // vs same-period last year
   topItems: MenuRank[];
   topCategories: MenuRank[];
 };
 
 const TH_MONTHS_LOCAL = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 
-/** Whole-month rollup + MoM/YoY (full month) + top menus (owner F). */
+/** Whole-month rollup + same-period MoM/YoY (1..throughDay both periods) + top menus (owner F). */
 export function monthlyAnalytics(branchId: number, year: number, month: number, topN = 5): MonthlyAnalytics {
   const mm = String(month).padStart(2, "0");
   const end = `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`;
@@ -407,11 +407,14 @@ export function monthlyAnalytics(branchId: number, year: number, month: number, 
   const totalPax = rows.reduce((s, d) => s + d.pax, 0);
   const totalDiscount = round2(rows.reduce((s, d) => s + d.discount, 0));
   const best = rows.reduce<DailyRow | null>((b, d) => (b == null || d.nett > b.nett ? d : b), null);
-  const full = daysInMonth(year, month);
+  // Same-period MoM/YoY (owner 2026-09-23): compare 1..last-day-with-data of this
+  // month against the SAME 1..throughDay window of the previous month / last year,
+  // so an in-progress month isn't judged against a full prior month.
+  const throughDay = rows.reduce((mx, d) => Math.max(mx, Number(d.sale_date.slice(8, 10))), 0);
   const pm = month === 1 ? 12 : month - 1;
   const pmY = month === 1 ? year - 1 : year;
-  const prevMonthNett = sumNett(branchId, pmY, pm, full);
-  const lastYearNett = sumNett(branchId, year - 1, month, full);
+  const prevMonthNett = sumNett(branchId, pmY, pm, throughDay);
+  const lastYearNett = sumNett(branchId, year - 1, month, throughDay);
   const items = menuRange(branchId, `${year}-${mm}-01`, end, "item").map((m, i) => ({ ...m, rank: i + 1 }));
   const cats = menuRange(branchId, `${year}-${mm}-01`, end, "category").map((m, i) => ({ ...m, rank: i + 1 }));
   const unitsByName = new Map(itemUnitsRange(branchId, `${year}-${mm}-01`, end).map((u) => [u.name, u.units]));
