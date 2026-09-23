@@ -220,6 +220,7 @@ export function salesaMonthlyFlex(m: MonthlyAnalytics, meta: DailyCardMeta): Fle
     { type: "text", text: `สรุปโดย: ${meta.operator} · รวม ${m.dayCount} วัน`, size: "xxs", color: "#999999", wrap: true },
     sep,
     kv("ยอดขายรวมทั้งเดือน", baht(m.totalNett), { bold: true, color: "#0f7a4f", size: "md" }),
+    ...(m.revshareIncome > 0 ? [{ type: "text", text: `รวมส่วนแบ่งยอดขายรายเดือน ${baht(m.revshareIncome)} (นอก POS)`, size: "xxs", color: "#7c3aed", wrap: true }] : []),
     yoy("เทียบเดือนก่อน", m.prevMonthNett, m.prevMonthPct),
     yoy("เทียบปีก่อน", m.lastYearNett, m.lastYearPct),
     kv("จำนวนบิลรวม", `${intTh(m.totalBills)} บิล`, { size: "xs" }),

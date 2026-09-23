@@ -113,7 +113,7 @@ type MergeSuggestion = { a: string; b: string; score: number; reason: "exact" | 
 type MergeGroup = { root: string; members: string[]; label: string };
 type MonthlyAnalytics = {
   year: number; month: number; ym: string; label: string; dayCount: number;
-  totalNett: number; totalBills: number; totalPax: number; totalDiscount: number;
+  totalNett: number; revshareIncome: number; totalBills: number; totalPax: number; totalDiscount: number;
   avgPerDay: number | null; avgPerBill: number | null; bestDate: string | null; bestNett: number | null;
   prevMonthNett: number | null; prevMonthPct: number | null; lastYearNett: number | null; lastYearPct: number | null;
   topItems: MenuRank[]; topCategories: MenuRank[];
@@ -217,6 +217,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [insightRange, setInsightRange] = useState<InsightRange | null>(null);
   const [monthTarget, setMonthTarget] = useState<MonthTarget | null>(null);
   const [annual, setAnnual] = useState<Annual | null>(null);
+  const [revshareIncome, setRevshareIncome] = useState(0);   // ส่วนแบ่งยอดขาย this month
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [pushDays, setPushDays] = useState(3);
   const [pushTarget, setPushTarget] = useState("");
@@ -281,7 +282,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     if (r.ok) {
       setDays(r.view.days); setHasLineGroup(r.hasLineGroup); setMonthCompare(r.monthCompare ?? null);
       setWeekdays(r.weekdays ?? []); setDiscount(r.discount ?? null); setChannels(r.channels ?? null);
-      setMonthTarget(r.monthTarget ?? null); setAnnual(r.annual ?? null); setMonthSentAt(r.monthSentAt ?? null); setInsights(r.insights ?? null);
+      setMonthTarget(r.monthTarget ?? null); setAnnual(r.annual ?? null); setRevshareIncome(r.revshareIncome ?? 0); setMonthSentAt(r.monthSentAt ?? null); setInsights(r.insights ?? null);
       setInsightRange(r.insightRange ?? null);
       if (r.cardColor) setCardColor(r.cardColor);
     }
@@ -676,11 +677,12 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           <div className="rounded-xl bg-slate-50 p-3 space-y-1.5">
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-[11px] text-slate-500">ยอดสะสมต้นเดือน (ถึงวันที่ {monthCompare.throughDay})</span>
-              <span className="text-lg font-bold text-emerald-700">{baht(monthCompare.mtdNett)}</span>
+              <span className="text-lg font-bold text-emerald-700">{baht(monthCompare.mtdNett + revshareIncome)}</span>
             </div>
+            {revshareIncome > 0 && <div className="text-[10px] text-violet-600 -mt-1">รวมส่วนแบ่งยอดขายรายเดือน {baht(revshareIncome)} (นอก POS)</div>}
             <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
-              <span>เทียบเดือนก่อน (ช่วงเดียวกัน) <PctChip pct={monthCompare.prevMonthPct} /></span>
-              <span>เทียบปีก่อน (เดือนเดียวกัน) <PctChip pct={monthCompare.lastYearPct} /></span>
+              <span>เทียบเดือนก่อน (ช่วงเดียวกัน · POS) <PctChip pct={monthCompare.prevMonthPct} /></span>
+              <span>เทียบปีก่อน (เดือนเดียวกัน · POS) <PctChip pct={monthCompare.lastYearPct} /></span>
             </div>
 
             {/* Monthly target progress (owner C) */}
@@ -1865,6 +1867,7 @@ function MonthlyPreview({ m, branchName, operator, color }: { m: MonthlyAnalytic
       <div className="text-[11px] text-slate-400">สรุปโดย: {operator} · รวม {m.dayCount} วัน</div>
       {sepline}
       <PRow label="ยอดขายรวมทั้งเดือน" value={`${baht(m.totalNett)} บาท`} bold tone="green" />
+      {m.revshareIncome > 0 && <div className="text-[10px] text-violet-600">รวมส่วนแบ่งยอดขายรายเดือน {baht(m.revshareIncome)} บาท (นอก POS)</div>}
       <Cmp parts={[{ label: "เทียบเดือนก่อน", pct: m.prevMonthPct }, { label: "เทียบปีก่อน", pct: m.lastYearPct }]} />
       <PRow label="จำนวนบิลรวม" value={`${intTh(m.totalBills)} บิล`} />
       <PRow label="ลูกค้ารวม" value={`${intTh(m.totalPax)} คน`} />
