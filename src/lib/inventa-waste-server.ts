@@ -7,7 +7,11 @@ import type { WasteReason, WasteRow, WasteSummary, WasteReasonTotal, WasteItemTo
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export type CreateWasteInput = {
-  itemId: number;
+  itemId?: number | null;      // a stock item → snapshot its name/unit/cost
+  // Ad-hoc item not in the stock list (owner 2026-09-23) — used when itemId is null.
+  itemName?: string;
+  unit?: string | null;
+  unitCost?: number;
   qty: number;
   reason: WasteReason;
   note?: string | null;
@@ -15,21 +19,32 @@ export type CreateWasteInput = {
   photoPath?: string | null;   // stored filename from saveWastePhoto, or null
 };
 
-/** Record a waste event. Snapshots the item's name/unit/cost so the entry keeps
- *  its value even if the item changes later. Returns the new row id, or null if
- *  the item doesn't exist for this branch. */
+/** Record a waste event. For a stock item (itemId) it snapshots the item's
+ *  name/unit/cost; for an ad-hoc item (no itemId) it uses the supplied
+ *  name/unit/cost and stores item_id = NULL. Returns the new row id, or null
+ *  when the stock item doesn't exist for this branch, or an ad-hoc name is blank. */
 export function createWaste(branchId: number | null, input: CreateWasteInput, userId: number): number | null {
   const db = getDb();
-  const item = db.prepare(
-    "SELECT name, unit, unit_cost FROM inventa_items WHERE id = ? AND (branch_id IS ? OR branch_id = ?)"
-  ).get(input.itemId, branchId, branchId) as { name: string; unit: string | null; unit_cost: number } | undefined;
-  if (!item) return null;
+  let itemId: number | null;
+  let name: string, unit: string | null, unitCost: number;
+
+  if (input.itemId != null) {
+    const item = db.prepare(
+      "SELECT name, unit, unit_cost FROM inventa_items WHERE id = ? AND (branch_id IS ? OR branch_id = ?)"
+    ).get(input.itemId, branchId, branchId) as { name: string; unit: string | null; unit_cost: number } | undefined;
+    if (!item) return null;
+    itemId = input.itemId; name = item.name; unit = item.unit; unitCost = item.unit_cost ?? 0;
+  } else {
+    name = (input.itemName ?? "").trim();
+    if (!name) return null;
+    itemId = null; unit = input.unit?.trim() || null; unitCost = Math.max(0, input.unitCost ?? 0);
+  }
 
   const info = db.prepare(`
     INSERT INTO inventa_waste (branch_id, item_id, item_name, unit, unit_cost, qty, reason, note, photo_path, wasted_on, logged_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    branchId, input.itemId, item.name, item.unit, item.unit_cost ?? 0,
+    branchId, itemId, name, unit, unitCost,
     input.qty, input.reason, input.note?.trim() || null, input.photoPath ?? null, input.wastedOn, userId
   );
   return Number(info.lastInsertRowid);

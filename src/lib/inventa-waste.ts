@@ -22,6 +22,13 @@ export const WASTE_REASONS: Array<{ code: WasteReason; th: string; en: string }>
 
 const REASON_BY_CODE = new Map(WASTE_REASONS.map((r) => [r.code, r]));
 
+// Unit picker for an ad-hoc item that isn't in the stock list (owner 2026-09-23).
+// Common Thai units; the form also allows a typed-in unit ("อื่นๆ").
+export const WASTE_UNITS: string[] = [
+  "ชิ้น", "อัน", "ใบ", "กล่อง", "แพ็ค", "ห่อ", "ถุง", "ขวด", "กระป๋อง", "ซอง",
+  "หลอด", "ชุด", "คู่", "โหล", "แผง", "ลัง", "กก.", "กรัม", "ขีด", "ลิตร", "มล."
+];
+
 export function wasteReasonLabel(code: string, lang: "th" | "en"): string {
   const r = REASON_BY_CODE.get(code as WasteReason);
   if (!r) return code;

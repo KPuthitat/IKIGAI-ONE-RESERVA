@@ -71,6 +71,17 @@ process.env.DATABASE_PATH = TMP;
   const withPhoto = listWaste(A, 100).find((x) => x.id === w4);
   ok("photoUrl points at the serving route when a photo is attached", withPhoto?.photoUrl === `/api/inventa/waste/photo/${w4}`);
 
+  // Ad-hoc item not in the stock list (owner 2026-09-23): item_id NULL, uses the
+  // supplied name/unit/cost, value = qty × cost.
+  const w5 = createWaste(A, { itemName: "  ผ้าเช็ดมือ  ", unit: "ผืน", unitCost: 12.5, qty: 4, reason: "damaged", wastedOn: "2026-09-22" }, uid);
+  ok("adhoc: creates a row (id returned)", w5 != null);
+  ok("adhoc: item_id NULL, name trimmed, unit + value from input", (() => {
+    const r = listWaste(A, 100).find((x) => x.id === w5);
+    return !!r && r.item_id === null && r.item_name === "ผ้าเช็ดมือ" && r.unit === "ผืน" && r.value === 50; // 4 × 12.5
+  })());
+  ok("adhoc: blank name → null (rejected)", createWaste(A, { itemName: "   ", unit: "อัน", unitCost: 5, qty: 1, reason: "other", wastedOn: "2026-09-22" }, uid) === null);
+  ok("adhoc: missing itemId AND name → null", createWaste(A, { qty: 1, reason: "other", wastedOn: "2026-09-22" }, uid) === null);
+
   console.log(`\ninventa-waste test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);
