@@ -12,7 +12,7 @@ process.env.DATABASE_PATH = TMP;
 
 (async () => {
   const { getDb } = await import("../src/lib/db");
-  const { linkBill, unlinkBill, listLinkedBills, customerBillStats, findReceiptByReceiptId } = await import("../src/lib/insigna");
+  const { linkBill, unlinkBill, listLinkedBills, customerBillStats, findReceiptByReceiptId, listCustomerRollups } = await import("../src/lib/insigna");
 
   // The canonical "link by scanned id" flow (mirrors the bills API route):
   // resolve the id → (the route also guards branch access here) → linkBill.
@@ -125,14 +125,37 @@ process.env.DATABASE_PATH = TMP;
     const s = customerBillStats("custfold");
     return !!s.topItems.find((t) => t.name === "น้ำเปล่า" && t.qty === 1);
   })());
-  ok("cross-branch: a raw spelling at a branch without the alias folds under the group label", (() => {
+  ok("per-branch fold: a branch's own name isn't folded into another branch's group", (() => {
     const B = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('b','HYPO')").run().lastInsertRowid);
     rec.run(B, "2026-08-03", "3001", 12, "T1", 100, 0, 100, "cash", "FOLD-B1");
     item.run(B, "2026-08-03", "3001", "ตับหวาน", 4); // branch B has NO alias for this name
     linkBill({ customer_hash: "custfold", branch_id: B, sale_date: "2026-08-03", bill_no: "3001" });
-    const g = customerBillStats("custfold").topItems.find((t) => t.name === "ตับหวาน / ตับหวานอัลตราสมูธ");
-    return !!g && g.qty === 9; // A: 2 + 3, B: 4
+    const items = customerBillStats("custfold").topItems;
+    // A's confirmed group stays 5; B's un-aliased "ตับหวาน" stays its own (4) —
+    // not conflated with A's group (they might be different dishes).
+    const grp = items.find((t) => t.name === "ตับหวาน / ตับหวานอัลตราสมูธ");
+    const plain = items.find((t) => t.name === "ตับหวาน");
+    return !!grp && grp.qty === 5 && !!plain && plain.qty === 4;
   })());
+
+  // ── customer directory rollups (owner 2026-09-24) ──
+  const bySpend = listCustomerRollups({ sort: "spend" });
+  ok("rollups: sort=spend puts the biggest spender first", bySpend[0].customer_hash === "cust1" && bySpend[0].totalNett === 900);
+  ok("rollups: every linked customer appears, none without bills", (() => {
+    const hashes = new Set(bySpend.map((r) => r.customer_hash));
+    return hashes.has("cust1") && hashes.has("cust2") && hashes.has("cust3") && hashes.has("custfold") && !hashes.has("nobody");
+  })());
+  ok("rollups: a row matches customerBillStats", (() => {
+    const row = bySpend.find((r) => r.customer_hash === "custfold");
+    const s = customerBillStats("custfold");
+    // totalNett tolerance: the directory rounds SUM() in SQL, the detail sums in JS.
+    return !!row && Math.abs(row.totalNett - s.totalNett) < 0.01 && row.billCount === s.billCount && row.distinctDays === s.distinctDays;
+  })());
+  ok("rollups: sort=visits puts the most frequent first", (() => {
+    const byVisits = listCustomerRollups({ sort: "visits" });
+    return byVisits[0].customer_hash === "custfold" && byVisits[0].distinctDays === 3;
+  })());
+  ok("rollups: limit caps the row count", listCustomerRollups({ limit: 1 }).length === 1);
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();

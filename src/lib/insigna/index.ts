@@ -99,11 +99,14 @@ export {
   unlinkBill,
   listLinkedBills,
   customerBillStats,
+  listCustomerRollups,
   findReceiptByReceiptId,
   type LinkBillArgs,
   type LinkResult,
   type LinkedBill,
   type CustomerBillStats,
+  type CustomerRollup,
+  type CustomerRollupSort,
   type ReceiptRef
 } from "./bills";
 

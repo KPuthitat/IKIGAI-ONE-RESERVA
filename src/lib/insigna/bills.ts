@@ -153,19 +153,17 @@ export function customerBillStats(customer_hash: string, topN = 5): CustomerBill
     GROUP BY i.branch_id, i.name
   `).all(customer_hash) as Array<{ branch_id: number; name: string; qty: number }>;
 
-  // Merge the alias maps of every branch this customer visited into ONE
-  // name→label map, then fold regardless of which branch a bill was at. This
-  // still groups a raw spelling used at branch B under a group label confirmed
-  // at branch A (a customer who visits both shouldn't see the dish split).
-  const merged = new Map<string, string>();
-  for (const branchId of new Set(rawItems.map((r) => r.branch_id))) {
-    for (const [name, label] of aliasLabelMap(branchId)) {
-      if (!merged.has(name)) merged.set(name, label);
-    }
-  }
+  // Fold each item by ITS OWN branch's confirmed alias map, then combine by
+  // the resulting label. Per-branch (not a merged cross-branch map) on purpose:
+  // it's deterministic, and it won't conflate a plain dish at one branch with a
+  // same-named dish that another branch has grouped into something else. When
+  // both branches confirm the same group, their labels match and still combine.
+  const aliasByBranch = new Map<number, Map<string, string>>();
   const byLabel = new Map<string, number>();
   for (const r of rawItems) {
-    const label = merged.get(r.name) ?? r.name;
+    let m = aliasByBranch.get(r.branch_id);
+    if (!m) { m = aliasLabelMap(r.branch_id); aliasByBranch.set(r.branch_id, m); }
+    const label = m.get(r.name) ?? r.name;
     byLabel.set(label, (byLabel.get(label) ?? 0) + Number(r.qty));
   }
   const topItems = [...byLabel.entries()]
@@ -183,4 +181,46 @@ export function customerBillStats(customer_hash: string, topN = 5): CustomerBill
     peakHour,
     topItems
   };
+}
+
+export type CustomerRollup = {
+  customer_hash: string;
+  billCount: number;
+  totalNett: number;
+  avgNett: number;
+  distinctDays: number;      // separate days visited (frequency)
+  firstVisit: string | null;
+  lastVisit: string | null;
+};
+
+export type CustomerRollupSort = "spend" | "visits" | "recent";
+
+/** Directory of every customer with linked bills, rolled up for the VIP list
+ *  (spend / frequency / recency). Ranked by `sort` (default spend). No PII —
+ *  each row is just the pseudonym + its POS aggregates. */
+export function listCustomerRollups(
+  opts: { sort?: CustomerRollupSort; limit?: number } = {}
+): CustomerRollup[] {
+  const limit = Math.min(1000, Math.max(1, opts.limit ?? 200));
+  // Whitelisted ordering (never interpolate user input): every branch has a
+  // spend tiebreak so ties stay deterministic.
+  const orderBy =
+    opts.sort === "visits" ? "distinctDays DESC, totalNett DESC" :
+    opts.sort === "recent" ? "lastVisit DESC, totalNett DESC" :
+    "totalNett DESC, distinctDays DESC";
+  return getDb().prepare(`
+    SELECT l.customer_hash                       AS customer_hash,
+           COUNT(*)                              AS billCount,
+           ROUND(SUM(r.nett), 2)                 AS totalNett,
+           ROUND(AVG(r.nett), 2)                 AS avgNett,
+           COUNT(DISTINCT r.sale_date)           AS distinctDays,
+           MIN(r.sale_date)                      AS firstVisit,
+           MAX(r.sale_date)                      AS lastVisit
+    FROM insigna_customer_bills l
+    JOIN salesa_receipts r
+      ON r.branch_id = l.branch_id AND r.sale_date = l.sale_date AND r.bill_no = l.bill_no
+    GROUP BY l.customer_hash
+    ORDER BY ${orderBy}
+    LIMIT ?
+  `).all(limit) as CustomerRollup[];
 }
