@@ -7,6 +7,7 @@
 // import can't give on its own. No PII: everything hangs off customer_hash.
 
 import { getDb } from "../db";
+import { aliasLabelMap } from "../salesa-db";
 
 export type LinkBillArgs = {
   customer_hash: string;
@@ -141,16 +142,36 @@ export function customerBillStats(customer_hash: string, topN = 5): CustomerBill
     if (n > peakN || (n === peakN && (peakHour === null || h < peakHour))) { peakN = n; peakHour = h; }
   }
 
-  const items = db.prepare(`
-    SELECT i.name, SUM(i.qty) AS qty
+  // Keep branch_id so renamed dishes fold via that branch's alias map (Phase 2):
+  // "ตับหวาน" and "ตับหวานอัลตราสมูธ" count as one favourite.
+  const rawItems = db.prepare(`
+    SELECT i.branch_id AS branch_id, i.name AS name, SUM(i.qty) AS qty
     FROM insigna_customer_bills l
     JOIN salesa_receipt_items i
       ON i.branch_id = l.branch_id AND i.sale_date = l.sale_date AND i.bill_no = l.bill_no
     WHERE l.customer_hash = ?
-    GROUP BY i.name
-    ORDER BY qty DESC, i.name
-    LIMIT ?
-  `).all(customer_hash, topN) as Array<{ name: string; qty: number }>;
+    GROUP BY i.branch_id, i.name
+  `).all(customer_hash) as Array<{ branch_id: number; name: string; qty: number }>;
+
+  // Merge the alias maps of every branch this customer visited into ONE
+  // name→label map, then fold regardless of which branch a bill was at. This
+  // still groups a raw spelling used at branch B under a group label confirmed
+  // at branch A (a customer who visits both shouldn't see the dish split).
+  const merged = new Map<string, string>();
+  for (const branchId of new Set(rawItems.map((r) => r.branch_id))) {
+    for (const [name, label] of aliasLabelMap(branchId)) {
+      if (!merged.has(name)) merged.set(name, label);
+    }
+  }
+  const byLabel = new Map<string, number>();
+  for (const r of rawItems) {
+    const label = merged.get(r.name) ?? r.name;
+    byLabel.set(label, (byLabel.get(label) ?? 0) + Number(r.qty));
+  }
+  const topItems = [...byLabel.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "th"))
+    .slice(0, topN)
+    .map(([name, qty]) => ({ name, qty }));
 
   return {
     billCount: bills.length,
@@ -160,6 +181,6 @@ export function customerBillStats(customer_hash: string, topN = 5): CustomerBill
     lastVisit: last,
     distinctDays: days.size,
     peakHour,
-    topItems: items.map((r) => ({ name: r.name, qty: Number(r.qty) }))
+    topItems
   };
 }

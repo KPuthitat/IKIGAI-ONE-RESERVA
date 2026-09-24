@@ -105,6 +105,35 @@ process.env.DATABASE_PATH = TMP;
     return l[0].receipt_id === "FREE_9z9z";
   })());
 
+  // ── favourite folds renamed dishes via the branch alias map (Phase 2) ──
+  const ROOT = "tabwan";
+  const alias = db.prepare("INSERT INTO salesa_menu_alias (branch_id, name, root) VALUES (?,?,?)");
+  alias.run(A, "ตับหวาน", ROOT);
+  alias.run(A, "ตับหวานอัลตราสมูธ", ROOT);
+  rec.run(A, "2026-08-01", "2001", 12, "T1", 100, 0, 100, "cash", "FOLD-1");
+  rec.run(A, "2026-08-02", "2002", 12, "T2", 100, 0, 100, "cash", "FOLD-2");
+  item.run(A, "2026-08-01", "2001", "ตับหวาน", 2);
+  item.run(A, "2026-08-02", "2002", "ตับหวานอัลตราสมูธ", 3);
+  linkBill({ customer_hash: "custfold", branch_id: A, sale_date: "2026-08-01", bill_no: "2001" });
+  linkBill({ customer_hash: "custfold", branch_id: A, sale_date: "2026-08-02", bill_no: "2002" });
+  ok("favourite folds two spellings of one dish into a group (qty summed)", (() => {
+    const s = customerBillStats("custfold");
+    return s.topItems.length === 1 && s.topItems[0].qty === 5 && s.topItems[0].name === "ตับหวาน / ตับหวานอัลตราสมูธ";
+  })());
+  ok("un-aliased dishes still show under their own name", (() => {
+    item.run(A, "2026-08-01", "2001", "น้ำเปล่า", 1);
+    const s = customerBillStats("custfold");
+    return !!s.topItems.find((t) => t.name === "น้ำเปล่า" && t.qty === 1);
+  })());
+  ok("cross-branch: a raw spelling at a branch without the alias folds under the group label", (() => {
+    const B = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('b','HYPO')").run().lastInsertRowid);
+    rec.run(B, "2026-08-03", "3001", 12, "T1", 100, 0, 100, "cash", "FOLD-B1");
+    item.run(B, "2026-08-03", "3001", "ตับหวาน", 4); // branch B has NO alias for this name
+    linkBill({ customer_hash: "custfold", branch_id: B, sale_date: "2026-08-03", bill_no: "3001" });
+    const g = customerBillStats("custfold").topItems.find((t) => t.name === "ตับหวาน / ตับหวานอัลตราสมูธ");
+    return !!g && g.qty === 9; // A: 2 + 3, B: 4
+  })());
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
