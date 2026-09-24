@@ -516,7 +516,7 @@ export default function HookFab({
                 voucher by camera instead of typing the code. */}
             {canScan && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 space-y-2">
-                <div className="text-sm font-bold text-slate-800">สแกนรับรางวัลลูกค้า</div>
+                <div className="text-sm font-bold text-slate-800">สแกนคิวอาร์</div>
                 <div className="text-[11px] text-slate-500">สแกน QR รางวัลจากหน้าจอลูกค้า เพื่อใช้สิทธิ์ส่วนลด</div>
                 <button type="button" onClick={() => { setClaimMsg(null); setScanning(true); }}
                   className="btn-primary !py-1.5 !px-3 text-sm w-full">เปิดกล้องสแกน QR</button>
