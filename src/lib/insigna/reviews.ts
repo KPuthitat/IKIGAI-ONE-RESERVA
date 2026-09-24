@@ -426,3 +426,61 @@ export function listReviews(opts: {
      ORDER BY created_at DESC LIMIT ?`
   ).all(...params, limit) as ReviewRow[];
 }
+
+// ── customer-facing "my rewards" (owner 2026-09-24) ──────────────
+
+export type CustomerRewardStatus =
+  | "claimed"      // already redeemed
+  | "usable"       // ready to use on a return visit
+  | "not_yet"      // issued today — can't use on the review day
+  | "superseded";  // another reward at this branch was already redeemed (1/branch)
+
+export type CustomerReward = {
+  code: string;
+  branch_id: number | null;
+  branch_name: string | null;
+  reward_text: string | null;   // the CURRENT configured reward text (not stored per code) — shown only on active cards
+  created_at: string;
+  claimed: boolean;
+  claimed_at: string | null;
+  status: CustomerRewardStatus;
+};
+
+/** Every reward this identified customer holds, newest first, with a display
+ *  status that MIRRORS claimReward's redemption rules (not-same-day, 1 per
+ *  branch). Powers the customer-facing "สิทธิ์ของฉัน" page. Keep the precedence
+ *  below in lockstep with claimReward: a code is dead (superseded) if this
+ *  branch already had one redeemed, even if it was only issued today. */
+export function listCustomerRewards(customer_hash: string): CustomerReward[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT rr.reward_code AS code, rr.branch_id AS branch_id, b.name AS branch_name,
+           rr.created_at AS created_at, rr.reward_claimed AS claimed, rr.reward_claimed_at AS claimed_at
+    FROM insigna_review_requests rr
+    LEFT JOIN branches b ON b.id = rr.branch_id
+    WHERE rr.customer_hash = ? AND rr.reward_code IS NOT NULL
+    ORDER BY rr.created_at DESC
+  `).all(customer_hash) as Array<{
+    code: string; branch_id: number | null; branch_name: string | null;
+    created_at: string; claimed: number; claimed_at: string | null;
+  }>;
+
+  const rewardText = getReviewConfig().reward_text;
+  const today = todayBkk();
+  // Branches where the customer already redeemed a reward — the per-branch cap
+  // means any other code there is dead (superseded), regardless of its date.
+  const claimedBranches = new Set(rows.filter((r) => r.claimed).map((r) => r.branch_id));
+
+  return rows.map((r) => {
+    let status: CustomerRewardStatus;
+    if (r.claimed) status = "claimed";
+    else if (claimedBranches.has(r.branch_id)) status = "superseded"; // dead even if issued today
+    else if (bkkDateIso(r.created_at) === today) status = "not_yet";
+    else status = "usable";
+    return {
+      code: r.code, branch_id: r.branch_id, branch_name: r.branch_name,
+      reward_text: rewardText, created_at: r.created_at,
+      claimed: !!r.claimed, claimed_at: r.claimed_at, status
+    };
+  });
+}
