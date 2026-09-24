@@ -18,7 +18,7 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
     getReviewConfig, saveReviewConfig, setBranchGoogleUrl, getBranchReviewInfo,
     submitReview, trackGoogleClick, claimReward, reviewSummary, listReviews,
     createReviewInvite, resolveReviewInvite, purgeExpiredReviewInvites, hashLineUserId,
-    customerRewardCountAtBranch
+    customerRewardCountAtBranch, listCustomerRewards
   } = await import("../src/lib/insigna");
   const db = getDb();
 
@@ -244,6 +244,10 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   ok("reviewRewardFlex is a flex message", (reward as { type: string }).type === "flex");
   ok("reviewRewardFlex shows the code + reward text", rewardStr.includes("IK-ABCDEF") && rewardStr.includes("เครื่องดื่มฟรี 1 แก้ว"));
   ok("reviewRewardFlex altText carries the code (saved in LINE)", (reward as { altText: string }).altText.includes("IK-ABCDEF"));
+  ok("reviewRewardFlex adds a 'my rewards' button when a url is given", (() => {
+    const withBtn = reviewRewardFlex({ branchName: "NAMA", code: "IK-ABCDEF", rewardText: "x", lang: "th", myRewardsUrl: "https://ikigaimedihealth.com/rewards?t=TOK9" });
+    return JSON.stringify(withBtn).includes("https://ikigaimedihealth.com/rewards?t=TOK9");
+  })());
 
   // gate: the reward push fires only when this is the customer's ONLY code at
   // the branch (count === 1) — a resubmit/repeat visit is skipped.
@@ -253,6 +257,23 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   submitReview({ branch_id: A, rating: 5, customer_hash: gateHash });
   ok("reward-push gate: count = 2 after a resubmit (push would be skipped)", customerRewardCountAtBranch(gateHash, A) === 2);
   ok("reward-push gate: count is per-branch (branch B still 0)", customerRewardCountAtBranch(gateHash, B) === 0);
+
+  // ── customer "สิทธิ์ของฉัน" (owner 2026-09-24) ──
+  const rewHash = hashLineUserId("Urewards");
+  const rw1 = submitReview({ branch_id: A, rating: 5, customer_hash: rewHash }); backdate(rw1.token);
+  claimReward(rw1.reward_code!);                                                    // claimed at A
+  const rw2 = submitReview({ branch_id: A, rating: 5, customer_hash: rewHash }); backdate(rw2.token); // superseded (A already claimed)
+  const rw3 = submitReview({ branch_id: B, rating: 5, customer_hash: rewHash }); backdate(rw3.token); // usable (B, no claim)
+  const rw4 = submitReview({ branch_id: A, rating: 5, customer_hash: rewHash });    // today AT A (already claimed) → superseded, NOT not_yet
+  const rw5 = submitReview({ branch_id: B, rating: 5, customer_hash: rewHash });    // today at B (no claim) → not_yet
+  const mine = listCustomerRewards(rewHash);
+  const byCode = (c: string) => mine.find((m) => m.code === c);
+  ok("listCustomerRewards: claimed code → 'claimed'", byCode(rw1.reward_code!)?.status === "claimed");
+  ok("listCustomerRewards: another unclaimed at the same branch → 'superseded'", byCode(rw2.reward_code!)?.status === "superseded");
+  ok("listCustomerRewards: unclaimed at a branch with no claim → 'usable'", byCode(rw3.reward_code!)?.status === "usable");
+  ok("listCustomerRewards: today's code at an already-redeemed branch → 'superseded' (not 'not_yet')", byCode(rw4.reward_code!)?.status === "superseded");
+  ok("listCustomerRewards: today's code at a branch with no claim → 'not_yet'", byCode(rw5.reward_code!)?.status === "not_yet");
+  ok("listCustomerRewards: all 5 for the customer", mine.length === 5);
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();

@@ -138,7 +138,8 @@ export async function POST(req: Request) {
       branchId: branch.branch_id,
       lineUserId: inviteLineUserId,
       code: result.reward_code,
-      rewardText: result.reward_text
+      rewardText: result.reward_text,
+      myRewardsToken: parsed.data.t ?? null
     }).catch((e) => console.warn("[insigna-reviews] reward push failed:", e));
   }
 

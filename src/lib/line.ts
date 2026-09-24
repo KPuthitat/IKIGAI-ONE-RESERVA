@@ -1697,6 +1697,7 @@ export function reviewRewardFlex(args: {
   rewardText: string;
   headerColor?: string | null;
   lang: "th" | "en";
+  myRewardsUrl?: string | null;   // link to the customer's "สิทธิ์ของฉัน" page
 }): LineFlexMessage {
   const th = args.lang !== "en";
   const headerColor = args.headerColor || COLOR_INK_700;
@@ -1705,7 +1706,7 @@ export function reviewRewardFlex(args: {
     ? "แสดงโค้ดนี้กับพนักงานในครั้งถัดไปที่มาใช้บริการ · ใช้ในวันนี้ไม่ได้ · 1 สิทธิ์ต่อสาขา"
     : "Show this to staff on your next visit · not valid today · one per branch";
 
-  const bubble = {
+  const bubble: Record<string, unknown> = {
     type: "bubble",
     size: "giga",
     header: {
@@ -1742,6 +1743,19 @@ export function reviewRewardFlex(args: {
     }
   };
 
+  if (args.myRewardsUrl) {
+    bubble.footer = {
+      type: "box", layout: "vertical", paddingAll: "16px", paddingTop: "0px",
+      contents: [
+        {
+          type: "button", style: "secondary", height: "sm",
+          action: { type: "uri", label: th ? "ดูสิทธิ์ทั้งหมดของฉัน" : "My rewards", uri: args.myRewardsUrl }
+        }
+      ]
+    };
+    (bubble.styles as Record<string, unknown>).footer = { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER };
+  }
+
   return {
     type: "flex",
     altText: th ? `โค้ดแลกส่วนลดของคุณ: ${args.code}` : `Your reward code: ${args.code}`,
@@ -1751,9 +1765,11 @@ export function reviewRewardFlex(args: {
 
 /** Push the reward card into the customer's OA chat after an identified
  *  submit. Fire-and-forget; skips silently when the branch/token/id is
- *  missing so a review is never failed over a push. */
+ *  missing so a review is never failed over a push. When `myRewardsToken` is
+ *  given, the card links to the customer's "สิทธิ์ของฉัน" page. */
 export async function notifyReviewReward(args: {
-  branchId: number; lineUserId: string; code: string; rewardText: string; lang?: "th" | "en";
+  branchId: number; lineUserId: string; code: string; rewardText: string;
+  lang?: "th" | "en"; myRewardsToken?: string | null;
 }): Promise<{ ok: boolean; skipped?: string }> {
   if (!args.lineUserId || !args.code) return { ok: false, skipped: "missing_args" };
   const branch = getDb().prepare("SELECT * FROM branches WHERE id = ?").get(args.branchId) as Branch | undefined;
@@ -1761,12 +1777,16 @@ export async function notifyReviewReward(args: {
   const token = resolveBranchToken(branch);
   if (!token) return { ok: false, skipped: "no_token" };
 
+  const myRewardsUrl = args.myRewardsToken
+    ? `${getPublicBaseUrl()}/rewards?t=${encodeURIComponent(args.myRewardsToken)}`
+    : null;
   const flex = reviewRewardFlex({
     branchName: branch.name,
     code: args.code,
     rewardText: args.rewardText,
     headerColor: branch.brand_color,
-    lang: args.lang ?? "th"
+    lang: args.lang ?? "th",
+    myRewardsUrl
   });
   const res = await sendLinePush(token, { to: args.lineUserId, messages: [flex] });
   return { ok: res.ok, skipped: res.ok ? undefined : "push_failed" };
