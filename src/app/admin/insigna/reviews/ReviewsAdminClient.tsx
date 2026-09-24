@@ -55,7 +55,7 @@ export default function ReviewsAdminClient({
     const label = r.result === "claimed" ? "✓ ใช้สิทธิ์สำเร็จ"
       : r.result === "already" ? "โค้ดนี้ถูกใช้ไปแล้ว"
       : r.result === "same_day" ? "ใช้ในวันที่ทำแบบประเมินไม่ได้ · ใช้ได้ในครั้งถัดไปที่มาใช้บริการ"
-      : r.result === "already_redeemed" ? "ลูกค้าท่านนี้ใช้สิทธิ์ไปแล้ว (1 สิทธิ์ต่อท่าน)"
+      : r.result === "already_redeemed" ? "ลูกค้าท่านนี้ใช้สิทธิ์ที่สาขานี้ไปแล้ว (1 สิทธิ์ต่อสาขา)"
       : "ไม่พบโค้ดนี้";
     setClaimMsg(label);
     if (r.result === "claimed") setClaimCode("");

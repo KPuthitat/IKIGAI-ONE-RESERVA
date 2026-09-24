@@ -172,7 +172,7 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   ok("same LINE id → same hash (recognises a returning customer)", hashLineUserId("Uabc123") === idHash);
   ok("hash reveals no PII (not the raw id)", !idHash.includes("Uabc123"));
 
-  // ── reward rules (owner 2026-09-24): not same-day, one per customer ──
+  // ── reward rules (owner 2026-09-24): not same-day, one per customer PER BRANCH ──
   const backdate = (token: string) =>
     db.prepare("UPDATE insigna_review_requests SET created_at = ? WHERE token = ?").run(PAST_TS, token);
 
@@ -182,18 +182,25 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   backdate(sameDay.token);
   ok("claim on a later visit → 'claimed'", claimReward(sameDay.reward_code!) === "claimed");
 
-  // one reward per identified (LINE-linked) customer, ever.
+  // one reward per identified (LINE-linked) customer, per branch.
   const onceHash = hashLineUserId("Uonce");
   const r1 = submitReview({ branch_id: A, rating: 5, customer_hash: onceHash });
   backdate(r1.token);
-  ok("first reward for a customer → 'claimed'", claimReward(r1.reward_code!) === "claimed");
-  const r2 = submitReview({ branch_id: A, rating: 5, customer_hash: onceHash }); // same person, later review
+  ok("first reward for a customer at branch A → 'claimed'", claimReward(r1.reward_code!) === "claimed");
+  const r2 = submitReview({ branch_id: A, rating: 5, customer_hash: onceHash }); // same person, same branch, later review
   backdate(r2.token);
-  ok("second reward for the SAME customer → 'already_redeemed'", claimReward(r2.reward_code!) === "already_redeemed");
+  ok("second reward SAME customer SAME branch → 'already_redeemed'", claimReward(r2.reward_code!) === "already_redeemed");
   ok("the second code stays unclaimed after the refusal", (() => {
     const row = db.prepare("SELECT reward_claimed FROM insigna_review_requests WHERE token = ?").get(r2.token) as { reward_claimed: number };
     return row.reward_claimed === 0;
   })());
+  // per-BRANCH: the same customer may still claim once at the OTHER branch.
+  const rB = submitReview({ branch_id: B, rating: 5, customer_hash: onceHash });
+  backdate(rB.token);
+  ok("same customer at the OTHER branch → 'claimed' (cap is per-branch)", claimReward(rB.reward_code!) === "claimed");
+  const rB2 = submitReview({ branch_id: B, rating: 5, customer_hash: onceHash });
+  backdate(rB2.token);
+  ok("second reward SAME customer at branch B → 'already_redeemed'", claimReward(rB2.reward_code!) === "already_redeemed");
 
   // a different customer is unaffected by another's redemption.
   const otherHash = hashLineUserId("Uother");

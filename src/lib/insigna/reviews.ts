@@ -282,7 +282,7 @@ export type ClaimResult =
   | "already"           // THIS code was already redeemed
   | "unknown"           // no such code
   | "same_day"          // redeemed on the same Bangkok day as the review
-  | "already_redeemed"; // this customer has already used a reward (1/person)
+  | "already_redeemed"; // this customer has already used a reward at this branch
 
 /** Redeem a reward code (staff scans/enters it on a LATER visit).
  *
@@ -290,9 +290,10 @@ export type ClaimResult =
  *   • NOT on the same Bangkok day the survey was filled — the reward is for
  *     a return visit, not the visit being reviewed → 'same_day'. (It need
  *     not be the very next visit, just not that same day.)
- *   • ONE reward per identified customer, ever — customer_hash is set when
- *     the review came in via a LINE card, so if that customer has already
- *     redeemed ANY reward, refuse → 'already_redeemed'. Anonymous QR reviews
+ *   • ONE reward per identified customer PER BRANCH — customer_hash is set
+ *     when the review came in via a LINE card, so if that customer has
+ *     already redeemed a reward AT THIS BRANCH, refuse → 'already_redeemed'
+ *     (they may still redeem once at the other branch). Anonymous QR reviews
  *     carry no hash, so only the same-day + per-code guards apply to them.
  *
  *  Returns 'claimed' on success, 'already' if THIS code was already used,
@@ -301,20 +302,21 @@ export function claimReward(reward_code: string): ClaimResult {
   const db = getDb();
   const code = reward_code.trim().toUpperCase();
   const row = db.prepare(
-    "SELECT token, reward_claimed, customer_hash, created_at FROM insigna_review_requests WHERE reward_code = ?"
+    "SELECT token, reward_claimed, customer_hash, branch_id, created_at FROM insigna_review_requests WHERE reward_code = ?"
   ).get(code) as
-    { token: string; reward_claimed: number; customer_hash: string | null; created_at: string } | undefined;
+    { token: string; reward_claimed: number; customer_hash: string | null; branch_id: number | null; created_at: string } | undefined;
   if (!row) return "unknown";
   if (row.reward_claimed) return "already";
 
   // Not redeemable on the same Bangkok day the survey was filled.
   if (bkkDateIso(row.created_at) === todayBkk()) return "same_day";
 
-  // One reward per identified customer, for all time.
+  // One reward per identified customer PER BRANCH. `branch_id IS ?` is
+  // null-safe so a branchless review only collides with another branchless one.
   if (row.customer_hash) {
     const prior = db.prepare(
-      "SELECT 1 FROM insigna_review_requests WHERE customer_hash = ? AND reward_claimed = 1 LIMIT 1"
-    ).get(row.customer_hash);
+      "SELECT 1 FROM insigna_review_requests WHERE customer_hash = ? AND branch_id IS ? AND reward_claimed = 1 LIMIT 1"
+    ).get(row.customer_hash, row.branch_id);
     if (prior) return "already_redeemed";
   }
 
