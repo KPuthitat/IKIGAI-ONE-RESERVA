@@ -265,15 +265,26 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   const rw2 = submitReview({ branch_id: A, rating: 5, customer_hash: rewHash }); backdate(rw2.token); // superseded (A already claimed)
   const rw3 = submitReview({ branch_id: B, rating: 5, customer_hash: rewHash }); backdate(rw3.token); // usable (B, no claim)
   const rw4 = submitReview({ branch_id: A, rating: 5, customer_hash: rewHash });    // today AT A (already claimed) → superseded, NOT not_yet
-  const rw5 = submitReview({ branch_id: B, rating: 5, customer_hash: rewHash });    // today at B (no claim) → not_yet
+  const rw5 = submitReview({ branch_id: B, rating: 5, customer_hash: rewHash });    // today at B, but B already has a usable code → superseded (1 active/branch)
   const mine = listCustomerRewards(rewHash);
   const byCode = (c: string) => mine.find((m) => m.code === c);
   ok("listCustomerRewards: claimed code → 'claimed'", byCode(rw1.reward_code!)?.status === "claimed");
   ok("listCustomerRewards: another unclaimed at the same branch → 'superseded'", byCode(rw2.reward_code!)?.status === "superseded");
-  ok("listCustomerRewards: unclaimed at a branch with no claim → 'usable'", byCode(rw3.reward_code!)?.status === "usable");
+  ok("listCustomerRewards: the one active code at an unclaimed branch → 'usable'", byCode(rw3.reward_code!)?.status === "usable");
   ok("listCustomerRewards: today's code at an already-redeemed branch → 'superseded' (not 'not_yet')", byCode(rw4.reward_code!)?.status === "superseded");
-  ok("listCustomerRewards: today's code at a branch with no claim → 'not_yet'", byCode(rw5.reward_code!)?.status === "not_yet");
+  ok("listCustomerRewards: a second active code at the same branch → 'superseded' (1 active/branch)", byCode(rw5.reward_code!)?.status === "superseded");
+  ok("listCustomerRewards: at most one active (usable/not_yet) code per branch", (() => {
+    const activeByBranch = new Map<number | null, number>();
+    for (const m of mine) if (m.status === "usable" || m.status === "not_yet") activeByBranch.set(m.branch_id, (activeByBranch.get(m.branch_id) ?? 0) + 1);
+    return [...activeByBranch.values()].every((n) => n <= 1);
+  })());
   ok("listCustomerRewards: all 5 for the customer", mine.length === 5);
+
+  // a customer whose only code at a branch is today's → 'not_yet'.
+  const nyHash = hashLineUserId("Unotyet");
+  const ny = submitReview({ branch_id: B, rating: 5, customer_hash: nyHash });
+  ok("listCustomerRewards: sole today's code at an unclaimed branch → 'not_yet'",
+    listCustomerRewards(nyHash).find((m) => m.code === ny.reward_code)?.status === "not_yet");
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();

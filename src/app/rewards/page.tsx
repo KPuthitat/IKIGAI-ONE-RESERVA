@@ -95,7 +95,7 @@ export default function MyRewardsPage({ searchParams }: { searchParams: { t?: st
             <div className="text-[11px] text-slate-400 mt-1">
               {r.status === "not_yet"
                 ? "ใช้ในวันที่ทำแบบประเมินไม่ได้ · ใช้ได้ครั้งถัดไปที่มาใช้บริการ"
-                : "ใช้ได้ครั้งถัดไปที่มาใช้บริการ · 1 สิทธิ์ต่อสาขา"}
+                : "ใช้ได้เลย · แสดงโค้ดนี้กับพนักงาน · 1 สิทธิ์ต่อสาขา"}
             </div>
           </div>
         ))}
