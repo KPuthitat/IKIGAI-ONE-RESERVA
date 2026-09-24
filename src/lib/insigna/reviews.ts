@@ -37,6 +37,7 @@ export type BranchReviewInfo = {
   branch_name: string;
   branch_slug: string;
   google_review_url: string | null;
+  customer_line_oa_url: string | null;   // the branch OA add-friend URL — source of the review-QR deep link
 };
 
 export type SubmitReviewArgs = {
@@ -131,7 +132,7 @@ export function setBranchGoogleUrl(branch_id: number, url: string | null): void 
  *  slug is unknown so the caller can 404 without leaking branch list. */
 export function getBranchReviewInfo(slug: string): BranchReviewInfo | null {
   const row = getDb().prepare(`
-    SELECT id AS branch_id, name AS branch_name, slug AS branch_slug, google_review_url
+    SELECT id AS branch_id, name AS branch_name, slug AS branch_slug, google_review_url, customer_line_oa_url
     FROM branches WHERE slug = ?
   `).get(slug) as BranchReviewInfo | undefined;
   return row ?? null;
@@ -140,7 +141,7 @@ export function getBranchReviewInfo(slug: string): BranchReviewInfo | null {
 /** All branches with their Google-link state — for the admin config table. */
 export function listBranchReviewInfo(): BranchReviewInfo[] {
   return getDb().prepare(`
-    SELECT id AS branch_id, name AS branch_name, slug AS branch_slug, google_review_url
+    SELECT id AS branch_id, name AS branch_name, slug AS branch_slug, google_review_url, customer_line_oa_url
     FROM branches
     ORDER BY display_order, name
   `).all() as BranchReviewInfo[];
@@ -258,6 +259,21 @@ export function resolveReviewInvite(token: string): ResolvedInvite | null {
     return null;
   }
   return { line_user_id: row.line_user_id, branch_id: row.branch_id };
+}
+
+/** True if this LINE user already got a review invite for this branch within
+ *  the last `withinSeconds`. Dedups LINE webhook retries and a customer
+ *  spamming the review keyword, so we don't push a stack of rating cards.
+ *  Compared in SQL so it matches review_invites.created_at (UTC "YYYY-MM-DD
+ *  HH:MM:SS"), which a JS ISO string would not. */
+export function recentReviewInviteExists(
+  lineUserId: string, branchId: number | null, withinSeconds = 600
+): boolean {
+  const row = getDb().prepare(
+    `SELECT 1 FROM review_invites
+     WHERE line_user_id = ? AND branch_id IS ? AND created_at >= datetime('now', ?) LIMIT 1`
+  ).get(lineUserId, branchId, `-${Math.max(1, Math.floor(withinSeconds))} seconds`);
+  return !!row;
 }
 
 /** Delete expired invite rows so raw LINE ids don't accumulate past their

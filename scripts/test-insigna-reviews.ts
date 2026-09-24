@@ -216,7 +216,7 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
     claimReward(anonA.reward_code!) === "claimed" && claimReward(anonB.reward_code!) === "claimed");
 
   // ── LINE thank-you card (Phase 2B) ──
-  const { reviewInviteFlex } = await import("../src/lib/line");
+  const { reviewInviteFlex, isReviewKeyword, oaReviewDeepLink, REVIEW_QR_KEYWORD } = await import("../src/lib/line");
   const flex = reviewInviteFlex({
     branchName: "NAMA", slug: "nama", token: "TOK-123",
     publicBaseUrl: "https://ikigaimedihealth.com/", lang: "th", customerName: "สมชาย"
@@ -225,6 +225,17 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   ok("reviewInviteFlex is a flex message", (flex as { type: string }).type === "flex");
   ok("reviewInviteFlex button links to /f/<slug>?t=<token>", flexStr.includes("https://ikigaimedihealth.com/f/nama?t=TOK-123"));
   ok("reviewInviteFlex greets the customer by name", flexStr.includes("สมชาย"));
+
+  // ── review QR → OA (owner 2026-09-24) ──
+  ok("the QR's own keyword round-trips through isReviewKeyword", isReviewKeyword(REVIEW_QR_KEYWORD));
+  ok("isReviewKeyword matches the whole-message keywords", isReviewKeyword("รีวิว") && isReviewKeyword(" review ") && isReviewKeyword("ให้คะแนน"));
+  ok("isReviewKeyword ignores chatter that merely contains it", !isReviewKeyword("อยากรีวิวอาหาร") && !isReviewKeyword(""));
+  ok("oaReviewDeepLink builds an oaMessage link from an @-form OA url", (() => {
+    const link = oaReviewDeepLink("https://line.me/R/ti/p/@nama123");
+    return link === `https://line.me/R/oaMessage/@nama123/?${encodeURIComponent(REVIEW_QR_KEYWORD)}`;
+  })());
+  ok("oaReviewDeepLink → null when no @basic-id (e.g. lin.ee short link)", oaReviewDeepLink("https://lin.ee/abcd") === null);
+  ok("oaReviewDeepLink → null on empty/nullish input", oaReviewDeepLink(null) === null && oaReviewDeepLink("") === null);
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();

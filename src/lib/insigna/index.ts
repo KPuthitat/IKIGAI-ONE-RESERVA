@@ -76,6 +76,7 @@ export {
   submitReview,
   createReviewInvite,
   resolveReviewInvite,
+  recentReviewInviteExists,
   purgeExpiredReviewInvites,
   trackGoogleClick,
   claimReward,

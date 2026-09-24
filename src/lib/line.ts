@@ -13,7 +13,7 @@ import {
 import { getChannelByCode, getPlatformChannel } from "./messaging-channels";
 import { decryptSecret } from "./secret-vault";
 import { nameWithPrefix } from "./name";
-import { getReviewConfig, createReviewInvite } from "./insigna";
+import { getReviewConfig, createReviewInvite, recentReviewInviteExists } from "./insigna";
 
 // LINE message kinds we use. Loose typing is intentional — Flex contents are
 // large JSON blobs and the API spec already documents the shape.
@@ -1607,21 +1607,84 @@ export async function notifyReviewInvite(
   ).get(booking.id);
   if (already) return { ok: false, skipped: "already_sent" };
 
-  const inviteToken = createReviewInvite(booking.line_user_id, branch.id);
-  const flex = reviewInviteFlex({
-    branchName: branch.name,
-    customerName: booking.customer_name,
-    slug: branch.slug,
-    token: inviteToken,
-    publicBaseUrl: getPublicBaseUrl(),
-    headerColor: branch.brand_color,
-    lang: booking.lang === "en" ? "en" : "th"
-  });
-  const res = await sendLinePush(token, { to: booking.line_user_id, messages: [flex] });
+  const res = await pushReviewInviteCard(
+    branch, booking.line_user_id, token,
+    booking.lang === "en" ? "en" : "th", booking.customer_name
+  );
   db.prepare(
     "INSERT INTO notification_log (booking_id, type, audience, status, error) VALUES (?,?,?,?,?)"
   ).run(booking.id, "review_invite", "customer", res.ok ? "sent" : "failed", res.error ?? null);
   return { ok: res.ok };
+}
+
+/** Mint a fresh invite for this customer + branch and push the rating card.
+ *  Shared by the booking-complete and QR/keyword entry points so the card
+ *  content and token minting stay in one place. */
+async function pushReviewInviteCard(
+  branch: Branch, lineUserId: string, channelToken: string,
+  lang: "th" | "en", customerName?: string | null
+): Promise<{ ok: boolean; error?: string | null }> {
+  const inviteToken = createReviewInvite(lineUserId, branch.id);
+  const flex = reviewInviteFlex({
+    branchName: branch.name,
+    customerName: customerName ?? null,
+    slug: branch.slug,
+    token: inviteToken,
+    publicBaseUrl: getPublicBaseUrl(),
+    headerColor: branch.brand_color,
+    lang
+  });
+  return sendLinePush(channelToken, { to: lineUserId, messages: [flex] });
+}
+
+// ── Customer review QR → OA (owner 2026-09-24) ───────────────────────
+// The printed QR sends the customer INTO the branch's LINE OA with a
+// prefilled keyword. When they send it, the webhook mints an identified
+// review invite and pushes the rating card — so the review, and later the
+// reward code, live in the customer's own OA chat. Nothing to "save".
+
+export const REVIEW_QR_KEYWORD = "รีวิว";
+
+/** Does this inbound OA message mean "I want to review"? Anchored to the
+ *  whole message so it doesn't fire on chatter that merely contains the
+ *  word (same guard as the 'id'/'help' handlers). */
+export function isReviewKeyword(text: string): boolean {
+  return /^\s*(รีวิว|review|ให้คะแนน|ให้คะแนนร้าน)\s*$/i.test(text ?? "");
+}
+
+/** Build the "open the OA with a prefilled review keyword" deep link from a
+ *  branch's public add-friend URL (https://line.me/R/ti/p/@xxx). Returns
+ *  null when no @basic-id can be parsed (e.g. a lin.ee short link) — the
+ *  admin then knows to paste the @-form OA URL first. */
+export function oaReviewDeepLink(oaUrl: string | null | undefined): string | null {
+  // Parse the @basic-id from the LINE add-friend path (…/ti/p/@xxx) or accept
+  // a bare "@xxx". Anchoring to the path (not the first '@' anywhere) avoids
+  // grabbing a stray '@' from userinfo/query in a malformed URL.
+  const s = (oaUrl ?? "").trim();
+  const m = s.match(/\/ti\/p\/(@[A-Za-z0-9._-]+)/) || s.match(/^(@[A-Za-z0-9._-]+)$/);
+  if (!m) return null;
+  return `https://line.me/R/oaMessage/${m[1]}/?${encodeURIComponent(REVIEW_QR_KEYWORD)}`;
+}
+
+/** Push the review-invite card to a customer who reached the branch OA via
+ *  the review QR (no booking context). Mints a fresh invite so the review
+ *  ties to this customer's INSIGNA pseudonym. Fire-and-forget; skips when
+ *  reviews are off, the branch has no channel token, no userId, or an invite
+ *  was already pushed to this user + branch recently (dedups webhook retries
+ *  and a customer sending the keyword repeatedly). */
+export async function notifyReviewInviteToLineUser(
+  branch: Branch, lineUserId: string, lang: "th" | "en" = "th"
+): Promise<{ ok: boolean; skipped?: string }> {
+  if (!getReviewConfig().enabled) return { ok: false, skipped: "reviews_off" };
+  const token = resolveBranchToken(branch);
+  if (!token) return { ok: false, skipped: "no_token" };
+  if (!lineUserId) return { ok: false, skipped: "no_line_user_id" };
+  if (recentReviewInviteExists(lineUserId, branch.id, 600)) {
+    return { ok: false, skipped: "recent_invite" };
+  }
+
+  const res = await pushReviewInviteCard(branch, lineUserId, token, lang);
+  return { ok: res.ok, skipped: res.ok ? undefined : "push_failed" };
 }
 
 export async function notifyStaff(
