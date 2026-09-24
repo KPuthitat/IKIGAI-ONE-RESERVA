@@ -348,6 +348,19 @@ export function branchOpensOn(branchId: number): string | null {
   return r?.opens_on ?? null;
 }
 
+/** Set a branch's authoritative opening date (branches.opens_on, YYYY-MM-DD).
+ *  Same column RESERVA settings writes — surfaced in ANALYTICA settings too so
+ *  the annual target/projection for a mid-year branch can be prorated from it
+ *  (owner 2026-09-24). Blank/invalid clears it. */
+export function setBranchOpensOn(branchId: number, iso: string | null): void {
+  const t = iso?.trim() ?? "";
+  // Require a REAL calendar date, not just the shape — "2026-02-31" matches the
+  // regex but is not a date, and would produce NaN in the annual projection.
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(t) ? new Date(`${t}T00:00:00Z`) : null;
+  const clean = d && !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === t ? t : null;
+  getDb().prepare("UPDATE branches SET opens_on = ? WHERE id = ?").run(clean, branchId);
+}
+
 export function getMenu(branchId: number, date: string): { items: MenuEntry[]; categories: MenuEntry[] } {
   const rows = getDb().prepare(
     "SELECT kind, name, nett, rank FROM salesa_menu WHERE branch_id = ? AND sale_date = ? ORDER BY rank ASC"

@@ -496,7 +496,19 @@ function branchYtdProjection(branchId: number, todayIso: string): { ytd: number;
   const revYtd = revshareYtdForBranch(branchId, y, Number(todayIso.slice(5, 7)));
   if (!rows.length) return { ytd: round2(revYtd), projected: round2(revYtd) };
   const day = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
-  const spanDays = Math.max(1, day(todayIso) - day(rows[0].sale_date) + 1);
+  // Run-rate span starts at the branch's authoritative opening date when it
+  // opened this year (owner 2026-09-24: "คาดจากวันแรกที่เปิดร้าน"), so a store
+  // that opened 25/07 is annualised over its true operating window rather than
+  // the calendar year. Falls back to the first sale date when opens_on isn't
+  // set / is out of range.
+  const opensOn = branchOpensOn(branchId);
+  const firstSale = rows[0].sale_date;
+  const openedThisYear = opensOn != null && opensOn.slice(0, 4) === String(y) && opensOn > `${y}-01-01`;
+  // Span from the opening date, but never later than the first counted sale —
+  // otherwise a soft-opening sale before opens_on would be in posYtd yet
+  // excluded from the span, overstating the run-rate.
+  const spanStart = openedThisYear && opensOn! <= todayIso && opensOn! < firstSale ? opensOn! : firstSale;
+  const spanDays = Math.max(1, day(todayIso) - day(spanStart) + 1);
   const dailyRate = posYtd / spanDays;
   const remainingDays = Math.max(0, day(`${y}-12-31`) - day(todayIso));
   return { ytd: round2(posYtd + revYtd), projected: round2(posYtd + dailyRate * remainingDays + revYtd) };
@@ -518,6 +530,12 @@ function branchAnnualTarget(branchId: number, year: number): { annualTarget: num
   if (!openedThisYear) return { annualTarget: round2(fullYearTarget), fullYearTarget, openedIso: null };
   const yearDays = dayNum(dec31) - dayNum(jan1) + 1;
   const availDays = dayNum(dec31) - dayNum(opensOn as string) + 1;
+  // A malformed opens_on (e.g. an impossible calendar date that slipped past
+  // input validation) yields NaN — fall back to the full-year target rather
+  // than poisoning the company roll-up with NaN.
+  if (!Number.isFinite(availDays) || availDays <= 0) {
+    return { annualTarget: round2(fullYearTarget), fullYearTarget, openedIso: null };
+  }
   return { annualTarget: round2(fullYearTarget * (availDays / yearDays)), fullYearTarget, openedIso: opensOn };
 }
 

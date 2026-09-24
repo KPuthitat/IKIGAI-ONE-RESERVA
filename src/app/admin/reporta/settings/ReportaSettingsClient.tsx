@@ -8,11 +8,12 @@ import { useState } from "react";
 const DEFAULT_COLOR = "#0e2724";
 const PRESETS = ["#0e2724", "#1e3a5f", "#5b21b6", "#9d174d", "#b45309", "#334155", "#166534", "#7c2d12"];
 
-export default function ReportaSettingsClient({ initialGroupId, initialTarget, initialMerchant, initialColor }: { initialGroupId: string | null; initialTarget: number | null; initialMerchant: string | null; initialColor: string | null }) {
+export default function ReportaSettingsClient({ initialGroupId, initialTarget, initialMerchant, initialColor, initialOpensOn }: { initialGroupId: string | null; initialTarget: number | null; initialMerchant: string | null; initialColor: string | null; initialOpensOn: string | null }) {
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
   const [target, setTarget] = useState(initialTarget != null ? String(initialTarget) : "");
   const [merchant, setMerchant] = useState(initialMerchant ?? "");
   const [color, setColor] = useState(initialColor ?? DEFAULT_COLOR);
+  const [opensOn, setOpensOn] = useState(initialOpensOn ?? "");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -24,7 +25,13 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget, i
     try {
       const r = await fetch("/api/admin/reporta/settings", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineGroupId: groupId.trim() || null, monthlyTarget: targetNum, merchantName: merchant.trim() || null, cardColor: color })
+        // Only send opensOn when it actually changed — it's the shared
+        // branches.opens_on column (also editable in RESERVA), so re-sending an
+        // untouched value could revert a concurrent edit there.
+        body: JSON.stringify({
+          lineGroupId: groupId.trim() || null, monthlyTarget: targetNum, merchantName: merchant.trim() || null, cardColor: color,
+          ...(opensOn !== (initialOpensOn ?? "") ? { opensOn: opensOn || null } : {})
+        })
       }).then((x) => x.json());
       if (r.ok) setMsg({ kind: "ok", text: "บันทึกแล้ว" });
       else setMsg({ kind: "err", text: r.error ?? "บันทึกไม่สำเร็จ" });
@@ -47,6 +54,13 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget, i
         <input value={target} onChange={(e) => setTarget(e.target.value)} inputMode="numeric" placeholder="เช่น 500000" className="input !w-48" />
         <p className="text-xs text-slate-500 mt-1.5">
           ใช้แสดงแถบความคืบหน้า + คาดการณ์สิ้นเดือนในหน้าวิเคราะห์ · เว้นว่างเพื่อไม่ตั้งเป้า
+        </p>
+      </div>
+      <div>
+        <label className="label">วันเปิดสาขา (วันแรกที่เปิดร้าน)</label>
+        <input type="date" value={opensOn} onChange={(e) => setOpensOn(e.target.value)} className="input !w-48" />
+        <p className="text-xs text-slate-500 mt-1.5">
+          สาขาที่เปิดกลางปีจะถูก<b>เฉลี่ยเป้าทั้งปี</b>และ<b>คาดการณ์รายได้</b>จากวันนี้ ไม่ใช่ทั้งปีเต็ม · ใช้ค่าเดียวกับ RESERVA (ตั้งที่ไหนก็ได้) · เว้นว่าง = ถือว่าเปิดมาทั้งปี
         </p>
       </div>
       <div>

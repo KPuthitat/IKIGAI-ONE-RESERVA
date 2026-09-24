@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { isSalesaBranch, getLineGroupId, getMonthlyTarget, getMerchantName, getCardColor } from "@/lib/salesa-db";
+import { isSalesaBranch, getLineGroupId, getMonthlyTarget, getMerchantName, getCardColor, branchOpensOn } from "@/lib/salesa-db";
 import ReportaSettingsClient from "./ReportaSettingsClient";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +28,7 @@ export default function ReportaSettingsPage() {
         <h1 className="text-2xl font-bold text-slate-800">ตั้งค่ากลุ่ม LINE หัวหน้างาน</h1>
         <p className="text-sm text-slate-500 mt-1">สาขา {branch?.name ?? `#${branchId}`} · การ์ดสรุปยอดขายรายวัน/รายสัปดาห์จะถูกส่งเข้ากลุ่มนี้</p>
       </div>
-      <ReportaSettingsClient initialGroupId={getLineGroupId(branchId)} initialTarget={getMonthlyTarget(branchId)} initialMerchant={getMerchantName(branchId)} initialColor={getCardColor(branchId)} />
+      <ReportaSettingsClient initialGroupId={getLineGroupId(branchId)} initialTarget={getMonthlyTarget(branchId)} initialMerchant={getMerchantName(branchId)} initialColor={getCardColor(branchId)} initialOpensOn={branchOpensOn(branchId)} />
     </div>
   );
 }
