@@ -87,7 +87,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <Link href="/admin/reporta" className="text-sm text-slate-500 hover:text-brand">← กลับ ANALYTICA (รายสาขา)</Link>
         {canModule(user, "accounta.manage") && (
-          <Link href="/admin/accounta/company" className="text-sm text-brand hover:underline">โครงสร้างต้นทุน · กฎ 100% (ACCOUNTA รวมบริษัท) →</Link>
+          <Link href="/admin/accounta/company" className="text-sm text-brand hover:underline">โครงสร้างต้นทุน · 100% Rules (ACCOUNTA รวมบริษัท) →</Link>
         )}
       </div>
       <div className="flex items-start justify-between gap-3 flex-wrap">
