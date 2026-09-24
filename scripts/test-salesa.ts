@@ -608,6 +608,26 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     return apCo.prorated === true && apCo.branchCount === 2 && Math.abs(apCo.annualTarget - expect) < 1 && apCo.fullYearTarget === 13200000;
   })());
 
+  // ── 15b) projection run-rate spans from opens_on, not first sale (owner
+  // 2026-09-24: "รายได้คาดการณ์ควรคาดจากวันแรกที่เปิดร้าน"). A branch that opened
+  // 25/07 but whose first recorded sale is 10/08 must be annualised over the
+  // 25/07→today window, giving a lower (fairer) run-rate than dividing by the
+  // shorter first-sale span. ──
+  const bidGap = Number(db.prepare("INSERT INTO branches (slug,name,opens_on) VALUES ('gap','GAPBR','2026-07-25')").run().lastInsertRowid);
+  sdb.setMonthlyTarget(bidGap, 600000);
+  fput2(bidGap, "2026-08-10", 30000); fput2(bidGap, "2026-08-20", 30000); // first sale 10/08, after opening 25/07
+  ok("projection run-rate spans from opens_on (25/07), not first sale (10/08)", (() => {
+    const apGap = analytics.annualProjection(bidGap, "2026-09-20");
+    if (!apGap) return false;
+    const day = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
+    const remaining = day("2026-12-31") - day("2026-09-20");
+    const spanFromOpen = day("2026-09-20") - day("2026-07-25") + 1;   // 58
+    const spanFromFirst = day("2026-09-20") - day("2026-08-10") + 1;  // 42
+    const expectOpen = 60000 + (60000 / spanFromOpen) * remaining;
+    const firstBased = 60000 + (60000 / spanFromFirst) * remaining;
+    return Math.abs(apGap.projectedNett - expectOpen) < 1 && apGap.projectedNett < firstBased - 1000;
+  })());
+
   // ── 16) full-year growth bars (owner 2026-09-21): per-branch monthly nett,
   // Jan → last month with data, for reading each branch's growth trend. ──
   const fput3 = (bid: number, d: string, nett: number) => sdb.upsertDaily(bid, uid, { date: d, dateEnd: d, merchant: "BAR", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 4, pax: 7, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / 4, avgPax: 1.8, avgSalesPax: nett / 7, payments: [], types: [], sources: [] });

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
-import { isSalesaBranch, getLineGroupId, setLineGroupId, getMonthlyTarget, setMonthlyTarget, getMerchantName, setMerchantName, getCardColor, setCardColor } from "@/lib/salesa-db";
+import { isSalesaBranch, getLineGroupId, setLineGroupId, getMonthlyTarget, setMonthlyTarget, getMerchantName, setMerchantName, getCardColor, setCardColor, branchOpensOn, setBranchOpensOn } from "@/lib/salesa-db";
 
 // REPORTA settings — the HOD LINE group id the daily/weekly cards are pushed to
 // (per branch). The IKIGAI OS platform OA must be a member of that group.
@@ -18,14 +18,15 @@ function ctx() {
 export function GET() {
   const { branchId, ok } = ctx();
   if (!ok) return NextResponse.json({ error: "no_branch" }, { status: 403 });
-  return NextResponse.json({ ok: true, lineGroupId: getLineGroupId(branchId!), monthlyTarget: getMonthlyTarget(branchId!), merchantName: getMerchantName(branchId!), cardColor: getCardColor(branchId!) });
+  return NextResponse.json({ ok: true, lineGroupId: getLineGroupId(branchId!), monthlyTarget: getMonthlyTarget(branchId!), merchantName: getMerchantName(branchId!), cardColor: getCardColor(branchId!), opensOn: branchOpensOn(branchId!) });
 }
 
 const Body = z.object({
   lineGroupId: z.string().max(200).nullable().optional(),
   monthlyTarget: z.number().min(0).max(1_000_000_000).nullable().optional(),
   merchantName: z.string().max(200).nullable().optional(),
-  cardColor: z.string().max(9).nullable().optional()
+  cardColor: z.string().max(9).nullable().optional(),
+  opensOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
 });
 
 export async function POST(req: Request) {
@@ -37,5 +38,6 @@ export async function POST(req: Request) {
   if (parsed.data.monthlyTarget !== undefined) setMonthlyTarget(branchId!, parsed.data.monthlyTarget);
   if (parsed.data.merchantName !== undefined) setMerchantName(branchId!, parsed.data.merchantName);
   if (parsed.data.cardColor !== undefined) setCardColor(branchId!, parsed.data.cardColor);
-  return NextResponse.json({ ok: true, lineGroupId: getLineGroupId(branchId!), monthlyTarget: getMonthlyTarget(branchId!), merchantName: getMerchantName(branchId!), cardColor: getCardColor(branchId!) });
+  if (parsed.data.opensOn !== undefined) setBranchOpensOn(branchId!, parsed.data.opensOn);
+  return NextResponse.json({ ok: true, lineGroupId: getLineGroupId(branchId!), monthlyTarget: getMonthlyTarget(branchId!), merchantName: getMerchantName(branchId!), cardColor: getCardColor(branchId!), opensOn: branchOpensOn(branchId!) });
 }
