@@ -176,7 +176,7 @@ export function existingKinds(branchId: number, date: string): { sales: boolean;
  *  any group are absent (they resolve to themselves). Range-independent — built
  *  from the whole alias table — so a group's label is identical in every view
  *  and period (keeping cross-period matching, e.g. momentum, correct). */
-function aliasLabelMap(branchId: number): Map<string, string> {
+export function aliasLabelMap(branchId: number): Map<string, string> {
   const rows = getDb().prepare(
     "SELECT name, root FROM salesa_menu_alias WHERE branch_id = ?"
   ).all(branchId) as Array<{ name: string; root: string }>;
