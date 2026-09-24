@@ -22,6 +22,7 @@
     "test:inventa-waste": "node --import tsx scripts/test-inventa-waste.ts",
     "test:insigna-reviews": "node --import tsx scripts/test-insigna-reviews.ts",
     "test:insigna-migration": "node --import tsx scripts/test-insigna-migration.ts",
+    "test:insigna-bills": "node --import tsx scripts/test-insigna-bills.ts",
     "test:company-cost": "node --import tsx scripts/test-company-cost.ts",
     "test:payroll": "node --import tsx scripts/test-payroll.ts",
     "test:payroll-summary": "node --import tsx scripts/test-payroll-summary-doc.ts",
