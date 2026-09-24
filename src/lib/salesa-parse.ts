@@ -255,7 +255,8 @@ export function parseOverview(buf: Buffer | ArrayBuffer): SalesOverview {
 export type ReceiptItem = { name: string; qty: number };
 export type ReceiptBill = {
   hour: number;            // 0–23 (from the Time column)
-  billNo: string;
+  billNo: string;              // the short per-day "No." (1428) — the analytics key
+  receiptId: string | null;    // FeedMe's long global receipt id (e.g. "823Z_4w8g") — for a customer-scannable QR; null when the file has no ID column
   table: string;
   gross: number;
   discount: number;
@@ -294,7 +295,7 @@ export function parseReceipt(buf: Buffer | ArrayBuffer): SalesReceipt {
   const header = rows[hdrIdx].map((c) => String(c).trim().toLowerCase());
   const col = (name: string) => header.indexOf(name);
   const ci = {
-    time: col("time"), no: col("no."), table: col("table"), gross: col("gross"),
+    time: col("time"), no: col("no."), id: col("id"), table: col("table"), gross: col("gross"),
     discount: col("discount"), nett: col("nett"), payment: col("payment"), items: col("items")
   };
 
@@ -321,7 +322,7 @@ export function parseReceipt(buf: Buffer | ArrayBuffer): SalesReceipt {
       itemMap.set(name, (itemMap.get(name) ?? 0) + Number(m[1]));
     }
     bills.push({
-      hour, billNo: cell(r, ci.no), table,
+      hour, billNo: cell(r, ci.no), receiptId: ci.id >= 0 ? (cell(r, ci.id) || null) : null, table,
       gross: round2(gross), discount: round2(discount), nett: round2(nett),
       payment: cell(r, ci.payment),
       isStaff, isTakeaway: /^ta/i.test(table),

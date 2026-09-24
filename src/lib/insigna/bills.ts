@@ -56,6 +56,7 @@ export type LinkedBill = {
   branch_id: number;
   sale_date: string;
   bill_no: string;
+  receipt_id: string | null;
   hour: number;
   table_name: string | null;
   nett: number;
@@ -64,7 +65,7 @@ export type LinkedBill = {
 /** A customer's linked bills, newest first, joined to receipt totals. */
 export function listLinkedBills(customer_hash: string): LinkedBill[] {
   return getDb().prepare(`
-    SELECT r.branch_id, r.sale_date, r.bill_no, r.hour, r.table_name, r.nett
+    SELECT r.branch_id, r.sale_date, r.bill_no, r.receipt_id, r.hour, r.table_name, r.nett
     FROM insigna_customer_bills l
     JOIN salesa_receipts r
       ON r.branch_id = l.branch_id AND r.sale_date = l.sale_date AND r.bill_no = l.bill_no
@@ -72,6 +73,27 @@ export function listLinkedBills(customer_hash: string): LinkedBill[] {
     ORDER BY r.sale_date DESC, r.hour DESC
   `).all(customer_hash) as LinkedBill[];
 }
+
+export type ReceiptRef = { branch_id: number; sale_date: string; bill_no: string };
+
+/** Resolve FeedMe's long global receipt id to its (branch, date, bill) key.
+ *  Returns null when no imported receipt carries that id. The id is globally
+ *  unique in practice; if it somehow repeats, the most recent bill wins. */
+export function findReceiptByReceiptId(receipt_id: string): ReceiptRef | null {
+  const id = receipt_id.trim();
+  if (!id) return null;
+  const row = getDb().prepare(
+    `SELECT branch_id, sale_date, bill_no FROM salesa_receipts
+     WHERE receipt_id = ? ORDER BY sale_date DESC, hour DESC LIMIT 1`
+  ).get(id) as ReceiptRef | undefined;
+  return row ?? null;
+}
+
+// NOTE: linking by receipt id is intentionally NOT a one-shot helper. The
+// caller must resolve the id (findReceiptByReceiptId), enforce branch access
+// against the RESOLVED ref.branch_id, and only then linkBill — otherwise a
+// scanned id could attach a receipt of a branch the caller doesn't administer.
+// See the link_by_id branch in the bills API route for the canonical flow.
 
 export type CustomerBillStats = {
   billCount: number;

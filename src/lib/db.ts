@@ -2031,6 +2031,7 @@ function runMigrations(db: Database.Database): void {
       payment    TEXT,
       is_staff   INTEGER NOT NULL DEFAULT 0,
       is_takeaway INTEGER NOT NULL DEFAULT 0,
+      receipt_id TEXT,                              -- FeedMe's long global receipt id (for a customer-scannable QR); NULL on pre-migration rows
       PRIMARY KEY (branch_id, sale_date, bill_no)
     );
     CREATE INDEX IF NOT EXISTS idx_salesa_receipts_day ON salesa_receipts(branch_id, sale_date, hour);
@@ -2094,6 +2095,15 @@ function runMigrations(db: Database.Database): void {
     if (!sdCols.some((c) => c.name === "has_receipt")) {
       db.exec("ALTER TABLE salesa_daily ADD COLUMN has_receipt INTEGER NOT NULL DEFAULT 0");
     }
+    // FeedMe's long global receipt id (owner 2026-09-24) — captured so a
+    // customer can later scan their receipt QR to self-link the bill.
+    // NOTE: create the lookup index only AFTER the column exists (the
+    // 2026-05-28 outage was an index on a not-yet-added column).
+    const srCols = db.prepare("PRAGMA table_info(salesa_receipts)").all() as Array<{ name: string }>;
+    if (!srCols.some((c) => c.name === "receipt_id")) {
+      db.exec("ALTER TABLE salesa_receipts ADD COLUMN receipt_id TEXT");
+    }
+    db.exec("CREATE INDEX IF NOT EXISTS idx_salesa_receipts_rid ON salesa_receipts(receipt_id)");
   }
   // One-time (owner 2026-09-17): the first merchant guard AUTO-LEARNED the shop
   // name from a branch's first import — which recorded the WRONG shop when a

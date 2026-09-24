@@ -12,7 +12,15 @@ process.env.DATABASE_PATH = TMP;
 
 (async () => {
   const { getDb } = await import("../src/lib/db");
-  const { linkBill, unlinkBill, listLinkedBills, customerBillStats } = await import("../src/lib/insigna");
+  const { linkBill, unlinkBill, listLinkedBills, customerBillStats, findReceiptByReceiptId } = await import("../src/lib/insigna");
+
+  // The canonical "link by scanned id" flow (mirrors the bills API route):
+  // resolve the id → (the route also guards branch access here) → linkBill.
+  const linkByReceiptId = (customer_hash: string, receipt_id: string) => {
+    const ref = findReceiptByReceiptId(receipt_id);
+    if (!ref) return { result: "receipt_not_found" as const, ref: null };
+    return { result: linkBill({ customer_hash, ...ref }), ref };
+  };
   const db = getDb();
 
   let passed = 0, failed = 0;
@@ -22,11 +30,11 @@ process.env.DATABASE_PATH = TMP;
   };
 
   const A = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('a','NAMA')").run().lastInsertRowid);
-  const rec = db.prepare("INSERT INTO salesa_receipts (branch_id,sale_date,bill_no,hour,table_name,gross,discount,nett,payment) VALUES (?,?,?,?,?,?,?,?,?)");
+  const rec = db.prepare("INSERT INTO salesa_receipts (branch_id,sale_date,bill_no,hour,table_name,gross,discount,nett,payment,receipt_id) VALUES (?,?,?,?,?,?,?,?,?,?)");
   const item = db.prepare("INSERT INTO salesa_receipt_items (branch_id,sale_date,bill_no,name,qty) VALUES (?,?,?,?,?)");
-  rec.run(A, "2026-09-20", "1001", 12, "T1", 300, 0, 300, "cash");
-  rec.run(A, "2026-09-20", "1002", 19, "T2", 500, 0, 500, "cash");
-  rec.run(A, "2026-09-22", "1003", 12, "T3", 400, 0, 400, "cash");
+  rec.run(A, "2026-09-20", "1001", 12, "T1", 300, 0, 300, "cash", "823Z_4w8g");
+  rec.run(A, "2026-09-20", "1002", 19, "T2", 500, 0, 500, "cash", "914A_5x9h");
+  rec.run(A, "2026-09-22", "1003", 12, "T3", 400, 0, 400, "cash", "K72Q_1b3c");
   item.run(A, "2026-09-20", "1001", "กะเพรา", 2); item.run(A, "2026-09-20", "1001", "ชาเย็น", 1);
   item.run(A, "2026-09-20", "1002", "กะเพรา", 1);
   item.run(A, "2026-09-22", "1003", "ต้มยำ", 1); item.run(A, "2026-09-22", "1003", "กะเพรา", 1);
@@ -67,6 +75,34 @@ process.env.DATABASE_PATH = TMP;
   ok("empty customer → zeroed stats", (() => {
     const s = customerBillStats("nobody");
     return s.billCount === 0 && s.avgNett === null && s.topItems.length === 0;
+  })());
+
+  // ── link by FeedMe's long receipt id (owner 2026-09-24) ──
+  // A fresh, unlinked receipt so the by-id link path starts clean.
+  rec.run(A, "2026-09-23", "1004", 13, "T4", 250, 0, 250, "cash", "FREE_9z9z");
+
+  ok("findReceiptByReceiptId resolves the (branch,date,bill) key", (() => {
+    const ref = findReceiptByReceiptId("914A_5x9h");
+    return ref?.branch_id === A && ref?.sale_date === "2026-09-20" && ref?.bill_no === "1002";
+  })());
+  ok("findReceiptByReceiptId unknown id → null", findReceiptByReceiptId("NOPE_00000") === null);
+  ok("findReceiptByReceiptId blank id → null", findReceiptByReceiptId("   ") === null);
+
+  ok("link-by-id: unknown id → 'receipt_not_found'", (() => {
+    const r = linkByReceiptId("cust3", "NOPE_00000");
+    return r.result === "receipt_not_found" && r.ref === null;
+  })());
+  ok("link-by-id: links a real id → 'linked' + ref", (() => {
+    const r = linkByReceiptId("cust3", "FREE_9z9z");
+    return r.result === "linked" && r.ref?.bill_no === "1004" && listLinkedBills("cust3").length === 1;
+  })());
+  ok("link-by-id: same id same customer → 'already_yours'",
+    linkByReceiptId("cust3", "FREE_9z9z").result === "already_yours");
+  ok("link-by-id: id owned by another → 'linked_to_other'",
+    linkByReceiptId("cust4", "FREE_9z9z").result === "linked_to_other");
+  ok("listLinkedBills exposes receipt_id", (() => {
+    const l = listLinkedBills("cust3");
+    return l[0].receipt_id === "FREE_9z9z";
   })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);

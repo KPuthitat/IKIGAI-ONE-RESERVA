@@ -24,6 +24,7 @@ export default function LinkedBillsPanel({
   const [stats, setStats] = useState(initialStats);
   const [billNo, setBillNo] = useState("");
   const [date, setDate] = useState(today);
+  const [receiptId, setReceiptId] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -46,6 +47,16 @@ export default function LinkedBillsPanel({
     const r = await call({ action: "link", branch_id: branchId, sale_date: date, bill_no: billNo.trim() });
     if (r === "linked" || r === "already_yours") { setBillNo(""); setMsg({ kind: "ok", text: r === "linked" ? "ผูกบิลแล้ว ✓" : "บิลนี้ผูกไว้แล้ว" }); }
     else if (r === "receipt_not_found") setMsg({ kind: "err", text: "ไม่พบบิลนี้ (นำเข้าไฟล์ยอดขายของวันนั้นหรือยังคะ)" });
+    else if (r === "linked_to_other") setMsg({ kind: "err", text: "บิลนี้ผูกกับลูกค้าท่านอื่นแล้ว" });
+    else setMsg({ kind: "err", text: "ผูกไม่สำเร็จ" });
+  }
+
+  async function linkById() {
+    const id = receiptId.trim();
+    if (!id) return;
+    const r = await call({ action: "link_by_id", receipt_id: id });
+    if (r === "linked" || r === "already_yours") { setReceiptId(""); setMsg({ kind: "ok", text: r === "linked" ? "ผูกบิลแล้ว ✓" : "บิลนี้ผูกไว้แล้ว" }); }
+    else if (r === "receipt_not_found") setMsg({ kind: "err", text: "ไม่พบรหัสบิลนี้ (นำเข้าไฟล์ใบเสร็จของวันนั้นหรือยังคะ)" });
     else if (r === "linked_to_other") setMsg({ kind: "err", text: "บิลนี้ผูกกับลูกค้าท่านอื่นแล้ว" });
     else setMsg({ kind: "err", text: "ผูกไม่สำเร็จ" });
   }
@@ -119,6 +130,20 @@ export default function LinkedBillsPanel({
         )}
         {msg && <div className={`text-xs mt-1.5 ${msg.kind === "ok" ? "text-emerald-600" : "text-rose-600"}`}>{msg.text}</div>}
         <p className="text-[11px] text-slate-400 mt-1">ใช้เลขบิลจากไฟล์ยอดขายที่นำเข้า (สาขา+วันที่+เลขบิล) · ผูกได้เฉพาะบิลของสาขาที่เลือกอยู่</p>
+
+        {/* Or link by FeedMe's long receipt id — no branch/date needed, it
+            resolves the bill on its own (owner 2026-09-24). */}
+        <div className="mt-3 pt-3 border-t border-dashed border-slate-100">
+          <div className="text-xs font-semibold text-slate-600 mb-1.5">หรือวางรหัสบิลยาวจากใบเสร็จ (ID)</div>
+          <div className="flex flex-wrap items-end gap-2">
+            <input className="input !w-52 font-mono" value={receiptId} placeholder="เช่น 823Z_4w8g"
+              onChange={(e) => { setReceiptId(e.target.value); setMsg(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter") linkById(); }} />
+            <button type="button" onClick={linkById} disabled={busy || !receiptId.trim()}
+              className="btn-primary text-sm px-4 py-2 disabled:opacity-50">ผูกด้วยรหัส</button>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1">รหัสจากช่อง ID บนใบเสร็จ FeedMe · ระบบจะหาสาขาและวันที่ให้เอง</p>
+        </div>
       </div>
 
       {/* Linked bills list */}
