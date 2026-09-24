@@ -19,6 +19,7 @@
     "test:salesa": "node --import tsx scripts/test-salesa.ts",
     "test:meetings": "node --import tsx scripts/test-exec-meetings.ts",
     "test:branch-cost": "node --import tsx scripts/test-branch-cost.ts",
+    "test:analytica-labor": "node --import tsx scripts/test-analytica-labor.ts",
     "test:inventa-waste": "node --import tsx scripts/test-inventa-waste.ts",
     "test:insigna-reviews": "node --import tsx scripts/test-insigna-reviews.ts",
     "test:insigna-migration": "node --import tsx scripts/test-insigna-migration.ts",

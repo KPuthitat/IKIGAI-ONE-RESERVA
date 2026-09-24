@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requirePermission, canModule } from "@/lib/auth";
+import { cookies } from "next/headers";
+import { requirePermission, canModule, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu } from "@/lib/salesa-analytics";
 import { getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
+import { companyMonthLabor } from "@/lib/daily-col";
 import { fmtMoney } from "@/lib/format";
 import CompanyReportActions from "./CompanyReportActions";
+import LaborCostPanel from "./LaborCostPanel";
 
 // ANALYTICA · ภาพรวมบริษัท (รวมทุกสาขา) — owner 2026-09-21. ยอดขายรวมบริษัท +
 // เทียบรายสาขา + เทียบเดือนนี้↔เดือนก่อน (ช่วงเวลาเดียวกัน) + เป้าเดือน/ทั้งปี.
@@ -73,6 +76,12 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
   const isCurMonth = year === nowY && month === nowM;
   const menuDay = isCurMonth ? Number(today.slice(8, 10)) : new Date(Date.UTC(year, month, 0)).getUTCDate();
   const menu = companyTopMenu(companyBranchIds, `${year}-${mmp}-01`, `${year}-${mmp}-${String(menuDay).padStart(2, "0")}`);
+  // Labour cost (COL) — payroll-derived, so only for viewers who can see payroll.
+  // The panel is cookie-toggled: compute the (heavier) per-day dataset only when
+  // the viewer has it expanded, so a collapsed panel costs the droplet nothing.
+  const canSeeLabor = userCanViewPayroll(user);
+  const laborShown = cookies().get("analytica_labor")?.value === "1";
+  const labor = canSeeLabor && laborShown ? companyMonthLabor(companyBranchIds, year, month, today) : null;
 
   const prev = shiftMonth(year, month, -1);
   const next = shiftMonth(year, month, 1);
@@ -181,6 +190,11 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
               </div>
               <div className="text-[11px] text-slate-500">YTD ฿{baht(ov.annual.ytdNett)} · คาดสิ้นปี <b className={ov.annual.onTrack ? "text-emerald-600" : "text-amber-600"}>฿{baht(ov.annual.projectedNett)}</b> ({ov.annual.projectedPct.toFixed(0)}% ของเป้า)</div>
             </div>
+          )}
+
+          {/* Labour cost (COL) — payroll-view only, cookie-toggled show/hide */}
+          {canSeeLabor && (
+            <LaborCostPanel data={labor} monthLabel={`${TH_MONTHS[month]} ${year + 543}`} />
           )}
 
           {/* Per-branch table */}
