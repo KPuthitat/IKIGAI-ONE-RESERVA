@@ -7274,7 +7274,11 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_insigna_review_created ON insigna_review_requests(created_at);
     CREATE INDEX IF NOT EXISTS idx_insigna_review_branch ON insigna_review_requests(branch_id, created_at);
-    CREATE INDEX IF NOT EXISTS idx_insigna_review_customer ON insigna_review_requests(customer_hash);
+    -- NOTE: the customer_hash index is created AFTER the ALTER guard below,
+    -- not here — on a DB where insigna_review_requests already exists WITHOUT
+    -- customer_hash, this CREATE TABLE is a no-op, so indexing customer_hash
+    -- here would throw "no such column" before the ALTER adds it (prod boot
+    -- outage 2026-09-24). Index it once the column is guaranteed to exist.
     -- UNIQUE so a minted reward code is unambiguous at redemption. SQLite
     -- allows many NULLs in a UNIQUE index, so no-reward rows are unaffected.
     CREATE UNIQUE INDEX IF NOT EXISTS idx_insigna_review_reward ON insigna_review_requests(reward_code);
@@ -7297,12 +7301,16 @@ function runMigrations(db: Database.Database): void {
   `);
 
   // Idempotent add for DBs that created insigna_review_requests before the
-  // customer_hash column landed (owner 2026-09-23).
+  // customer_hash column landed (owner 2026-09-23). Must run BEFORE the
+  // customer_hash index is created — on an existing table the CREATE TABLE
+  // above is a no-op, so the column only appears here.
   const rrCols = db.prepare("PRAGMA table_info(insigna_review_requests)").all() as Array<{ name: string }>;
   if (!rrCols.some((c) => c.name === "customer_hash")) {
     db.exec("ALTER TABLE insigna_review_requests ADD COLUMN customer_hash TEXT");
-    db.exec("CREATE INDEX IF NOT EXISTS idx_insigna_review_customer ON insigna_review_requests(customer_hash)");
   }
+  // Now the column exists in every case (fresh CREATE TABLE or ALTER above),
+  // so the index is safe to create.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_insigna_review_customer ON insigna_review_requests(customer_hash)");
 
   // ── FEASIBILITY (project investment feasibility, owner 2026-06-16) ──
   // One row per project. `inputs` holds the whole assumptions/startup/cost
