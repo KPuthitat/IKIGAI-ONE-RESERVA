@@ -276,6 +276,18 @@ export function recentReviewInviteExists(
   return !!row;
 }
 
+/** How many reward-bearing reviews this identified customer already has at a
+ *  branch. Gates the OA reward push so a resubmit (the invite token is
+ *  reusable) or a repeat visit doesn't stack reward cards — the reward is 1
+ *  per customer per branch, so we only push when this is their only code. */
+export function customerRewardCountAtBranch(customer_hash: string, branch_id: number | null): number {
+  const row = getDb().prepare(
+    `SELECT COUNT(*) AS n FROM insigna_review_requests
+     WHERE customer_hash = ? AND branch_id IS ? AND reward_code IS NOT NULL`
+  ).get(customer_hash, branch_id) as { n: number };
+  return row.n;
+}
+
 /** Delete expired invite rows so raw LINE ids don't accumulate past their
  *  validity window. Wire into the nightly cron. Returns rows removed. */
 export function purgeExpiredReviewInvites(): number {

@@ -77,6 +77,7 @@ export {
   createReviewInvite,
   resolveReviewInvite,
   recentReviewInviteExists,
+  customerRewardCountAtBranch,
   purgeExpiredReviewInvites,
   trackGoogleClick,
   claimReward,
