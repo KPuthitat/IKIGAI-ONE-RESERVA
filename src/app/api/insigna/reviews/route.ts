@@ -6,8 +6,10 @@ import {
   getBranchReviewInfo,
   submitReview,
   resolveReviewInvite,
-  hashLineUserId
+  hashLineUserId,
+  customerRewardCountAtBranch
 } from "@/lib/insigna";
+import { notifyReviewReward } from "@/lib/line";
 
 // POST /api/insigna/reviews  — PUBLIC (no auth).
 //
@@ -83,12 +85,18 @@ export async function POST(req: Request) {
   }
 
   // Resolve the invite token (if any) to the customer's INSIGNA pseudonym.
-  // The raw LINE id is hashed here and never stored on the review row.
+  // The raw LINE id is hashed here and never stored on the review row — but we
+  // keep it in-memory for this request so the reward card can be pushed back
+  // into the customer's OA chat (owner 2026-09-24: the code lives in LINE).
   let customerHash: string | null = null;
+  let inviteLineUserId: string | null = null;
   if (parsed.data.t) {
     try {
       const invite = resolveReviewInvite(parsed.data.t);
-      if (invite) customerHash = hashLineUserId(invite.line_user_id);
+      if (invite) {
+        customerHash = hashLineUserId(invite.line_user_id);
+        inviteLineUserId = invite.line_user_id;
+      }
     } catch (e) {
       // e.g. INSIGNA_SALT not set — never fail the review over identity;
       // just record it anonymously.
@@ -113,6 +121,25 @@ export async function POST(req: Request) {
   if (result.reward_code) {
     rewardQr = await QRCode.toDataURL(result.reward_code, { width: 320, margin: 1, errorCorrectionLevel: "M" })
       .catch(() => null);
+  }
+
+  // Identified via LINE + a reward was issued → push the code into the
+  // customer's OA chat so it's SAVED in LINE (owner 2026-09-24), not lost when
+  // the browser tab closes. Only when this is the customer's ONLY reward at
+  // this branch (count === 1, the row just minted) — so a resubmit or a repeat
+  // visit doesn't stack cards, and a customer who already has a code (the cap
+  // is 1 per branch) isn't handed one they can't redeem. Fire-and-forget: prod
+  // is a long-lived PM2 process, so don't block the thank-you screen on LINE.
+  if (
+    inviteLineUserId && customerHash && result.reward_code && result.reward_text &&
+    customerRewardCountAtBranch(customerHash, branch.branch_id) === 1
+  ) {
+    void notifyReviewReward({
+      branchId: branch.branch_id,
+      lineUserId: inviteLineUserId,
+      code: result.reward_code,
+      rewardText: result.reward_text
+    }).catch((e) => console.warn("[insigna-reviews] reward push failed:", e));
   }
 
   return NextResponse.json({ ok: true, ...result, reward_qr: rewardQr });

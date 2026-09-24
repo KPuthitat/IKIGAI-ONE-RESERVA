@@ -1687,6 +1687,91 @@ export async function notifyReviewInviteToLineUser(
   return { ok: res.ok, skipped: res.ok ? undefined : "push_failed" };
 }
 
+/** The reward-code card pushed into the customer's OA chat after they finish
+ *  an identified review — so the code is SAVED in LINE (owner 2026-09-24), not
+ *  lost when they close the browser tab. Shows the code large; staff read/scan
+ *  it on the return visit. Mirrors the thank-you screen's rules. */
+export function reviewRewardFlex(args: {
+  branchName: string;
+  code: string;
+  rewardText: string;
+  headerColor?: string | null;
+  lang: "th" | "en";
+}): LineFlexMessage {
+  const th = args.lang !== "en";
+  const headerColor = args.headerColor || COLOR_INK_700;
+  const title = th ? "โค้ดแลกส่วนลดของคุณ" : "Your reward code";
+  const note = th
+    ? "แสดงโค้ดนี้กับพนักงานในครั้งถัดไปที่มาใช้บริการ · ใช้ในวันนี้ไม่ได้ · 1 สิทธิ์ต่อสาขา"
+    : "Show this to staff on your next visit · not valid today · one per branch";
+
+  const bubble = {
+    type: "bubble",
+    size: "giga",
+    header: {
+      type: "box", layout: "vertical", backgroundColor: headerColor, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: th ? "รางวัล" : "REWARD", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        { type: "text", text: title, color: "#ffffff", size: "lg", weight: "bold", wrap: true, margin: "md" }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        { type: "text", text: args.rewardText, size: "sm", color: COLOR_TEXT_DARK, wrap: true },
+        {
+          type: "box", layout: "vertical", margin: "md", paddingAll: "16px",
+          backgroundColor: "#fffbeb", cornerRadius: "12px",
+          contents: [
+            { type: "text", text: args.code, size: "xxl", weight: "bold", align: "center", color: "#b45309" }
+          ]
+        },
+        { type: "text", text: note, size: "xs", color: COLOR_TEXT_MUTED, wrap: true, margin: "md" }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: headerColor },
+      body: { backgroundColor: "#ffffff" }
+    }
+  };
+
+  return {
+    type: "flex",
+    altText: th ? `โค้ดแลกส่วนลดของคุณ: ${args.code}` : `Your reward code: ${args.code}`,
+    contents: bubble
+  };
+}
+
+/** Push the reward card into the customer's OA chat after an identified
+ *  submit. Fire-and-forget; skips silently when the branch/token/id is
+ *  missing so a review is never failed over a push. */
+export async function notifyReviewReward(args: {
+  branchId: number; lineUserId: string; code: string; rewardText: string; lang?: "th" | "en";
+}): Promise<{ ok: boolean; skipped?: string }> {
+  if (!args.lineUserId || !args.code) return { ok: false, skipped: "missing_args" };
+  const branch = getDb().prepare("SELECT * FROM branches WHERE id = ?").get(args.branchId) as Branch | undefined;
+  if (!branch) return { ok: false, skipped: "no_branch" };
+  const token = resolveBranchToken(branch);
+  if (!token) return { ok: false, skipped: "no_token" };
+
+  const flex = reviewRewardFlex({
+    branchName: branch.name,
+    code: args.code,
+    rewardText: args.rewardText,
+    headerColor: branch.brand_color,
+    lang: args.lang ?? "th"
+  });
+  const res = await sendLinePush(token, { to: args.lineUserId, messages: [flex] });
+  return { ok: res.ok, skipped: res.ok ? undefined : "push_failed" };
+}
+
 export async function notifyStaff(
   branch: Branch, booking: Booking, tableLabel: string | null,
   type: "created" | "reminder" | "pending_review"

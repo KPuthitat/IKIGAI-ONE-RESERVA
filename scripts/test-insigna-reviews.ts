@@ -17,7 +17,8 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   const {
     getReviewConfig, saveReviewConfig, setBranchGoogleUrl, getBranchReviewInfo,
     submitReview, trackGoogleClick, claimReward, reviewSummary, listReviews,
-    createReviewInvite, resolveReviewInvite, purgeExpiredReviewInvites, hashLineUserId
+    createReviewInvite, resolveReviewInvite, purgeExpiredReviewInvites, hashLineUserId,
+    customerRewardCountAtBranch
   } = await import("../src/lib/insigna");
   const db = getDb();
 
@@ -216,7 +217,7 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
     claimReward(anonA.reward_code!) === "claimed" && claimReward(anonB.reward_code!) === "claimed");
 
   // ── LINE thank-you card (Phase 2B) ──
-  const { reviewInviteFlex, isReviewKeyword, oaReviewDeepLink, REVIEW_QR_KEYWORD } = await import("../src/lib/line");
+  const { reviewInviteFlex, reviewRewardFlex, isReviewKeyword, oaReviewDeepLink, REVIEW_QR_KEYWORD } = await import("../src/lib/line");
   const flex = reviewInviteFlex({
     branchName: "NAMA", slug: "nama", token: "TOK-123",
     publicBaseUrl: "https://ikigaimedihealth.com/", lang: "th", customerName: "สมชาย"
@@ -236,6 +237,22 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   })());
   ok("oaReviewDeepLink → null when no @basic-id (e.g. lin.ee short link)", oaReviewDeepLink("https://lin.ee/abcd") === null);
   ok("oaReviewDeepLink → null on empty/nullish input", oaReviewDeepLink(null) === null && oaReviewDeepLink("") === null);
+
+  // ── reward card pushed into the customer's OA chat after submit ──
+  const reward = reviewRewardFlex({ branchName: "NAMA", code: "IK-ABCDEF", rewardText: "เครื่องดื่มฟรี 1 แก้ว", lang: "th" });
+  const rewardStr = JSON.stringify(reward);
+  ok("reviewRewardFlex is a flex message", (reward as { type: string }).type === "flex");
+  ok("reviewRewardFlex shows the code + reward text", rewardStr.includes("IK-ABCDEF") && rewardStr.includes("เครื่องดื่มฟรี 1 แก้ว"));
+  ok("reviewRewardFlex altText carries the code (saved in LINE)", (reward as { altText: string }).altText.includes("IK-ABCDEF"));
+
+  // gate: the reward push fires only when this is the customer's ONLY code at
+  // the branch (count === 1) — a resubmit/repeat visit is skipped.
+  const gateHash = hashLineUserId("Ugate");
+  submitReview({ branch_id: A, rating: 5, customer_hash: gateHash });
+  ok("reward-push gate: count = 1 after the first identified reward", customerRewardCountAtBranch(gateHash, A) === 1);
+  submitReview({ branch_id: A, rating: 5, customer_hash: gateHash });
+  ok("reward-push gate: count = 2 after a resubmit (push would be skipped)", customerRewardCountAtBranch(gateHash, A) === 2);
+  ok("reward-push gate: count is per-branch (branch B still 0)", customerRewardCountAtBranch(gateHash, B) === 0);
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
