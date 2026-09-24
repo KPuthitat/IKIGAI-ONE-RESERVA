@@ -471,16 +471,31 @@ export function listCustomerRewards(customer_hash: string): CustomerReward[] {
   // means any other code there is dead (superseded), regardless of its date.
   const claimedBranches = new Set(rows.filter((r) => r.claimed).map((r) => r.branch_id));
 
-  return rows.map((r) => {
+  // Base status per row.
+  const withStatus = rows.map((r) => {
     let status: CustomerRewardStatus;
     if (r.claimed) status = "claimed";
     else if (claimedBranches.has(r.branch_id)) status = "superseded"; // dead even if issued today
-    else if (bkkDateIso(r.created_at) === today) status = "not_yet";
-    else status = "usable";
-    return {
-      code: r.code, branch_id: r.branch_id, branch_name: r.branch_name,
-      reward_text: rewardText, created_at: r.created_at,
-      claimed: !!r.claimed, claimed_at: r.claimed_at, status
-    };
+    else status = bkkDateIso(r.created_at) === today ? "not_yet" : "usable";
+    return { r, status };
   });
+
+  // Only ONE code per branch is ever redeemable (1 per branch), so present at
+  // most one ACTIVE code per branch — the rest are superseded. Prefer a usable
+  // (redeemable now) code over a not_yet (issued today) one. Rows are newest
+  // first, so the first match per branch is the most recent.
+  const activePicked = new Set<number | null>();
+  for (const want of ["usable", "not_yet"] as const) {
+    for (const w of withStatus) {
+      if (w.status !== want) continue;
+      if (activePicked.has(w.r.branch_id)) w.status = "superseded";
+      else activePicked.add(w.r.branch_id);
+    }
+  }
+
+  return withStatus.map(({ r, status }) => ({
+    code: r.code, branch_id: r.branch_id, branch_name: r.branch_name,
+    reward_text: rewardText, created_at: r.created_at,
+    claimed: !!r.claimed, claimed_at: r.claimed_at, status
+  }));
 }
