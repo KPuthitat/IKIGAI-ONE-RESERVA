@@ -19,7 +19,7 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { getDb, type Branch } from "@/lib/db";
-import { sendLinePush } from "@/lib/line";
+import { sendLinePush, isReviewKeyword, notifyReviewInviteToLineUser } from "@/lib/line";
 import { ingestLineBill, handleBillVerifyPostback } from "@/lib/accounta-line-bill";
 import { getChannelByCode } from "@/lib/messaging-channels";
 
@@ -241,6 +241,15 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // pattern here so customers who type out of habit get a polite
       // redirect to call instead of silence.
       if (channel.scope !== "platform" && channel.branch) {
+        // INSIGNA review QR (owner 2026-09-24): the printed QR opens this OA
+        // with a prefilled review keyword. When the customer sends it, mint an
+        // identified review invite and push the rating card — the review + its
+        // reward code then live in the customer's own OA chat.
+        if (isReviewKeyword(text)) {
+          await notifyReviewInviteToLineUser(channel.branch, userId);
+          continue;
+        }
+
         const cancelMatch = text.match(/ยกเลิก\s*#?\s*[A-Z0-9]+/i);
         if (cancelMatch) {
           // Read the branch's contact phone (if configured) so we can
