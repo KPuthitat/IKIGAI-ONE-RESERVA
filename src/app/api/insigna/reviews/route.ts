@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import QRCode from "qrcode";
 import {
   getReviewConfig,
   getBranchReviewInfo,
@@ -106,5 +107,13 @@ export async function POST(req: Request) {
     customer_hash: customerHash
   });
 
-  return NextResponse.json({ ok: true, ...result });
+  // A scannable QR of the reward code so staff can redeem it with the camera
+  // (via น้องฮูก) instead of typing (owner 2026-09-24). Encodes the plain code.
+  let rewardQr: string | null = null;
+  if (result.reward_code) {
+    rewardQr = await QRCode.toDataURL(result.reward_code, { width: 320, margin: 1, errorCorrectionLevel: "M" })
+      .catch(() => null);
+  }
+
+  return NextResponse.json({ ok: true, ...result, reward_qr: rewardQr });
 }

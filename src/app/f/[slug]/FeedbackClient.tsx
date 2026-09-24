@@ -24,6 +24,7 @@ type SubmitResult = {
   google_review_url: string | null;
   reward_code: string | null;
   reward_text: string | null;
+  reward_qr: string | null;
 };
 
 function Stars({ value, onChange }: { value: number; onChange: (v: number) => void }) {
@@ -170,9 +171,15 @@ export default function FeedbackClient({ branchSlug, branchName, inviteToken }: 
                 สิทธิ์รอบหน้าของคุณ
               </div>
               <div className="text-sm text-amber-800 mt-1">{result.reward_text}</div>
+              {result.reward_qr && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={result.reward_qr} alt="QR รางวัล" width={150} height={150}
+                  className="mx-auto mt-3 w-[150px] h-[150px] rounded-lg bg-white p-1.5 shadow-sm" />
+              )}
               <div className="mt-2 text-2xl font-black tracking-widest text-amber-700 tabular-nums">
                 {result.reward_code}
               </div>
+              <div className="text-[11px] text-amber-600 mt-1">ให้พนักงานสแกน QR หรือกรอกโค้ดนี้</div>
               <div className="text-[11px] text-amber-500 mt-1">
                 {wentToGoogle
                   ? "ขอบคุณที่ช่วยรีวิวค่ะ แสดงโค้ดนี้กับพนักงานในครั้งถัดไป"
