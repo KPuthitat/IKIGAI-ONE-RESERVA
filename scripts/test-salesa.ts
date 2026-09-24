@@ -43,7 +43,8 @@ function scalar(title: string, date: string, merchant: string, name: string, val
 
 function receiptBuf(date: string, merchant: string, bills: Array<{ time: string; no: string; table: string; gross: string; discount: string; nett: string; payment: string; items: string }>): Buffer {
   const header = ["Time", "No.", "Table", "Status", "ID", "Gross", "Discount", "VAT", "SC", "Other Charge", "Delivery fee", "Rounding", "Nett", "Payment", "Items"];
-  const rows = bills.map((b) => [b.time, b.no, b.table, "COMPLETED", "id", b.gross, b.discount, "0", "0", "0", "0", "0", b.nett, b.payment, b.items]);
+  // Give each bill a distinct FeedMe-style long id so receipt_id capture is testable.
+  const rows = bills.map((b) => [b.time, b.no, b.table, "COMPLETED", `RID-${b.no}`, b.gross, b.discount, "0", "0", "0", "0", "0", b.nett, b.payment, b.items]);
   return wbBuf({ "1.": [...preamble("Receipt", date, merchant), header, ...rows] });
 }
 
@@ -136,6 +137,7 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     ok("receipt hour + qty aggregation", b1.hour === 12 && b1.items.find((i) => i.name === "ข้าวเหนียว")?.qty === 2);
     ok("receipt name cleaning (tabs/spaces)", !!rp.receipt.bills[1].items.find((i) => i.name === "โค้ก") && !!rp.receipt.bills[1].items.find((i) => i.name === "ข้าวเหนียว"));
     ok("receipt staff flagged", rp.receipt.bills[2].isStaff === true && rp.receipt.bills[0].isStaff === false);
+    ok("receipt long id (ID column) captured", b1.receiptId === "RID-1" && rp.receipt.bills[1].receiptId === "RID-2");
   }
 
   // ── 3) DB + analytics ──
@@ -408,6 +410,9 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const rParsed = parse.parseSalesFile(rbuf2);
   if (rParsed.kind === "receipt") sdb.upsertReceipts(bid4, uid, rParsed.receipt);
   ok("upsertReceipts sets has_receipt", sdb.getDaily(bid4, "2026-09-17")?.has_receipt === 1);
+  ok("upsertReceipts stores the long receipt_id", (db.prepare(
+    "SELECT receipt_id FROM salesa_receipts WHERE branch_id = ? AND sale_date = ? AND bill_no = ?"
+  ).get(bid4, "2026-09-17", "1") as { receipt_id: string | null } | undefined)?.receipt_id === "RID-1");
   const ri = analytics.receiptInsights(bid4, 2026, 9);
   ok("receipt hasData + peak hour 12 (1600>800)", ri.hasData && ri.peakHour === 12);
   ok("hourly 12:00 has 2 bills", ri.hourly.find((h) => h.hour === 12)?.bills === 2);

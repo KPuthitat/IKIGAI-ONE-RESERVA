@@ -4,6 +4,7 @@ import { requirePermission, userHasBranch } from "@/lib/auth";
 import {
   isCustomerHash,
   linkBill,
+  findReceiptByReceiptId,
   unlinkBill,
   listLinkedBills,
   customerBillStats
@@ -28,6 +29,10 @@ const Body = z.discriminatedUnion("action", [
     branch_id: z.number().int().positive(),
     sale_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     bill_no: z.string().min(1).max(40)
+  }),
+  z.object({
+    action: z.literal("link_by_id"),
+    receipt_id: z.string().min(1).max(64)
   })
 ]);
 
@@ -42,7 +47,10 @@ export async function POST(req: Request, { params }: { params: { hash: string } 
 
   // Only touch receipts of a branch the caller actually administers — the
   // permission check above is global, so guard the branch here.
-  if (!userHasBranch(user, d.branch_id)) {
+  //
+  // link/unlink name the branch directly; link_by_id resolves the branch from
+  // the scanned receipt id, so its branch guard runs AFTER the lookup below.
+  if (d.action !== "link_by_id" && !userHasBranch(user, d.branch_id)) {
     return NextResponse.json({ error: "forbidden_branch" }, { status: 403 });
   }
 
@@ -52,6 +60,17 @@ export async function POST(req: Request, { params }: { params: { hash: string } 
       customer_hash: hash, branch_id: d.branch_id, sale_date: d.sale_date,
       bill_no: d.bill_no.trim(), linked_by: user.id
     });
+  } else if (d.action === "link_by_id") {
+    // Resolve the scanned id to a receipt FIRST, guard the resolved branch,
+    // then link — so a cross-branch id can't slip a row in before the check.
+    const ref = findReceiptByReceiptId(d.receipt_id.trim());
+    if (!ref) {
+      result = "receipt_not_found";
+    } else if (!userHasBranch(user, ref.branch_id)) {
+      return NextResponse.json({ error: "forbidden_branch" }, { status: 403 });
+    } else {
+      result = linkBill({ customer_hash: hash, ...ref, linked_by: user.id });
+    }
   } else {
     unlinkBill(d.branch_id, d.sale_date, d.bill_no.trim());
     result = "unlinked";

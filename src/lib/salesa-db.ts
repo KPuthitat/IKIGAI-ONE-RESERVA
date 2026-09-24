@@ -142,15 +142,15 @@ export function upsertReceipts(branchId: number, userId: number, r: SalesReceipt
     db.prepare("DELETE FROM salesa_receipts WHERE branch_id = ? AND sale_date = ?").run(branchId, r.date);
     db.prepare("DELETE FROM salesa_receipt_items WHERE branch_id = ? AND sale_date = ?").run(branchId, r.date);
     const insB = db.prepare(
-      `INSERT INTO salesa_receipts (branch_id, sale_date, bill_no, hour, table_name, gross, discount, nett, payment, is_staff, is_takeaway)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO salesa_receipts (branch_id, sale_date, bill_no, hour, table_name, gross, discount, nett, payment, is_staff, is_takeaway, receipt_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const insI = db.prepare(
       `INSERT INTO salesa_receipt_items (branch_id, sale_date, bill_no, name, qty) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(branch_id, sale_date, bill_no, name) DO UPDATE SET qty = qty + excluded.qty`
     );
     for (const b of r.bills) {
-      insB.run(branchId, r.date, b.billNo, b.hour, b.table, b.gross, b.discount, b.nett, b.payment, b.isStaff ? 1 : 0, b.isTakeaway ? 1 : 0);
+      insB.run(branchId, r.date, b.billNo, b.hour, b.table, b.gross, b.discount, b.nett, b.payment, b.isStaff ? 1 : 0, b.isTakeaway ? 1 : 0, b.receiptId || null);
       for (const it of b.items) insI.run(branchId, r.date, b.billNo, it.name, it.qty);
     }
   });

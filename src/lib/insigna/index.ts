@@ -97,10 +97,12 @@ export {
   unlinkBill,
   listLinkedBills,
   customerBillStats,
+  findReceiptByReceiptId,
   type LinkBillArgs,
   type LinkResult,
   type LinkedBill,
-  type CustomerBillStats
+  type CustomerBillStats,
+  type ReceiptRef
 } from "./bills";
 
 // Persona tagging (Phase 7). recomputePersonaTag fires automatically
