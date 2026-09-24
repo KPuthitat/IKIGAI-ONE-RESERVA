@@ -194,6 +194,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/discipline", label: t(lang, "admin.persona.nav.discipline") }
       ]
     },
+    // INSIGNA — contextual section (owner 2026-09-24). Makes รีวิวลูกค้า +
+    // QR reachable straight from the module submenu instead of only via a
+    // card on the INSIGNA landing.
+    ...(canModule(user, "insigna.view") ? [{
+      label: "INSIGNA",
+      pathPrefix: "/admin/insigna",
+      items: [
+        { href: "/admin/insigna", label: "ภาพรวม INSIGNA" },
+        { href: "/admin/insigna/reviews", label: "รีวิวลูกค้า" },
+        { href: "/admin/insigna/reviews/qr", label: "QR รีวิว (ติดโต๊ะ)" }
+      ]
+    }] : []),
     // ANALYTICA — contextual section (owner 2026-09-21). Shown inside
     // /admin/reporta. The company roll-up + LINE-group settings live here.
     ...(canModule(user, "reporta.manage") ? [{
