@@ -21,6 +21,7 @@
 
 import crypto from "node:crypto";
 import { getDb } from "../db";
+import { bkkDateIso, todayBkk } from "../time";
 import { logInsignaEvent } from "./audit";
 
 export type ReviewTier = "high" | "low";
@@ -276,21 +277,52 @@ export function trackGoogleClick(token: string): void {
   ).run(token);
 }
 
-/** Redeem a reward code (staff scans/enters it on the next visit).
- *  Returns 'claimed' on first redemption, 'already' if it was already
- *  used, 'unknown' if the code doesn't exist. */
-export function claimReward(reward_code: string): "claimed" | "already" | "unknown" {
+export type ClaimResult =
+  | "claimed"
+  | "already"           // THIS code was already redeemed
+  | "unknown"           // no such code
+  | "same_day"          // redeemed on the same Bangkok day as the review
+  | "already_redeemed"; // this customer has already used a reward (1/person)
+
+/** Redeem a reward code (staff scans/enters it on a LATER visit).
+ *
+ *  Owner rules (2026-09-24):
+ *   • NOT on the same Bangkok day the survey was filled — the reward is for
+ *     a return visit, not the visit being reviewed → 'same_day'. (It need
+ *     not be the very next visit, just not that same day.)
+ *   • ONE reward per identified customer, ever — customer_hash is set when
+ *     the review came in via a LINE card, so if that customer has already
+ *     redeemed ANY reward, refuse → 'already_redeemed'. Anonymous QR reviews
+ *     carry no hash, so only the same-day + per-code guards apply to them.
+ *
+ *  Returns 'claimed' on success, 'already' if THIS code was already used,
+ *  'unknown' if the code doesn't exist. */
+export function claimReward(reward_code: string): ClaimResult {
   const db = getDb();
   const code = reward_code.trim().toUpperCase();
   const row = db.prepare(
-    "SELECT token, reward_claimed FROM insigna_review_requests WHERE reward_code = ?"
-  ).get(code) as { token: string; reward_claimed: number } | undefined;
+    "SELECT token, reward_claimed, customer_hash, created_at FROM insigna_review_requests WHERE reward_code = ?"
+  ).get(code) as
+    { token: string; reward_claimed: number; customer_hash: string | null; created_at: string } | undefined;
   if (!row) return "unknown";
   if (row.reward_claimed) return "already";
-  db.prepare(
-    "UPDATE insigna_review_requests SET reward_claimed = 1, reward_claimed_at = CURRENT_TIMESTAMP WHERE token = ?"
+
+  // Not redeemable on the same Bangkok day the survey was filled.
+  if (bkkDateIso(row.created_at) === todayBkk()) return "same_day";
+
+  // One reward per identified customer, for all time.
+  if (row.customer_hash) {
+    const prior = db.prepare(
+      "SELECT 1 FROM insigna_review_requests WHERE customer_hash = ? AND reward_claimed = 1 LIMIT 1"
+    ).get(row.customer_hash);
+    if (prior) return "already_redeemed";
+  }
+
+  // Guard the write itself so a double-scan can't claim twice.
+  const res = db.prepare(
+    "UPDATE insigna_review_requests SET reward_claimed = 1, reward_claimed_at = CURRENT_TIMESTAMP WHERE token = ? AND reward_claimed = 0"
   ).run(row.token);
-  return "claimed";
+  return res.changes ? "claimed" : "already";
 }
 
 // ── read surface (admin หลังบ้าน) ────────────────────────────────

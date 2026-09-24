@@ -92,6 +92,13 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   ok("trackGoogleClick unknown token is a no-op", true);
 
   // ── reward claim lifecycle ──
+  // The reward is for a LATER visit, so a same-day claim is refused (see the
+  // reward-rules section below). Backdate these two so the lifecycle checks a
+  // legitimate return-visit redemption. Use a RELATIVE past timestamp so the
+  // suite is robust whatever date it runs on.
+  const PAST_TS = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 19).replace("T", " ");
+  db.prepare("UPDATE insigna_review_requests SET created_at = ? WHERE token IN (?, ?)")
+    .run(PAST_TS, hi.token, lo.token);
   ok("claim unknown code → 'unknown'", claimReward("IK-ZZZZZZ") === "unknown");
   ok("claim valid code → 'claimed'", claimReward(hi.reward_code!) === "claimed");
   ok("claim again → 'already'", claimReward(hi.reward_code!) === "already");
@@ -164,6 +171,42 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234"; // ≥32 chars
   })());
   ok("same LINE id → same hash (recognises a returning customer)", hashLineUserId("Uabc123") === idHash);
   ok("hash reveals no PII (not the raw id)", !idHash.includes("Uabc123"));
+
+  // ── reward rules (owner 2026-09-24): not same-day, one per customer ──
+  const backdate = (token: string) =>
+    db.prepare("UPDATE insigna_review_requests SET created_at = ? WHERE token = ?").run(PAST_TS, token);
+
+  // same-day: a reward can't be redeemed on the day the survey was filled.
+  const sameDay = submitReview({ branch_id: A, rating: 5 }); // created_at = today
+  ok("claim on the same day as the review → 'same_day'", claimReward(sameDay.reward_code!) === "same_day");
+  backdate(sameDay.token);
+  ok("claim on a later visit → 'claimed'", claimReward(sameDay.reward_code!) === "claimed");
+
+  // one reward per identified (LINE-linked) customer, ever.
+  const onceHash = hashLineUserId("Uonce");
+  const r1 = submitReview({ branch_id: A, rating: 5, customer_hash: onceHash });
+  backdate(r1.token);
+  ok("first reward for a customer → 'claimed'", claimReward(r1.reward_code!) === "claimed");
+  const r2 = submitReview({ branch_id: A, rating: 5, customer_hash: onceHash }); // same person, later review
+  backdate(r2.token);
+  ok("second reward for the SAME customer → 'already_redeemed'", claimReward(r2.reward_code!) === "already_redeemed");
+  ok("the second code stays unclaimed after the refusal", (() => {
+    const row = db.prepare("SELECT reward_claimed FROM insigna_review_requests WHERE token = ?").get(r2.token) as { reward_claimed: number };
+    return row.reward_claimed === 0;
+  })());
+
+  // a different customer is unaffected by another's redemption.
+  const otherHash = hashLineUserId("Uother");
+  const r3 = submitReview({ branch_id: A, rating: 5, customer_hash: otherHash });
+  backdate(r3.token);
+  ok("a different customer can still claim → 'claimed'", claimReward(r3.reward_code!) === "claimed");
+
+  // anonymous QR reviews carry no hash → not capped per-person.
+  const anonA = submitReview({ branch_id: A, rating: 5 });
+  const anonB = submitReview({ branch_id: A, rating: 5 });
+  backdate(anonA.token); backdate(anonB.token);
+  ok("anonymous reward claims → 'claimed' (both, not capped per-person)",
+    claimReward(anonA.reward_code!) === "claimed" && claimReward(anonB.reward_code!) === "claimed");
 
   // ── LINE thank-you card (Phase 2B) ──
   const { reviewInviteFlex } = await import("../src/lib/line");

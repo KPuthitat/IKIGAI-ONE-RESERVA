@@ -126,6 +126,8 @@ export default function HookFab({
       const r = j?.result as string | undefined;
       if (r === "claimed") setClaimMsg({ kind: "ok", text: `ใช้สิทธิ์สำเร็จ · ${j.code ?? ""}` });
       else if (r === "already") setClaimMsg({ kind: "err", text: "โค้ดนี้ถูกใช้ไปแล้ว" });
+      else if (r === "same_day") setClaimMsg({ kind: "err", text: "ใช้ในวันที่ทำแบบประเมินไม่ได้ · ใช้ได้ในครั้งถัดไปที่มาใช้บริการ" });
+      else if (r === "already_redeemed") setClaimMsg({ kind: "err", text: "ลูกค้าท่านนี้ใช้สิทธิ์ไปแล้ว (1 สิทธิ์ต่อท่าน)" });
       else setClaimMsg({ kind: "err", text: `ไม่พบโค้ดนี้ (${j.code ?? text})` });
     } catch { setClaimMsg({ kind: "err", text: "เชื่อมต่อไม่ได้ ลองใหม่" }); }
   }
