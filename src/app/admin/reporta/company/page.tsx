@@ -126,7 +126,12 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
         <>
           {/* Company KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="card">
+            {/* ยอดขายรวม carries the long comparison + revshare lines, so give it
+                room: full width on mobile, and half the row (2 of 4 cols) when
+                there are 3 boxes so บิล/ลูกค้า balance beside it. In the current
+                month a 4th box (ยอดขายวันนี้) appears, so it drops back to 1 col
+                and all four sit evenly (owner 2026-09-24). */}
+            <div className={`card col-span-2 ${ov.isCurrentMonth ? "md:col-span-1" : "md:col-span-2"}`}>
               <div className="text-xs text-slate-500">ยอดขายรวม (วันที่ 1–{ov.throughDay})</div>
               <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">฿{baht(t.mtdNett)}</div>
               <div className="text-[11px] mt-0.5">เทียบเดือนก่อน <Pct pct={t.momPct} />{t.prevSameNett != null ? <span className="text-slate-400"> (฿{baht(t.prevSameNett)})</span> : null}</div>
