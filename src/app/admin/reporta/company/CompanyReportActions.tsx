@@ -18,7 +18,7 @@ export default function CompanyReportActions(
       <a href={pdfHref} target="_blank" rel="noopener noreferrer"
         className="btn-secondary text-sm px-3 py-1.5 text-center">ดาวน์โหลด PDF</a>
       <button type="button" onClick={() => setOpen(true)}
-        className="btn-primary text-sm px-3 py-1.5">ส่งการ์ดเข้ากลุ่ม HOD</button>
+        className="btn-primary text-sm px-3 py-1.5">ส่งรายงานผู้บริหาร</button>
       {open && (
         <SendPinModal year={year} month={month}
           preview={<CompanyCardPreview ov={overview} companyName={companyName} monthLabel={monthLabel} operator={operator} color={color} />}
