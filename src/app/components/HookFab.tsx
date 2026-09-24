@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import OwlMascot from "./OwlMascot";
+import BarcodeScanner from "./BarcodeScanner";
 import {
   FAQ_CATEGORIES,
   searchFaq,
@@ -107,6 +108,27 @@ export default function HookFab({
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<FaqCategory | "">("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Reward-QR scanner (owner 2026-09-24): staff scan a customer's review-reward
+  // QR to redeem it, instead of typing the IK-XXXXXX code. Staff/admin only.
+  const canScan = audience === "admin" || audience === "staff";
+  const [scanning, setScanning] = useState(false);
+  const [claimMsg, setClaimMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  async function claimScanned(text: string) {
+    setClaimMsg(null);
+    try {
+      const res = await fetch(apiUrl("/api/insigna/reviews/claim"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: text })
+      });
+      const j = await res.json().catch(() => ({}));
+      const r = j?.result as string | undefined;
+      if (r === "claimed") setClaimMsg({ kind: "ok", text: `ใช้สิทธิ์สำเร็จ · ${j.code ?? ""}` });
+      else if (r === "already") setClaimMsg({ kind: "err", text: "โค้ดนี้ถูกใช้ไปแล้ว" });
+      else setClaimMsg({ kind: "err", text: `ไม่พบโค้ดนี้ (${j.code ?? text})` });
+    } catch { setClaimMsg({ kind: "err", text: "เชื่อมต่อไม่ได้ ลองใหม่" }); }
+  }
 
   // Smart น้องฮูก (AI) — admin-only natural-language Q&A (owner 2026-06-18).
   const [aiQ, setAiQ] = useState("");
@@ -313,6 +335,10 @@ export default function HookFab({
   );
   const safePanelBottom = Math.max(panelBottom, pos.bottom + FAB_SIZE + 8);
 
+  // Don't let a previous scan's success/error banner linger into the next
+  // time the panel is opened for something unrelated.
+  useEffect(() => { if (!open) setClaimMsg(null); }, [open]);
+
   // Close the panel on Escape — feels native for a modal/popover.
   useEffect(() => {
     if (!open) return;
@@ -486,6 +512,21 @@ export default function HookFab({
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            {/* Scan reward QR — staff/admin. Redeems a customer's review-reward
+                voucher by camera instead of typing the code. */}
+            {canScan && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 space-y-2">
+                <div className="text-sm font-bold text-slate-800">สแกนรับรางวัลลูกค้า</div>
+                <div className="text-[11px] text-slate-500">สแกน QR รางวัลจากหน้าจอลูกค้า เพื่อใช้สิทธิ์ส่วนลด</div>
+                <button type="button" onClick={() => { setClaimMsg(null); setScanning(true); }}
+                  className="btn-primary !py-1.5 !px-3 text-sm w-full">เปิดกล้องสแกน QR</button>
+                {claimMsg && (
+                  <p className={`text-xs font-medium ${claimMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
+                    {claimMsg.kind === "ok" ? "✓ " : "✗ "}{claimMsg.text}
+                  </p>
+                )}
+              </div>
+            )}
             {/* Running Claude API spend — admin only, shown once anything has
                 been used. Covers bill OCR + owl questions together. */}
             {audience === "admin" && aiUsage && aiUsage.totalCount > 0 && (
@@ -699,6 +740,14 @@ export default function HookFab({
             </Link>
           </div>
         </div>
+      )}
+
+      {scanning && (
+        <BarcodeScanner
+          title="สแกน QR รางวัลลูกค้า"
+          onResult={(text) => claimScanned(text)}
+          onClose={() => setScanning(false)}
+        />
       )}
     </>
   );
