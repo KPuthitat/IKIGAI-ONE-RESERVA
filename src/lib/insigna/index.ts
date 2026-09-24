@@ -91,6 +91,18 @@ export {
   type ResolvedInvite
 } from "./reviews";
 
+// Bill ↔ customer links + per-customer CRM roll-up (Phase 1, owner 2026-09-24).
+export {
+  linkBill,
+  unlinkBill,
+  listLinkedBills,
+  customerBillStats,
+  type LinkBillArgs,
+  type LinkResult,
+  type LinkedBill,
+  type CustomerBillStats
+} from "./bills";
+
 // Persona tagging (Phase 7). recomputePersonaTag fires automatically
 // from endVisit; the bulk recompute is exposed for the nightly job.
 export {

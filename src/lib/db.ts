@@ -7298,6 +7298,25 @@ function runMigrations(db: Database.Database): void {
       expires_at    TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_review_invites_expires ON review_invites(expires_at);
+
+    -- Bill ↔ customer link (INSIGNA CRM Phase 1, owner 2026-09-24). Ties a POS
+    -- receipt (salesa_receipts key: branch+date+bill_no) to a customer's
+    -- pseudonym so their basket / spend / visit times / frequency can be rolled
+    -- up per person. No FK to insigna_customers on purpose — a customer known
+    -- only from a LINE review (not the visit graph) can still be linked. Carries
+    -- no PII (customer_hash is the one-way pseudonym); UNIQUE on the bill so one
+    -- receipt belongs to at most one customer.
+    CREATE TABLE IF NOT EXISTS insigna_customer_bills (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_hash TEXT NOT NULL,
+      branch_id     INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      sale_date     TEXT NOT NULL,
+      bill_no       TEXT NOT NULL,
+      linked_by     INTEGER REFERENCES users(id),
+      linked_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, sale_date, bill_no)
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_customer_bills_cust ON insigna_customer_bills(customer_hash);
   `);
 
   // Idempotent add for DBs that created insigna_review_requests before the

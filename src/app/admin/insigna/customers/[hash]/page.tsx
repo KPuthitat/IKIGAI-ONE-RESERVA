@@ -16,8 +16,9 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { getCustomerProfile, isCustomerHash } from "@/lib/insigna";
+import { getCustomerProfile, isCustomerHash, listLinkedBills, customerBillStats } from "@/lib/insigna";
 import { bkkDateIso, formatBkkDateTime } from "@/lib/time";
+import LinkedBillsPanel from "./LinkedBillsPanel";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Customer · INSIGNA" };
@@ -47,12 +48,20 @@ export default function CustomerDrillDown({
 }: {
   params: { hash: string };
 }) {
-  requireAdmin();
+  const user = requireAdmin();
   if (!isCustomerHash(params.hash)) notFound();
   const profile = getCustomerProfile(params.hash);
   if (!profile) notFound();
 
   const db = getDb();
+
+  // CRM Phase 1 (owner 2026-09-24): POS bills linked to this customer + roll-up.
+  const activeBranchId = user.activeBranchId ?? null;
+  const crmBranchName = activeBranchId
+    ? (db.prepare("SELECT name FROM branches WHERE id = ?").get(activeBranchId) as { name: string } | undefined)?.name ?? null
+    : null;
+  const linkedBills = listLinkedBills(params.hash);
+  const billStats = customerBillStats(params.hash);
 
   // Tags.
   const tags = db.prepare(`
@@ -155,6 +164,16 @@ export default function CustomerDrillDown({
           ← กลับไป INSIGNA dashboard
         </Link>
       </div>
+
+      {/* CRM Phase 1 — linked POS bills + per-customer roll-up */}
+      <LinkedBillsPanel
+        hash={params.hash}
+        branchId={activeBranchId}
+        branchName={crmBranchName}
+        initialBills={linkedBills}
+        initialStats={billStats}
+        today={bkkDateIso(new Date().toISOString())}
+      />
 
       {/* Header — hash + persona + key counters */}
       <div className="card">
