@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { apiUrl } from "@/lib/url";
 import type { CompanyOverview } from "@/lib/salesa-analytics";
 
@@ -50,7 +51,7 @@ function CompanyCardPreview({ ov, companyName, monthLabel, operator, color }: { 
         <div className="text-[11px] opacity-90">รวมทุกสาขา · {monthLabel}</div>
       </div>
       <div className="px-4 py-3 space-y-1.5 bg-white">
-        <div className="text-[11px] text-slate-400">รวม {ov.branchCount} สาขา · สรุปโดย: {operator}</div>
+        <div className="text-[11px] text-slate-400">ภาพรวมทั้งบริษัท · สรุปโดย: {operator}</div>
         <div className="flex justify-between gap-2">
           <span className="text-slate-500">ยอดขายรวม (วันที่ 1–{ov.throughDay})</span>
           <span className="font-bold text-emerald-700">{baht(t.mtdNett)}</span>
@@ -95,6 +96,11 @@ function SendPinModal({ year, month, preview, onClose }:
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Portal to <body> so the overlay escapes the page header's stacking
+  // context — otherwise the sticky module nav renders on top of it (owner
+  // 2026-09-24: "การ์ดซ้อนกัน").
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   async function submit() {
     if (!/^\d{4}$/.test(pin)) { setErr("PIN ต้องเป็นตัวเลข 4 หลัก"); return; }
@@ -116,10 +122,12 @@ function SendPinModal({ year, month, preview, onClose }:
     finally { setSending(false); }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="font-bold text-slate-800">ส่งภาพรวมบริษัทเข้ากลุ่ม HOD</div>
+        <div className="font-bold text-slate-800">ส่งรายงานผู้บริหาร · ภาพรวมบริษัท</div>
         {done ? (
           <p className="text-emerald-600 text-sm font-medium py-4 text-center">✓ ส่งเข้ากลุ่ม LINE แล้ว</p>
         ) : (
@@ -147,6 +155,7 @@ function SendPinModal({ year, month, preview, onClose }:
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
