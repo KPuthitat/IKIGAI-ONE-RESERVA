@@ -129,6 +129,21 @@ export default function InsignaDashboard() {
         <span className="text-slate-300 group-hover:text-brand">→</span>
       </Link>
 
+      {/* Customer directory (owner 2026-09-24) */}
+      <Link
+        href="/admin/insigna/customers"
+        className="card flex items-center gap-3 hover:border-brand transition group"
+      >
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-rose-50 text-rose-500 text-xl">♛</span>
+        <div className="flex-1">
+          <div className="font-bold text-slate-800">รายชื่อลูกค้า · Customer directory</div>
+          <div className="text-xs text-slate-500">
+            ลูกค้าที่ผูกบิลไว้ เรียงตามยอดซื้อ/ความบ่อย/ครั้งล่าสุด — หา VIP + เจาะดูรายคน
+          </div>
+        </div>
+        <span className="text-slate-300 group-hover:text-brand">→</span>
+      </Link>
+
       {/* Sandbox — only super_admin can fire test events */}
       {user.role === "super_admin" && <Sandbox />}
 
