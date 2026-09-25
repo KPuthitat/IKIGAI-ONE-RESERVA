@@ -105,7 +105,7 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
 
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(bkkToday());
-  const [time, setTime] = useState("");   // optional HH:MM start time
+  const [time, setTime] = useState("00:00");   // HH:MM start time — defaults 00:00 so the field is never blank (owner 2026-09-25)
   const [companyWide, setCompanyWide] = useState(false);
   const [topics, setTopics] = useState<string[]>([]);
   const [invited, setInvited] = useState<Set<number>>(new Set());
@@ -160,7 +160,7 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
       });
       const j = await res.json().catch(() => ({}));
       if (j?.ok) {
-        setTitle(""); setInvited(new Set()); setCompanyWide(false); setTopics([]); setTime("");
+        setTitle(""); setInvited(new Set()); setCompanyWide(false); setTopics([]); setTime("00:00");
         setMsg({ kind: "ok", text: "สร้างการประชุมแล้ว" });
         startTransition(() => router.refresh());
       } else {
@@ -434,7 +434,7 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
   }
   async function load(): Promise<Detail | null> {
     const m = await fetchDetail();
-    if (m) { setD(m); setTopics(m.agenda_topics ?? []); setMDate(m.meeting_date); setMTime(timeOf(m.scheduled_at) ?? ""); }
+    if (m) { setD(m); setTopics(m.agenda_topics ?? []); setMDate(m.meeting_date); setMTime(timeOf(m.scheduled_at) ?? "00:00"); }
     return m;
   }
   // The summary runs in the background — poll the meeting until it finishes.
