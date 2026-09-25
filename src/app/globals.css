@@ -69,6 +69,16 @@ input[type="time"]::-webkit-datetime-edit-fields-wrapper,
 input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
   font-family: inherit;
 }
+/* iOS Safari centers the value in date/time inputs; left-align it everywhere so
+   the value doesn't float in the middle of the field (owner 2026-09-25). */
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value,
+input[type="month"]::-webkit-date-and-time-value,
+input[type="week"]::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
 
 /* 2026-05: numeric font pairing. The tailwind config repoints
    `font-mono` → LINE Seed Sans TH (the original ui-monospace was
@@ -117,6 +127,17 @@ input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
   width: 100%;
   /* iOS เพิ่ม inner padding รอบ icon — ลด px ลง */
   padding-right: 0.5rem;
+  text-align: left;
+}
+/* iOS Safari CENTERS the displayed value inside date/time inputs, so a short
+   date floats in the middle of a wide field and reads as broken (owner
+   2026-09-25 — "เห็นกล่องวันที่แบบนี้เยอะมาก"). Pin the value left so these
+   read like every other text field, app-wide. */
+.input[type="date"]::-webkit-date-and-time-value,
+.input[type="time"]::-webkit-date-and-time-value,
+.input[type="datetime-local"]::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
 }
 .label { @apply block text-[13px] font-semibold text-slate-500 mb-1.5; }
 
