@@ -11,7 +11,7 @@ type Result = {
 
 const baht = (n: number) => `฿${n.toLocaleString("th-TH")}`;
 
-export default function ClinicaImportClient() {
+export default function ClinicaImportClient({ onImported }: { onImported?: () => void }) {
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -30,7 +30,9 @@ export default function ClinicaImportClient() {
         setResults(j.imported as Result[]);
         setMsg({ kind: "ok", text: `นำเข้าสำเร็จ ${j.imported.length} ไฟล์` });
         setFiles([]);
-        router.refresh();
+        router.refresh();      // refresh server components (e.g. the imported-range hint)
+        onImported?.();        // let an inline host (ReportaClient) re-fetch its report
+
       } else {
         setMsg({ kind: "err", text: j.message ?? j.error ?? "นำเข้าไม่สำเร็จ" });
       }
