@@ -222,6 +222,25 @@ export function effectiveShiftStartForUserDate(
   return row?.start_time ?? null;
 }
 
+/** The LATEST scheduled shift end (HH:MM) among a user's assignments on a date,
+ *  or null when the day has no assignment. Mirrors effectiveShiftStartForUserDate
+ *  — used to prefill the backdated-OT "อยู่เกินเวลาถึง" field (owner 2026-09-26). */
+export function scheduledShiftEndForUserDate(
+  userId: number,
+  branchId: number,
+  dateBkk: string
+): string | null {
+  const row = getDb().prepare(`
+    SELECT MAX(s.end_time) AS end_time
+    FROM roster_assignments a
+    JOIN shift_codes s ON s.id = a.shift_code_id
+    WHERE a.user_id = ?
+      AND a.branch_id = ?
+      AND a.assignment_date = ?
+  `).get(userId, branchId, dateBkk) as { end_time: string | null } | undefined;
+  return row?.end_time ?? null;
+}
+
 /** The scheduled break window for a user on a date at a branch (owner
  *  2026-09-13, break-skip). Returns the EARLIEST break window among the day's
  *  assignments, or null when the day has no break to skip. Drives the break-skip

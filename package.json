@@ -34,6 +34,7 @@
     "test:referral": "node --import tsx scripts/test-referral.ts",
     "test:quality": "node --import tsx scripts/test-quality-docs.ts",
     "test:late-excusal": "node --import tsx scripts/test-late-excusal.ts",
+    "test:ot-backdate": "node --import tsx scripts/test-ot-backdate.ts",
     "test:clock": "node --import tsx scripts/test-clock-code.ts",
     "test:revshare": "node --import tsx scripts/test-revshare.ts",
     "test:revshare-category": "node --import tsx scripts/test-revshare-category.ts",
