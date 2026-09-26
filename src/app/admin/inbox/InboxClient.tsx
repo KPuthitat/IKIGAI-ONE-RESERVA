@@ -24,10 +24,25 @@ type Message = {
   body: string;
   sent_by: number | null;
   sent_by_name: string | null;
+  media_kind?: "image" | "sticker" | null;
+  media_ref?: string | null;
   created_at: string;
 };
 
 const POLL_MS = 15_000;
+
+/** An inbound image, fetched on-demand from LINE. Falls back to the text label
+ *  (e.g. "[รูปภาพ]") if the content has expired from LINE and the endpoint 404s. */
+function InboxImage({ id, fallback }: { id: number; fallback: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <div className="text-slate-500 italic">{fallback} <span className="text-[10px]">(รูปหมดอายุ)</span></div>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={apiUrl(`/api/admin/inbox/media/${id}`)} alt="รูปภาพ"
+      className="max-w-[220px] max-h-[280px] rounded-lg object-contain" loading="lazy"
+      onError={() => setFailed(true)} />
+  );
+}
 
 /** Customer's shown name: the LINE display name, else a short id tail. */
 function convName(c: Conversation): string {
@@ -264,7 +279,15 @@ export default function InboxClient({
                           ? "bg-brand text-white rounded-br-sm"
                           : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm"
                       }`}>
-                        <div>{m.body}</div>
+                        {m.media_kind === "sticker" && m.media_ref ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={`https://stickershop.line-scdn.net/stickershop/v1/sticker/${m.media_ref}/android/sticker.png`}
+                            alt="สติกเกอร์" className="w-24 h-24 object-contain" loading="lazy" />
+                        ) : m.media_kind === "image" ? (
+                          <InboxImage id={m.id} fallback={m.body} />
+                        ) : (
+                          <div>{m.body}</div>
+                        )}
                         <div className={`text-[10px] mt-1 ${m.direction === "out" ? "text-white/70" : "text-slate-400"}`}>
                           {m.direction === "out" && m.sent_by_name ? `${m.sent_by_name} · ` : ""}
                           {formatBkkDateTime(m.created_at)}

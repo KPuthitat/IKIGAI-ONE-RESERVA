@@ -32,7 +32,7 @@ type LineEvent = {
     groupId?: string;
     roomId?: string;
   };
-  message?: { type: string; text?: string; id?: string; fileName?: string };
+  message?: { type: string; text?: string; id?: string; fileName?: string; stickerId?: string };
   postback?: { data?: string };
   replyToken?: string;
 };
@@ -222,6 +222,12 @@ export async function POST(req: Request, { params }: { params: { branch: string 
         : m?.type === "image" ? "[รูปภาพ]"
         : m?.type === "sticker" ? "[สติกเกอร์]"
         : m?.type ? `[${m.type}]` : "";
+      // Media so the inbox can render the real image/sticker, not just a label:
+      // an image is fetched on-demand by its message id; a sticker renders from
+      // LINE's CDN by stickerId (owner 2026-09-26).
+      const mediaKind: "image" | "sticker" | null =
+        m?.type === "image" ? "image" : m?.type === "sticker" ? "sticker" : null;
+      const mediaRef = m?.type === "sticker" ? (m.stickerId ?? null) : null;
       if (body && !autoHandled) {
         try {
           recordInbound({
@@ -229,7 +235,9 @@ export async function POST(req: Request, { params }: { params: { branch: string 
             branch_id: channel.branch.id,
             line_user_id: userId,
             text: body,
-            external_message_id: m?.id ?? null
+            external_message_id: m?.id ?? null,
+            media_kind: mediaKind,
+            media_ref: mediaRef
           });
         } catch (e) {
           console.warn("[inbox] record failed:", e);
