@@ -144,7 +144,7 @@ function MeetingCard({ m, onChanged }: { m: StaffMeetingView; onChanged: () => v
             {busy === "join" ? "..." : "เข้าร่วมประชุม"}
           </button>
           <p className="text-xs text-slate-400">
-            เข้าร่วมได้แม้อยู่ในเวลางาน · เบี้ยประชุมจ่ายเฉพาะช่วงที่อยู่นอกเวลางาน
+            เข้าร่วมได้แม้อยู่ในเวลางาน · ได้เบี้ยประชุมตามปกติ
           </p>
         </div>
       ) : (

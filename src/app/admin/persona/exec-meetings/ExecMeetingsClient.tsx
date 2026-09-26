@@ -386,7 +386,12 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
       </div>
 
       {detailId != null && (
-        <MeetingDetailModal meetingId={detailId} onClose={() => setDetailId(null)} />
+        <MeetingDetailModal
+          meetingId={detailId}
+          staff={staff}
+          onClose={() => setDetailId(null)}
+          onChanged={() => startTransition(() => router.refresh())}
+        />
       )}
     </div>
   );
@@ -407,7 +412,7 @@ type Detail = {
   invitees: Invitee[];
 };
 
-function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose: () => void }) {
+function MeetingDetailModal({ meetingId, staff, onClose, onChanged }: { meetingId: number; staff: StaffLite[]; onClose: () => void; onChanged: () => void }) {
   const [d, setD] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -418,6 +423,12 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
   const [savingTopics, setSavingTopics] = useState(false);
   const [topicsMsg, setTopicsMsg] = useState<string | null>(null);
   const [notifyMsg, setNotifyMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Add invitees after creation — allowed even after the meeting opens (owner
+  // 2026-09-26). Pre-selected from the current invitees; anyone who already
+  // joined stays selected server-side regardless.
+  const [invSel, setInvSel] = useState<Set<number>>(new Set());
+  const [savingInv, setSavingInv] = useState(false);
+  const [invMsg, setInvMsg] = useState<string | null>(null);
 
   const polling = useRef(false);
 
@@ -434,7 +445,10 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
   }
   async function load(): Promise<Detail | null> {
     const m = await fetchDetail();
-    if (m) { setD(m); setTopics(m.agenda_topics ?? []); setMDate(m.meeting_date); setMTime(timeOf(m.scheduled_at) ?? "00:00"); }
+    if (m) {
+      setD(m); setTopics(m.agenda_topics ?? []); setMDate(m.meeting_date); setMTime(timeOf(m.scheduled_at) ?? "00:00");
+      setInvSel(new Set(m.invitees.map((i) => i.user_id)));
+    }
     return m;
   }
   // The summary runs in the background — poll the meeting until it finishes.
@@ -478,6 +492,38 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
       else setTopicsMsg(j?.error === "no_change" ? "ไม่มีการเปลี่ยนแปลง" : (j?.message ?? j?.error ?? "บันทึกไม่สำเร็จ"));
     } catch { setTopicsMsg("เชื่อมต่อไม่ได้"); }
     finally { setSavingTopics(false); }
+  }
+
+  // Save the invitee set (add people, even after the meeting has opened — owner
+  // 2026-09-26). The server keeps anyone who already joined and LINE-notifies
+  // only the newly-added invitees.
+  function toggleInv(id: number) {
+    setInvSel((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }
+  async function saveInvitees() {
+    if (!d) return;
+    if (invSel.size === 0) { setInvMsg("เลือกผู้เข้าประชุมอย่างน้อย 1 คน"); return; }
+    const current = new Set(d.invitees.map((i) => i.user_id));
+    const added = [...invSel].filter((id) => !current.has(id));
+    const removed = [...current].filter((id) => !invSel.has(id));
+    if (added.length === 0 && removed.length === 0) { setInvMsg("ไม่มีการเปลี่ยนแปลง"); return; }
+    setSavingInv(true); setInvMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/exec-meetings/${meetingId}`), {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invitee_user_ids: Array.from(invSel) })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j?.ok) {
+        // Refresh only the attendance table + selection; do NOT call load(), which
+        // would reset unsaved date/time/agenda edits in this same modal.
+        const m = await fetchDetail();
+        if (m) { setD(m); setInvSel(new Set(m.invitees.map((i) => i.user_id))); }
+        onChanged();
+        setInvMsg(added.length > 0 ? `เพิ่ม ${added.length} คน — แจ้งเตือนเข้า LINE แล้ว` : "อัปเดตรายชื่อผู้เข้าประชุมแล้ว");
+      } else setInvMsg(j?.message ?? j?.error ?? "บันทึกไม่สำเร็จ");
+    } catch { setInvMsg("เชื่อมต่อไม่ได้"); }
+    finally { setSavingInv(false); }
   }
 
   async function summarize() {
@@ -574,6 +620,40 @@ function MeetingDetailModal({ meetingId, onClose }: { meetingId: number; onClose
                 </ol>
               </div>
             ) : null}
+
+            {/* Add / edit invitees — allowed even after the meeting opens (owner
+                2026-09-26). Server keeps anyone who already joined and notifies
+                only the newly-added. */}
+            {(d.status === "scheduled" || d.status === "active") && (
+              <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">ผู้เข้าประชุม (เพิ่มได้แม้เปิดประชุมแล้ว)</span>
+                  <span className="text-[11px] text-slate-400">เลือกไว้ {invSel.size} คน</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                  {staff.map((s) => {
+                    const joined = d.invitees.some((i) => i.user_id === s.id && i.joined_at);
+                    const label = `${s.title_prefix ? `${s.title_prefix} ` : ""}${s.display_name}`;
+                    if (joined) {
+                      // Already joined — locked in (can't be removed).
+                      return (
+                        <span key={s.id} className="text-xs px-2 py-0.5 rounded-full border border-emerald-300 bg-emerald-100 text-emerald-700">
+                          {label} · เข้าร่วมแล้ว
+                        </span>
+                      );
+                    }
+                    return <ChipBtn key={s.id} active={invSel.has(s.id)} onClick={() => toggleInv(s.id)}>{label}</ChipBtn>;
+                  })}
+                </div>
+                <div className="flex items-center gap-3 pt-0.5">
+                  <button type="button" onClick={saveInvitees} disabled={savingInv}
+                    className="btn-secondary text-xs disabled:opacity-50">
+                    {savingInv ? "..." : "บันทึกผู้เข้าประชุม"}
+                  </button>
+                  {invMsg && <span className="text-xs text-slate-500">{invMsg}</span>}
+                </div>
+              </div>
+            )}
 
             {/* Attendance + minutes status */}
             <div className="overflow-x-auto">
