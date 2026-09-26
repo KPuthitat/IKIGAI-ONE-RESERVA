@@ -83,6 +83,45 @@ process.env.DATABASE_PATH = TMP;
   ok("exempt: คิดเวลา 60 นาที", !("error" in e2) && e2.minutes === 60);
   ok("exempt: เบี้ยประชุม = 0 (ยกเว้น)", !("error" in e2) && e2.fee === 0);
 
+  // ── in-work-hours meetings (owner 2026-09-26): เข้าประชุมได้แม้ยังไม่ลงเวลาออก;
+  //    เบี้ยประชุมคิดเฉพาะนาทีที่อยู่นอกเวลางาน (ทับกับกะงาน = ไม่คิด) ──
+  const uidW = mkUser("worker_full");     // ประชุมทั้งช่วงอยู่ในเวลางาน
+  const uidP = mkUser("worker_partial");  // ลงเวลาออกกลางประชุม
+  const uidC = mkUser("worker_clockedin");// ทดสอบว่ากดเข้าได้ทั้งที่ยัง clocked in
+  const mid3 = em.createExecMeeting({ title: "ประชุมในเวลางาน", meeting_date: "2026-09-05", branch_id: null, invitee_user_ids: [uidW, uidP, uidC], created_by: uidW });
+  em.updateExecMeeting(mid3, { status: "active" });
+
+  // time_entries.ts is stored in ISO-8601 by the clock route (new Date().toISOString()),
+  // NOT SQLite's space format — insert it that way so this test exercises the real
+  // format the off-clock math must parse/compare.
+  const isoAgo = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+  const clockIn  = (u: number, min: number) => db.prepare("INSERT INTO time_entries (user_id,type,ts,branch_id) VALUES (?, 'in',  ?, NULL)").run(u, isoAgo(min));
+  const clockOut = (u: number, min: number) => db.prepare("INSERT INTO time_entries (user_id,type,ts,branch_id) VALUES (?, 'out', ?, NULL)").run(u, isoAgo(min));
+
+  // join no longer blocked by an open work shift.
+  clockIn(uidC, 10);
+  ok("join: เข้าประชุมได้แม้ยังอยู่ในเวลางาน (ไม่ต้องลงเวลาออกก่อน)", em.joinMeeting(mid3, uidC) === null);
+
+  // (a) whole 60-min meeting sits inside a work shift → off-clock 0 → fee 0.
+  em.joinMeeting(mid3, uidW);
+  em.saveMinutes(mid3, uidW, { locked_answers: [], extra_items: [{ topic: "ก", details: "ข", suggestions: "ค", action_plan: "ง", owner_user_ids: [] }] });
+  db.prepare("UPDATE exec_meeting_attendance SET joined_at = datetime('now','-60 minutes') WHERE meeting_id=? AND user_id=?").run(mid3, uidW);
+  clockIn(uidW, 120);
+  clockOut(uidW, -5);   // clocks out 5 min AFTER the meeting ends → covers the whole meeting
+  const ew = em.endMeeting(mid3, uidW);
+  ok("in-work-hours: คิดเวลาเข้าร่วม 60 นาที", !("error" in ew) && ew.minutes === 60);
+  ok("in-work-hours: เบี้ย = 0 (อยู่ในเวลางานทั้งหมด)", !("error" in ew) && ew.fee === 0);
+
+  // (b) clocked out 30 min into a 60-min meeting → 30 off-clock min → fee 100.
+  em.joinMeeting(mid3, uidP);
+  em.saveMinutes(mid3, uidP, { locked_answers: [], extra_items: [{ topic: "ก", details: "ข", suggestions: "ค", action_plan: "ง", owner_user_ids: [] }] });
+  db.prepare("UPDATE exec_meeting_attendance SET joined_at = datetime('now','-60 minutes') WHERE meeting_id=? AND user_id=?").run(mid3, uidP);
+  clockIn(uidP, 120);
+  clockOut(uidP, 30);   // clocks out 30 min ago = 30 min into the meeting
+  const ep = em.endMeeting(mid3, uidP);
+  ok("partial: คิดเวลาเข้าร่วม 60 นาที", !("error" in ep) && ep.minutes === 60);
+  ok("partial: เบี้ย = 100 (นอกเวลางาน 30 นาที = 2 บล็อก)", !("error" in ep) && ep.fee === 100);
+
   // ── preset agenda (วาระตั้งล่วงหน้า) + multi-วาระ minutes ──
   const uid3 = mkUser("staff3");
   const mid2 = em.createExecMeeting({

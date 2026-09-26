@@ -138,10 +138,15 @@ function MeetingCard({ m, onChanged }: { m: StaffMeetingView; onChanged: () => v
       ) : m.status !== "active" ? (
         <div className="text-sm text-slate-400">การประชุมยังไม่เปิด — รอแอดมินเปิดประชุม</div>
       ) : !joined ? (
-        <button type="button" onClick={join} disabled={busy != null}
-          className="btn-primary text-sm disabled:opacity-50">
-          {busy === "join" ? "..." : "เข้าร่วมประชุม"}
-        </button>
+        <div className="space-y-1.5">
+          <button type="button" onClick={join} disabled={busy != null}
+            className="btn-primary text-sm disabled:opacity-50">
+            {busy === "join" ? "..." : "เข้าร่วมประชุม"}
+          </button>
+          <p className="text-xs text-slate-400">
+            เข้าร่วมได้แม้อยู่ในเวลางาน · เบี้ยประชุมจ่ายเฉพาะช่วงที่อยู่นอกเวลางาน
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
           <div className="text-xs text-slate-500">
