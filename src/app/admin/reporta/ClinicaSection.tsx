@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import OwlMascot from "@/app/components/OwlMascot";
+import { thaiDate } from "@/lib/revshare";   // shared "15 มิถุนายน 2569" formatter (client-safe, pure)
 // Type-only import (erased from the client bundle, so the server-only db code in
 // clinica-analytics is never pulled in) — the single source of truth for the
 // shape, re-exported for the rest of the client tree.
@@ -15,6 +17,15 @@ export type { ClinicaMonth };
 const baht = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
 /** Money with its count in parentheses — the house style (owner 2026-09-26). */
 const bahtC = (n: number, c: number) => `${baht(n)} (${c.toLocaleString("th-TH")} ครั้ง)`;
+const intTh = (n: number) => n.toLocaleString("th-TH");
+
+/** Per-day file chip, same look as the restaurant's FileChip (owner 2026-09-27:
+ *  ให้เหมือนกัน) — green ✓ when the file is present that day, amber ขาด when not. */
+function FileChip({ label, present }: { label: string; present?: boolean }) {
+  return present
+    ? <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 text-[10px] font-medium">✓{label}</span>
+    : <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 border border-amber-300 px-2 py-0.5 text-[10px] font-medium">ขาด{label}</span>;
+}
 
 // Same ▲▼ symbols + one-decimal format as the restaurant PctChip (owner
 // 2026-09-27: "ดูพวกลูกศรด้วย … ให้เหมือนกัน อย่าแหวก"). Exported so the clinic
@@ -39,6 +50,7 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
   canSend?: boolean;
   disabledReason?: string;
 }) {
+  const [showAllDays, setShowAllDays] = useState(false);
   const maxCat = Math.max(1, ...c.categories.map((x) => x.net));
   const maxItem = Math.max(1, ...c.topItems.map((x) => x.net));
   const maxDx = Math.max(1, ...c.topDiagnoses.map((x) => x.count));
@@ -149,6 +161,54 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
           </div>
         </div>
       )}
+
+      {/* รายวันทั้งเดือน — file-completeness list mirroring the restaurant's
+          (owner 2026-09-27: "ดูตัวอย่าง … เลียนแบบให้หมด"). Each operating day shows
+          its bills/patients + ✓Invoice/✓OPD chips; "missing" is read from the data,
+          so a day that already has bills never reads as missing Invoice. */}
+      {c.monthDays.length > 0 && (() => {
+        const inc = c.monthDays.filter((d) => !(d.hasInvoice && d.hasOpd));
+        const missInv = c.monthDays.filter((d) => !d.hasInvoice).length;
+        const missOpd = c.monthDays.filter((d) => !d.hasOpd).length;
+        return (
+          <div className="card space-y-2">
+            {inc.length === 0 ? (
+              <div className="text-xs text-emerald-600">✓ ทุกวันที่มีข้อมูลในเดือนนี้ ลงไฟล์ครบทั้ง 2 ชนิดแล้ว (Invoice + OPD)</div>
+            ) : (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                มี <b>{inc.length}</b> วันที่ลงไฟล์ไม่ครบ —
+                {missInv > 0 && <> ขาด Invoice {missInv} วัน</>}
+                {missInv > 0 && missOpd > 0 && <> · </>}
+                {missOpd > 0 && <> ขาด OPD {missOpd} วัน</>}
+              </div>
+            )}
+            <button type="button" onClick={() => setShowAllDays((v) => !v)}
+              className="w-full flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+              <span>รายวันทั้งเดือน ({intTh(c.monthDays.length)} วัน)</span>
+              <span className="text-slate-400">{showAllDays ? "ซ่อน ▲" : "ดูรายวัน ▼"}</span>
+            </button>
+            {showAllDays && (
+              <div className="divide-y divide-slate-100">
+                {c.monthDays.map((d) => (
+                  <div key={d.date} className="flex items-center justify-between gap-2 py-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-800">{thaiDate(d.date)}</div>
+                      <div className="text-xs text-slate-500">{d.hasInvoice ? `${intTh(d.bills)} บิล · ${intTh(d.patients)} คน` : "ยังไม่มีบิล"}</div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <FileChip label="Invoice" present={d.hasInvoice} />
+                        <FileChip label="OPD" present={d.hasOpd} />
+                      </div>
+                    </div>
+                    <div className="text-right whitespace-nowrap">
+                      <div className="text-sm font-bold text-slate-900">{d.hasInvoice ? baht(d.net) : "—"}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Patient growth (new vs returning) + demographics (owner 2026-09-26) */}
       {(totalPatientsMix > 0 || c.demographics.male + c.demographics.female + c.demographics.other > 0) && (

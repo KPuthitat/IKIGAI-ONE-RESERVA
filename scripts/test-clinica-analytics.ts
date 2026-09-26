@@ -67,6 +67,14 @@ process.env.DATABASE_PATH = TMP;
   // Clinic report v2 (owner 2026-09-26): new/returning, daily trend, demographics, target.
   ok("patients: ใหม่ 2 · กลับมาซ้ำ 0 (ส.ค. เป็นบิลแรกของทั้งคู่)", m.newPatients === 2 && m.returningPatients === 0);
   ok("daily: 2 วัน (08-05=300, 08-10=500)", m.daily.length === 2 && m.daily[0].date === "2026-08-05" && near(m.daily[0].net, 300) && near(m.daily[1].net, 500));
+  // Per-day file list: 08-05 & 08-10 have bills+OPD (ครบ), 08-11 has OPD only.
+  ok("monthDays: 3 วัน (05,10 ครบ · 11 มี OPD ไม่มีบิล)", (() => {
+    const byDate = new Map(m.monthDays.map((d) => [d.date, d]));
+    const d5 = byDate.get("2026-08-05"), d11 = byDate.get("2026-08-11");
+    return m.monthDays.length === 3
+      && !!d5 && d5.hasInvoice && d5.hasOpd && d5.bills === 1 && d5.patients === 1
+      && !!d11 && d11.hasInvoice === false && d11.hasOpd === true && d11.bills === 0;
+  })());
   ok("demographics: ชาย 2 · หญิง 1 · อายุ 18–34=1, 35–59=2", (() => {
     const d = m.demographics; const band = new Map(d.ageBands.map((a) => [a.label, a.count]));
     return d.male === 2 && d.female === 1 && d.withAge === 3 && band.get("18–34") === 1 && band.get("35–59") === 2;
@@ -120,6 +128,28 @@ process.env.DATABASE_PATH = TMP;
   ok("week: สัปดาห์ที่ไม่มีข้อมูล → ทุกค่าเป็น 0 และ WoW null", (() => {
     const e = ca.clinicaWeek(branch, "2026-11-16");
     return e.dayCount === 0 && e.totalBills === 0 && e.wowNetPct === null && e.days.length === 0;
+  })());
+
+  // Company overview + annual roll-up must include a clinic branch's billed net
+  // (owner 2026-09-27: "ภาพรวม/รายปีก็ต้องขึ้น"). Dedicated branch so the figures
+  // are independent of the data other tests seeded on `branch`.
+  const sa = await import("../src/lib/salesa-analytics");
+  const cb = Number(db.prepare("INSERT INTO branches (slug,name,company_id) VALUES ('clinic2','CLINIC 2',1)").run().lastInsertRowid);
+  cdb.importInvoice(cb, invParse("2026-08-03", "2026-08-04", [
+    bill("CB1", "2026-08-03", "17:00:00", "ผู้ป่วยทั่วไป", 1000, 1000, 0, [item("GEN001", "[HSC] บริการ", 1000)]),
+    bill("CB2", "2026-08-04", "18:00:00", "ผู้ป่วยทั่วไป", 500, 500, 0, [item("GEN001", "[HSC] บริการ", 500)]),
+  ]));
+  const ov = sa.companyOverview([cb], 2026, 8, "2026-08-31");
+  ok("company: ภาพรวมรวมยอดคลินิก (mtd 1500 · 2 บิล · 2 คน)", near(ov.total.mtdNett, 1500) && ov.total.bills === 2 && ov.total.pax === 2 && ov.branchCount === 1);
+  ok("company: แถวสาขาคลินิกโชว์ยอด 1500 (ไม่ใช่ 0)", ov.branches.length === 1 && near(ov.branches[0].mtdNett, 1500));
+  const bars = sa.annualBranchBars(2026, "2026-08-31", [cb]);
+  ok("annual: สาขาคลินิกอยู่ในกราฟรายปี · ส.ค. = 1500", (() => {
+    const row = bars.branches.find((b) => b.branchId === cb);
+    return !!row && near(row.total, 1500) && row.months[7] === 1500;
+  })());
+  ok("annual: YTD ของคลินิก = 1500 · คาดสิ้นปี > YTD (run-rate)", (() => {
+    const p = cdb.clinicaYtdProjection(cb, "2026-08-31");
+    return near(p.ytd, 1500) && p.projected > p.ytd;
   })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);

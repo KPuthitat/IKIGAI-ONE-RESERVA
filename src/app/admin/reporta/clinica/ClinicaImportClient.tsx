@@ -43,19 +43,12 @@ export default function ClinicaImportClient({ onImported }: { onImported?: (targ
       const j = await res.json().catch(() => ({}));
       if (res.ok && j.ok) {
         const imported = (j.imported ?? []) as Result[];
-        // Which of the two HIS exports came in, and which is still missing — the
-        // restaurant POS import reports the same "ไฟล์ไหนแล้ว / ขาดไฟล์อะไร" so the
-        // clinic mirrors it (owner 2026-09-27). A missing kind is a gentle amber
-        // note, not an error: importing one at a time is allowed.
-        const hasInv = imported.some((r) => r.kind === "invoice");
-        const hasOpd = imported.some((r) => r.kind === "opd");
-        const got = [hasInv ? "Invoice" : null, hasOpd ? "OPD" : null].filter(Boolean).join(" + ");
-        if (hasInv && hasOpd) {
-          setMsg({ kind: "ok", text: "นำเข้าสำเร็จ · Invoice + OPD ครบแล้ว" });
-        } else {
-          const missing = hasInv ? "OPD Report" : "Invoice Report";
-          setMsg({ kind: "warn", text: `นำเข้าสำเร็จ · ${got} · ⚠️ ยังไม่ได้นำเข้า ${missing}` });
-        }
+        // Just "นำเข้าสำเร็จ", like the restaurant POS import (owner 2026-09-27).
+        // Which file is missing is NOT a property of this one upload — Invoice may
+        // already be in the system from an earlier import — so completeness is
+        // shown per day in the month list below, from the actual data, not guessed
+        // from this batch ("ยอดขายก็ขึ้นแล้ว ว่าไม่นำเข้าได้ไง").
+        setMsg({ kind: "ok", text: "นำเข้าสำเร็จ" });
         setFiles([]);
         // Latest imported date → let the host jump its month browser to that data
         // (owner 2026-09-27: after import, เด้งไปเดือนที่นำเข้า).

@@ -5,6 +5,7 @@
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
 import type { MenuEntry } from "./salesa-parse";
 import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTarget, branchIdsWithTarget, branchOpensOn, type DailyRow } from "./salesa-db";
+import { clinicaRangeAgg, clinicaMaxBillDayInMonth, clinicaBranchesWithBillsInYear, clinicaMonthlyNet, clinicaYtdProjection } from "./clinica-db";
 import { getDb } from "./db";
 
 function addDaysIso(iso: string, n: number): string {
@@ -640,7 +641,10 @@ function branchYtdProjection(branchId: number, todayIso: string): { ytd: number;
   // Settled ส่วนแบ่งยอดขาย (RevShare) Jan..this month — actual income, added flat to
   // YTD + projection (POS drives the run-rate; no future revshare is guessed).
   const revYtd = revshareYtdForBranch(branchId, y, Number(todayIso.slice(5, 7)));
-  if (!rows.length) return { ytd: round2(revYtd), projected: round2(revYtd) };
+  // Clinic billed net + its own run-rate projection, added on top of POS so a
+  // hybrid branch keeps both streams (owner 2026-09-27: รายปี/เป้าทั้งปี ต้องรวมคลินิก).
+  const cli = clinicaYtdProjection(branchId, todayIso);
+  if (!rows.length) return { ytd: round2(revYtd + cli.ytd), projected: round2(revYtd + cli.projected) };
   const day = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
   // Run-rate span starts at the branch's authoritative opening date when it
   // opened this year (owner 2026-09-24: "คาดจากวันแรกที่เปิดร้าน"), so a store
@@ -657,7 +661,7 @@ function branchYtdProjection(branchId: number, todayIso: string): { ytd: number;
   const spanDays = Math.max(1, day(todayIso) - day(spanStart) + 1);
   const dailyRate = posYtd / spanDays;
   const remainingDays = Math.max(0, day(`${y}-12-31`) - day(todayIso));
-  return { ytd: round2(posYtd + revYtd), projected: round2(posYtd + dailyRate * remainingDays + revYtd) };
+  return { ytd: round2(posYtd + revYtd + cli.ytd), projected: round2(posYtd + dailyRate * remainingDays + revYtd + cli.projected) };
 }
 
 const dayNum = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
@@ -821,7 +825,10 @@ export function companyOverview(branchIds: number[], year: number, month: number
     const r = db.prepare(
       `SELECT MAX(sale_date) AS d FROM salesa_daily WHERE has_sales = 1 AND substr(sale_date,1,7) = ? AND branch_id IN (${ids.map(() => "?").join(",")})`
     ).get(`${year}-${mm}`, ...ids) as { d: string | null } | undefined;
-    throughDay = r?.d ? Number(r.d.slice(8, 10)) : 0;
+    const posDay = r?.d ? Number(r.d.slice(8, 10)) : 0;
+    // A clinic-only company has no salesa_daily, so reach the window to the last
+    // clinic bill too (owner 2026-09-27).
+    throughDay = Math.max(posDay, clinicaMaxBillDayInMonth(ids, year, month));
   }
   const pm = month === 1 ? 12 : month - 1;
   const pmY = month === 1 ? year - 1 : year;
@@ -834,9 +841,28 @@ export function companyOverview(branchIds: number[], year: number, month: number
   // Targeted-branch MTD is tracked POS vs revshare separately: the revshare lump
   // is added FLAT to the projection (not run-rate-annualized by targetProgress).
   let tTargetSum = 0, tMtdTargetedPos = 0, tRevTargeted = 0, targetedCount = 0;
+  // A clinic branch's revenue lives in clinica_bills, so fold it in ADDITIVELY to
+  // POS (owner 2026-09-27: the clinic must show up in ภาพรวมบริษัท, not ฿0). A pure
+  // restaurant has clinic 0, a pure clinic has POS 0, and a hypothetical hybrid
+  // keeps both — no all-or-nothing branch classifier.
+  const clinicAggMtd = (branchId: number, yy: number, mmn: number): MtdAgg | null => {
+    if (throughDay < 1) return null;
+    const last = Math.min(throughDay, daysInMonth(yy, mmn));
+    const mms = String(mmn).padStart(2, "0");
+    const a = clinicaRangeAgg(branchId, `${yy}-${mms}-01`, `${yy}-${mms}-${String(last).padStart(2, "0")}`);
+    return a.bills > 0 ? { nett: a.nett, bills: a.bills, pax: a.pax, discount: 0, days: a.days } : null;
+  };
+  const mergeMtd = (p: MtdAgg | null, c: MtdAgg | null): MtdAgg | null => {
+    if (!p && !c) return null;
+    return {
+      nett: round2((p?.nett ?? 0) + (c?.nett ?? 0)), bills: (p?.bills ?? 0) + (c?.bills ?? 0),
+      pax: (p?.pax ?? 0) + (c?.pax ?? 0), discount: round2((p?.discount ?? 0) + (c?.discount ?? 0)),
+      days: Math.max(p?.days ?? 0, c?.days ?? 0),
+    };
+  };
   for (const b of brows) {
-    const cur = throughDay > 0 ? aggMtd(b.id, year, month, throughDay) : null;
-    const prev = throughDay > 0 ? aggMtd(b.id, pmY, pm, throughDay) : null;
+    const cur = throughDay > 0 ? mergeMtd(aggMtd(b.id, year, month, throughDay), clinicAggMtd(b.id, year, month)) : null;
+    const prev = throughDay > 0 ? mergeMtd(aggMtd(b.id, pmY, pm, throughDay), clinicAggMtd(b.id, pmY, pm)) : null;
     const posNett = cur?.nett ?? 0;
     // ส่วนแบ่งยอดขาย (RevShare) settled this month — added into the displayed nett,
     // target and totals. Kept OUT of the same-period MoM % (below), which stays a
@@ -847,7 +873,8 @@ export function companyOverview(branchIds: number[], year: number, month: number
     const bills = cur?.bills ?? 0;
     const pax = cur?.pax ?? 0;
     const todayNett = isCurrentMonth
-      ? round2(listRange(b.id, todayIso, todayIso).filter((d) => d.has_sales).reduce((s, d) => s + d.nett, 0))
+      ? round2(listRange(b.id, todayIso, todayIso).filter((d) => d.has_sales).reduce((s, d) => s + d.nett, 0)
+               + clinicaRangeAgg(b.id, todayIso, todayIso).nett)
       : null;
     const monthTarget = getMonthlyTarget(b.id);
     const pctOfTarget = monthTarget && monthTarget > 0 ? round2((mtdNett / monthTarget) * 100) : null;
@@ -906,8 +933,12 @@ export function companyWeekCompare(branchIds: number[], todayIso: string): Compa
     "SELECT SUM(nett) AS nett, SUM(bill_count) AS bills, SUM(pax) AS pax FROM salesa_daily WHERE branch_id = ? AND has_sales = 1 AND sale_date BETWEEN ? AND ?"
   );
   const rangeAgg = (bid: number, s: string, e: string): { nett: number; bills: number; pax: number } | null => {
+    // POS + clinic, added (owner 2026-09-27) — a clinic has no salesa_daily, a
+    // restaurant has no clinica_bills, a hybrid keeps both.
     const r = aggStmt.get(bid, s, e) as { nett: number | null; bills: number | null; pax: number | null };
-    return r.nett == null ? null : { nett: round2(r.nett), bills: r.bills ?? 0, pax: r.pax ?? 0 };
+    const cli = clinicaRangeAgg(bid, s, e);
+    if (r.nett == null && cli.bills === 0) return null;
+    return { nett: round2((r.nett ?? 0) + cli.nett), bills: (r.bills ?? 0) + cli.bills, pax: (r.pax ?? 0) + cli.pax };
   };
   const rows: CompanyWeekRow[] = [];
   let tNett = 0, tBills = 0, tPax = 0, cmpCur = 0, cmpPrev = 0, anyCmp = false;
@@ -1452,7 +1483,12 @@ export function annualBranchBars(year: number, todayIso: string, allowedBranchId
   const db = getDb();
   const yr = String(year);
 
-  const branches = branchesWithSalesInYear(yr, allowedBranchIds);
+  // Restaurants (POS) + clinic branches that billed this year, so a clinic shows
+  // up in the annual view too (owner 2026-09-27: "รายปีก็ต้องเห็นสรุป").
+  const posBranches = branchesWithSalesInYear(yr, allowedBranchIds);
+  const cliBranches = clinicaBranchesWithBillsInYear(year, allowedBranchIds);
+  const seen = new Set(posBranches.map((b) => b.id));
+  const branches = [...posBranches, ...cliBranches.filter((c) => !seen.has(c.id)).map((c) => ({ id: c.id, name: c.name }))];
   // Render Jan..Dec for a past year; only through the current month for this year.
   const isThisYear = year === Number(todayIso.slice(0, 4));
   const monthCount = isThisYear ? Number(todayIso.slice(5, 7)) : 12;
@@ -1473,6 +1509,13 @@ export function annualBranchBars(year: number, todayIso: string, allowedBranchId
   for (const r of rows) {
     const idx = Number(r.m) - 1;
     if (idx >= 0 && idx < monthCount) byBranchMonth.set(r.b * 100 + idx, round2(r.n));
+  }
+  // Fold each clinic branch's monthly billed net into the same map.
+  for (const c of cliBranches) {
+    const monthly = clinicaMonthlyNet(c.id, year);
+    for (let i = 0; i < monthCount; i++) {
+      if (monthly[i] > 0) byBranchMonth.set(c.id * 100 + i, round2((byBranchMonth.get(c.id * 100 + i) ?? 0) + monthly[i]));
+    }
   }
 
   const out: BranchYearBars[] = branches.map((br) => {
