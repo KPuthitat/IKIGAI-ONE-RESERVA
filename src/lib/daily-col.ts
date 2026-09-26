@@ -103,6 +103,76 @@ export function getDailyColRows(branchId: number, days: number): DailyColRow[] {
   });
 }
 
+// ── ANALYTICA: today's COL snapshot for one branch (owner 2026-09-26) ────────
+// "วันนี้มีพนักงานเข้างานกี่คน (ประจำ/พาร์ทไทม์), เป็นต้นทุนแรงงานกี่บาท, กี่ %
+// ของยอดขายวันนี้." Headcount counts everyone who clocked IN today (including
+// staff still on shift); labour cost/COL% use completed shifts × each staff's
+// rate (an open shift firms up when they clock out), matching the rest of COL.
+
+export type TodayCol = {
+  date: string;             // Bangkok YYYY-MM-DD
+  headcount: number;        // distinct real staff who clocked in today
+  ftCount: number;          // of those, full-time
+  ptCount: number;          // of those, part-time
+  otherCount: number;       // of those, neither (contract/unset) — so the split reconciles
+  laborCost: number;        // baht — worked hours × rate, open shifts counted up to now
+  salesNett: number | null; // this branch's POS nett today
+  colPct: number | null;    // laborCost / salesNett × 100
+};
+
+export function branchTodayCol(branchId: number, todayBkk: string): TodayCol {
+  const db = getDb();
+  const startIso = new Date(`${todayBkk}T00:00:00+07:00`).toISOString();
+  const endIso = new Date(`${todayBkk}T23:59:59+07:00`).toISOString();
+  const rawEntries = db.prepare(
+    `SELECT user_id, ts, type FROM time_entries
+     WHERE branch_id = ? AND ts >= ? AND ts <= ? ORDER BY ts ASC`
+  ).all(branchId, startIso, endIso) as Array<{ user_id: number; ts: string; type: "in" | "out" }>;
+
+  // Restrict to real staff — exclude disabled/resigned and test accounts, and
+  // capture employment_type in the SAME lookup for the FT/PT split (CLAUDE.md).
+  const allIds = [...new Set(rawEntries.map((e) => e.user_id))];
+  const empByUser = new Map<number, string | null>();
+  if (allIds.length) {
+    const ph = allIds.map(() => "?").join(",");
+    for (const u of db.prepare(
+      `SELECT id, employment_type FROM users
+        WHERE id IN (${ph}) AND status NOT IN ('disabled','resigned') AND COALESCE(is_test_account,0) = 0`
+    ).all(...allIds) as Array<{ id: number; employment_type: string | null }>) {
+      empByUser.set(u.id, u.employment_type);
+    }
+  }
+  const entries = rawEntries.filter((e) => empByUser.has(e.user_id));
+
+  // Close any still-open shift at "now" so the cost is live through the day, not
+  // 0 until people clock out. (No effect on a fully clocked-out past day.)
+  const nowIso = new Date().toISOString();
+  const net = new Map<number, number>();
+  for (const e of entries) net.set(e.user_id, (net.get(e.user_id) ?? 0) + (e.type === "in" ? 1 : -1));
+  const withOpen = [...entries];
+  for (const [uid, n] of net) if (n > 0) withOpen.push({ user_id: uid, ts: nowIso, type: "out" });
+  withOpen.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+  const laborCost = laborCostByDay(db, computeWorkedMinutesByDay(withOpen)).get(todayBkk) ?? 0;
+
+  // Headcount = distinct real staff with a clock-IN today (incl. still on shift).
+  const inUserIds = [...new Set(entries.filter((e) => e.type === "in").map((e) => e.user_id))];
+  let ftCount = 0, ptCount = 0;
+  for (const uid of inUserIds) {
+    const t = empByUser.get(uid);
+    if (t === "ft") ftCount++;
+    else if (t === "pt") ptCount++;
+  }
+  const headcount = inUserIds.length;
+
+  const salesRow = db.prepare(
+    `SELECT SUM(nett) AS nett FROM salesa_daily WHERE branch_id = ? AND has_sales = 1 AND sale_date = ?`
+  ).get(branchId, todayBkk) as { nett: number | null } | undefined;
+  const salesNett = salesRow?.nett != null ? Math.round(salesRow.nett * 100) / 100 : null;
+  const colPct = salesNett && salesNett > 0 ? Math.round((laborCost / salesNett) * 1000) / 10 : null;
+
+  return { date: todayBkk, headcount, ftCount, ptCount, otherCount: headcount - ftCount - ptCount, laborCost, salesNett, colPct };
+}
+
 // ── ANALYTICA: company-wide daily labour cost for a month (owner 2026-09-24) ──
 
 export type CompanyLaborDay = {
