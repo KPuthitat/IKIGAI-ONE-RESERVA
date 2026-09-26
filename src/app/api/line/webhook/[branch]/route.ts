@@ -20,6 +20,7 @@ import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { getDb, type Branch } from "@/lib/db";
 import { sendLinePush, isReviewKeyword, notifyReviewInviteToLineUser } from "@/lib/line";
+import { recordInbound } from "@/lib/inbox";
 import { ingestLineBill, handleBillVerifyPostback } from "@/lib/accounta-line-bill";
 import { getChannelByCode } from "@/lib/messaging-channels";
 
@@ -197,6 +198,43 @@ export async function POST(req: Request, { params }: { params: { branch: string 
         });
       }
       continue;
+    }
+
+    // INBOX (owner 2026-09-26): log genuine customer messages from a branch OA
+    // into the unified inbox so staff reply from the back office. Messages the
+    // keyword handlers below answer automatically (review QR, cancel, id, help)
+    // are NOT recorded — they're bot traffic, not something a human must reply
+    // to, and recording them would inflate the น้องฮูก unread badge. Best-effort.
+    if (channel.branch && channel.scope !== "platform" && ev.type === "message") {
+      const m = ev.message;
+      const isText = m?.type === "text";
+      const textBody = isText ? (m.text ?? "").trim() : "";
+      // Mirror the auto-reply keyword handlers further down: any message they
+      // fully handle (each ends the loop) must be skipped here.
+      const autoHandled = isText && (
+        isReviewKeyword(textBody) ||
+        /ยกเลิก\s*#?\s*[A-Z0-9]+/i.test(textBody) ||
+        /^\s*(id|ไอดี|myid|line\s*id)\s*$/i.test(textBody) ||
+        /^\s*(help|ช่วย|cmd|menu|วิธีใช้)\s*$/i.test(textBody)
+      );
+      const body =
+        isText ? textBody
+        : m?.type === "image" ? "[รูปภาพ]"
+        : m?.type === "sticker" ? "[สติกเกอร์]"
+        : m?.type ? `[${m.type}]` : "";
+      if (body && !autoHandled) {
+        try {
+          recordInbound({
+            channel_code: params.branch,
+            branch_id: channel.branch.id,
+            line_user_id: userId,
+            text: body,
+            external_message_id: m?.id ?? null
+          });
+        } catch (e) {
+          console.warn("[inbox] record failed:", e);
+        }
+      }
     }
 
     // ACCOUNTA bill ingest (owner 2026-06-18). A bound staff member sends a

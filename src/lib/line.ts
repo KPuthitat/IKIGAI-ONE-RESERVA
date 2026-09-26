@@ -75,6 +75,24 @@ export async function sendLinePush(
   }
 }
 
+/** Fetch a LINE user's OA profile (display name) for the inbox. Best-effort:
+ *  returns null on any failure so recording the message never blocks. A GET
+ *  that reads only the OA-visible profile, so it isn't DEV-guarded. */
+export async function getLineProfile(
+  channelToken: string, userId: string
+): Promise<{ displayName: string | null } | null> {
+  try {
+    const res = await fetch(`https://api.line.me/v2/bot/profile/${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${channelToken}` }
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { displayName?: string };
+    return { displayName: j.displayName ?? null };
+  } catch {
+    return null;
+  }
+}
+
 // Reply to a webhook event using its replyToken. Reply messages are FREE — they
 // do NOT count against the LINE OA monthly push quota (owner 2026-06-30: bill
 // cards stopped after the push quota ran out). Token is single-use + short-lived
