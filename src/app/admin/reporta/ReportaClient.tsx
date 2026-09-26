@@ -97,6 +97,8 @@ type SalesPushPlan = {
 };
 type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
 type Annual = { year: number; annualTarget: number; fullYearTarget: number; prorated: boolean; openedIso: string | null; ytdNett: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean; throughDate: string; branchCount: number };
+type OutlookBenchmark = { label: string; expected: number; avgPerDay: number; monthsUsed?: number };
+type RemainingOutlook = { year: number; month: number; todayDom: number; remainingDays: number; windowStartDom: number; windowEndDom: number; mtdNett: number; prevMonth: OutlookBenchmark | null; avg3: OutlookBenchmark | null };
 // Festival / important-day analysis (owner 2026-09-20): each วันสำคัญ × each branch.
 type FestivalCell = { branchId: number; branchName: string; sales: number | null; monthAvg: number | null; upliftPct: number | null };
 type FestivalRow = { date: string; dateLabel: string; nameTh: string; branches: FestivalCell[] };
@@ -217,6 +219,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [insightRange, setInsightRange] = useState<InsightRange | null>(null);
   const [monthTarget, setMonthTarget] = useState<MonthTarget | null>(null);
   const [annual, setAnnual] = useState<Annual | null>(null);
+  const [remainingOutlook, setRemainingOutlook] = useState<RemainingOutlook | null>(null);
   const [revshareIncome, setRevshareIncome] = useState(0);   // ส่วนแบ่งยอดขาย this month
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [pushDays, setPushDays] = useState(3);
@@ -284,6 +287,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       setWeekdays(r.weekdays ?? []); setDiscount(r.discount ?? null); setChannels(r.channels ?? null);
       setMonthTarget(r.monthTarget ?? null); setAnnual(r.annual ?? null); setRevshareIncome(r.revshareIncome ?? 0); setMonthSentAt(r.monthSentAt ?? null); setInsights(r.insights ?? null);
       setInsightRange(r.insightRange ?? null);
+      setRemainingOutlook(r.remainingOutlook ?? null);
       if (r.cardColor) setCardColor(r.cardColor);
     }
   }, [year, month, panelPeriod]);
@@ -726,6 +730,41 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Remaining-days-of-month outlook (owner 2026-09-26): how much the tail
+            of the month usually brings, vs the same window last month and the
+            3-month average — a heads-up for what's still to come. */}
+        {remainingOutlook && (remainingOutlook.prevMonth || remainingOutlook.avg3) && (
+          <div className="card space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-bold text-slate-800">ยอดที่เหลือของเดือน</h2>
+              <span className="text-[11px] text-slate-500">
+                อีก {remainingOutlook.remainingDays} วัน (วันที่ {remainingOutlook.windowStartDom}–{remainingOutlook.windowEndDom})
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              คาดการณ์ยอดของวันที่เหลือ อิงช่วงวันเดียวกันของเดือนก่อน และค่าเฉลี่ย 3 เดือนล่าสุด
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[remainingOutlook.prevMonth, remainingOutlook.avg3]
+                .filter((b): b is OutlookBenchmark => b != null)
+                .map((b) => (
+                  <div key={b.label} className="rounded-xl border border-slate-200 p-3">
+                    <div className="text-xs font-semibold text-slate-600">
+                      {b.label}{b.monthsUsed != null ? ` (${b.monthsUsed} เดือน)` : ""}
+                    </div>
+                    <div className="text-lg font-bold text-emerald-700">{baht(b.expected)}</div>
+                    <div className="text-[11px] text-slate-500">
+                      คาดยอดวันที่เหลือ · เฉลี่ย {baht(b.avgPerDay)}/วัน
+                    </div>
+                  </div>
+                ))}
+            </div>
+            <div className="text-[11px] text-slate-500">
+              เดือนนี้ทำได้แล้ว {baht(remainingOutlook.mtdNett)} (ถึงวันที่ {remainingOutlook.todayDom})
+            </div>
           </div>
         )}
 

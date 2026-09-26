@@ -266,6 +266,95 @@ export function monthComparison(branchId: number, year: number, month: number, t
   };
 }
 
+// ── Remaining-days-of-month outlook (owner 2026-09-26) ──────────────────────
+// As of today, how much does the TAIL of the month (the days after today,
+// through month end) usually bring? Benchmarks the current month's remaining
+// window against the same day-window in the previous month and the pooled
+// average of the last 3 months, and projects an expected figure for the days
+// still to come. "ยอดที่เหลือของเดือนน่าจะเป็นประมาณเท่าไร."
+
+export type OutlookBenchmark = {
+  label: string;             // "เดือนก่อน" / "เฉลี่ย 3 เดือน"
+  expected: number;          // ฿ expected for this month's remaining days
+  avgPerDay: number;         // expected ÷ remaining days
+  monthsUsed?: number;       // (3-mo avg only) how many of the 3 months had data
+};
+
+export type RemainingMonthOutlook = {
+  year: number;
+  month: number;
+  todayDom: number;          // today's day-of-month
+  remainingDays: number;     // calendar days AFTER today through month end
+  windowStartDom: number;    // first day of the tail window (todayDom + 1)
+  windowEndDom: number;      // last day of the current month
+  mtdNett: number;           // this month so far (context)
+  prevMonth: OutlookBenchmark | null;
+  avg3: OutlookBenchmark | null;
+};
+
+/** Nett over a month's LAST `n` calendar days, and how many of those days had
+ *  sales. Using the last-n-days (a fixed length) instead of a fixed date range
+ *  keeps every benchmark month the same length as the current month's remaining
+ *  window — a fair apples-to-apples "tail of the month" total, and no month is
+ *  dropped for being shorter. salesDays==0 ⇒ no data for that window. */
+function lastNDaysTail(branchId: number, y: number, m: number, n: number): { nett: number; salesDays: number } {
+  const last = daysInMonth(y, m);
+  const startDom = Math.max(1, last - n + 1);
+  const mm = String(m).padStart(2, "0");
+  const rows = listRange(branchId, `${y}-${mm}-${String(startDom).padStart(2, "0")}`, `${y}-${mm}-${String(last).padStart(2, "0")}`)
+    .filter((d) => d.has_sales);
+  return { nett: round2(rows.reduce((s, d) => s + d.nett, 0)), salesDays: rows.length };
+}
+
+/** Outlook for the remaining days of the current month: what the tail usually
+ *  brings, benchmarked against the same-length tail of the previous month and
+ *  the average of the last 3 months. Returns null on the month's last day
+ *  (nothing left to project). `todayIso` is Bangkok-local. */
+export function remainingMonthOutlook(branchId: number, todayIso: string): RemainingMonthOutlook | null {
+  const year = Number(todayIso.slice(0, 4));
+  const month = Number(todayIso.slice(5, 7));
+  const todayDom = Number(todayIso.slice(8, 10));
+  const lastCur = daysInMonth(year, month);
+  const remainingDays = lastCur - todayDom;               // days strictly after today
+  if (remainingDays <= 0) return null;
+  const n = remainingDays;
+
+  // MTD context: nett from the 1st through today.
+  const mm = String(month).padStart(2, "0");
+  const mtdNett = round2(
+    listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(todayDom).padStart(2, "0")}`)
+      .filter((d) => d.has_sales)
+      .reduce((s, d) => s + d.nett, 0)
+  );
+
+  const monthBack = (k: number): { y: number; m: number } => {
+    let y = year, m = month - k;
+    while (m <= 0) { m += 12; y -= 1; }
+    return { y, m };
+  };
+
+  // Compute each of the last 3 months' tail ONCE (prevMonth reuses the first).
+  const tails = [1, 2, 3].map((k) => { const { y, m } = monthBack(k); return lastNDaysTail(branchId, y, m, n); });
+
+  const prevMonth: OutlookBenchmark | null = tails[0].salesDays > 0
+    ? { label: "เดือนก่อน", expected: tails[0].nett, avgPerDay: round2(tails[0].nett / n) }
+    : null;
+
+  const withData = tails.filter((t) => t.salesDays > 0);
+  const avg3: OutlookBenchmark | null = withData.length > 0
+    ? (() => {
+        const mean = withData.reduce((s, t) => s + t.nett, 0) / withData.length;
+        return { label: "เฉลี่ย 3 เดือน", expected: round2(mean), avgPerDay: round2(mean / n), monthsUsed: withData.length };
+      })()
+    : null;
+
+  return {
+    year, month, todayDom, remainingDays,
+    windowStartDom: todayDom + 1, windowEndDom: lastCur,
+    mtdNett, prevMonth, avg3
+  };
+}
+
 export type WeeklyAnalytics = {
   weekStart: string;
   weekEnd: string;

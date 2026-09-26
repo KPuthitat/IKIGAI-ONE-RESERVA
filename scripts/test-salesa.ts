@@ -768,6 +768,29 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     return a.name === "ต้ม" && a.nett === 150 && a.branchCount === 2 && b.name === "ผัด" && b.nett === 80 && b.branchCount === 1;
   })());
 
+  // ── remainingMonthOutlook (owner 2026-09-26): the tail of the month vs the
+  //    same-length last-N-days tail of the previous month + the 3-month average.
+  //    As of 2026-09-26 (Sept, 30 days) → 4 days left (27–30); each benchmark
+  //    month contributes its OWN last 4 days. ──
+  const bidRO = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('ro','REST-RO')").run().lastInsertRowid);
+  for (const d of ["28", "29", "30", "31"]) mkDay(bidRO, `2026-08-${d}`, 1000);  // Aug last 4: 4×1000 = 4000
+  for (const d of ["28", "29", "30", "31"]) mkDay(bidRO, `2026-07-${d}`, 2000);  // Jul last 4: 4×2000 = 8000
+  for (const d of ["27", "28", "29", "30"]) mkDay(bidRO, `2026-06-${d}`, 3000);  // Jun last 4: 4×3000 = 12000
+  mkDay(bidRO, "2026-09-25", 500); mkDay(bidRO, "2026-09-26", 500);              // Sept MTD context
+  const ro = analytics.remainingMonthOutlook(bidRO, "2026-09-26")!;
+  ok("outlook: 4 วันที่เหลือ (27–30)", ro.remainingDays === 4 && ro.windowStartDom === 27 && ro.windowEndDom === 30);
+  ok("outlook: MTD = 1000 (25+26)", near(ro.mtdNett, 1000));
+  ok("outlook: เดือนก่อน (ส.ค. last 4) คาด 4000 · เฉลี่ย 1000/วัน",
+    ro.prevMonth != null && near(ro.prevMonth.expected, 4000) && near(ro.prevMonth.avgPerDay, 1000));
+  ok("outlook: เฉลี่ย 3 เดือน (4000,8000,12000)/3 = 8000 · เฉลี่ย 2000/วัน",
+    ro.avg3 != null && ro.avg3.monthsUsed === 3 && near(ro.avg3.expected, 8000) && near(ro.avg3.avgPerDay, 2000));
+  ok("outlook: วันสุดท้ายของเดือน → null (ไม่มีวันเหลือ)", analytics.remainingMonthOutlook(bidRO, "2026-09-30") === null);
+  ok("outlook: สาขาไม่มีข้อมูลเดือนก่อน → prevMonth/avg3 = null", (() => {
+    const empty = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('roE','RO-EMPTY')").run().lastInsertRowid);
+    const r = analytics.remainingMonthOutlook(empty, "2026-09-26");
+    return r != null && r.prevMonth === null && r.avg3 === null && r.remainingDays === 4;
+  })());
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
