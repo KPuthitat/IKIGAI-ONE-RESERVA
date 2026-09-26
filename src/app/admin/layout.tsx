@@ -218,7 +218,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin/reporta", label: "วิเคราะห์รายสาขา" },
         { href: "/admin/reporta/company", label: "ภาพรวมบริษัท (รวมสาขา)" },
-        { href: "/admin/reporta/clinica", label: "นำเข้าข้อมูลคลินิก (HIS)" },
+        // The clinic HIS import moved inline into วิเคราะห์รายสาขา (APSX box shown
+        // on a clinic branch), so the standalone nav link is gone (owner 2026-09-26).
         { href: "/admin/reporta/settings", label: "ตั้งค่ากลุ่ม LINE" }
       ]
     }] : []),

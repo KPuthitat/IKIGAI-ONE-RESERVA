@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import OwlMascot from "@/app/components/OwlMascot";
 import ClinicaSection, { type ClinicaMonth } from "./ClinicaSection";
+import ClinicaImportClient from "./clinica/ClinicaImportClient";
 import { clinicaPaidPct } from "@/lib/clinica-shared";
 
 // REPORTA dashboard (owner 2026-09-16): import the POS files, review the day's
@@ -210,7 +211,8 @@ function PinModal({ title, preview, onConfirm, onClose }: { title: string; previ
   );
 }
 
-export default function ReportaClient({ branchName, operatorName, defaultColor }: { branchName: string; operatorName: string; defaultColor: string }) {
+type ClinicaRange = { billsFrom: string | null; billsTo: string | null; visitsFrom: string | null; visitsTo: string | null };
+export default function ReportaClient({ branchName, operatorName, defaultColor, isClinic = false, clinicaRange = null }: { branchName: string; operatorName: string; defaultColor: string; isClinic?: boolean; clinicaRange?: ClinicaRange | null }) {
   const initial = todayBkk();
   const [year, setYear] = useState(Number(initial.slice(0, 4)));
   const [month, setMonth] = useState(Number(initial.slice(5, 7)));
@@ -645,7 +647,24 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         <div className={`card text-sm ${msg.kind === "ok" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : msg.kind === "warn" ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-rose-50 border-rose-200 text-rose-700"}`}>{msg.text}</div>
       )}
 
-      {/* Import — modern drop zone */}
+      {/* Import — POS files for restaurants, APSX/HIS for the clinic (owner
+          2026-09-26: a clinic imports from APSX, not a POS). */}
+      {isClinic ? (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2 flex-wrap px-1">
+            <h2 className="font-bold text-slate-800">นำเข้าไฟล์จาก APSX (HIS)</h2>
+            <span className="text-[11px] text-slate-400">รองรับ .xlsx · Invoice / OPD Report · นำเข้าเป็นช่วงวันแล้วเขียนทับได้</span>
+          </div>
+          <ClinicaImportClient onImported={loadMonth} />
+          {clinicaRange && (clinicaRange.billsFrom || clinicaRange.visitsFrom) && (
+            <div className="text-[11px] text-slate-400 px-1">
+              นำเข้าแล้ว —
+              {clinicaRange.billsFrom && <> บิล: {clinicaRange.billsFrom} ถึง {clinicaRange.billsTo}</>}
+              {clinicaRange.visitsFrom && <> · OPD: {clinicaRange.visitsFrom} ถึง {clinicaRange.visitsTo}</>}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="card space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h2 className="font-bold text-slate-800">นำเข้าไฟล์จาก POS</h2>
@@ -701,6 +720,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           <button onClick={clearMismatched} disabled={busy} className="text-xs text-rose-500 hover:text-rose-700 disabled:opacity-50">ลบข้อมูลที่ร้านไม่ตรงกับสาขา</button>
         </div>
       </div>
+      )}
 
       {/* Month browser — sits right under the upload box (owner 2026-09-20) with
           the per-day list collapsed by default, so managing/picking days is close
@@ -918,7 +938,9 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         })()}
 
         {days.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลในเดือนนี้ — นำเข้าไฟล์ด้านบน</p>
+          // A clinic branch has no POS days — its report is the คลินิก section
+          // above, so skip the restaurant "no sales, import above" prompt.
+          isClinic ? null : <p className="text-sm text-slate-400 text-center py-4">ยังไม่มีข้อมูลในเดือนนี้ — นำเข้าไฟล์ด้านบน</p>
         ) : (
           <>
             {/* Missing-file summary for the month (owner 2026-09-18) — always shown. */}
@@ -968,6 +990,9 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         )}
       </div>
 
+      {/* Restaurant/POS analytics below — hidden on a clinic branch, whose report
+          is the คลินิก section above (owner 2026-09-26: a clinic isn't a restaurant). */}
+      {!isClinic && (<>
       {/* Day analysis — moved to the top (owner 2026-09-19: บทวิเคราะห์ขึ้นบน) */}
       {selDate && daily && (
         <div className="card space-y-4">
@@ -1804,6 +1829,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           </div>
         )}
       </div>
+      </>)}
 
       {pin && <PinModal title={pin.title} preview={pin.preview} onConfirm={pin.run} onClose={() => setPin(null)} />}
     </div>
