@@ -2052,7 +2052,7 @@ function ClinicaPreview({ c, branchName, operator, color }: { c: ClinicaMonth; b
       {sepline}
       <PRow label="ยอดบิลรวม" value={`${baht(c.billNet)} (${intTh(c.billCount)} ครั้ง)`} bold tone="green" />
       {c.billNetMomPct != null && <Cmp parts={[{ label: "เทียบเดือนก่อน", pct: c.billNetMomPct }]} />}
-      <PRow label="เงินเข้าจริง (สด+พร้อมเพย์)" value={`${baht(c.paid)} (${paidPct}%)`} tone="green" />
+      <PRow label="เงินเข้าจริง (เงินสด/พร้อมเพย์)" value={`${baht(c.paid)} (${paidPct}%)`} tone="green" />
       <PRow label="รอเบิก (บิลเดือนนี้)" value={`${baht(c.due)} (${100 - paidPct}%)`} tone="red" />
       <PRow label="คนไข้ (บิล)" value={`${intTh(c.patientCount)} คน`} />
       {c.arTotal > 0.5 && <PRow label="รอเบิกค้างสะสม (ทุกงวด)" value={baht(c.arTotal)} tone="red" />}

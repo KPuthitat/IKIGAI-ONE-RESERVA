@@ -18,6 +18,8 @@ function monthBounds(y: number, m: number): [string, string] {
 }
 
 export type PayerRow = { group: string; net: number; count: number; paid: number; due: number };
+export type Aging = { d0_30: number; d31_60: number; d61_90: number; d90p: number };
+export type ArPayerRow = PayerRow & { aging: Aging };  // owing payer + its aging buckets
 export type AmountCount = { net: number; count: number };
 export type CatRow = { key: string; label: string; net: number; count: number };
 export type NamedNet = { name: string; net: number; qty: number };
@@ -35,8 +37,8 @@ export type ClinicaMonth = {
   payers: PayerRow[];
   // AR — outstanding across ALL periods as of today (not month-scoped)
   arTotal: number;
-  arByPayer: PayerRow[];                      // unpaid payers, biggest owing first
-  arAging: { d0_30: number; d31_60: number; d61_90: number; d90p: number }; // age = today − bill_date
+  arByPayer: ArPayerRow[];                     // unpaid payers (+per-payer aging), biggest owing first
+  arAging: Aging;                              // age = today − bill_date
   // revenue structure
   categories: CatRow[];
   topItems: NamedNet[];
@@ -78,7 +80,7 @@ export function clinicaAdvice(c: Omit<ClinicaMonth, "advice">): string[] {
   //    รอเบิก%.
   if (c.billNet > 0) {
     const paidPct = clinicaPaidPct(c);
-    out.push(`เงินเข้าจริง (สด+พร้อมเพย์) ${bahtTh(c.paid)} (${paidPct}%) · รอเบิก ${bahtTh(c.due)} (${100 - paidPct}%)`);
+    out.push(`เงินเข้าจริง (เงินสด/พร้อมเพย์) ${bahtTh(c.paid)} (${paidPct}%) · รอเบิก ${bahtTh(c.due)} (${100 - paidPct}%)`);
   }
 
   // 3) Overdue AR — the most actionable warning. This is the CUMULATIVE unpaid
@@ -140,27 +142,39 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
     .map((r) => ({ group: r.grp, net: r.net, count: r.cnt, paid: r.paid, due: r.due }));
 
   // AR = ALL unpaid bills for the branch (across every period), owing biggest first.
-  const arByPayer = (db.prepare(
+  const arRows = (db.prepare(
     `SELECT COALESCE(NULLIF(payer_group,''),'(ไม่ระบุ)') grp, ROUND(SUM(net),2) net, COUNT(*) cnt,
             ROUND(SUM(paid),2) paid, ROUND(SUM(due),2) due
        FROM clinica_bills WHERE branch_id=? AND due>0.005 GROUP BY grp ORDER BY due DESC`
-  ).all(branchId) as Array<{ grp: string; net: number; cnt: number; paid: number; due: number }>)
-    .map((r) => ({ group: r.grp, net: r.net, count: r.cnt, paid: r.paid, due: r.due }));
-  const arTotal = round2(arByPayer.reduce((s, p) => s + p.due, 0));
+  ).all(branchId) as Array<{ grp: string; net: number; cnt: number; paid: number; due: number }>);
 
-  // AR aging by how long each unpaid bill has been outstanding (asOf − bill_date).
-  const aging = { d0_30: 0, d31_60: 0, d61_90: 0, d90p: 0 };
+  // AR aging by how long each unpaid bill has been outstanding (asOf − bill_date),
+  // accumulated both overall AND per payer group so each owing payer shows which
+  // buckets its outstanding falls in (owner 2026-09-26: "รู้ได้ไงว่าอันไหนกี่วัน").
+  const zeroAging = (): Aging => ({ d0_30: 0, d31_60: 0, d61_90: 0, d90p: 0 });
+  const bucketOf = (days: number): keyof Aging => days <= 30 ? "d0_30" : days <= 60 ? "d31_60" : days <= 90 ? "d61_90" : "d90p";
+  const aging = zeroAging();
+  const agingByGroup = new Map<string, Aging>();
   const asOfMs = new Date(`${asOfDate}T00:00:00Z`).getTime();
   for (const r of db.prepare(
-    `SELECT bill_date, due FROM clinica_bills WHERE branch_id=? AND due>0.005 AND bill_date<>''`
-  ).all(branchId) as Array<{ bill_date: string; due: number }>) {
+    `SELECT COALESCE(NULLIF(payer_group,''),'(ไม่ระบุ)') grp, bill_date, due
+       FROM clinica_bills WHERE branch_id=? AND due>0.005 AND bill_date<>''`
+  ).all(branchId) as Array<{ grp: string; bill_date: string; due: number }>) {
     const days = Math.floor((asOfMs - new Date(`${r.bill_date}T00:00:00Z`).getTime()) / 86_400_000);
-    if (days <= 30) aging.d0_30 += r.due;
-    else if (days <= 60) aging.d31_60 += r.due;
-    else if (days <= 90) aging.d61_90 += r.due;
-    else aging.d90p += r.due;
+    const b = bucketOf(days);
+    aging[b] += r.due;
+    const g = agingByGroup.get(r.grp) ?? zeroAging();
+    g[b] += r.due;
+    agingByGroup.set(r.grp, g);
   }
-  (Object.keys(aging) as Array<keyof typeof aging>).forEach((k) => { aging[k] = round2(aging[k]); });
+  const roundAging = (a: Aging): Aging => ({ d0_30: round2(a.d0_30), d31_60: round2(a.d31_60), d61_90: round2(a.d61_90), d90p: round2(a.d90p) });
+  const agingRounded = roundAging(aging);
+
+  const arByPayer: ArPayerRow[] = arRows.map((r) => ({
+    group: r.grp, net: r.net, count: r.cnt, paid: r.paid, due: r.due,
+    aging: roundAging(agingByGroup.get(r.grp) ?? zeroAging())
+  }));
+  const arTotal = round2(arByPayer.reduce((s, p) => s + p.due, 0));
 
   const categories = (db.prepare(
     `SELECT CASE
@@ -212,7 +226,7 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
     avgPerBill: kpi.bills > 0 ? round2(kpi.net / kpi.bills) : null,
     paid: round2(kpi.paid), due: round2(kpi.due),
     prevBillNet, billNetMomPct: relPct(kpi.net, prevBillNet),
-    payers, arTotal, arByPayer, arAging: aging,
+    payers, arTotal, arByPayer, arAging: agingRounded,
     categories, topItems,
     visitCount: visits.v, visitPatientCount: visits.pts,
     topDiagnoses, doctors, hours

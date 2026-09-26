@@ -263,7 +263,7 @@ export function clinicaMonthlyFlex(c: ClinicaMonth, meta: DailyCardMeta, monthLa
     sep,
     kv("ยอดบิลรวม", `${baht(c.billNet)} (${intTh(c.billCount)} ครั้ง)`, { bold: true, color: "#0f7a4f", size: "md" }),
     momLine,
-    kv("เงินเข้าจริง (สด+พร้อมเพย์)", `${baht(c.paid)} (${paidPct}%)`, { size: "xs", color: "#0f7a4f" }),
+    kv("เงินเข้าจริง (เงินสด/พร้อมเพย์)", `${baht(c.paid)} (${paidPct}%)`, { size: "xs", color: "#0f7a4f" }),
     kv("รอเบิก (บิลเดือนนี้)", `${baht(c.due)} (${100 - paidPct}%)`, { size: "xs", color: "#b0392f" }),
     kv("คนไข้ (บิล)", `${intTh(c.patientCount)} คน`, { size: "xs" }),
     ...(c.avgPerBill != null ? [kv("เฉลี่ยต่อบิล", baht(c.avgPerBill), { size: "xs" })] : []),
