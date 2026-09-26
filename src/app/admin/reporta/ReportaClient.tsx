@@ -651,10 +651,6 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           2026-09-26: a clinic imports from APSX, not a POS). */}
       {isClinic ? (
         <div className="space-y-1">
-          <div className="flex items-center justify-between gap-2 flex-wrap px-1">
-            <h2 className="font-bold text-slate-800">นำเข้าไฟล์จาก APSX (HIS)</h2>
-            <span className="text-[11px] text-slate-400">รองรับ .xlsx · Invoice / OPD Report · นำเข้าเป็นช่วงวันแล้วเขียนทับได้</span>
-          </div>
           <ClinicaImportClient onImported={loadMonth} />
           {clinicaRange && (clinicaRange.billsFrom || clinicaRange.visitsFrom) && (
             <div className="text-[11px] text-slate-400 px-1">
