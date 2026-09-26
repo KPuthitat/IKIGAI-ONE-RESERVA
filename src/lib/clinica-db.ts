@@ -76,10 +76,11 @@ export function importOpd(branchId: number, p: ClinicaOpdParse): ClinicaImportRe
 /** True when a branch has any imported clinic data (drives the ANALYTICA clinic
  *  section visibility). */
 export function isClinicaBranch(branchId: number): boolean {
-  const db = getDb();
-  const b = db.prepare("SELECT 1 FROM clinica_bills WHERE branch_id = ? LIMIT 1").get(branchId);
-  const v = db.prepare("SELECT 1 FROM clinica_visits WHERE branch_id = ? LIMIT 1").get(branchId);
-  return !!b || !!v;
+  const r = getDb().prepare(
+    `SELECT (EXISTS(SELECT 1 FROM clinica_bills WHERE branch_id = ?)
+          OR EXISTS(SELECT 1 FROM clinica_visits WHERE branch_id = ?)) AS has`
+  ).get(branchId, branchId) as { has: number };
+  return r.has === 1;
 }
 
 /** Earliest/latest imported dates for a branch (for an "imported through" note). */

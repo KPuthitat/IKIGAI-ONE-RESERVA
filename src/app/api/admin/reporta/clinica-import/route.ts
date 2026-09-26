@@ -36,6 +36,18 @@ export async function POST(req: Request) {
     }
   }
 
+  // One file per kind per upload: two invoice files with overlapping ranges would
+  // let the second's range-replace wipe bills the first just inserted. Normal use
+  // is one Invoice + one OPD; import different periods one upload at a time.
+  for (const kind of ["invoice", "opd"] as const) {
+    if (parsed.filter((f) => f.p.kind === kind).length > 1) {
+      return NextResponse.json({
+        error: "duplicate_kind",
+        message: kind === "invoice" ? "อัปโหลด Invoice Report ได้ทีละ 1 ไฟล์ (คนละช่วงให้ทยอยนำเข้า)" : "อัปโหลด OPD Report ได้ทีละ 1 ไฟล์"
+      }, { status: 422 });
+    }
+  }
+
   // All files in ONE transaction — if any file fails, nothing is committed, so
   // the owner never ends up with the invoice replaced but the OPD half-missing.
   const results: Array<ClinicaImportResult & { filename: string }> = [];

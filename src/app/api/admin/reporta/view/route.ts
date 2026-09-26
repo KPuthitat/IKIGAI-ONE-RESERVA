@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requirePermission, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { branchTodayCol } from "@/lib/daily-col";
+import { isClinicaBranch } from "@/lib/clinica-db";
+import { clinicaMonth } from "@/lib/clinica-analytics";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars, revshareIncomeForBranch, applyRevshareToTarget, remainingMonthOutlook, composeExpenseAnalysis } from "@/lib/salesa-analytics";
 import { expenseCategoryTotals, expenseAccrualTotal } from "@/lib/accounta-db";
@@ -157,5 +159,9 @@ export function GET(req: Request) {
     categorySpends: et.byCategory
   });
 
-  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook, expenseAnalysis, todayCol });
+  // Clinic (CLINICA) analytics for the viewed month — only for a branch that has
+  // imported HIS data (owner 2026-09-26).
+  const clinica = isClinicaBranch(branchId) ? clinicaMonth(branchId, year, month, todayIso) : null;
+
+  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook, expenseAnalysis, todayCol, clinica });
 }
