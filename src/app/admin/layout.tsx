@@ -151,6 +151,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         ...ADMIN_MODULES
           .filter((m) => m.perm == null || canModule(user, m.perm))
           .map((m) => ({ href: gate(m.href), label: m.label })),
+        // Unified customer-chat inbox (owner 2026-09-26) — reachable by every
+        // admin who oversees ≥1 branch; the page itself scopes to their
+        // branches. Not a full module card; น้องฮูก is the primary entry point.
+        { href: "/admin/inbox", label: "กล่องข้อความลูกค้า" },
         // System-wide entries — only super_admin can manage these,
         // so hide them from regular admins to keep the sidebar clean.
         // The pages still enforce requireSuperAdmin() server-side as
