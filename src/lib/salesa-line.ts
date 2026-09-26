@@ -266,7 +266,9 @@ export function clinicaMonthlyFlex(c: ClinicaMonth, meta: DailyCardMeta, monthLa
     kv("เงินเข้าจริง (เงินสด/พร้อมเพย์)", `${baht(c.paid)} (${paidPct}%)`, { size: "xs", color: "#0f7a4f" }),
     kv("รอเบิก (บิลเดือนนี้)", `${baht(c.due)} (${100 - paidPct}%)`, { size: "xs", color: "#b0392f" }),
     kv("คนไข้ (บิล)", `${intTh(c.patientCount)} คน`, { size: "xs" }),
+    ...(c.newPatients + c.returningPatients > 0 ? [kv("คนไข้ใหม่ · กลับมาซ้ำ", `${intTh(c.newPatients)} · ${intTh(c.returningPatients)} คน`, { size: "xs" })] : []),
     ...(c.avgPerBill != null ? [kv("เฉลี่ยต่อบิล", baht(c.avgPerBill), { size: "xs" })] : []),
+    ...(c.target ? [kv("เป้าเดือนนี้", `${baht(c.target.target)} · ${c.target.pct.toFixed(0)}%`, { size: "xs", color: c.target.pct >= 100 ? "#0f7a4f" : "#b8860b" })] : []),
   ];
   if (c.arTotal > 0.5) {
     body.push(sep);

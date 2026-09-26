@@ -165,7 +165,7 @@ export function GET(req: Request) {
 
   // Clinic (CLINICA) analytics for the viewed month — only for a branch that has
   // imported HIS data (owner 2026-09-26).
-  const clinica = isClinicaBranch(branchId) ? clinicaMonth(branchId, year, month, todayIso) : null;
+  const clinica = isClinicaBranch(branchId) ? clinicaMonth(branchId, year, month, todayIso, target) : null;
 
   return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, clinicaSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook, expenseAnalysis, todayCol, clinica });
 }

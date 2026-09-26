@@ -41,6 +41,9 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
   const maxDx = Math.max(1, ...c.topDiagnoses.map((x) => x.count));
   const maxHour = Math.max(1, ...c.hours.map((x) => x.count));
   const maxPayer = Math.max(1, ...c.payers.map((x) => x.net));
+  const maxDaily = Math.max(1, ...c.daily.map((x) => x.net));
+  const totalPatientsMix = c.newPatients + c.returningPatients;
+  const maxDemoAge = Math.max(1, ...c.demographics.ageBands.map((x) => x.count));
   const arPct = c.billNet > 0 ? Math.round((c.due / c.billNet) * 100) : 0;
   // Contiguous hour axis (zero-fill gaps between the earliest and latest hour so
   // the time axis reads honestly).
@@ -50,6 +53,18 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
     const byHour = new Map(c.hours.map((h) => [h.hour, h.count]));
     const out: Array<{ hour: number; count: number }> = [];
     for (let h = lo; h <= hi; h++) out.push({ hour: h, count: byHour.get(h) ?? 0 });
+    return out;
+  })();
+  // Zero-fill missing days between the first and last billed day so a sparse
+  // month reads honestly (same rule as the hour axis).
+  const dailyBars = (() => {
+    if (!c.daily.length) return c.daily;
+    const nextDay = (d: string) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
+    const byDate = new Map(c.daily.map((d) => [d.date, d]));
+    const out: typeof c.daily = [];
+    for (let cur = c.daily[0].date, last = c.daily[c.daily.length - 1].date; cur <= last; cur = nextDay(cur)) {
+      out.push(byDate.get(cur) ?? { date: cur, net: 0, count: 0 });
+    }
     return out;
   })();
 
@@ -112,6 +127,85 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
           <div className="text-[10px] text-slate-400">เฉลี่ย/บิล {c.avgPerBill != null ? baht(c.avgPerBill) : "—"}</div>
         </div>
       </div>
+
+      {/* Monthly target + month-end projection (owner 2026-09-26) — set the target
+          on the ตั้งค่ากลุ่ม LINE page. */}
+      {c.target && (
+        <div className="card space-y-1">
+          <div className="flex items-baseline justify-between gap-2 text-sm">
+            <span className="text-slate-500">เป้ายอดบิลเดือนนี้ · {baht(c.target.target)}</span>
+            <span className={`font-bold ${c.target.pct >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{c.target.pct.toFixed(0)}% ของเป้า</span>
+          </div>
+          <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
+            <div className={`h-full ${c.target.pct >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, c.target.pct)}%` }} />
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {c.target.isCurrent
+              ? <>คาดสิ้นเดือน <b className={c.target.onTrack ? "text-emerald-600" : "text-amber-600"}>{baht(c.target.projected)}</b> ({c.target.projectedPct.toFixed(0)}% ของเป้า) · {c.target.onTrack ? "มีแนวโน้มถึงเป้า ✓" : "ต่ำกว่าเป้า ต้องเร่ง"}</>
+              : <>ทำได้จริง <b className={c.target.pct >= 100 ? "text-emerald-600" : "text-amber-600"}>{baht(c.billNet)}</b> ({c.target.pct.toFixed(0)}% ของเป้า) · {c.target.pct >= 100 ? "ถึงเป้า ✓" : "ไม่ถึงเป้า"}</>}
+          </div>
+        </div>
+      )}
+
+      {/* Patient growth (new vs returning) + demographics (owner 2026-09-26) */}
+      {(totalPatientsMix > 0 || c.demographics.male + c.demographics.female + c.demographics.other > 0) && (
+        <div className="card grid md:grid-cols-2 gap-4">
+          {totalPatientsMix > 0 && (
+            <div className="space-y-1.5">
+              <h3 className="font-bold text-slate-800 text-sm">คนไข้ใหม่ vs กลับมาซ้ำ</h3>
+              {([["คนไข้ใหม่", c.newPatients, "bg-emerald-400"], ["กลับมาซ้ำ", c.returningPatients, "bg-sky-400"]] as Array<[string, number, string]>).map(([lb, v, tone]) => (
+                <div key={lb} className="text-[11px]">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-slate-600">{lb}</span>
+                    <span className="text-slate-700 tabular-nums">{v.toLocaleString("th-TH")} คน ({Math.round((v / totalPatientsMix) * 100)}%)</span>
+                  </div>
+                  <Bar value={v} max={totalPatientsMix} tone={tone} />
+                </div>
+              ))}
+              <p className="text-[10px] text-slate-400">คนไข้ใหม่ = บิลแรกสุด (ทุกงวด) อยู่ในเดือนนี้</p>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <h3 className="font-bold text-slate-800 text-sm">ประชากรคนไข้ (จาก OPD)</h3>
+            <div className="flex gap-3 text-[11px] text-slate-700">
+              <span>ชาย <b className="tabular-nums">{c.demographics.male.toLocaleString("th-TH")}</b></span>
+              <span>หญิง <b className="tabular-nums">{c.demographics.female.toLocaleString("th-TH")}</b></span>
+              {c.demographics.other > 0 && <span>อื่นๆ <b className="tabular-nums">{c.demographics.other.toLocaleString("th-TH")}</b></span>}
+            </div>
+            {c.demographics.withAge > 0 ? (
+              <div className="space-y-1 pt-0.5">
+                {c.demographics.ageBands.map((a) => (
+                  <div key={a.label} className="text-[11px]">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-slate-600">{a.label} ปี</span>
+                      <span className="text-slate-700 tabular-nums">{a.count.toLocaleString("th-TH")} คน</span>
+                    </div>
+                    <Bar value={a.count} max={maxDemoAge} tone="bg-indigo-300" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[10px] text-slate-400">ยังไม่มีวันเกิดในไฟล์ OPD สำหรับคิดช่วงอายุ</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Daily billing trend (owner 2026-09-26) */}
+      {c.daily.length > 0 && (
+        <div className="card space-y-1.5">
+          <h3 className="font-bold text-slate-800 text-sm">ยอดบิลรายวัน</h3>
+          <div className="flex items-end gap-0.5 h-24">
+            {dailyBars.map((d) => (
+              <div key={d.date} className="flex-1 flex flex-col items-center justify-end" title={`${d.date} · ${baht(d.net)} · ${d.count} บิล`}>
+                <div className="w-full bg-teal-400 rounded-t" style={{ height: `${Math.max(3, Math.round((d.net / maxDaily) * 80))}px` }} />
+                <span className="text-[8px] text-slate-400">{d.date.slice(8, 10)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-400">แต่ละแท่ง = ยอดบิลรวมของวันนั้น (แตะเพื่อดูยอด/จำนวนบิล)</p>
+        </div>
+      )}
 
       {/* AR aging + payer owing */}
       {c.arTotal > 0 && (

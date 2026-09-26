@@ -64,6 +64,27 @@ process.env.DATABASE_PATH = TMP;
   ok("advice: มีบรรทัดเงินเข้าจริง/รอเบิก", m.advice.some((l) => l.includes("เงินเข้าจริง") && l.includes("รอเบิก")));
   ok("advice: เตือนพึ่งพากลุ่มผู้จ่ายสูง (ประกัน 63% ของบิล)", m.advice.some((l) => l.includes("พึ่งพากลุ่ม")));
   ok("advice: เดือนที่ไม่มีข้อมูล → advice ว่าง", ca.clinicaMonth(branch, 2026, 3).advice.length === 0);
+  // Clinic report v2 (owner 2026-09-26): new/returning, daily trend, demographics, target.
+  ok("patients: ใหม่ 2 · กลับมาซ้ำ 0 (ส.ค. เป็นบิลแรกของทั้งคู่)", m.newPatients === 2 && m.returningPatients === 0);
+  ok("daily: 2 วัน (08-05=300, 08-10=500)", m.daily.length === 2 && m.daily[0].date === "2026-08-05" && near(m.daily[0].net, 300) && near(m.daily[1].net, 500));
+  ok("demographics: ชาย 2 · หญิง 1 · อายุ 18–34=1, 35–59=2", (() => {
+    const d = m.demographics; const band = new Map(d.ageBands.map((a) => [a.label, a.count]));
+    return d.male === 2 && d.female === 1 && d.withAge === 3 && band.get("18–34") === 1 && band.get("35–59") === 2;
+  })());
+  ok("target: null เมื่อไม่ตั้งเป้า", m.target === null);
+  ok("target: เป้า 1000 → 80% · คาดสิ้นเดือน 800 · ต่ำกว่าเป้า (เดือนปัจจุบัน)", (() => {
+    const mt = ca.clinicaMonth(branch, 2026, 8, "2026-08-31", 1000);
+    return mt.target != null && near(mt.target.pct, 80) && near(mt.target.projected, 800) && mt.target.onTrack === false && mt.target.isCurrent === true;
+  })());
+  ok("target: เดือนที่จบแล้ว → ทำได้จริง (isCurrent=false)", (() => {
+    const mt = ca.clinicaMonth(branch, 2026, 8, "2026-09-26", 1000);
+    return mt.target != null && mt.target.isCurrent === false && near(mt.target.projected, 800);
+  })());
+  // A patient billed in a prior month counts as returning when they come back.
+  cdb.importInvoice(branch, invParse("2026-09-01", "2026-09-01", [
+    { billNo: "BR1", date: "2026-09-01", time: "10:00:00", hn: "HN-BL1", payerGroup: "ผู้ป่วยทั่วไป", staff: "แอดมิน", gross: 100, billDiscount: 0, net: 100, paid: 100, due: 0, items: [item("GEN001", "[HSC] x", 100)] }
+  ]));
+  ok("patients: HN ที่เคยมาเดือนก่อน → กลับมาซ้ำ", (() => { const s = ca.clinicaMonth(branch, 2026, 9, "2026-09-30"); return s.newPatients === 0 && s.returningPatients === 1; })());
 
   // AR is all-time as of today: a June insurance claim still unpaid surfaces when
   // viewing August, and ages to the 90+ bucket.

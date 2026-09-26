@@ -25,6 +25,10 @@ export type CatRow = { key: string; label: string; net: number; count: number };
 export type NamedNet = { name: string; net: number; qty: number };
 export type NamedCount = { name: string; count: number };
 export type HourCount = { hour: number; count: number };
+export type DailyPoint = { date: string; net: number; count: number };
+export type AgeBand = { label: string; count: number };
+export type Demographics = { male: number; female: number; other: number; ageBands: AgeBand[]; withAge: number };
+export type ClinicaTarget = { target: number; pct: number; projected: number; projectedPct: number; onTrack: boolean; isCurrent: boolean };
 
 export type ClinicaMonth = {
   year: number; month: number;
@@ -33,6 +37,11 @@ export type ClinicaMonth = {
   billNet: number; billCount: number; patientCount: number; avgPerBill: number | null;
   paid: number; due: number;                 // เงินเข้าจริง / รอเบิก จากบิลเดือนนี้
   prevBillNet: number | null; billNetMomPct: number | null;
+  // patient mix (new vs returning), daily trend, demographics, target
+  newPatients: number; returningPatients: number;
+  daily: DailyPoint[];
+  demographics: Demographics;
+  target: ClinicaTarget | null;
   // payer mix (this month)
   payers: PayerRow[];
   // AR — outstanding across ALL periods as of today (not month-scoped)
@@ -92,6 +101,12 @@ export function clinicaAdvice(c: Omit<ClinicaMonth, "advice">): string[] {
     out.push(`รอเบิกค้างสะสม 61–90 วัน ${bahtTh(c.arAging.d61_90)} — ใกล้ครบกำหนด ควรติดตาม`);
   }
 
+  // 3b) Patient growth — new vs returning, the clinic's headline growth signal.
+  if (c.newPatients + c.returningPatients > 0) {
+    const share = Math.round((c.newPatients / (c.newPatients + c.returningPatients)) * 100);
+    out.push(`คนไข้ใหม่ ${c.newPatients} คน (${share}%) · กลับมาซ้ำ ${c.returningPatients} คน`);
+  }
+
   // 4) Payer concentration — dependency risk on a single INSURER/corporate payer.
   //    A dominant general-cash base is healthy, not a risk, so the cash/self-pay
   //    and unspecified groups are excluded (matched loosely — the HIS "กลุ่มลูกค้า"
@@ -107,12 +122,59 @@ export function clinicaAdvice(c: Omit<ClinicaMonth, "advice">): string[] {
   if (c.categories.length) out.push(`รายได้หลักจาก${c.categories[0].label} ${bahtTh(c.categories[0].net)}`);
   else if (c.avgPerBill != null) out.push(`คนไข้ ${c.patientCount.toLocaleString("th-TH")} คน · เฉลี่ย/บิล ${bahtTh(c.avgPerBill)}`);
 
-  return out.slice(0, 5);
+  return out.slice(0, 6);
+}
+
+/** Gender + age bands from a month's distinct OPD patients. Gender is free text
+ *  (ชาย/หญิง); age is today − birth_date (ISO), bucketed. */
+function buildDemographics(rows: Array<{ gender: string | null; birth: string | null }>, asOfDate: string): Demographics {
+  let male = 0, female = 0, other = 0, withAge = 0;
+  const bands = { "0–17": 0, "18–34": 0, "35–59": 0, "60+": 0 };
+  const asOfMs = new Date(`${asOfDate}T00:00:00Z`).getTime();
+  for (const r of rows) {
+    const g = r.gender ?? "";
+    // Thai (ชาย/หญิง) or coded (M/F, male/female) gender values.
+    if (/ญ|female|^\s*f\s*$/i.test(g)) female++;
+    else if (/ช|male|^\s*m\s*$/i.test(g)) male++;
+    else other++;
+    if (r.birth && /^\d{4}-\d{2}-\d{2}$/.test(r.birth)) {
+      const age = Math.floor((asOfMs - new Date(`${r.birth}T00:00:00Z`).getTime()) / (365.25 * 86_400_000));
+      if (age >= 0 && age < 130) {
+        withAge++;
+        if (age <= 17) bands["0–17"]++; else if (age <= 34) bands["18–34"]++; else if (age <= 59) bands["35–59"]++; else bands["60+"]++;
+      }
+    }
+  }
+  return { male, female, other, withAge, ageBands: (Object.keys(bands) as Array<keyof typeof bands>).map((label) => ({ label, count: bands[label] })) };
+}
+
+/** Target progress + month-end projection. Projection scales billed-so-far by
+ *  calendar days elapsed for the CURRENT month; a past month is already complete.
+ *  Returns null when no target is set. */
+function buildTarget(billNet: number, year: number, month: number, asOfDate: string, target: number | null): ClinicaTarget | null {
+  if (!target || target <= 0) return null;
+  const mm = String(month).padStart(2, "0");
+  const ymPrefix = `${year}-${mm}`;
+  const dim = daysInMonth(year, month);
+  const isCurrent = asOfDate.slice(0, 7) === ymPrefix;
+  const isPast = asOfDate.slice(0, 7) > ymPrefix;
+  if (!isCurrent && !isPast) return null;   // a future month hasn't started — no target card
+  const elapsed = isCurrent ? Math.max(1, Math.min(dim, Number(asOfDate.slice(8, 10)))) : dim;
+  const projected = isCurrent ? round2((billNet * dim) / elapsed) : round2(billNet);
+  return {
+    target: round2(target),
+    pct: round2((billNet / target) * 100),
+    projected,
+    projectedPct: round2((projected / target) * 100),
+    onTrack: projected >= target,
+    isCurrent,
+  };
 }
 
 /** Full clinic analytics for a month. `asOf` (Bangkok YYYY-MM-DD) anchors AR
- *  aging; defaults to the month end. */
-export function clinicaMonth(branchId: number, year: number, month: number, asOf?: string): ClinicaMonth {
+ *  aging; defaults to the month end. `monthlyTarget` (the branch's target)
+ *  drives the target-progress card when set. */
+export function clinicaMonth(branchId: number, year: number, month: number, asOf?: string, monthlyTarget?: number | null): ClinicaMonth {
   const db = getDb();
   const [start, end] = monthBounds(year, month);
   const pm = month === 1 ? 12 : month - 1;
@@ -219,6 +281,37 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
        GROUP BY hr ORDER BY hr ASC`
   ).all(branchId, start, end) as Array<{ hr: number; cnt: number }>).map((r) => ({ hour: r.hr, count: r.cnt }));
 
+  // New vs returning patients: among patients billed this month, "new" = their
+  // first-ever bill (across all imported history) fell in this month.
+  const pmix = db.prepare(
+    `SELECT COALESCE(SUM(CASE WHEN firstDate >= ? THEN 1 ELSE 0 END),0) newp, COUNT(*) total FROM (
+       SELECT hn, MIN(bill_date) firstDate,
+              MAX(CASE WHEN bill_date BETWEEN ? AND ? THEN 1 ELSE 0 END) seen
+         FROM clinica_bills WHERE branch_id=? AND NULLIF(hn,'') IS NOT NULL AND bill_date<>''
+         GROUP BY hn
+     ) WHERE seen=1`
+  ).get(start, start, end, branchId) as { newp: number; total: number };
+  const newPatients = pmix.newp;
+  const returningPatients = Math.max(0, pmix.total - pmix.newp);
+
+  // Daily billed net + count (in-month trend).
+  const daily = (db.prepare(
+    `SELECT bill_date date, ROUND(SUM(net),2) net, COUNT(*) cnt FROM clinica_bills
+       WHERE branch_id=? AND bill_date BETWEEN ? AND ? AND bill_date<>''
+       GROUP BY bill_date ORDER BY bill_date ASC`
+  ).all(branchId, start, end) as Array<{ date: string; net: number; cnt: number }>)
+    .map((r) => ({ date: r.date, net: r.net, count: r.cnt }));
+
+  // Demographics from OPD visits — one row per patient (hn) so a patient counts once.
+  const demoRows = db.prepare(
+    `SELECT MAX(gender) gender, MAX(birth_date) birth FROM clinica_visits
+       WHERE branch_id=? AND visit_date BETWEEN ? AND ? AND NULLIF(hn,'') IS NOT NULL
+       GROUP BY hn`
+  ).all(branchId, start, end) as Array<{ gender: string | null; birth: string | null }>;
+  const demographics = buildDemographics(demoRows, asOfDate);
+
+  const target = buildTarget(round2(kpi.net), year, month, asOfDate, monthlyTarget ?? null);
+
   const base: Omit<ClinicaMonth, "advice"> = {
     year, month,
     hasData: kpi.bills > 0 || visits.v > 0,
@@ -226,6 +319,7 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
     avgPerBill: kpi.bills > 0 ? round2(kpi.net / kpi.bills) : null,
     paid: round2(kpi.paid), due: round2(kpi.due),
     prevBillNet, billNetMomPct: relPct(kpi.net, prevBillNet),
+    newPatients, returningPatients, daily, demographics, target,
     payers, arTotal, arByPayer, arAging: agingRounded,
     categories, topItems,
     visitCount: visits.v, visitPatientCount: visits.pts,
