@@ -101,6 +101,7 @@ type OutlookBenchmark = { label: string; expected: number; avgPerDay: number; mo
 type RemainingOutlook = { year: number; month: number; todayDom: number; remainingDays: number; windowStartDom: number; windowEndDom: number; mtdNett: number; prevMonth: OutlookBenchmark | null; avg3: OutlookBenchmark | null };
 type ExpenseCategoryRow = { name: string; spent: number; pctOfSales: number | null };
 type ExpenseAnalysis = { month: string; salesNett: number; expenseTotal: number; expensePrev: number | null; expensePrevPct: number | null; expenseToSalesPct: number | null; netProxy: number; categories: ExpenseCategoryRow[] };
+type TodayCol = { date: string; headcount: number; ftCount: number; ptCount: number; otherCount: number; laborCost: number; salesNett: number | null; colPct: number | null };
 // Festival / important-day analysis (owner 2026-09-20): each วันสำคัญ × each branch.
 type FestivalCell = { branchId: number; branchName: string; sales: number | null; monthAvg: number | null; upliftPct: number | null };
 type FestivalRow = { date: string; dateLabel: string; nameTh: string; branches: FestivalCell[] };
@@ -223,6 +224,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [annual, setAnnual] = useState<Annual | null>(null);
   const [remainingOutlook, setRemainingOutlook] = useState<RemainingOutlook | null>(null);
   const [expenseAnalysis, setExpenseAnalysis] = useState<ExpenseAnalysis | null>(null);
+  const [todayCol, setTodayCol] = useState<TodayCol | null>(null);
   const [revshareIncome, setRevshareIncome] = useState(0);   // ส่วนแบ่งยอดขาย this month
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [pushDays, setPushDays] = useState(3);
@@ -292,6 +294,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       setInsightRange(r.insightRange ?? null);
       setRemainingOutlook(r.remainingOutlook ?? null);
       setExpenseAnalysis(r.expenseAnalysis ?? null);
+      setTodayCol(r.todayCol ?? null);
       if (r.cardColor) setCardColor(r.cardColor);
     }
   }, [year, month, panelPeriod]);
@@ -734,6 +737,38 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Today's COL snapshot (owner 2026-09-26): who's in today (FT/PT), the
+            day's labour cost, and its % of today's sales. Payroll-view only, so
+            the server sends it only to those accounts. */}
+        {todayCol && (
+          <div className="card space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-bold text-slate-800">ต้นทุนแรงงานวันนี้ · COL</h2>
+              <span className="text-[11px] text-slate-400">{thaiDate(todayCol.date)}</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <div className="text-[11px] text-slate-500">พนักงานเข้างาน</div>
+                <div className="text-lg font-bold text-slate-800 tabular-nums">{todayCol.headcount} คน</div>
+                <div className="text-[10px] text-slate-400">ประจำ {todayCol.ftCount} · พาร์ทไทม์ {todayCol.ptCount}{todayCol.otherCount > 0 ? ` · อื่นๆ ${todayCol.otherCount}` : ""}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-500">ต้นทุนแรงงาน</div>
+                <div className="text-lg font-bold text-rose-600 tabular-nums">{baht(todayCol.laborCost)}</div>
+                <div className="text-[10px] text-slate-400">บาท/วัน</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-500">COL% ของยอดขาย</div>
+                <div className="text-lg font-bold text-slate-800 tabular-nums">{todayCol.colPct != null ? `${todayCol.colPct}%` : "—"}</div>
+                <div className="text-[10px] text-slate-400">ยอดวันนี้ {todayCol.salesNett != null ? baht(todayCol.salesNett) : "—"}</div>
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              คิดจากชั่วโมงที่ลงเวลาจริง × ค่าจ้าง (พาร์ทไทม์ รายชม. · ประจำ เงินเดือน÷22÷8) · คนที่ยังทำงานอยู่คิดถึงตอนนี้ · นับเฉพาะพนักงานจริง (ไม่รวมบัญชีทดสอบ/ลาออก)
+            </p>
           </div>
         )}
 

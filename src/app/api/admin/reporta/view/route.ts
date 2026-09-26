@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { requirePermission } from "@/lib/auth";
+import { requirePermission, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { branchTodayCol } from "@/lib/daily-col";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars, revshareIncomeForBranch, applyRevshareToTarget, remainingMonthOutlook, composeExpenseAnalysis } from "@/lib/salesa-analytics";
 import { expenseCategoryTotals, expenseAccrualTotal } from "@/lib/accounta-db";
@@ -121,6 +122,11 @@ export function GET(req: Request) {
   const remainingOutlook = (year === now.year && month === now.month)
     ? remainingMonthOutlook(branchId, todayIso)
     : null;
+  // Today's COL snapshot (owner 2026-09-26) — payroll-derived, so only for
+  // payroll-view accounts; shown on the current-month view only (it's "today").
+  const todayCol = (year === now.year && month === now.month && userCanViewPayroll(user))
+    ? branchTodayCol(branchId, todayIso)
+    : null;
   const days = listMonth(branchId, year, month).map((d) => ({
     date: d.sale_date,
     nett: d.nett,
@@ -151,5 +157,5 @@ export function GET(req: Request) {
     categorySpends: et.byCategory
   });
 
-  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook, expenseAnalysis });
+  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook, expenseAnalysis, todayCol });
 }

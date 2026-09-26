@@ -79,6 +79,7 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const analytics = await import("../src/lib/salesa-analytics");
   const push = await import("../src/lib/salesa-push");
   const accdb = await import("../src/lib/accounta-db");
+  const dcol = await import("../src/lib/daily-col");
 
   let passed = 0, failed = 0;
   const ok = (name: string, cond: boolean) => {
@@ -821,6 +822,25 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("expenseCategoryTotals: วัตถุดิบ รวม = 15000", (et.byCategory.find((c) => c.name === "วัตถุดิบ")?.spent) === 15000);
   ok("expenseAccrualTotal: เดือนก่อน (ส.ค.) = 20000", near(accdb.expenseAccrualTotal("2026-08", bidEx), 20000));
   ok("expenseAccrualTotal: เดือนที่ไม่มีบิล = 0", near(accdb.expenseAccrualTotal("2026-07", bidEx), 0));
+
+  // branchTodayCol (owner 2026-09-26): today's headcount (FT/PT) + labour cost + COL%.
+  const bidCol = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('col','REST-COL')").run().lastInsertRowid);
+  const ftU = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,employment_type,monthly_salary) VALUES ('ftcol','x','FT','staff','active','ft',30000)").run().lastInsertRowid);
+  const ptU = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,employment_type,hourly_rate) VALUES ('ptcol','x','PT','staff','active','pt',100)").run().lastInsertRowid);
+  const teIns = db.prepare("INSERT INTO time_entries (user_id,branch_id,type,ts) VALUES (?,?,?,?)");
+  // 8-hour completed shift on 2026-09-26 (09:00–17:00 Bangkok) for both.
+  teIns.run(ftU, bidCol, "in", "2026-09-26T02:00:00Z"); teIns.run(ftU, bidCol, "out", "2026-09-26T10:00:00Z");
+  teIns.run(ptU, bidCol, "in", "2026-09-26T02:00:00Z"); teIns.run(ptU, bidCol, "out", "2026-09-26T10:00:00Z");
+  sdb.upsertDaily(bidCol, uid, { date: "2026-09-26", dateEnd: "2026-09-26", merchant: "COL", nett: 10000, gross: 10000, grossBeforeCharges: 10000, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 10, pax: 15, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: 1000, avgPax: 1.5, avgSalesPax: 666, payments: [], types: [], sources: [] });
+  const tc = dcol.branchTodayCol(bidCol, "2026-09-26");
+  ok("COL วันนี้: เข้างาน 2 คน (ประจำ 1 · พาร์ทไทม์ 1)", tc.headcount === 2 && tc.ftCount === 1 && tc.ptCount === 1);
+  ok("COL วันนี้: ต้นทุน = FT(30000/22) + PT(8×100)", near(tc.laborCost, 30000 / 22 + 800));
+  ok("COL วันนี้: ยอดวันนี้ 10000 · COL% ≈ 21.6", tc.salesNett === 10000 && near(tc.colPct!, 21.6));
+  ok("COL วันนี้: สาขาที่ไม่มีคนเข้างาน → 0 คน, ต้นทุน 0", (() => {
+    const b0 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('col0','COL0')").run().lastInsertRowid);
+    const z = dcol.branchTodayCol(b0, "2026-09-26");
+    return z.headcount === 0 && z.laborCost === 0 && z.colPct === null;
+  })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
