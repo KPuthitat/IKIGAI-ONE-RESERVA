@@ -14,7 +14,6 @@ import Footer from "../Footer";
 import { type SidebarSection } from "../components/Sidebar";
 import { ADMIN_MODULES } from "@/lib/admin-modules";
 import ModuleTabs, { type ModuleTab } from "../components/ModuleTabs";
-import BranchTabs from "../components/BranchTabs";
 import ModuleSubnav from "../components/ModuleSubnav";
 import { ActionBarProvider } from "../components/ActionBar";
 import AdminModeToggle from "../components/AdminModeToggle";
@@ -57,14 +56,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     ? user.branches.find((b) => b.id === user.activeBranchId) ?? null
     : null;
   const hasBranchChoice = user.branches.length > 1;
-  // Branches the admin console may switch between — same rule as the
-  // full-page branch picker: super_admin gets all their memberships,
-  // sub-admins get the ones flagged in user_branches.is_admin. Drives the
-  // BranchTabs pill-row (owner 2026-09-24: branch picker styled like the
-  // module picker).
-  const adminBranches = user.role === "super_admin"
-    ? user.branches
-    : user.branches.filter((b) => user.adminBranchIds.includes(b.id));
 
   // Count of pending_review bookings on the active branch — surfaces as a
   // red badge next to the "การจอง" sidebar entry so admin notices new
@@ -522,11 +513,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           desktop, horizontal chips on mobile) + page content. max-w-screen-2xl
           so data-heavy tables don't wrap Thai names on common widths. */}
       <div className="w-full max-w-screen-2xl mx-auto px-4 pt-4 flex-1 flex flex-col min-w-0">
+        {/* Branch switching lives in the header pill (TodaysBranchPill) — the
+            duplicate BranchTabs pill-row was removed (owner 2026-09-26: "ถ้ามีปุ่ม
+            เปลี่ยนสาขาข้างบนแล้ว ไม่ควรมีท้อปบาร์เรื่องสาขาอีก"). */}
         <div className="space-y-2">
-          <BranchTabs
-            branches={adminBranches.map((b) => ({ id: b.id, name: b.name }))}
-            activeBranchId={user.activeBranchId}
-          />
           <ModuleTabs tabs={moduleTabs} />
         </div>
         {/* Sub-nav chips read as part of the nav — snug under the tabs, with a
