@@ -1,29 +1,16 @@
 "use client";
 
 import OwlMascot from "@/app/components/OwlMascot";
+// Type-only import (erased from the client bundle, so the server-only db code in
+// clinica-analytics is never pulled in) — the single source of truth for the
+// shape, re-exported for the rest of the client tree.
+import type { ClinicaMonth } from "@/lib/clinica-analytics";
+export type { ClinicaMonth };
 
 // The คลินิก section of ANALYTICA (owner 2026-09-26). Headline is ยอดบิลรวม,
-// split into เงินเข้าจริง (สด+พร้อมเพย์) vs รอเบิกประกัน (AR + aging), plus payer
+// split into เงินเข้าจริง (เงินสด/พร้อมเพย์) vs รอเบิกประกัน (AR + aging), plus payer
 // mix, revenue categories, top ยา/แล็บ, diagnoses, doctors and peak hours. Every
 // money figure carries its count (ครั้ง) in parentheses.
-
-export type ClinicaMonth = {
-  year: number; month: number; hasData: boolean;
-  billNet: number; billCount: number; patientCount: number; avgPerBill: number | null;
-  paid: number; due: number;
-  prevBillNet: number | null; billNetMomPct: number | null;
-  payers: Array<{ group: string; net: number; count: number; paid: number; due: number }>;
-  arTotal: number;
-  arByPayer: Array<{ group: string; net: number; count: number; paid: number; due: number }>;
-  arAging: { d0_30: number; d31_60: number; d61_90: number; d90p: number };
-  categories: Array<{ key: string; label: string; net: number; count: number }>;
-  topItems: Array<{ name: string; net: number; qty: number }>;
-  visitCount: number; visitPatientCount: number;
-  topDiagnoses: Array<{ name: string; count: number }>;
-  doctors: Array<{ name: string; count: number }>;
-  hours: Array<{ hour: number; count: number }>;
-  advice: string[];
-};
 
 const baht = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
 /** Money with its count in parentheses — the house style (owner 2026-09-26). */
@@ -106,11 +93,12 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="card col-span-2 md:col-span-1">
           <div className="text-xs text-slate-500">ยอดบิลรวมเดือนนี้</div>
-          <div className="text-xl font-bold text-slate-800 tabular-nums">{bahtC(c.billNet, c.billCount)}</div>
+          <div className="text-xl font-bold text-slate-800 tabular-nums">{baht(c.billNet)}</div>
+          <div className="text-[11px] text-slate-400">{c.billCount.toLocaleString("th-TH")} ครั้ง</div>
           <div className="text-[11px] mt-0.5">เทียบเดือนก่อน <Pct pct={c.billNetMomPct} />{c.prevBillNet != null && <span className="text-slate-400"> ({baht(c.prevBillNet)})</span>}</div>
         </div>
         <div className="card">
-          <div className="text-xs text-slate-500">เงินเข้าจริง (สด+พร้อมเพย์)</div>
+          <div className="text-xs text-slate-500">เงินเข้าจริง (เงินสด/พร้อมเพย์)</div>
           <div className="text-lg font-bold text-emerald-700 tabular-nums">{baht(c.paid)}</div>
         </div>
         <div className="card">
@@ -140,14 +128,39 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
               </div>
             ))}
           </div>
-          <div className="space-y-1 pt-1">
-            {c.arByPayer.slice(0, 6).map((p) => (
-              <div key={p.group} className="flex items-baseline justify-between gap-2 text-[11px]">
-                <span className="text-slate-600 truncate">{p.group}</span>
-                <span className="text-rose-600 tabular-nums whitespace-nowrap">{bahtC(p.due, p.count)}</span>
-              </div>
-            ))}
+          <div className="space-y-1.5 pt-1">
+            {c.arByPayer.slice(0, 6).map((p) => {
+              // Per-payer aging: which buckets this payer's outstanding sits in, so
+              // the owner can tell who is overdue how long (owner 2026-09-26).
+              // Bills with no/invalid bill_date can't be aged, so they sit in
+              // p.due but in no bucket. Surface the remainder as "ไม่ระบุวันที่" so
+              // the breakdown reconciles with the owed figure (owner 2026-09-26).
+              const bucketSum = p.aging.d0_30 + p.aging.d31_60 + p.aging.d61_90 + p.aging.d90p;
+              const undated = Math.round((p.due - bucketSum) * 100) / 100;
+              const buckets: Array<[string, number, boolean]> = [
+                ["0–30 วัน", p.aging.d0_30, false], ["31–60 วัน", p.aging.d31_60, false],
+                ["61–90 วัน", p.aging.d61_90, true], ["90+ วัน", p.aging.d90p, true],
+                ...(undated > 0.5 ? [["ไม่ระบุวันที่", undated, false] as [string, number, boolean]] : []),
+              ];
+              const shown = buckets.filter(([, v]) => v > 0.5);
+              return (
+                <div key={p.group}>
+                  <div className="flex items-baseline justify-between gap-2 text-[11px]">
+                    <span className="text-slate-600 truncate">{p.group}</span>
+                    <span className="text-rose-600 tabular-nums whitespace-nowrap">{bahtC(p.due, p.count)}</span>
+                  </div>
+                  {shown.length > 0 && (
+                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] mt-0.5">
+                      {shown.map(([lb, v, old]) => (
+                        <span key={lb} className={old ? "text-rose-500" : "text-slate-400"}>{lb}: {baht(v)}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
+          <p className="text-[10px] text-slate-400">อายุหนี้นับจากวันที่ในบิลถึงวันนี้ · เกิน 60 วันแสดงเป็นสีแดง</p>
         </div>
       )}
 

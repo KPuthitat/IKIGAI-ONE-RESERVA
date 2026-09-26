@@ -73,6 +73,13 @@ process.env.DATABASE_PATH = TMP;
   ok("AR aging (ณ 09-26): 08-10→31–60, 06-10→90+", near(m2.arAging.d31_60, 500) && near(m2.arAging.d90p, 700) && near(m2.arAging.d0_30, 0));
   ok("headline due ยังเป็นของเดือนที่ดู (Aug = 500)", near(m2.due, 500));
   ok("advice (ณ 09-26): เตือนรอเบิกค้างเกิน 90 วัน (บิล มิ.ย.)", m2.advice.some((l) => l.includes("เกิน 90 วัน")));
+  // Per-payer aging (owner 2026-09-26): each owing payer carries its own buckets.
+  ok("aging รายเจ้า: ประกัน เอ (บิล ส.ค.) → 31–60, ประกัน บี (บิล มิ.ย.) → 90+", (() => {
+    const a = m2.arByPayer.find((p) => p.group.includes("เอ"));
+    const b = m2.arByPayer.find((p) => p.group.includes("บี"));
+    return !!a && near(a.aging.d31_60, 500) && a.aging.d90p === 0
+        && !!b && near(b.aging.d90p, 700) && b.aging.d31_60 === 0;
+  })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
