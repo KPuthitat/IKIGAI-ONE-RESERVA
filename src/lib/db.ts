@@ -7362,6 +7362,58 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_inbox_msg_conv ON inbox_messages(conversation_id, id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_inbox_msg_extid ON inbox_messages(external_message_id) WHERE external_message_id IS NOT NULL;
+
+    -- CLINICA (owner 2026-09-26): AT HOME CLINIC HIS imports, stored at line-item
+    -- grain so ANALYTICA can aggregate by day/month/any range. Import is
+    -- range-based (replace-in-range), so re-importing a span overwrites cleanly.
+    CREATE TABLE IF NOT EXISTS clinica_bills (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id     INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      bill_no       TEXT NOT NULL,
+      bill_date     TEXT NOT NULL DEFAULT '',   -- ISO; '' when the source date was unparseable
+      bill_time     TEXT,
+      hn            TEXT,
+      payer_group   TEXT,                        -- กลุ่มลูกค้า (เงินสด / ประกันแต่ละเจ้า / บริษัท)
+      staff         TEXT,                        -- ผู้ทำรายการ
+      gross         REAL NOT NULL DEFAULT 0,
+      bill_discount REAL NOT NULL DEFAULT 0,
+      net           REAL NOT NULL DEFAULT 0,     -- รวมสุทธิ (บิลนี้)
+      paid          REAL NOT NULL DEFAULT 0,
+      due           REAL NOT NULL DEFAULT 0,     -- ยอดค้างชำระ (AR)
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, bill_no)
+    );
+    CREATE INDEX IF NOT EXISTS idx_clinica_bills_date ON clinica_bills(branch_id, bill_date);
+    CREATE INDEX IF NOT EXISTS idx_clinica_bills_payer ON clinica_bills(branch_id, payer_group);
+    CREATE TABLE IF NOT EXISTS clinica_bill_items (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      bill_id       INTEGER NOT NULL REFERENCES clinica_bills(id) ON DELETE CASCADE,
+      code          TEXT,
+      name          TEXT,
+      qty           REAL NOT NULL DEFAULT 0,
+      unit          TEXT,
+      line_gross    REAL NOT NULL DEFAULT 0,
+      line_discount REAL NOT NULL DEFAULT 0,
+      line_net      REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_clinica_items_bill ON clinica_bill_items(bill_id);
+    CREATE TABLE IF NOT EXISTS clinica_visits (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id   INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      visit_no    TEXT NOT NULL,
+      visit_date  TEXT NOT NULL DEFAULT '',
+      visit_time  TEXT,
+      hn          TEXT,
+      gender      TEXT,
+      birth_date  TEXT,
+      doctor      TEXT,
+      dx_code     TEXT NOT NULL DEFAULT '',   -- '' not NULL, so the UNIQUE dedup below is reliable (CLAUDE.md: NULL≠NULL in UNIQUE)
+      dx_th       TEXT,
+      dx_en       TEXT,
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, visit_no, dx_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_clinica_visits_date ON clinica_visits(branch_id, visit_date);
   `);
 
   // Idempotent add for DBs that created insigna_review_requests before the

@@ -227,6 +227,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin/reporta", label: "วิเคราะห์รายสาขา" },
         { href: "/admin/reporta/company", label: "ภาพรวมบริษัท (รวมสาขา)" },
+        { href: "/admin/reporta/clinica", label: "นำเข้าข้อมูลคลินิก (HIS)" },
         { href: "/admin/reporta/settings", label: "ตั้งค่ากลุ่ม LINE" }
       ]
     }] : []),
