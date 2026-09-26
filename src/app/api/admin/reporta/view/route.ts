@@ -3,7 +3,7 @@ import { requirePermission, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { branchTodayCol } from "@/lib/daily-col";
 import { isClinicaBranch } from "@/lib/clinica-db";
-import { clinicaMonth } from "@/lib/clinica-analytics";
+import { clinicaMonth, clinicaWeek } from "@/lib/clinica-analytics";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars, revshareIncomeForBranch, applyRevshareToTarget, remainingMonthOutlook, composeExpenseAnalysis } from "@/lib/salesa-analytics";
 import { expenseCategoryTotals, expenseAccrualTotal } from "@/lib/accounta-db";
@@ -74,6 +74,11 @@ export function GET(req: Request) {
 
   const week = sp.get("week") ?? "";
   if (ISO.test(week)) {
+    // A clinic gets the CLINICA weekly rollup (bills/patients), a restaurant the
+    // POS weekly rollup — same card, branch-appropriate metrics (owner 2026-09-27).
+    if (isClinicaBranch(branchId)) {
+      return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, clinicaWeek: clinicaWeek(branchId, week) });
+    }
     const weekly = weeklyAnalytics(branchId, week);
     return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, weekly, weeklySentAt: weeklySentAt(branchId, weekly.weekStart) });
   }

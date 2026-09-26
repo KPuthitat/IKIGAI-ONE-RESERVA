@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import OwlMascot from "@/app/components/OwlMascot";
 import ClinicaSection, { type ClinicaMonth } from "./ClinicaSection";
+import ClinicaWeekCard from "./ClinicaWeekCard";
+import type { ClinicaWeek } from "@/lib/clinica-analytics";
 import ClinicaImportClient from "./clinica/ClinicaImportClient";
 import { clinicaPaidPct } from "@/lib/clinica-shared";
 
@@ -230,6 +232,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
   const [expenseAnalysis, setExpenseAnalysis] = useState<ExpenseAnalysis | null>(null);
   const [todayCol, setTodayCol] = useState<TodayCol | null>(null);
   const [clinica, setClinica] = useState<ClinicaMonth | null>(null);
+  const [clinicaWeekly, setClinicaWeekly] = useState<ClinicaWeek | null>(null);
   const [revshareIncome, setRevshareIncome] = useState(0);   // ส่วนแบ่งยอดขาย this month
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [clinicaSentAt, setClinicaSentAt] = useState<string | null>(null);
@@ -315,8 +318,26 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
 
   const loadWeek = useCallback(async (ws: string) => {
     const r = await fetch(`/api/admin/reporta/view?week=${ws}`, { cache: "no-store" }).then((x) => x.json());
-    if (r.ok) { setWeekly(r.weekly); setWeeklySentAt(r.weeklySentAt); }
+    // A clinic branch returns clinicaWeek (bills/patients); a restaurant returns
+    // the POS weekly. Keep whichever came back and clear the other.
+    if (r.ok) { setWeekly(r.weekly ?? null); setWeeklySentAt(r.weeklySentAt ?? null); setClinicaWeekly(r.clinicaWeek ?? null); }
   }, []);
+
+  // After a clinic import, jump the month browser (and the week) to the imported
+  // data's latest month, then re-fetch — the same "เด้งไปเดือนที่นำเข้า" behaviour
+  // the restaurant POS import has (owner 2026-09-27).
+  const onClinicaImported = useCallback(async (target?: string) => {
+    if (target && /^\d{4}-\d{2}-\d{2}$/.test(target)) {
+      const ty = Number(target.slice(0, 4)), tm = Number(target.slice(5, 7));
+      setYear(ty); setMonth(tm); setWeekStart(mondayOf(target));
+      await loadMonth(ty, tm);
+      await loadWeek(mondayOf(target));
+    } else {
+      await loadMonth();
+      await loadWeek(weekStart);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadMonth, loadWeek, weekStart]);
 
   // Menu-name merging (owner 2026-09-20): pull the possible-duplicate suggestions
   // and the already-merged groups. Best-effort — never blocks the dashboard.
@@ -651,7 +672,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           2026-09-26: a clinic imports from APSX, not a POS). */}
       {isClinic ? (
         <div className="space-y-1">
-          <ClinicaImportClient onImported={loadMonth} />
+          <ClinicaImportClient onImported={onClinicaImported} />
           {clinicaRange && (clinicaRange.billsFrom || clinicaRange.visitsFrom) && (
             <div className="text-[11px] text-slate-400 px-1">
               นำเข้าแล้ว —
@@ -985,6 +1006,31 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           </>
         )}
       </div>
+
+      {/* Clinic weekly rollup (owner 2026-09-27: "การ์ดสัปดาห์เต็ม + เทียบสัปดาห์ก่อน") —
+          mirrors the restaurant สรุปรายสัปดาห์ card with clinic metrics + the same
+          ↻ วิเคราะห์อีกครั้ง button for when more data is imported. */}
+      {isClinic && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-center sm:justify-between gap-2 flex-wrap">
+            <h2 className="font-bold text-slate-800">สรุปรายสัปดาห์ (จันทร์–อาทิตย์)</h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <NavStepper eyebrow="สัปดาห์" label={clinicaWeekly?.label ?? "—"}
+                onPrev={() => setWeekStart(addDays(weekStart, -7))} onNext={() => setWeekStart(addDays(weekStart, 7))}
+                prevTitle="สัปดาห์ก่อนหน้า" nextTitle="สัปดาห์ถัดไป" />
+              <button type="button" onClick={() => setWeekStart(mondayOf(todayBkk()))}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-800 rounded-full border border-slate-200 px-3 py-2 hover:bg-slate-50 transition">
+                สัปดาห์นี้
+              </button>
+              <button type="button" onClick={reanalyze} disabled={analyzing}
+                className="btn-secondary text-sm px-3 py-1.5 disabled:opacity-50" title="ดึงข้อมูลล่าสุดมาวิเคราะห์ใหม่">
+                {analyzing ? "กำลังวิเคราะห์…" : "↻ วิเคราะห์อีกครั้ง"}
+              </button>
+            </div>
+          </div>
+          {clinicaWeekly && <ClinicaWeekCard w={clinicaWeekly} />}
+        </div>
+      )}
 
       {/* Restaurant/POS analytics below — hidden on a clinic branch, whose report
           is the คลินิก section above (owner 2026-09-26: a clinic isn't a restaurant). */}
