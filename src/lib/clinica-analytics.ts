@@ -44,9 +44,64 @@ export type ClinicaMonth = {
   topDiagnoses: NamedCount[];
   doctors: NamedCount[];
   hours: HourCount[];                         // bills by clock hour
+  advice: string[];                           // auto summary + recommendations (น้องฮูก)
 };
 
 const CAT_LABEL: Record<string, string> = { service: "ค่าบริการ/ตรวจ", drug: "ยา", lab: "แล็บ", package: "แพ็กเกจตรวจสุขภาพ", other: "อื่นๆ" };
+
+const bahtTh = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
+
+/** Auto executive summary + recommendations for the clinic month — the น้องฮูก
+ *  card that mirrors the restaurant's "สรุป & คำแนะนำ" (owner 2026-09-26: make
+ *  the clinic report read like the restaurant one). Pure: reads only the
+ *  already-computed month figures. Headline first, then the most actionable
+ *  notes (collection, overdue AR, payer concentration), capped at 5 lines. */
+export function clinicaAdvice(c: Omit<ClinicaMonth, "advice">): string[] {
+  const out: string[] = [];
+  if (!c.hasData) return out;
+
+  // 1) Headline: this month's billed total vs last month.
+  if (c.billNetMomPct == null) {
+    out.push(`ยอดบิลรวมเดือนนี้ ${bahtTh(c.billNet)} (${c.billCount.toLocaleString("th-TH")} ครั้ง)`);
+  } else if (c.billNetMomPct >= 5) {
+    out.push(`ยอดบิลรวมสูงกว่าเดือนก่อน +${c.billNetMomPct}% — โมเมนตัมดี รักษาไว้`);
+  } else if (c.billNetMomPct <= -5) {
+    out.push(`ยอดบิลรวมต่ำกว่าเดือนก่อน ${Math.abs(c.billNetMomPct)}% — ทบทวนจำนวนคนไข้/บริการ`);
+  } else {
+    out.push(`ยอดบิลรวมใกล้เคียงเดือนก่อน (${c.billNetMomPct >= 0 ? "+" : ""}${c.billNetMomPct}%)`);
+  }
+
+  // 2) Cash collection — how much of this month's billing is real cash in vs AR.
+  //    paid + due = billNet per bill, so derive due% as 100 − paid% to keep the
+  //    two shares summing to 100 (independent rounding could give 101%).
+  if (c.billNet > 0) {
+    const paidPct = Math.round((c.paid / c.billNet) * 100);
+    out.push(`เงินเข้าจริง (สด+พร้อมเพย์) ${bahtTh(c.paid)} (${paidPct}%) · รอเบิก ${bahtTh(c.due)} (${100 - paidPct}%)`);
+  }
+
+  // 3) Overdue AR — the most actionable warning (all periods, as of today).
+  if (c.arAging.d90p > 0.5) {
+    out.push(`⚠️ รอเบิกค้างเกิน 90 วัน ${bahtTh(c.arAging.d90p)} — ควรเร่งตามเก็บ`);
+  } else if (c.arAging.d61_90 > 0.5) {
+    out.push(`รอเบิกค้าง 61–90 วัน ${bahtTh(c.arAging.d61_90)} — ใกล้ครบกำหนด ควรติดตาม`);
+  }
+
+  // 4) Payer concentration — dependency risk on a single INSURER/corporate payer.
+  //    A dominant general-cash base (ผู้ป่วยทั่วไป) is healthy, not a risk, so the
+  //    cash and unspecified groups are excluded from the warning.
+  const GENERAL_PAYERS = new Set(["ผู้ป่วยทั่วไป", "(ไม่ระบุ)"]);
+  const topInsurer = c.payers.find((p) => !GENERAL_PAYERS.has(p.group));
+  if (topInsurer && c.billNet > 0) {
+    const share = Math.round((topInsurer.net / c.billNet) * 100);
+    if (share >= 50) out.push(`พึ่งพากลุ่ม "${topInsurer.group}" สูง ${share}% ของยอดบิล — ควรกระจายฐานคนไข้`);
+  }
+
+  // 5) Revenue driver + a patient-mix note, whichever room is left.
+  if (c.categories.length) out.push(`รายได้หลักจาก${c.categories[0].label} ${bahtTh(c.categories[0].net)}`);
+  else if (c.avgPerBill != null) out.push(`คนไข้ ${c.patientCount.toLocaleString("th-TH")} คน · เฉลี่ย/บิล ${bahtTh(c.avgPerBill)}`);
+
+  return out.slice(0, 5);
+}
 
 /** Full clinic analytics for a month. `asOf` (Bangkok YYYY-MM-DD) anchors AR
  *  aging; defaults to the month end. */
@@ -145,7 +200,7 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
        GROUP BY hr ORDER BY hr ASC`
   ).all(branchId, start, end) as Array<{ hr: number; cnt: number }>).map((r) => ({ hour: r.hr, count: r.cnt }));
 
-  return {
+  const base: Omit<ClinicaMonth, "advice"> = {
     year, month,
     hasData: kpi.bills > 0 || visits.v > 0,
     billNet: round2(kpi.net), billCount: kpi.bills, patientCount: kpi.pts,
@@ -157,4 +212,5 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
     visitCount: visits.v, visitPatientCount: visits.pts,
     topDiagnoses, doctors, hours
   };
+  return { ...base, advice: clinicaAdvice(base) };
 }

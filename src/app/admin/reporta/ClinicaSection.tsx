@@ -1,5 +1,7 @@
 "use client";
 
+import OwlMascot from "@/app/components/OwlMascot";
+
 // The คลินิก section of ANALYTICA (owner 2026-09-26). Headline is ยอดบิลรวม,
 // split into เงินเข้าจริง (สด+พร้อมเพย์) vs รอเบิกประกัน (AR + aging), plus payer
 // mix, revenue categories, top ยา/แล็บ, diagnoses, doctors and peak hours. Every
@@ -20,6 +22,7 @@ export type ClinicaMonth = {
   topDiagnoses: Array<{ name: string; count: number }>;
   doctors: Array<{ name: string; count: number }>;
   hours: Array<{ hour: number; count: number }>;
+  advice: string[];
 };
 
 const baht = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
@@ -60,6 +63,26 @@ export default function ClinicaSection({ c }: { c: ClinicaMonth }) {
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-slate-800">คลินิก · วิเคราะห์เชิงลึก</h2>
+
+      {/* บทสรุป & คำแนะนำจากน้องฮูก — mirrors the restaurant report's summary card
+          (owner 2026-09-26). Sits on top so the read starts with the takeaway. */}
+      {c.advice.length > 0 && (
+        <div className="card">
+          <div className="flex items-start gap-3">
+            <OwlMascot size={40} mood="thinking" className="shrink-0" ariaLabel="น้องฮูก" />
+            <div className="min-w-0">
+              <h3 className="font-bold text-slate-800 text-sm">สรุป &amp; คำแนะนำจากน้องฮูก</h3>
+              <ul className="space-y-1 mt-1">
+                {c.advice.map((line, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-slate-700">
+                    <span className="text-brand">•</span><span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Headline */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
