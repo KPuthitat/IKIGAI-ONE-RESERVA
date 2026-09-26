@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import OwlMascot from "@/app/components/OwlMascot";
 import ClinicaSection, { type ClinicaMonth } from "./ClinicaSection";
+import { clinicaPaidPct } from "@/lib/clinica-shared";
 
 // REPORTA dashboard (owner 2026-09-16): import the POS files, review the day's
 // deep analytics + menu ranking, and push the summary card to the HOD LINE group
@@ -229,6 +230,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [clinica, setClinica] = useState<ClinicaMonth | null>(null);
   const [revshareIncome, setRevshareIncome] = useState(0);   // ส่วนแบ่งยอดขาย this month
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
+  const [clinicaSentAt, setClinicaSentAt] = useState<string | null>(null);
   const [pushDays, setPushDays] = useState(3);
   const [pushTarget, setPushTarget] = useState("");
   // Staffing planner assumptions (owner 2026-09-20): labor cost target % of sales
@@ -298,6 +300,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       setExpenseAnalysis(r.expenseAnalysis ?? null);
       setTodayCol(r.todayCol ?? null);
       setClinica(r.clinica ?? null);
+      setClinicaSentAt(r.clinicaSentAt ?? null);
       if (r.cardColor) setCardColor(r.cardColor);
     }
   }, [year, month, panelPeriod]);
@@ -583,6 +586,21 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     });
   };
 
+  // Send the clinic monthly summary to the HOD LINE group (owner 2026-09-26:
+  // ส่งรายงานคลินิกให้ผู้บริหารเหมือนร้านอาหาร). Reuses the same PIN-confirm modal
+  // and monthly-sent marker as the restaurant monthly card.
+  const sendClinica = (y: number, m: number) => {
+    setPin({
+      title: `ส่งสรุปคลินิก ${TH_MONTHS[m]} ${y + 543}`,
+      preview: clinica ? <ClinicaPreview c={clinica} branchName={branchName} operator={operatorName} color={cardColor} /> : undefined,
+      run: async (p) => {
+        const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "clinica", year: y, month: m, pin: p }) }).then((x) => x.json());
+        if (r.ok) { setMsg({ kind: "ok", text: "ส่งรายงานผู้บริหาร (คลินิก) แล้ว" }); await loadMonth(); }
+        return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
+      }
+    });
+  };
+
   // แผนดันยอด — น้องฮูกแนะนำ (owner 2026-09-18).
   const runPush = async () => {
     const target = Math.floor(Number(pushTarget.replace(/[, ]/g, "")) || 0);
@@ -752,7 +770,19 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
         )}
 
         {/* Clinic (CLINICA) deep-dive — only for a branch with imported HIS data. */}
-        {clinica?.hasData && <ClinicaSection c={clinica} />}
+        {clinica?.hasData && (() => {
+          // Only allow sending a COMPLETED month: the MoM in the card compares the
+          // whole viewed month against the whole prior month, so a mid-month send
+          // would judge a partial month against a full one (owner 2026-09-26).
+          const [cy, cm] = todayBkk().split("-").map(Number);
+          const monthComplete = year < cy || (year === cy && month < cm);
+          const reason = !hasLineGroup ? "ยังไม่ได้ตั้งกลุ่ม LINE หัวหน้างาน (ตั้งที่หน้าตั้งค่า ANALYTICA)"
+            : !monthComplete ? "ส่งได้เมื่อจบเดือน (เดือนนี้ยังไม่จบ)" : undefined;
+          return (
+            <ClinicaSection c={clinica} onSendReport={() => sendClinica(year, month)}
+              sentAt={clinicaSentAt} canSend={hasLineGroup && monthComplete} disabledReason={reason} />
+          );
+        })()}
 
         {/* Today's COL snapshot (owner 2026-09-26): who's in today (FT/PT), the
             day's labour cost, and its % of today's sales. Payroll-view only, so
@@ -2004,6 +2034,28 @@ function MonthlyPreview({ m, branchName, operator, color }: { m: MonthlyAnalytic
       <PRow label="ลูกค้ารวม" value={`${intTh(m.totalPax)} คน`} />
       {m.avgPerDay != null && <PRow label="เฉลี่ยต่อวัน" value={`${baht(m.avgPerDay)} บาท`} />}
       <PMenu title="เมนูทำรายได้สูงสุดประจำเดือน" list={m.topItems} />
+    </CardShell>
+  );
+}
+
+function ClinicaPreview({ c, branchName, operator, color }: { c: ClinicaMonth; branchName: string; operator: string; color: string }) {
+  const paidPct = clinicaPaidPct(c);
+  return (
+    <CardShell color={color} title="สรุปคลินิกประจำเดือน" subtitle={`${TH_MONTHS[c.month]} ${c.year + 543} · ${branchName}`}>
+      <div className="font-bold text-slate-800">{branchName}</div>
+      <div className="text-[11px] text-slate-400">สรุปโดย: {operator}</div>
+      {c.advice.length > 0 && (
+        <div className="rounded-lg bg-slate-50 border border-slate-200 p-2 my-1 space-y-0.5">
+          {c.advice.map((l, i) => <div key={i} className="text-[11px] text-slate-700">• {l}</div>)}
+        </div>
+      )}
+      {sepline}
+      <PRow label="ยอดบิลรวม" value={`${baht(c.billNet)} (${intTh(c.billCount)} ครั้ง)`} bold tone="green" />
+      {c.billNetMomPct != null && <Cmp parts={[{ label: "เทียบเดือนก่อน", pct: c.billNetMomPct }]} />}
+      <PRow label="เงินเข้าจริง (สด+พร้อมเพย์)" value={`${baht(c.paid)} (${paidPct}%)`} tone="green" />
+      <PRow label="รอเบิก (บิลเดือนนี้)" value={`${baht(c.due)} (${100 - paidPct}%)`} tone="red" />
+      <PRow label="คนไข้ (บิล)" value={`${intTh(c.patientCount)} คน`} />
+      {c.arTotal > 0.5 && <PRow label="รอเบิกค้างสะสม (ทุกงวด)" value={baht(c.arTotal)} tone="red" />}
     </CardShell>
   );
 }
