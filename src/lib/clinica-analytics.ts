@@ -6,8 +6,13 @@
 
 import { getDb } from "./db";
 import { clinicaPaidPct } from "./clinica-shared";
+import { mondayOf, roundLabel, thaiDate } from "./revshare";
 
 function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
+function addDaysIso(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 function relPct(cur: number, base: number | null): number | null {
   return base != null && base > 0 ? round2(((cur - base) / base) * 100) : null;
 }
@@ -57,6 +62,20 @@ export type ClinicaMonth = {
   doctors: NamedCount[];
   hours: HourCount[];                         // bills by clock hour
   advice: string[];                           // auto summary + recommendations (น้องฮูก)
+};
+
+export type ClinicaWeekDay = { date: string; dateLabel: string; net: number; bills: number };
+export type ClinicaWeek = {
+  weekStart: string; weekEnd: string; label: string;
+  dayCount: number;                 // days in the week that have at least one bill
+  totalNet: number; totalBills: number; totalPatients: number;
+  avgPerDay: number | null;
+  bestDate: string | null;          // highest-billing day of the week
+  days: ClinicaWeekDay[];           // billed days, ascending
+  // เทียบสัปดาห์ก่อน (previous Mon–Sun) — mirrors the restaurant weekly card
+  prevWeekNet: number | null; prevWeekDays: number;
+  wowNetPct: number | null; wowBillsPct: number | null; wowPatientsPct: number | null;
+  topItems: NamedNet[];             // top revenue items this week
 };
 
 const CAT_LABEL: Record<string, string> = { service: "ค่าบริการ/ตรวจ", drug: "ยา", lab: "แล็บ", package: "แพ็กเกจตรวจสุขภาพ", other: "อื่นๆ" };
@@ -326,4 +345,60 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
     topDiagnoses, doctors, hours
   };
   return { ...base, advice: clinicaAdvice(base) };
+}
+
+/** Weekly clinic rollup for the ISO week (Mon–Sun) containing `weekStartIso` —
+ *  the clinic mirror of the restaurant's สรุปรายสัปดาห์ card (owner 2026-09-27:
+ *  "การ์ดสัปดาห์เต็ม + เทียบสัปดาห์ก่อน"). Billed net, bills, patients, avg/day,
+ *  a Mon–Sun daily list and top revenue items, plus WoW vs the previous week. */
+export function clinicaWeek(branchId: number, weekStartIso: string, topN = 5): ClinicaWeek {
+  const db = getDb();
+  const start = mondayOf(weekStartIso);
+  const end = addDaysIso(start, 6);
+
+  const kpi = db.prepare(
+    `SELECT COALESCE(SUM(net),0) net, COUNT(*) bills, COUNT(DISTINCT NULLIF(hn,'')) pts
+       FROM clinica_bills WHERE branch_id=? AND bill_date BETWEEN ? AND ?`
+  ).get(branchId, start, end) as { net: number; bills: number; pts: number };
+
+  const dayRows = (db.prepare(
+    `SELECT bill_date date, ROUND(SUM(net),2) net, COUNT(*) bills FROM clinica_bills
+       WHERE branch_id=? AND bill_date BETWEEN ? AND ? AND bill_date<>''
+       GROUP BY bill_date ORDER BY bill_date ASC`
+  ).all(branchId, start, end) as Array<{ date: string; net: number; bills: number }>);
+  const days: ClinicaWeekDay[] = dayRows.map((d) => ({ date: d.date, dateLabel: thaiDate(d.date), net: d.net, bills: d.bills }));
+  const best = dayRows.reduce<{ date: string; net: number } | null>((b, d) => (b == null || d.net > b.net ? d : b), null);
+
+  // Previous ISO week (owner: เทียบสัปดาห์ก่อน).
+  const prevStart = addDaysIso(start, -7);
+  const prevEnd = addDaysIso(start, -1);
+  const prev = db.prepare(
+    `SELECT COALESCE(SUM(net),0) net, COUNT(*) bills, COUNT(DISTINCT NULLIF(hn,'')) pts,
+            COUNT(DISTINCT CASE WHEN bill_date<>'' THEN bill_date END) days
+       FROM clinica_bills WHERE branch_id=? AND bill_date BETWEEN ? AND ?`
+  ).get(branchId, prevStart, prevEnd) as { net: number; bills: number; pts: number; days: number };
+  const prevNet = prev.bills > 0 ? round2(prev.net) : null;
+
+  const topItems = (db.prepare(
+    `SELECT i.name, ROUND(SUM(i.line_net),2) net, ROUND(SUM(i.qty),2) qty
+       FROM clinica_bill_items i JOIN clinica_bills b ON b.id=i.bill_id
+       WHERE b.branch_id=? AND b.bill_date BETWEEN ? AND ? AND COALESCE(i.name,'')<>''
+       GROUP BY i.name ORDER BY net DESC LIMIT ?`
+  ).all(branchId, start, end, topN) as NamedNet[]);
+
+  return {
+    weekStart: start, weekEnd: end,
+    label: roundLabel(dayRows[0]?.date ?? start, dayRows[dayRows.length - 1]?.date ?? end),
+    dayCount: dayRows.length,
+    totalNet: round2(kpi.net), totalBills: kpi.bills, totalPatients: kpi.pts,
+    avgPerDay: dayRows.length ? round2(kpi.net / dayRows.length) : null,
+    bestDate: best?.date ?? null,
+    days,
+    prevWeekNet: prevNet, prevWeekDays: prev.days,
+    // relPct already returns null when the base is null or 0, so no extra guard.
+    wowNetPct: relPct(kpi.net, prevNet),
+    wowBillsPct: relPct(kpi.bills, prev.bills),
+    wowPatientsPct: relPct(kpi.pts, prev.pts),
+    topItems,
+  };
 }

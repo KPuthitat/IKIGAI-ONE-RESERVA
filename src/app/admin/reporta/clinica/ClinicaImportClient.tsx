@@ -4,23 +4,20 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
-type Result = {
-  filename: string; kind: "invoice" | "opd"; rangeStart: string; rangeEnd: string;
-  bills?: number; items?: number; visits?: number; totalNet?: number; totalDue?: number;
-};
-
-const baht = (n: number) => `฿${n.toLocaleString("th-TH")}`;
+type Result = { filename: string; kind: "invoice" | "opd"; rangeStart: string; rangeEnd: string };
 
 // Same drag-and-drop drop zone as the restaurant POS import (owner 2026-09-27:
 // "กรอบให้นำเข้าไฟล์สองระบบให้เหมือนกัน") — only the labels + the endpoint differ.
-export default function ClinicaImportClient({ onImported }: { onImported?: () => void }) {
+// onImported hands the host the latest imported date so it can jump the month
+// browser to that data, exactly as the restaurant POS import does (owner
+// 2026-09-27: "เลียนแบบให้หมด อย่าแหวกมาก").
+export default function ClinicaImportClient({ onImported }: { onImported?: (target?: string) => void }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [results, setResults] = useState<Result[]>([]);
+  const [msg, setMsg] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(null);
 
   function addFiles(list: FileList | null) {
     if (!list?.length) return;
@@ -38,18 +35,33 @@ export default function ClinicaImportClient({ onImported }: { onImported?: () =>
 
   async function upload() {
     if (!files.length || busy) return;
-    setBusy(true); setMsg(null); setResults([]);
+    setBusy(true); setMsg(null);
     try {
       const fd = new FormData();
       for (const f of files) fd.append("file", f);
       const res = await fetch(apiUrl("/api/admin/reporta/clinica-import"), { method: "POST", body: fd });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j.ok) {
-        setResults(j.imported as Result[]);
-        setMsg({ kind: "ok", text: `นำเข้าสำเร็จ ${j.imported.length} ไฟล์` });
+        const imported = (j.imported ?? []) as Result[];
+        // Which of the two HIS exports came in, and which is still missing — the
+        // restaurant POS import reports the same "ไฟล์ไหนแล้ว / ขาดไฟล์อะไร" so the
+        // clinic mirrors it (owner 2026-09-27). A missing kind is a gentle amber
+        // note, not an error: importing one at a time is allowed.
+        const hasInv = imported.some((r) => r.kind === "invoice");
+        const hasOpd = imported.some((r) => r.kind === "opd");
+        const got = [hasInv ? "Invoice" : null, hasOpd ? "OPD" : null].filter(Boolean).join(" + ");
+        if (hasInv && hasOpd) {
+          setMsg({ kind: "ok", text: "นำเข้าสำเร็จ · Invoice + OPD ครบแล้ว" });
+        } else {
+          const missing = hasInv ? "OPD Report" : "Invoice Report";
+          setMsg({ kind: "warn", text: `นำเข้าสำเร็จ · ${got} · ⚠️ ยังไม่ได้นำเข้า ${missing}` });
+        }
         setFiles([]);
+        // Latest imported date → let the host jump its month browser to that data
+        // (owner 2026-09-27: after import, เด้งไปเดือนที่นำเข้า).
+        const target = imported.map((r) => r.rangeEnd).filter(Boolean).sort().pop();
         router.refresh();      // refresh server components (e.g. the imported-range hint)
-        onImported?.();        // let an inline host (ReportaClient) re-fetch its report
+        onImported?.(target);  // let an inline host (ReportaClient) jump + re-fetch
       } else {
         setMsg({ kind: "err", text: j.message ?? j.error ?? "นำเข้าไม่สำเร็จ" });
       }
@@ -106,20 +118,7 @@ export default function ClinicaImportClient({ onImported }: { onImported?: () =>
         )}
       </div>
 
-      {msg && <p className={`text-sm ${msg.kind === "ok" ? "text-emerald-600" : "text-rose-600"}`}>{msg.text}</p>}
-      {results.length > 0 && (
-        <ul className="text-xs text-slate-600 space-y-1 border-t border-slate-200 pt-2">
-          {results.map((r, i) => (
-            <li key={i}>
-              <b>{r.filename}</b> —{" "}
-              {r.kind === "invoice"
-                ? `บิล ${r.bills} ใบ · รายการ ${r.items} · ยอด ${baht(r.totalNet ?? 0)} · รอเบิก/ค้าง ${baht(r.totalDue ?? 0)}`
-                : `OPD ${r.visits} รายการ`}
-              {" · "}ช่วง {r.rangeStart || "—"}–{r.rangeEnd || "—"}
-            </li>
-          ))}
-        </ul>
-      )}
+      {msg && <p className={`text-sm ${msg.kind === "ok" ? "text-emerald-600" : msg.kind === "warn" ? "text-amber-600" : "text-rose-600"}`}>{msg.text}</p>}
     </div>
   );
 }

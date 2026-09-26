@@ -102,6 +102,26 @@ process.env.DATABASE_PATH = TMP;
         && !!b && near(b.aging.d90p, 700) && b.aging.d31_60 === 0;
   })());
 
+  // Weekly rollup (owner 2026-09-27: "การ์ดสัปดาห์เต็ม + เทียบสัปดาห์ก่อน"). ISO week
+  // Mon–Sun. 2026-10-05 is a Monday; the prior week is 2026-09-28..10-04.
+  cdb.importInvoice(branch, invParse("2026-09-28", "2026-09-28", [bill("WP0", "2026-09-28", "10:00:00", "ผู้ป่วยทั่วไป", 200, 200, 0, [item("GEN001", "[HSC] บริการ", 200)])]));
+  cdb.importInvoice(branch, invParse("2026-10-05", "2026-10-07", [
+    bill("WC1", "2026-10-05", "09:00:00", "ผู้ป่วยทั่วไป", 300, 300, 0, [item("GEN001", "[HSC] บริการ", 300)]),
+    bill("WC2", "2026-10-07", "11:00:00", "ผู้ป่วยทั่วไป", 500, 500, 0, [item("LAB1", "[LAB] CBC", 500)]),
+  ]));
+  const w = ca.clinicaWeek(branch, "2026-10-07");
+  ok("week: ช่วง จ–อา ที่ถูกต้อง (05–11 ต.ค.)", w.weekStart === "2026-10-05" && w.weekEnd === "2026-10-11");
+  ok("week: ยอดบิลรวม 800 · 2 บิล · 2 คนไข้ · 2 วัน", near(w.totalNet, 800) && w.totalBills === 2 && w.totalPatients === 2 && w.dayCount === 2);
+  ok("week: เฉลี่ย/วัน = 400 · วันเด่น = 10-07 (500)", near(w.avgPerDay!, 400) && w.bestDate === "2026-10-07");
+  ok("week: รายวัน 2 แถว (300, 500) เรียงวันที่", w.days.length === 2 && w.days[0].date === "2026-10-05" && near(w.days[0].net, 300) && near(w.days[1].net, 500));
+  ok("week: label เป็นวันที่มีข้อมูลจริง (5–7 ตุลาคม 2569)", w.label === "5–7 ตุลาคม 2569");
+  ok("week: เทียบสัปดาห์ก่อน 200 → ยอด +300% · บิล +100% · คนไข้ +100%", w.prevWeekNet === 200 && near(w.wowNetPct!, 300) && near(w.wowBillsPct!, 100) && near(w.wowPatientsPct!, 100));
+  ok("week: topItems เรียงตามยอด (แล็บ 500 มาก่อน)", w.topItems.length === 2 && w.topItems[0].net === 500);
+  ok("week: สัปดาห์ที่ไม่มีข้อมูล → ทุกค่าเป็น 0 และ WoW null", (() => {
+    const e = ca.clinicaWeek(branch, "2026-11-16");
+    return e.dayCount === 0 && e.totalBills === 0 && e.wowNetPct === null && e.days.length === 0;
+  })());
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

@@ -16,10 +16,13 @@ const baht = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
 /** Money with its count in parentheses — the house style (owner 2026-09-26). */
 const bahtC = (n: number, c: number) => `${baht(n)} (${c.toLocaleString("th-TH")} ครั้ง)`;
 
-function Pct({ pct }: { pct: number | null }) {
-  if (pct == null) return null;
+// Same ▲▼ symbols + one-decimal format as the restaurant PctChip (owner
+// 2026-09-27: "ดูพวกลูกศรด้วย … ให้เหมือนกัน อย่าแหวก"). Exported so the clinic
+// weekly card shares one copy (no drift between the two clinic cards).
+export function Pct({ pct }: { pct: number | null }) {
+  if (pct == null) return <span className="text-slate-300">—</span>;
   const up = pct >= 0;
-  return <span className={up ? "text-emerald-600" : "text-rose-600"}>{up ? "↑" : "↓"} {Math.abs(pct)}%</span>;
+  return <span className={up ? "text-emerald-600" : "text-rose-600"}>{up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%</span>;
 }
 function Bar({ value, max, tone = "bg-brand" }: { value: number; max: number; tone?: string }) {
   return (
