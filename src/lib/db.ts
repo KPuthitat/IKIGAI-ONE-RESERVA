@@ -7327,6 +7327,41 @@ function runMigrations(db: Database.Database): void {
       UNIQUE (branch_id, sale_date, bill_no)
     );
     CREATE INDEX IF NOT EXISTS idx_insigna_customer_bills_cust ON insigna_customer_bills(customer_hash);
+
+    -- Unified customer-chat inbox (owner 2026-09-26). Inbound messages from
+    -- every customer channel (LINE OA per branch first; Facebook later) land in
+    -- one place so staff reply from the back office. channel_code is the webhook
+    -- code (messaging_channels.code / branch slug) used to resolve the SEND
+    -- token. external_user_id is the platform id (LINE userId) — operational,
+    -- like review_invites; display_name is fetched once for a usable list.
+    CREATE TABLE IF NOT EXISTS inbox_conversations (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      channel              TEXT NOT NULL DEFAULT 'line',
+      channel_code         TEXT NOT NULL,
+      branch_id            INTEGER REFERENCES branches(id) ON DELETE SET NULL,
+      external_user_id     TEXT NOT NULL,
+      display_name         TEXT,
+      last_message_at      TEXT,
+      last_message_preview TEXT,
+      last_inbound_at      TEXT,
+      unread               INTEGER NOT NULL DEFAULT 0,
+      status               TEXT NOT NULL DEFAULT 'open',   -- 'open' | 'closed'
+      created_at           TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (channel, channel_code, external_user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_inbox_conv_recent ON inbox_conversations(last_message_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_inbox_conv_branch ON inbox_conversations(branch_id, last_message_at DESC);
+    CREATE TABLE IF NOT EXISTS inbox_messages (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id     INTEGER NOT NULL REFERENCES inbox_conversations(id) ON DELETE CASCADE,
+      direction           TEXT NOT NULL,   -- 'in' (customer) | 'out' (staff)
+      body                TEXT NOT NULL,
+      sent_by             INTEGER REFERENCES users(id),
+      external_message_id TEXT,
+      created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_inbox_msg_conv ON inbox_messages(conversation_id, id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_inbox_msg_extid ON inbox_messages(external_message_id) WHERE external_message_id IS NOT NULL;
   `);
 
   // Idempotent add for DBs that created insigna_review_requests before the
