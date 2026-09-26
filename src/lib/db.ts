@@ -7358,10 +7358,22 @@ function runMigrations(db: Database.Database): void {
       body                TEXT NOT NULL,
       sent_by             INTEGER REFERENCES users(id),
       external_message_id TEXT,
+      media_kind          TEXT,   -- 'image' | 'sticker' | null (text)
+      media_ref           TEXT,   -- sticker: stickerId; image: null (uses external_message_id)
       created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_inbox_msg_conv ON inbox_messages(conversation_id, id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_inbox_msg_extid ON inbox_messages(external_message_id) WHERE external_message_id IS NOT NULL;
+  `);
+  // media_kind/media_ref (owner 2026-09-26): render an actual image (fetched
+  // on-demand from LINE by external_message_id) or a sticker (from LINE's sticker
+  // CDN by media_ref = stickerId) instead of a "[รูปภาพ]"/"[สติกเกอร์]" placeholder.
+  {
+    const imcols = db.prepare("PRAGMA table_info(inbox_messages)").all() as Array<{ name: string }>;
+    if (!imcols.some((c) => c.name === "media_kind")) db.exec("ALTER TABLE inbox_messages ADD COLUMN media_kind TEXT");
+    if (!imcols.some((c) => c.name === "media_ref")) db.exec("ALTER TABLE inbox_messages ADD COLUMN media_ref TEXT");
+  }
+  db.exec(`
 
     -- CLINICA (owner 2026-09-26): AT HOME CLINIC HIS imports, stored at line-item
     -- grain so ANALYTICA can aggregate by day/month/any range. Import is

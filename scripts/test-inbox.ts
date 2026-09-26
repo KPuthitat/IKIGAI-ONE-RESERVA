@@ -93,6 +93,21 @@ process.env.DATABASE_PATH = TMP;
   ok("listConversations() hides closed by default", inbox.listConversations().every((c) => c.id !== hypo.id));
   ok("listConversations({status:'all'}) includes closed", inbox.listConversations({ status: "all" }).some((c) => c.id === hypo.id));
 
+  // Media messages (owner 2026-09-26): image + sticker carry media_kind so the
+  // inbox renders the real thing. nama has a send token set above.
+  await inbox.recordInbound({ channel_code: "nama", branch_id: A, line_user_id: "Ucust1", text: "[รูปภาพ]", external_message_id: "IMG1", media_kind: "image" });
+  await inbox.recordInbound({ channel_code: "nama", branch_id: A, line_user_id: "Ucust1", text: "[สติกเกอร์]", external_message_id: "STK1", media_kind: "sticker", media_ref: "52002734" });
+  const mmsgs = inbox.getThread(nama.id).messages;
+  const img = mmsgs.find((m) => m.body === "[รูปภาพ]")!;
+  const stk = mmsgs.find((m) => m.body === "[สติกเกอร์]")!;
+  const txt = mmsgs.find((m) => m.body === "สวัสดีครับ เปิดกี่โมง")!;
+  ok("media: image message carries media_kind='image'", img.media_kind === "image");
+  ok("media: sticker message carries media_kind + stickerId", stk.media_kind === "sticker" && stk.media_ref === "52002734");
+  ok("media: image source resolves token + line message id (in scope)", (() => { const s = inbox.inboxImageSource(img.id, [A]); return s?.token === "TESTTOKEN" && s?.lineMessageId === "IMG1"; })());
+  ok("media: image source null out of branch scope", inbox.inboxImageSource(img.id, [B]) === null);
+  ok("media: sticker is not served as an image", inbox.inboxImageSource(stk.id, [A]) === null);
+  ok("media: plain text is not served as an image", inbox.inboxImageSource(txt.id, [A]) === null);
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

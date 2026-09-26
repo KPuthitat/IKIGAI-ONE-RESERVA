@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdmin, type SessionUser } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import {
   listConversations,
   getThread,
   markRead,
   sendReply,
-  unreadCount
+  unreadCount,
+  inboxScopeFor
 } from "@/lib/inbox";
 
 // Unified customer-chat inbox — back office (owner 2026-09-26). Staff read and
@@ -26,10 +27,7 @@ export const dynamic = "force-dynamic";
 /** The branch scope for this viewer, and whether they have any access at all.
  *  scope=null → every branch (super_admin). scope=[] with hasAccess=false →
  *  a non-super admin with no admin-branches: show nothing rather than leak. */
-function scopeFor(user: SessionUser): { scope: number[] | null; hasAccess: boolean } {
-  if (user.role === "super_admin") return { scope: null, hasAccess: true };
-  return { scope: user.adminBranchIds, hasAccess: user.adminBranchIds.length > 0 };
-}
+const scopeFor = inboxScopeFor;
 
 export function GET(req: Request) {
   const user = requireAdmin();

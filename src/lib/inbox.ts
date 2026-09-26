@@ -12,6 +12,15 @@ import { getDb } from "./db";
 import { getChannelByCode } from "./messaging-channels";
 import { decryptSecret } from "./secret-vault";
 import { sendLinePush, getLineProfile } from "./line";
+import type { SessionUser } from "./auth";
+
+/** The branch scope for an inbox viewer (shared by the inbox + media routes):
+ *  super_admin → all branches (null); a branch-admin → their admin branches; an
+ *  admin with none → no access (never "all"). */
+export function inboxScopeFor(user: SessionUser): { scope: number[] | null; hasAccess: boolean } {
+  if (user.role === "super_admin") return { scope: null, hasAccess: true };
+  return { scope: user.adminBranchIds, hasAccess: user.adminBranchIds.length > 0 };
+}
 
 /** Resolve a channel code to its LINE send token — new messaging_channels table
  *  first, then the legacy per-branch token on branches.slug (mirrors the
@@ -40,6 +49,8 @@ export type RecordInboundArgs = {
   line_user_id: string;
   text: string;
   external_message_id?: string | null;
+  media_kind?: "image" | "sticker" | null;
+  media_ref?: string | null;   // sticker: stickerId; image: null (uses external_message_id)
 };
 
 /** Record an inbound customer message: append it, then bump the conversation
@@ -54,9 +65,11 @@ export function recordInbound(args: RecordInboundArgs): void {
   const preview = args.text.slice(0, 200);
   const extId = args.external_message_id ?? null;
 
+  const mediaKind = args.media_kind ?? null;
+  const mediaRef = args.media_ref ?? null;
   const insertMsg = () =>
     db.prepare(
-      "INSERT INTO inbox_messages (conversation_id, direction, body, external_message_id) VALUES (?, 'in', ?, ?)"
+      "INSERT INTO inbox_messages (conversation_id, direction, body, external_message_id, media_kind, media_ref) VALUES (?, 'in', ?, ?, ?, ?)"
     );
 
   const existing = db.prepare(
@@ -72,7 +85,7 @@ export function recordInbound(args: RecordInboundArgs): void {
     // UNIQUE hit on external_message_id (a LINE retry) returns here — the
     // conversation's unread/status are left exactly as they were.
     try {
-      insertMsg().run(convId, args.text, extId);
+      insertMsg().run(convId, args.text, extId, mediaKind, mediaRef);
     } catch (e) {
       if (e instanceof Error && /UNIQUE/i.test(e.message)) return;
       throw e;
@@ -92,7 +105,7 @@ export function recordInbound(args: RecordInboundArgs): void {
     ).run(args.channel_code, args.branch_id, args.line_user_id, preview).lastInsertRowid);
     isNew = true;
     try {
-      insertMsg().run(convId, args.text, extId);
+      insertMsg().run(convId, args.text, extId, mediaKind, mediaRef);
     } catch (e) {
       // Extraordinary race (a retry created the conversation between our lookup
       // and insert): the empty conversation row is harmless — just stop.
@@ -116,6 +129,26 @@ export function recordInbound(args: RecordInboundArgs): void {
         .catch(() => { /* best-effort — name stays null, staff still see the chat */ });
     }
   }
+}
+
+/** Resolve an inbound IMAGE message to the LINE token + message id needed to
+ *  download its bytes (owner 2026-09-26 — the inbox shows the real photo).
+ *  Branch-scoped like getThread: a message outside scope reads as null so staff
+ *  can't pull another branch's images. null unless it's an image with content. */
+export function inboxImageSource(
+  messageId: number,
+  branchIds?: number[] | null
+): { token: string; lineMessageId: string } | null {
+  const db = getDb();
+  const row = db.prepare(
+    `SELECT m.external_message_id AS ext, m.media_kind AS kind, c.channel_code AS code, c.branch_id AS branch
+       FROM inbox_messages m JOIN inbox_conversations c ON c.id = m.conversation_id
+      WHERE m.id = ? AND m.direction = 'in' AND c.channel = 'line'`
+  ).get(messageId) as { ext: string | null; kind: string | null; code: string; branch: number | null } | undefined;
+  if (!row || row.kind !== "image" || !row.ext) return null;
+  if (!inScope(branchIds, row.branch)) return null;
+  const token = channelToken(row.code);
+  return token ? { token, lineMessageId: row.ext } : null;
 }
 
 export type InboxConversation = {
@@ -164,6 +197,8 @@ export type InboxMessage = {
   body: string;
   sent_by: number | null;
   sent_by_name: string | null;
+  media_kind: "image" | "sticker" | null;
+  media_ref: string | null;
   created_at: string;
 };
 
@@ -180,7 +215,8 @@ export function getThread(
   ).get(conversationId) as InboxConversation | undefined) ?? null;
   if (!conversation || !inScope(branchIds, conversation.branch_id)) return { conversation: null, messages: [] };
   const messages = db.prepare(
-    `SELECT m.id, m.direction, m.body, m.sent_by, u.display_name AS sent_by_name, m.created_at
+    `SELECT m.id, m.direction, m.body, m.sent_by, u.display_name AS sent_by_name,
+            m.media_kind, m.media_ref, m.created_at
      FROM inbox_messages m LEFT JOIN users u ON u.id = m.sent_by
      WHERE m.conversation_id = ? ORDER BY m.id ASC`
   ).all(conversationId) as InboxMessage[];
