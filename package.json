@@ -23,6 +23,7 @@
     "test:inbox": "node --import tsx scripts/test-inbox.ts",
     "test:clinica-parse": "node --import tsx scripts/test-clinica-parse.ts",
     "test:clinica-db": "node --import tsx scripts/test-clinica-db.ts",
+    "test:clinica-analytics": "node --import tsx scripts/test-clinica-analytics.ts",
     "test:inventa-waste": "node --import tsx scripts/test-inventa-waste.ts",
     "test:insigna-reviews": "node --import tsx scripts/test-insigna-reviews.ts",
     "test:insigna-migration": "node --import tsx scripts/test-insigna-migration.ts",

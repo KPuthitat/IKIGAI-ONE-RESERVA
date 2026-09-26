@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import OwlMascot from "@/app/components/OwlMascot";
+import ClinicaSection, { type ClinicaMonth } from "./ClinicaSection";
 
 // REPORTA dashboard (owner 2026-09-16): import the POS files, review the day's
 // deep analytics + menu ranking, and push the summary card to the HOD LINE group
@@ -225,6 +226,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [remainingOutlook, setRemainingOutlook] = useState<RemainingOutlook | null>(null);
   const [expenseAnalysis, setExpenseAnalysis] = useState<ExpenseAnalysis | null>(null);
   const [todayCol, setTodayCol] = useState<TodayCol | null>(null);
+  const [clinica, setClinica] = useState<ClinicaMonth | null>(null);
   const [revshareIncome, setRevshareIncome] = useState(0);   // ส่วนแบ่งยอดขาย this month
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [pushDays, setPushDays] = useState(3);
@@ -295,6 +297,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       setRemainingOutlook(r.remainingOutlook ?? null);
       setExpenseAnalysis(r.expenseAnalysis ?? null);
       setTodayCol(r.todayCol ?? null);
+      setClinica(r.clinica ?? null);
       if (r.cardColor) setCardColor(r.cardColor);
     }
   }, [year, month, panelPeriod]);
@@ -739,6 +742,9 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
             )}
           </div>
         )}
+
+        {/* Clinic (CLINICA) deep-dive — only for a branch with imported HIS data. */}
+        {clinica?.hasData && <ClinicaSection c={clinica} />}
 
         {/* Today's COL snapshot (owner 2026-09-26): who's in today (FT/PT), the
             day's labour cost, and its % of today's sales. Payroll-view only, so
