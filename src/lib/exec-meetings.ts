@@ -7,11 +7,11 @@
 // 15-minute block, rounded down like OT blocks — but a flat rate, NOT the
 // person's OT rate; owner 2026-09-07, clarified 2026-09-25).
 //
-// Meetings may now be attended DURING work hours (owner 2026-09-26): staff can
-// join without clocking out. But the เบี้ยประชุม is paid ONLY on the meeting
-// minutes that fall OUTSIDE a work shift — minutes spent in a meeting while on
-// the work clock are already paid as work, so they earn no separate เบี้ย. A
-// wholly in-work-hours meeting therefore pays 0.
+// Meetings may be attended DURING work hours (owner 2026-09-26): staff join
+// without clocking out. The full เบี้ยประชุม is paid on the whole attended
+// duration regardless of the work clock (owner 2026-09-26, revised): an
+// in-work-hours meeting collides with the staff member's break, so they lose
+// the break and are compensated with the normal fee.
 //
 // Taxable. A per-person meeting_fee_exempt flag (on users) drops the fee for
 // execs. This file is the shared data layer for the admin management page, the
@@ -360,66 +360,10 @@ export function isCurrentlyClockedIn(userId: number): boolean {
   return rows.some((r) => (r.ins ?? 0) > (r.outs ?? 0));
 }
 
-/** Parse a SQLite CURRENT_TIMESTAMP ('YYYY-MM-DD HH:MM:SS', UTC) to epoch ms. */
+/** Parse a SQLite CURRENT_TIMESTAMP ('YYYY-MM-DD HH:MM:SS', UTC) — or an ISO-8601
+ *  string — to epoch ms. */
 function sqlTsToMs(ts: string): number {
   return new Date(ts.replace(" ", "T") + (ts.includes("Z") ? "" : "Z")).getTime();
-}
-
-/** The Bangkok calendar date ('YYYY-MM-DD') of an epoch-ms. */
-function bkkDate(ms: number): string {
-  return new Date(ms + 7 * 3600_000).toISOString().slice(0, 10);
-}
-
-/** The user's WORK shifts (epoch-ms intervals) on the Bangkok day(s) the meeting
- *  window touches, paired from time_entries in/out. Filters and orders with
- *  SQLite date()/datetime() — exactly how the proven isCurrentlyClockedIn reads
- *  the same column — so it is correct whether ts is stored as CURRENT_TIMESTAMP
- *  ('YYYY-MM-DD HH:MM:SS') or as the clock route's ISO-8601 (toISOString);
- *  a raw string compare would mismatch those two formats. An 'in' with no
- *  closing 'out' — or whose 'out' lands after the meeting ended — is treated as
- *  running through the meeting's end (they were still on the work clock). */
-function workIntervalsForUser(userId: number, fromMs: number, toMs: number): Array<[number, number]> {
-  const db = getDb();
-  const dates = [...new Set([bkkDate(fromMs), bkkDate(toMs)])];
-  const rows = db.prepare(
-    `SELECT branch_id, type, ts FROM time_entries
-     WHERE user_id = ? AND date(ts, '+7 hours') IN (${dates.map(() => "?").join(",")})
-     ORDER BY datetime(ts) ASC`
-  ).all(userId, ...dates) as Array<{ branch_id: number | null; type: string; ts: string }>;
-  const open = new Map<number | null, number>();
-  const out: Array<[number, number]> = [];
-  for (const r of rows) {
-    const ms = sqlTsToMs(r.ts);
-    if (r.type === "in") { if (!open.has(r.branch_id)) open.set(r.branch_id, ms); }
-    else if (r.type === "out") {
-      const s = open.get(r.branch_id);
-      if (s != null) { out.push([s, ms]); open.delete(r.branch_id); }
-    }
-  }
-  for (const s of open.values()) out.push([s, toMs]);   // still on the clock at meeting end
-  return out;
-}
-
-/** Meeting minutes NOT covered by a work shift — the only minutes เบี้ยประชุม is
- *  paid on (owner 2026-09-26). Work shifts are unioned before subtracting so
- *  simultaneous multi-branch shifts don't over-credit. A wholly in-work-hours
- *  meeting returns 0. */
-export function offClockMinutes(userId: number, joinMs: number, endMs: number): number {
-  const total = Math.max(0, endMs - joinMs);
-  if (total === 0) return 0;
-  const clamped = workIntervalsForUser(userId, joinMs, endMs)
-    .map(([s, e]) => [Math.max(joinMs, s), Math.min(endMs, e)] as [number, number])
-    .filter(([s, e]) => e > s)
-    .sort((a, b) => a[0] - b[0]);
-  const merged: Array<[number, number]> = [];
-  for (const [s, e] of clamped) {
-    const last = merged[merged.length - 1];
-    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
-    else merged.push([s, e]);
-  }
-  let covered = 0;
-  for (const [s, e] of merged) covered += e - s;
-  return Math.max(0, Math.round((total - covered) / 60000));
 }
 
 export type MeetingPerson = { user_id: number; display_name: string; title_prefix: string | null };
@@ -484,9 +428,9 @@ export function getStaffMeetingView(meetingId: number, userId: number): StaffMee
 
 // Join a meeting = a meeting clock-in (NOT a work clock-in). Only an invitee may
 // join, only while the meeting is active, and only once. Joining is allowed
-// during work hours (owner 2026-09-26) — the เบี้ยประชุม is settled at end time
-// on the off-clock minutes only, so no clock-out is required first. Returns an
-// error code (or null on success).
+// during work hours (owner 2026-09-26) with no clock-out required; the full
+// เบี้ยประชุม is paid at end time regardless of the work clock. Returns an error
+// code (or null on success).
 export function joinMeeting(meetingId: number, userId: number): string | null {
   const db = getDb();
   const m = db.prepare("SELECT status FROM exec_meetings WHERE id = ?")
@@ -550,10 +494,9 @@ export function saveMinutes(meetingId: number, userId: number, d: {
 }
 
 // End a meeting = a meeting clock-out. Blocked unless the minutes are complete
-// (all four fields). Records total minutes attended, and computes เบี้ยประชุม on
-// the OFF-CLOCK minutes only (minutes overlapping a work shift are already paid
-// as work — owner 2026-09-26); 0 if the person is exempt. Returns { minutes,
-// fee } or an error code.
+// (all four fields). Records total minutes attended and computes the full
+// เบี้ยประชุม on that duration regardless of the work clock (owner 2026-09-26);
+// 0 if the person is exempt. Returns { minutes, fee } or an error code.
 export function endMeeting(meetingId: number, userId: number): { error: string } | { minutes: number; fee: number } {
   const db = getDb();
   const att = db.prepare(
@@ -569,9 +512,7 @@ export function endMeeting(meetingId: number, userId: number): { error: string }
   const endMs = Date.now();
   const joinMs = sqlTsToMs(att.joined_at);
   const minutes = Math.max(0, Math.round((endMs - joinMs) / 60000));
-  // เบี้ยประชุม is paid only on minutes spent off the work clock.
-  const billableMinutes = offClockMinutes(userId, joinMs, endMs);
-  const fee = exempt ? 0 : meetingFeeForMinutes(billableMinutes);
+  const fee = exempt ? 0 : meetingFeeForMinutes(minutes);
   db.prepare(`
     UPDATE exec_meeting_attendance
     SET ended_at = CURRENT_TIMESTAMP, minutes = ?, fee_amount = ?, fee_exempt = ?
