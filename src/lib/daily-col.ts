@@ -14,16 +14,18 @@ export type DailyColRow = {
   colPct: number | null; // laborCost / revenue × 100, null when no revenue
 };
 
-/** FT monthly salary → nominal hourly. Mirrors calcColPct: 22 working days
- *  × 8 hours, so the two COL figures stay consistent. */
+/** FT monthly salary → nominal hourly. FT staff are paid for their weekly rest
+ *  days too (Thai standard: daily wage = monthly salary / 30), so the salary
+ *  spreads across all 30 paid days, then / 8 hours (owner 2026-09-26). Mirrors
+ *  calcColPct, so the two COL figures stay consistent. */
 function ftHourly(monthlySalary: number): number {
-  return monthlySalary / 22 / 8;
+  return monthlySalary / 30 / 8;
 }
 
 /** Per-day labour cost from clocked minutes × each staff's stored rate — the
  *  single rate model shared by the branch (getDailyColRows) and company
  *  (companyMonthLabor) COL views. PT: hours × hourly_rate; FT: hours ×
- *  monthly_salary/22/8. Non-clocking staff contribute nothing (no minutes). */
+ *  monthly_salary/30/8. Non-clocking staff contribute nothing (no minutes). */
 function laborCostByDay(
   db: ReturnType<typeof getDb>, minutesByDay: Map<string, Map<number, number>>
 ): Map<string, number> {
@@ -33,7 +35,11 @@ function laborCostByDay(
   if (userIds.size > 0) {
     const ph = [...userIds].map(() => "?").join(",");
     for (const u of db.prepare(
-      `SELECT id, employment_type, hourly_rate, monthly_salary FROM users WHERE id IN (${ph})`
+      // Exclude disabled/resigned and test accounts so the historical daily/
+      // monthly COL matches branchTodayCol's "today" definition (CLAUDE.md:
+      // status NOT IN ('disabled','resigned'), skip is_test_account).
+      `SELECT id, employment_type, hourly_rate, monthly_salary FROM users
+        WHERE id IN (${ph}) AND status NOT IN ('disabled','resigned') AND COALESCE(is_test_account,0) = 0`
     ).all(...userIds) as Array<{ id: number; employment_type: string | null; hourly_rate: number | null; monthly_salary: number | null }>) {
       rateByUser.set(u.id, { type: u.employment_type, hourly: u.hourly_rate, monthly: u.monthly_salary });
     }
@@ -194,7 +200,7 @@ export type CompanyMonthLabor = {
 
 /** Company-wide daily labour cost (actual clocked hours × each staff's stored
  *  rate) for a month, plus the monthly per-day average. Mirrors getDailyColRows'
- *  rate model (PT: hours × hourly_rate; FT: hours × monthly_salary/22/8). COL%
+ *  rate model (PT: hours × hourly_rate; FT: hours × monthly_salary/30/8). COL%
  *  is against the SALESA daily nett so it matches the rest of the ANALYTICA
  *  page. Current month → through today; a past month → the full month. */
 export function companyMonthLabor(

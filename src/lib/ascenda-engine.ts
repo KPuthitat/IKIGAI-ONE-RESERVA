@@ -125,7 +125,7 @@ function calcAttendancePct(branchId: number, periodKey: string): number | null {
  *  revenue over the trailing 3 months) × 100.
  *  Planned labour cost = Σ for each roster_assignment in the period:
  *    PT staff:  hours × hourly_rate
- *    FT staff:  hours × (monthly_salary / 22 working days / 8 hours)
+ *    FT staff:  hours × (monthly_salary / 30 paid days / 8 hours)
  *  Returns null when revenue is missing for ALL three trailing
  *  months (can't divide by zero meaningfully). */
 function calcColPct(branchId: number, periodKey: string): number | null {
@@ -172,9 +172,10 @@ function calcColPct(branchId: number, periodKey: string): number | null {
     if (r.employment_type === "pt" && r.hourly_rate) {
       cost += hours * r.hourly_rate;
     } else if (r.employment_type === "ft" && r.monthly_salary) {
-      // 22 working days × 8 hours = nominal monthly hours.
-      // Owner can tune this if needed; conservative default.
-      const ftHourly = r.monthly_salary / 22 / 8;
+      // FT are paid for weekly rest days too (Thai standard: daily wage =
+      // monthly salary / 30), so spread the salary over 30 paid days × 8 hours
+      // = nominal monthly hours (owner 2026-09-26). Mirrors daily-col.ftHourly.
+      const ftHourly = r.monthly_salary / 30 / 8;
       cost += hours * ftHourly;
     }
     // Rows with no payroll fields contribute zero — admin should

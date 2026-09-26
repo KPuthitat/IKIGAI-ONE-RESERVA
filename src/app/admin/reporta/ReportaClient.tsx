@@ -98,7 +98,7 @@ type SalesPushPlan = {
 };
 type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysInMonth: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean };
 type Annual = { year: number; annualTarget: number; fullYearTarget: number; prorated: boolean; openedIso: string | null; ytdNett: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean; throughDate: string; branchCount: number };
-type OutlookBenchmark = { label: string; expected: number; avgPerDay: number; monthsUsed?: number };
+type OutlookBenchmark = { label: string; expected: number; avgPerDay: number };
 type RemainingOutlook = { year: number; month: number; todayDom: number; remainingDays: number; windowStartDom: number; windowEndDom: number; mtdNett: number; prevMonth: OutlookBenchmark | null; avg3: OutlookBenchmark | null };
 type ExpenseCategoryRow = { name: string; spent: number; pctOfSales: number | null };
 type ExpenseAnalysis = { month: string; salesNett: number; expenseTotal: number; expensePrev: number | null; expensePrevPct: number | null; expenseToSalesPct: number | null; netProxy: number; categories: ExpenseCategoryRow[] };
@@ -781,7 +781,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               </div>
             </div>
             <p className="text-[10px] text-slate-400">
-              คิดจากชั่วโมงที่ลงเวลาจริง × ค่าจ้าง (พาร์ทไทม์ รายชม. · ประจำ เงินเดือน÷22÷8) · คนที่ยังทำงานอยู่คิดถึงตอนนี้ · นับเฉพาะพนักงานจริง (ไม่รวมบัญชีทดสอบ/ลาออก)
+              คิดจากชั่วโมงที่ลงเวลาจริง × ค่าจ้าง (พาร์ทไทม์ รายชม. · ประจำ เงินเดือน÷30÷8) · คนที่ยังทำงานอยู่คิดถึงตอนนี้ · นับเฉพาะพนักงานจริง (ไม่รวมบัญชีทดสอบ/ลาออก)
             </p>
           </div>
         )}
@@ -798,7 +798,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               </span>
             </div>
             <p className="text-[11px] text-slate-500">
-              คาดการณ์ยอดของวันที่เหลือ อิงช่วงท้ายเดือน (จำนวนวันเท่ากัน) ของเดือนก่อน และค่าเฉลี่ย 3 เดือนล่าสุด
+              คาดการณ์ยอดของวันที่เหลือ อิงช่วงท้ายเดือน (จำนวนวันเท่ากัน) ของเดือนก่อน และค่าเฉลี่ยเดือนล่าสุด (ไม่เกิน 3 เดือน)
             </p>
             <div className="grid grid-cols-2 gap-2">
               {[remainingOutlook.prevMonth, remainingOutlook.avg3]
@@ -806,7 +806,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                 .map((b) => (
                   <div key={b.label} className="rounded-xl border border-slate-200 p-3">
                     <div className="text-xs font-semibold text-slate-600">
-                      {b.label}{b.monthsUsed != null && b.monthsUsed < 3 ? ` (${b.monthsUsed} เดือน)` : ""}
+                      {b.label}
                     </div>
                     <div className="text-lg font-bold text-emerald-700">{baht(b.expected)}</div>
                     <div className="text-[11px] text-slate-500">
