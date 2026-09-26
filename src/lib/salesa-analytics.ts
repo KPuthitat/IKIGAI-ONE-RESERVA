@@ -355,6 +355,58 @@ export function remainingMonthOutlook(branchId: number, todayIso: string): Remai
   };
 }
 
+// ── Expense analysis, sourced from ACCOUNTA (owner 2026-09-26) ──────────────
+// ANALYTICA reads confirmed ACCOUNTA expenses so cost sits next to sales: the
+// month's spend, its ratio to POS sales (nett), a rough sales−cost figure, and
+// the biggest categories. Pure composer — the route fetches the ACCOUNTA totals
+// (summarise / categoryBudget) and SALESA nett and passes them in, so this lib
+// stays decoupled from accounta-db and is unit-testable.
+
+export type ExpenseCategoryRow = { name: string; spent: number; pctOfSales: number | null };
+export type MonthExpenseAnalysis = {
+  month: string;              // "YYYY-MM"
+  salesNett: number;          // POS nett for the month (ANALYTICA's sales figure)
+  expenseTotal: number;       // confirmed accrual spend this month
+  expensePrev: number | null; // same, previous month
+  expensePrevPct: number | null;   // MoM change in spend
+  expenseToSalesPct: number | null; // spend ÷ sales
+  netProxy: number;           // salesNett − expenseTotal (rough; VAT not reconciled)
+  categories: ExpenseCategoryRow[];  // biggest first, capped at topN
+};
+
+/** Compose the expense analysis from figures the caller already fetched. */
+export function composeExpenseAnalysis(input: {
+  month: string;
+  salesNett: number;
+  expenseTotal: number;
+  expensePrev: number | null;
+  categorySpends: Array<{ name: string; spent: number }>;
+  topN?: number;
+}): MonthExpenseAnalysis {
+  const topN = input.topN ?? 6;
+  const salesNett = round2(input.salesNett);
+  const expenseTotal = round2(input.expenseTotal);
+  const categories: ExpenseCategoryRow[] = input.categorySpends
+    .filter((c) => c.spent > 0)
+    .sort((a, b) => b.spent - a.spent)
+    .slice(0, topN)
+    .map((c) => ({
+      name: c.name,
+      spent: round2(c.spent),
+      pctOfSales: salesNett > 0 ? round2((c.spent / salesNett) * 100) : null
+    }));
+  return {
+    month: input.month,
+    salesNett,
+    expenseTotal,
+    expensePrev: input.expensePrev == null ? null : round2(input.expensePrev),
+    expensePrevPct: relPct(expenseTotal, input.expensePrev),
+    expenseToSalesPct: salesNett > 0 ? round2((expenseTotal / salesNett) * 100) : null,
+    netProxy: round2(salesNett - expenseTotal),
+    categories
+  };
+}
+
 export type WeeklyAnalytics = {
   weekStart: string;
   weekEnd: string;

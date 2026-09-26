@@ -841,6 +841,33 @@ export function categoryBudget(month: string, branchId?: number | null, companyI
   return { month, revenue, totalExpense, items, uncategorized: round2(uncategorized) };
 }
 
+// Lightweight expense reads for ANALYTICA (owner 2026-09-26) — a single grouped
+// query for the month's confirmed spend by category (+ total), and a one-line
+// total for a comparison month. Kept minimal because the ANALYTICA view is a hot
+// path on the prod droplet; these avoid re-running the heavier summarise/
+// categoryBudget (which also compute income + budget bands ANALYTICA doesn't use).
+export function expenseCategoryTotals(month: string, branchId?: number | null): { total: number; byCategory: Array<{ name: string; spent: number }> } {
+  const db = getDb();
+  const where = ["review_status = 'confirmed'", "substr(bill_date,1,7) = ?"];
+  const args: Array<string | number> = [month];
+  if (branchId != null) { where.push("branch_id = ?"); args.push(branchId); }
+  const rows = db.prepare(
+    `SELECT COALESCE(category,'') AS name, ROUND(SUM(amount_total),2) AS spent
+       FROM accounta_expenses WHERE ${where.join(" AND ")} GROUP BY COALESCE(category,'')`
+  ).all(...args) as Array<{ name: string; spent: number }>;
+  return { total: round2(rows.reduce((s, r) => s + r.spent, 0)), byCategory: rows };
+}
+
+export function expenseAccrualTotal(month: string, branchId?: number | null): number {
+  const db = getDb();
+  const where = ["review_status = 'confirmed'", "substr(bill_date,1,7) = ?"];
+  const args: Array<string | number> = [month];
+  if (branchId != null) { where.push("branch_id = ?"); args.push(branchId); }
+  return round2((db.prepare(
+    `SELECT COALESCE(SUM(amount_total),0) AS t FROM accounta_expenses WHERE ${where.join(" AND ")}`
+  ).get(...args) as { t: number }).t);
+}
+
 // Vendors/suppliers are ONE branch-scoped master shared with INVENTA, stored in
 // inventa_suppliers (owner 2026-06-25). ACCOUNTA reads/writes the same per-branch
 // list so a คู่ค้า added in either module shows in both.
