@@ -59,6 +59,11 @@ process.env.DATABASE_PATH = TMP;
   ok("doctors: นพ.เอ 2 · นพ.บี 1", (() => { const d = new Map(m.doctors.map((x) => [x.name, x.count])); return d.get("นพ.เอ") === 2 && d.get("นพ.บี") === 1; })());
   ok("hours: 17:00 →1, 18:00 →1 (จากบิล)", (() => { const h = new Map(m.hours.map((x) => [x.hour, x.count])); return h.get(17) === 1 && h.get(18) === 1; })());
   ok("hasData true; empty month false", m.hasData === true && ca.clinicaMonth(branch, 2026, 3).hasData === false);
+  // น้องฮูก summary + recommendations (owner 2026-09-26).
+  ok("advice: headline บอก MoM ต่ำกว่าเดือนก่อน 20% (ไม่มีเครื่องหมายลบซ้อน)", m.advice.some((l) => l.includes("ต่ำกว่าเดือนก่อน 20%") && !l.includes("-20")));
+  ok("advice: มีบรรทัดเงินเข้าจริง/รอเบิก", m.advice.some((l) => l.includes("เงินเข้าจริง") && l.includes("รอเบิก")));
+  ok("advice: เตือนพึ่งพากลุ่มผู้จ่ายสูง (ประกัน 63% ของบิล)", m.advice.some((l) => l.includes("พึ่งพากลุ่ม")));
+  ok("advice: เดือนที่ไม่มีข้อมูล → advice ว่าง", ca.clinicaMonth(branch, 2026, 3).advice.length === 0);
 
   // AR is all-time as of today: a June insurance claim still unpaid surfaces when
   // viewing August, and ages to the 90+ bucket.
@@ -67,6 +72,7 @@ process.env.DATABASE_PATH = TMP;
   ok("AR all-time: รวมบิลค้างเดือนก่อน (500+700=1200) · 2 ผู้จ่าย", near(m2.arTotal, 1200) && m2.arByPayer.length === 2);
   ok("AR aging (ณ 09-26): 08-10→31–60, 06-10→90+", near(m2.arAging.d31_60, 500) && near(m2.arAging.d90p, 700) && near(m2.arAging.d0_30, 0));
   ok("headline due ยังเป็นของเดือนที่ดู (Aug = 500)", near(m2.due, 500));
+  ok("advice (ณ 09-26): เตือนรอเบิกค้างเกิน 90 วัน (บิล มิ.ย.)", m2.advice.some((l) => l.includes("เกิน 90 วัน")));
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
