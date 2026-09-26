@@ -106,8 +106,9 @@ export function getDailyColRows(branchId: number, days: number): DailyColRow[] {
 // ── ANALYTICA: today's COL snapshot for one branch (owner 2026-09-26) ────────
 // "วันนี้มีพนักงานเข้างานกี่คน (ประจำ/พาร์ทไทม์), เป็นต้นทุนแรงงานกี่บาท, กี่ %
 // ของยอดขายวันนี้." Headcount counts everyone who clocked IN today (including
-// staff still on shift); labour cost/COL% use completed shifts × each staff's
-// rate (an open shift firms up when they clock out), matching the rest of COL.
+// staff still on shift). Unlike getDailyColRows/companyMonthLabor (which cost
+// only completed shifts), this snapshot closes open shifts at "now" so the
+// current day's cost is live rather than 0 until people clock out.
 
 export type TodayCol = {
   date: string;             // Bangkok YYYY-MM-DD
