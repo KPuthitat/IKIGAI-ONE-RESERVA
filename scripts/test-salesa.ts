@@ -785,7 +785,22 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("outlook: เดือนก่อน (ส.ค. last 4) คาด 4000 · เฉลี่ย 1000/วัน",
     ro.prevMonth != null && near(ro.prevMonth.expected, 4000) && near(ro.prevMonth.avgPerDay, 1000));
   ok("outlook: เฉลี่ย 3 เดือน (4000,8000,12000)/3 = 8000 · เฉลี่ย 2000/วัน",
-    ro.avg3 != null && ro.avg3.monthsUsed === 3 && near(ro.avg3.expected, 8000) && near(ro.avg3.avgPerDay, 2000));
+    ro.avg3 != null && ro.avg3.label === "เฉลี่ย 3 เดือน" && near(ro.avg3.expected, 8000) && near(ro.avg3.avgPerDay, 2000));
+  // Owner 2026-09-26: with fewer than 3 months of data the label states the REAL
+  // count (was the confusing "เฉลี่ย 3 เดือน (2 เดือน)"), and a single-month case
+  // is suppressed (it would just repeat "เดือนก่อน").
+  const bidRO2 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('ro2','REST-RO2')").run().lastInsertRowid);
+  for (const d of ["28", "29", "30", "31"]) mkDay(bidRO2, `2026-08-${d}`, 1000);  // Aug last 4 = 4000
+  for (const d of ["28", "29", "30", "31"]) mkDay(bidRO2, `2026-07-${d}`, 2000);  // Jul last 4 = 8000 (no Jun)
+  mkDay(bidRO2, "2026-09-26", 500);
+  const ro2 = analytics.remainingMonthOutlook(bidRO2, "2026-09-26")!;
+  ok("outlook: 2 ใน 3 เดือนมีข้อมูล → label 'เฉลี่ย 2 เดือน' · (4000,8000)/2 = 6000",
+    ro2.avg3 != null && ro2.avg3.label === "เฉลี่ย 2 เดือน" && near(ro2.avg3.expected, 6000));
+  const bidRO1 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('ro1','REST-RO1')").run().lastInsertRowid);
+  for (const d of ["28", "29", "30", "31"]) mkDay(bidRO1, `2026-08-${d}`, 1000);  // Aug only (1 of 3)
+  mkDay(bidRO1, "2026-09-26", 500);
+  const ro1 = analytics.remainingMonthOutlook(bidRO1, "2026-09-26")!;
+  ok("outlook: 1 เดือนเท่านั้น → avg3 = null (ไม่ซ้ำกับเดือนก่อน)", ro1.prevMonth != null && ro1.avg3 === null);
   ok("outlook: วันสุดท้ายของเดือน → null (ไม่มีวันเหลือ)", analytics.remainingMonthOutlook(bidRO, "2026-09-30") === null);
   ok("outlook: สาขาไม่มีข้อมูลเดือนก่อน → prevMonth/avg3 = null", (() => {
     const empty = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('roE','RO-EMPTY')").run().lastInsertRowid);
@@ -834,8 +849,8 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   sdb.upsertDaily(bidCol, uid, { date: "2026-09-26", dateEnd: "2026-09-26", merchant: "COL", nett: 10000, gross: 10000, grossBeforeCharges: 10000, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 10, pax: 15, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: 1000, avgPax: 1.5, avgSalesPax: 666, payments: [], types: [], sources: [] });
   const tc = dcol.branchTodayCol(bidCol, "2026-09-26");
   ok("COL วันนี้: เข้างาน 2 คน (ประจำ 1 · พาร์ทไทม์ 1)", tc.headcount === 2 && tc.ftCount === 1 && tc.ptCount === 1);
-  ok("COL วันนี้: ต้นทุน = FT(30000/22) + PT(8×100)", near(tc.laborCost, 30000 / 22 + 800));
-  ok("COL วันนี้: ยอดวันนี้ 10000 · COL% ≈ 21.6", tc.salesNett === 10000 && near(tc.colPct!, 21.6));
+  ok("COL วันนี้: ต้นทุน = FT(30000/30) + PT(8×100)", near(tc.laborCost, 30000 / 30 + 800));
+  ok("COL วันนี้: ยอดวันนี้ 10000 · COL% ≈ 18.0", tc.salesNett === 10000 && near(tc.colPct!, 18.0));
   ok("COL วันนี้: สาขาที่ไม่มีคนเข้างาน → 0 คน, ต้นทุน 0", (() => {
     const b0 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('col0','COL0')").run().lastInsertRowid);
     const z = dcol.branchTodayCol(b0, "2026-09-26");

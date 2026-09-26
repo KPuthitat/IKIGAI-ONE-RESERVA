@@ -1,5 +1,5 @@
 // ANALYTICA company daily labour cost (owner 2026-09-24). Actual clocked hours
-// × each staff's rate (PT hourly, FT monthly/22/8), per day + monthly average,
+// × each staff's rate (PT hourly, FT monthly/30/8), per day + monthly average,
 // COL% vs SALESA daily nett. Run: node --import tsx scripts/test-analytica-labor.ts
 
 import fs from "node:fs";
@@ -24,16 +24,16 @@ process.env.DATABASE_PATH = TMP;
 
   const A = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('a','NAMA')").run().lastInsertRowid);
   const B = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('b','HYPO')").run().lastInsertRowid);
-  // PT @ ฿100/hr, FT @ ฿22,000/mo → 22000/22/8 = ฿125/hr.
+  // PT @ ฿100/hr, FT @ ฿24,000/mo → 24000/30/8 = ฿100/hr.
   const pt = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,employment_type,hourly_rate) VALUES ('pt','x','PT','staff','active','pt',100)").run().lastInsertRowid);
-  const ft = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,employment_type,monthly_salary) VALUES ('ft','x','FT','staff','active','ft',22000)").run().lastInsertRowid);
+  const ft = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,employment_type,monthly_salary) VALUES ('ft','x','FT','staff','active','ft',24000)").run().lastInsertRowid);
 
   const at = (date: string, hhmm: string) => new Date(`${date}T${hhmm}:00+07:00`).toISOString();
   const punch = (uid: number, date: string, hhmm: string, type: "in" | "out", branch: number) =>
     db.prepare("INSERT INTO time_entries (user_id, type, ts, branch_id) VALUES (?,?,?,?)").run(uid, type, at(date, hhmm), branch);
   const shift = (uid: number, date: string, inHH: string, outHH: string, branch: number) => { punch(uid, date, inHH, "in", branch); punch(uid, date, outHH, "out", branch); };
 
-  // Day 1: PT 8h + FT 8h at A → 8*100 + 8*125 = 1800.
+  // Day 1: PT 8h + FT 8h at A → 8*100 + 8*100 = 1600.
   shift(pt, "2026-09-01", "09:00", "17:00", A);
   shift(ft, "2026-09-01", "09:00", "17:00", A);
   // Day 2: PT 4h at B → 4*100 = 400.
@@ -54,14 +54,14 @@ process.env.DATABASE_PATH = TMP;
   const d2 = r.days.find((d) => d.date === "2026-09-02")!;
   const d3 = r.days.find((d) => d.date === "2026-09-03")!;
   const d4 = r.days.find((d) => d.date === "2026-09-04")!;
-  ok("day 1: labor ฿1800 (PT 800 + FT 1000)", d1.laborCost === 1800);
-  ok("day 1: sales ฿10000, COL 18.0%", d1.salesNett === 10000 && d1.colPct === 18.0);
+  ok("day 1: labor ฿1600 (PT 800 + FT 800)", d1.laborCost === 1600);
+  ok("day 1: sales ฿10000, COL 16.0%", d1.salesNett === 10000 && d1.colPct === 16.0);
   ok("day 2: labor ฿400, COL 10.0%", d2.laborCost === 400 && d2.colPct === 10.0);
   ok("day 3: labor ฿200 but sales not imported → COL null", d3.laborCost === 200 && d3.salesNett === null && d3.colPct === null);
   ok("a day with no work → labor 0, no sales, COL null", d4.laborCost === 0 && d4.salesNett === null && d4.colPct === null);
-  ok("total labor ฿2400 (incl. the no-sales day), total sales ฿14000", r.totalLabor === 2400 && r.totalSales === 14000);
-  ok("avg per day = ฿480 (2400 ÷ 5 days)", r.avgLaborPerDay === 480);
-  ok("avg COL = 15.7% — over days WITH sales only (2200 ÷ 14000), not inflated by the no-sales day", r.avgColPct === 15.7);
+  ok("total labor ฿2200 (incl. the no-sales day), total sales ฿14000", r.totalLabor === 2200 && r.totalSales === 14000);
+  ok("avg per day = ฿440 (2200 ÷ 5 days)", r.avgLaborPerDay === 440);
+  ok("avg COL = 14.3% — over days WITH sales only (2000 ÷ 14000), not inflated by the no-sales day", r.avgColPct === 14.3);
   ok("no company branches → empty", companyMonthLabor([], 2026, 9, "2026-09-05").days.length === 0);
   ok("past month uses the full month window (Aug = 31 days)", companyMonthLabor([A, B], 2026, 8, "2026-09-05").dayCount === 31);
 

@@ -146,7 +146,7 @@ export default function AscendaDailyPage({
 
       <p className="text-[11px] text-slate-400">
         %COL = ค่าแรงจริง (ชั่วโมงลงเวลา × เรต) ÷ ยอดขายของวันนั้น × 100 ·
-        FT คิดเรตจากเงินเดือน ÷ 22 วัน ÷ 8 ชม.
+        FT คิดเรตจากเงินเดือน ÷ 30 วัน ÷ 8 ชม.
       </p>
     </div>
   );

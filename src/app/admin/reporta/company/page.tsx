@@ -313,11 +313,16 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
             </div>
           )}
 
-          {/* Festival / important-day uplift (owner 2026-09-21), company-scoped */}
+          {/* Festival / important-day uplift (owner 2026-09-21), company-scoped.
+              Collapsed by default (owner 2026-09-26: "วันสำคัญให้ซ่อนไว้ จะดูค่อยเปิด")
+              — native <details> so a server component can toggle with no JS. */}
           {fest.rows.length > 0 && (
-            <div className="card">
-              <div className="text-sm font-bold text-slate-800 mb-2">วันสำคัญ / เทศกาล {year + 543} — เทียบยอดขายแต่ละสาขา</div>
-              <div className="overflow-x-auto">
+            <details className="card [&>summary]:cursor-pointer [&>summary]:list-none [&>summary::-webkit-details-marker]:hidden">
+              <summary className="flex items-center justify-between gap-2">
+                <span className="text-sm font-bold text-slate-800">วันสำคัญ / เทศกาล {year + 543} — เทียบยอดขายแต่ละสาขา</span>
+                <span className="text-[11px] text-slate-400 shrink-0">แตะเพื่อดู ▾</span>
+              </summary>
+              <div className="overflow-x-auto mt-3">
                 <table className="w-full text-sm border-collapse">
                   <thead><tr className="text-[11px] text-slate-500 border-b border-slate-200">
                     <th className="text-left py-2 pr-3">วันสำคัญ</th>
@@ -343,7 +348,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                 </table>
               </div>
               <p className="text-[11px] text-slate-400 mt-2">▲/▼ = ยอดวันนั้นเทียบกับยอดขายเฉลี่ยต่อวันของสาขาในเดือนเดียวกัน</p>
-            </div>
+            </details>
           )}
 
           {/* Top menu / categories รวมทุกสาขา (owner 2026-09-21) */}

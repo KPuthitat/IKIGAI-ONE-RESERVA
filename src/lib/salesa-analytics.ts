@@ -274,10 +274,9 @@ export function monthComparison(branchId: number, year: number, month: number, t
 // still to come. "ยอดที่เหลือของเดือนน่าจะเป็นประมาณเท่าไร."
 
 export type OutlookBenchmark = {
-  label: string;             // "เดือนก่อน" / "เฉลี่ย 3 เดือน"
+  label: string;             // "เดือนก่อน" / "เฉลี่ย N เดือน" (N = months with data, ≤3)
   expected: number;          // ฿ expected for this month's remaining days
   avgPerDay: number;         // expected ÷ remaining days
-  monthsUsed?: number;       // (3-mo avg only) how many of the 3 months had data
 };
 
 export type RemainingMonthOutlook = {
@@ -340,11 +339,17 @@ export function remainingMonthOutlook(branchId: number, todayIso: string): Remai
     ? { label: "เดือนก่อน", expected: tails[0].nett, avgPerDay: round2(tails[0].nett / n) }
     : null;
 
+  // The multi-month average needs at least 2 months to be distinct from
+  // "เดือนก่อน"; with only 1 month of data it would just repeat that card AND
+  // read as the confusing "เฉลี่ย 3 เดือน (1 เดือน)". So show it only when ≥2 of
+  // the last 3 months have data, and label it with the real month count. No
+  // "ล่าสุด" — those months aren't necessarily the most recent consecutive ones
+  // (last month can be a gap), so the label states the count only (owner 2026-09-26).
   const withData = tails.filter((t) => t.salesDays > 0);
-  const avg3: OutlookBenchmark | null = withData.length > 0
+  const avg3: OutlookBenchmark | null = withData.length >= 2
     ? (() => {
         const mean = withData.reduce((s, t) => s + t.nett, 0) / withData.length;
-        return { label: "เฉลี่ย 3 เดือน", expected: round2(mean), avgPerDay: round2(mean / n), monthsUsed: withData.length };
+        return { label: `เฉลี่ย ${withData.length} เดือน`, expected: round2(mean), avgPerDay: round2(mean / n) };
       })()
     : null;
 
