@@ -238,22 +238,39 @@ export default function HookFab({
   // every 60s while the page is open so the badge stays current.
   // Skipped for non-admin audiences.
   const [pending, setPending] = useState<OwlPendingResponse | null>(null);
+  // Unread customer-chat count (owner 2026-09-26) — น้องฮูก is the reply point
+  // for the unified inbox, so it surfaces the unread badge here too. Same
+  // admin-only, 60s cadence as the pending digest.
+  const [inboxUnread, setInboxUnread] = useState(0);
   useEffect(() => {
     if (audience !== "admin") return;
     let cancelled = false;
     const tick = async () => {
+      // Two independent fetches — a failure in one must not skip the other.
       try {
         const res = await fetch(apiUrl("/api/owl/admin-pending"), {
           cache: "no-store"
         });
-        if (!res.ok) return;
-        const data = await res.json() as OwlPendingResponse;
-        if (!cancelled) setPending(data);
+        if (res.ok) {
+          const data = await res.json() as OwlPendingResponse;
+          if (!cancelled) setPending(data);
+        }
       } catch { /* offline / 401 — ignore, owl stays in FAQ-only mode */ }
+      try {
+        const res = await fetch(apiUrl("/api/admin/inbox?count=1"), { cache: "no-store" });
+        if (res.ok) {
+          const j = await res.json();
+          if (!cancelled && j?.ok) setInboxUnread(Number(j.unread) || 0);
+        }
+      } catch { /* offline / 403 — leave the inbox badge hidden */ }
     };
     tick();
     const id = setInterval(tick, 60_000);
-    return () => { cancelled = true; clearInterval(id); };
+    // The inbox page fires this when a chat is read/replied so the badge clears
+    // live instead of waiting up to 60s for the next poll.
+    const onRead = () => { if (!cancelled) tick(); };
+    window.addEventListener("ikigai:inbox-read", onRead);
+    return () => { cancelled = true; clearInterval(id); window.removeEventListener("ikigai:inbox-read", onRead); };
   }, [audience]);
 
   // Auto-open (owner 2026-06-06): pop the panel automatically when
@@ -448,6 +465,9 @@ export default function HookFab({
         }
       };
 
+  // Combined FAB badge count — pending admin queues + unread customer chats.
+  const fabTotal = (pending?.total ?? 0) + inboxUnread;
+
   return (
     <>
       {/* FAB — bare owl, no circle wrapper. Drag to reposition (touch
@@ -469,14 +489,14 @@ export default function HookFab({
         `}
       >
         <OwlMascot size={64} mood={open ? "smile" : "sleepy"} />
-        {/* Badge — when admin has pending items, show the count
-            instead of "?". The count badge uses amber for urgency
-            so it stands out against the brand-red "?" baseline. */}
-        {!open && pending && pending.total > 0 ? (
+        {/* Badge — when admin has pending items OR unread customer chats,
+            show the combined count instead of "?". The count badge uses
+            amber for urgency so it stands out against the brand-red "?". */}
+        {!open && fabTotal > 0 ? (
           <span className="absolute top-0 right-0 bg-amber-500 text-white text-[10px]
               font-bold rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center
               shadow-md ring-2 ring-white">
-            {pending.total > 99 ? "99+" : pending.total}
+            {fabTotal > 99 ? "99+" : fabTotal}
           </span>
         ) : !open ? (
           <span className="absolute top-0 right-0 bg-brand text-white text-[10px]
@@ -621,6 +641,27 @@ export default function HookFab({
                   </div>
                 ))}
               </div>
+            )}
+
+            {/* Customer-chat inbox (owner 2026-09-26) — admin only. น้องฮูก is
+                the reply point for LINE OA messages; surface the unread count
+                and a jump into the full inbox. */}
+            {audience === "admin" && (
+              <Link href="/admin/inbox" onClick={() => setOpen(false)}
+                className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 p-3 hover:border-sky-400">
+                <span className="text-lg">💬</span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-bold text-slate-800">กล่องข้อความลูกค้า</span>
+                  <span className="block text-[11px] text-slate-500">
+                    {inboxUnread > 0 ? `มี ${inboxUnread} แชทที่ยังไม่ได้ตอบ` : "ตอบแชทลูกค้าจาก LINE ได้ที่นี่"}
+                  </span>
+                </span>
+                {inboxUnread > 0 && (
+                  <span className="shrink-0 bg-amber-500 text-white text-[11px] font-bold rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center">
+                    {inboxUnread > 99 ? "99+" : inboxUnread}
+                  </span>
+                )}
+              </Link>
             )}
 
             {/* ถามวิธีใช้งาน (AI) — all users when owl_help_enabled. Answers

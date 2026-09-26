@@ -24,11 +24,13 @@ function channelToken(code: string): string | null {
   return b?.line_channel_token ? decryptSecret(b.line_channel_token) : null;
 }
 
-/** true when no branch scope is imposed, or branchId falls inside it. Callers
- *  that hand a viewer's branch list get per-branch isolation; omitting it (or
- *  passing null) means unscoped (super-admin / server internals / tests). */
+/** true when branchId falls inside the given scope. null/undefined = unscoped
+ *  (super-admin / server internals / tests) → always true. An explicit array is
+ *  a real allow-list: an EMPTY array means "no branches" → always false, never
+ *  "all" — so a viewer with no admin-branches can never see another branch's
+ *  chats even if a caller forgets to pre-check. */
 function inScope(branchIds: number[] | null | undefined, branchId: number | null): boolean {
-  if (!branchIds || !branchIds.length) return true;
+  if (branchIds == null) return true;
   return branchId != null && branchIds.includes(branchId);
 }
 
@@ -142,7 +144,8 @@ export function listConversations(
   const limit = Math.min(300, Math.max(1, opts.limit ?? 100));
   let where = "1=1";
   const params: Array<string | number> = [];
-  if (opts.branchIds && opts.branchIds.length) {
+  if (opts.branchIds != null) {
+    if (opts.branchIds.length === 0) return [];   // no branches → no results
     where += ` AND c.branch_id IN (${opts.branchIds.map(() => "?").join(",")})`;
     params.push(...opts.branchIds);
   }
@@ -188,7 +191,8 @@ export function getThread(
  *  conversation outside scope is a no-op). */
 export function markRead(conversationId: number, branchIds?: number[] | null): void {
   const db = getDb();
-  if (branchIds && branchIds.length) {
+  if (branchIds != null) {
+    if (branchIds.length === 0) return;   // no branches → nothing to touch
     db.prepare(
       `UPDATE inbox_conversations SET unread = 0 WHERE id = ? AND branch_id IN (${branchIds.map(() => "?").join(",")})`
     ).run(conversationId, ...branchIds);
@@ -197,15 +201,18 @@ export function markRead(conversationId: number, branchIds?: number[] | null): v
   db.prepare("UPDATE inbox_conversations SET unread = 0 WHERE id = ?").run(conversationId);
 }
 
-/** Count of unread conversations (for the น้องฮูก badge). Scope to branchIds. */
+/** Count of OPEN unread conversations (for the น้องฮูก badge). Only 'open'
+ *  chats are actionable, so a resolved/closed chat never nags — this keeps the
+ *  badge in step with the default (open) conversation list. Scope to branchIds. */
 export function unreadCount(branchIds?: number[] | null): number {
   const db = getDb();
-  if (branchIds && branchIds.length) {
+  if (branchIds != null) {
+    if (branchIds.length === 0) return 0;   // no branches → nothing unread
     return (db.prepare(
-      `SELECT COUNT(*) AS n FROM inbox_conversations WHERE unread = 1 AND branch_id IN (${branchIds.map(() => "?").join(",")})`
+      `SELECT COUNT(*) AS n FROM inbox_conversations WHERE unread = 1 AND status = 'open' AND branch_id IN (${branchIds.map(() => "?").join(",")})`
     ).get(...branchIds) as { n: number }).n;
   }
-  return (db.prepare("SELECT COUNT(*) AS n FROM inbox_conversations WHERE unread = 1").get() as { n: number }).n;
+  return (db.prepare("SELECT COUNT(*) AS n FROM inbox_conversations WHERE unread = 1 AND status = 'open'").get() as { n: number }).n;
 }
 
 export type ReplyResult = "sent" | "no_conversation" | "no_channel" | "empty" | "push_failed";

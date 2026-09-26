@@ -73,6 +73,15 @@ process.env.DATABASE_PATH = TMP;
   ok("getThread scoped to the wrong branch → not found", inbox.getThread(nama.id, [B]).conversation === null);
   ok("getThread scoped to the right branch → found", inbox.getThread(nama.id, [A]).conversation?.id === nama.id);
   ok("sendReply scoped to the wrong branch → 'no_conversation'", (await inbox.sendReply(nama.id, staff, "x", [B])) === "no_conversation");
+
+  // Empty scope = a viewer with NO admin-branches → sees nothing, never "all".
+  ok("getThread with empty scope → not found", inbox.getThread(nama.id, []).conversation === null);
+  ok("listConversations with empty scope → none", inbox.listConversations({ branchIds: [] }).length === 0);
+  ok("unreadCount with empty scope → 0", inbox.unreadCount([]) === 0);
+  ok("sendReply with empty scope → 'no_conversation'", (await inbox.sendReply(nama.id, staff, "x", [])) === "no_conversation");
+  inbox.markRead(hypo.id, []);
+  ok("markRead with empty scope is a no-op", inbox.getThread(hypo.id).conversation!.unread === 1);
+
   // HYPO's M3 is still unread; a wrong-branch markRead must not clear it.
   inbox.markRead(hypo.id, [A]);
   ok("markRead scoped to the wrong branch is a no-op", inbox.getThread(hypo.id).conversation!.unread === 1);
