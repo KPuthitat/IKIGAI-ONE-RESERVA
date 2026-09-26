@@ -78,6 +78,7 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const sdb = await import("../src/lib/salesa-db");
   const analytics = await import("../src/lib/salesa-analytics");
   const push = await import("../src/lib/salesa-push");
+  const accdb = await import("../src/lib/accounta-db");
 
   let passed = 0, failed = 0;
   const ok = (name: string, cond: boolean) => {
@@ -790,6 +791,36 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     const r = analytics.remainingMonthOutlook(empty, "2026-09-26");
     return r != null && r.prevMonth === null && r.avg3 === null && r.remainingDays === 4;
   })());
+
+  // ── composeExpenseAnalysis (owner 2026-09-26): pure composer for the ACCOUNTA
+  //    expense panel in ANALYTICA. ──
+  const ea = analytics.composeExpenseAnalysis({
+    month: "2026-09", salesNett: 100000, expenseTotal: 40000, expensePrev: 32000,
+    categorySpends: [{ name: "วัตถุดิบ", spent: 25000 }, { name: "ค่าเช่า", spent: 10000 }, { name: "ว่าง", spent: 0 }, { name: "จิปาถะ", spent: 5000 }],
+    topN: 2
+  });
+  ok("expense: total + เทียบเดือนก่อน +25%", ea.expenseTotal === 40000 && ea.expensePrev === 32000 && near(ea.expensePrevPct!, 25));
+  ok("expense: รายจ่าย/ยอดขาย = 40%", near(ea.expenseToSalesPct!, 40));
+  ok("expense: ยอดขาย − รายจ่าย = 60000", near(ea.netProxy, 60000));
+  ok("expense: หมวดเรียงมาก→น้อย, topN=2, ตัดหมวดที่ 0 ทิ้ง",
+    ea.categories.length === 2 && ea.categories[0].name === "วัตถุดิบ" && ea.categories[1].name === "ค่าเช่า");
+  ok("expense: %ของยอดขายรายหมวด (25000/100000=25%)", near(ea.categories[0].pctOfSales!, 25));
+  const ea0 = analytics.composeExpenseAnalysis({ month: "2026-09", salesNett: 0, expenseTotal: 5000, expensePrev: null, categorySpends: [{ name: "x", spent: 5000 }] });
+  ok("expense: ไม่มียอดขาย → ratio null, ไม่มีเดือนก่อน → pct null", ea0.expenseToSalesPct === null && ea0.expensePrevPct === null && ea0.categories[0].pctOfSales === null);
+
+  // ACCOUNTA expense reads for ANALYTICA: confirmed-only, folded by category.
+  const bidEx = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('rx','REST-EX')").run().lastInsertRowid);
+  const axIns = db.prepare("INSERT INTO accounta_expenses (branch_id, bill_date, category, amount_total, review_status) VALUES (?,?,?,?,?)");
+  axIns.run(bidEx, "2026-09-05", "วัตถุดิบ", 10000, "confirmed");
+  axIns.run(bidEx, "2026-09-10", "วัตถุดิบ", 5000, "confirmed");
+  axIns.run(bidEx, "2026-09-12", "ค่าเช่า", 8000, "confirmed");
+  axIns.run(bidEx, "2026-09-15", "วัตถุดิบ", 999, "draft");        // draft → excluded
+  axIns.run(bidEx, "2026-08-20", "วัตถุดิบ", 20000, "confirmed");  // previous month
+  const et = accdb.expenseCategoryTotals("2026-09", bidEx);
+  ok("expenseCategoryTotals: total = 23000 (ตัด draft ทิ้ง)", near(et.total, 23000));
+  ok("expenseCategoryTotals: วัตถุดิบ รวม = 15000", (et.byCategory.find((c) => c.name === "วัตถุดิบ")?.spent) === 15000);
+  ok("expenseAccrualTotal: เดือนก่อน (ส.ค.) = 20000", near(accdb.expenseAccrualTotal("2026-08", bidEx), 20000));
+  ok("expenseAccrualTotal: เดือนที่ไม่มีบิล = 0", near(accdb.expenseAccrualTotal("2026-07", bidEx), 0));
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();

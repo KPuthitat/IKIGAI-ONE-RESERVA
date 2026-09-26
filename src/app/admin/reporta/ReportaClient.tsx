@@ -99,6 +99,8 @@ type MonthTarget = { target: number; mtdNett: number; throughDay: number; daysIn
 type Annual = { year: number; annualTarget: number; fullYearTarget: number; prorated: boolean; openedIso: string | null; ytdNett: number; pctOfTarget: number; projectedNett: number; projectedPct: number; onTrack: boolean; throughDate: string; branchCount: number };
 type OutlookBenchmark = { label: string; expected: number; avgPerDay: number; monthsUsed?: number };
 type RemainingOutlook = { year: number; month: number; todayDom: number; remainingDays: number; windowStartDom: number; windowEndDom: number; mtdNett: number; prevMonth: OutlookBenchmark | null; avg3: OutlookBenchmark | null };
+type ExpenseCategoryRow = { name: string; spent: number; pctOfSales: number | null };
+type ExpenseAnalysis = { month: string; salesNett: number; expenseTotal: number; expensePrev: number | null; expensePrevPct: number | null; expenseToSalesPct: number | null; netProxy: number; categories: ExpenseCategoryRow[] };
 // Festival / important-day analysis (owner 2026-09-20): each วันสำคัญ × each branch.
 type FestivalCell = { branchId: number; branchName: string; sales: number | null; monthAvg: number | null; upliftPct: number | null };
 type FestivalRow = { date: string; dateLabel: string; nameTh: string; branches: FestivalCell[] };
@@ -220,6 +222,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
   const [monthTarget, setMonthTarget] = useState<MonthTarget | null>(null);
   const [annual, setAnnual] = useState<Annual | null>(null);
   const [remainingOutlook, setRemainingOutlook] = useState<RemainingOutlook | null>(null);
+  const [expenseAnalysis, setExpenseAnalysis] = useState<ExpenseAnalysis | null>(null);
   const [revshareIncome, setRevshareIncome] = useState(0);   // ส่วนแบ่งยอดขาย this month
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [pushDays, setPushDays] = useState(3);
@@ -288,6 +291,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
       setMonthTarget(r.monthTarget ?? null); setAnnual(r.annual ?? null); setRevshareIncome(r.revshareIncome ?? 0); setMonthSentAt(r.monthSentAt ?? null); setInsights(r.insights ?? null);
       setInsightRange(r.insightRange ?? null);
       setRemainingOutlook(r.remainingOutlook ?? null);
+      setExpenseAnalysis(r.expenseAnalysis ?? null);
       if (r.cardColor) setCardColor(r.cardColor);
     }
   }, [year, month, panelPeriod]);
@@ -745,7 +749,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
               </span>
             </div>
             <p className="text-[11px] text-slate-500">
-              คาดการณ์ยอดของวันที่เหลือ อิงช่วงวันเดียวกันของเดือนก่อน และค่าเฉลี่ย 3 เดือนล่าสุด
+              คาดการณ์ยอดของวันที่เหลือ อิงช่วงท้ายเดือน (จำนวนวันเท่ากัน) ของเดือนก่อน และค่าเฉลี่ย 3 เดือนล่าสุด
             </p>
             <div className="grid grid-cols-2 gap-2">
               {[remainingOutlook.prevMonth, remainingOutlook.avg3]
@@ -753,7 +757,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                 .map((b) => (
                   <div key={b.label} className="rounded-xl border border-slate-200 p-3">
                     <div className="text-xs font-semibold text-slate-600">
-                      {b.label}{b.monthsUsed != null ? ` (${b.monthsUsed} เดือน)` : ""}
+                      {b.label}{b.monthsUsed != null && b.monthsUsed < 3 ? ` (${b.monthsUsed} เดือน)` : ""}
                     </div>
                     <div className="text-lg font-bold text-emerald-700">{baht(b.expected)}</div>
                     <div className="text-[11px] text-slate-500">
@@ -765,6 +769,45 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
             <div className="text-[11px] text-slate-500">
               เดือนนี้ทำได้แล้ว {baht(remainingOutlook.mtdNett)} (ถึงวันที่ {remainingOutlook.todayDom})
             </div>
+          </div>
+        )}
+
+        {/* Expense analysis from ACCOUNTA (owner 2026-09-26): the viewed month's
+            confirmed spend beside sales — total + MoM, cost/sales ratio, a rough
+            sales−cost figure, and the biggest categories. */}
+        {expenseAnalysis && expenseAnalysis.expenseTotal > 0 && (
+          <div className="card space-y-2">
+            <h2 className="font-bold text-slate-800">รายจ่าย (ACCOUNTA)</h2>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[11px] text-slate-500">รายจ่ายรวมเดือนนี้ (ตามบิล)</span>
+              <span className="text-lg font-bold text-rose-600">{baht(expenseAnalysis.expenseTotal)}</span>
+            </div>
+            <div className="text-[11px] text-slate-500">
+              เทียบเดือนก่อน {expenseAnalysis.expensePrev != null ? baht(expenseAnalysis.expensePrev) : "—"}
+              {expenseAnalysis.expensePrevPct != null && ` (${expenseAnalysis.expensePrevPct > 0 ? "+" : ""}${expenseAnalysis.expensePrevPct}%)`}
+            </div>
+            {expenseAnalysis.expenseToSalesPct != null && (
+              <div className="text-[11px] text-slate-600">
+                คิดเป็น <b>{expenseAnalysis.expenseToSalesPct}%</b> ของยอดขาย ({baht(expenseAnalysis.salesNett)})
+              </div>
+            )}
+            <div className="text-[11px] text-slate-500">
+              ยอดขาย − รายจ่าย ≈ <b className={expenseAnalysis.netProxy >= 0 ? "text-emerald-700" : "text-rose-600"}>{baht(expenseAnalysis.netProxy)}</b>
+              <span className="text-slate-400"> (คร่าวๆ ยังไม่รวมภาษี/รายการอื่น)</span>
+            </div>
+            {expenseAnalysis.categories.length > 0 && (
+              <div className="pt-1.5 border-t border-slate-200 space-y-1">
+                <div className="text-[11px] font-semibold text-slate-600">หมวดที่จ่ายมากสุด</div>
+                {expenseAnalysis.categories.map((c) => (
+                  <div key={c.name} className="flex items-baseline justify-between gap-2 text-[11px]">
+                    <span className="text-slate-600 truncate">{c.name || "ไม่ระบุหมวด"}</span>
+                    <span className="text-slate-700 tabular-nums whitespace-nowrap">
+                      {baht(c.spent)}{c.pctOfSales != null ? ` · ${c.pctOfSales}%` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

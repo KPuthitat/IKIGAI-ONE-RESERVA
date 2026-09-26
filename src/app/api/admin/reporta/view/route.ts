@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
-import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars, revshareIncomeForBranch, applyRevshareToTarget, remainingMonthOutlook } from "@/lib/salesa-analytics";
+import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars, revshareIncomeForBranch, applyRevshareToTarget, remainingMonthOutlook, composeExpenseAnalysis } from "@/lib/salesa-analytics";
+import { expenseCategoryTotals, expenseAccrualTotal } from "@/lib/accounta-db";
 import { salesPushPlan } from "@/lib/salesa-push";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
@@ -130,5 +131,25 @@ export function GET(req: Request) {
     hasReceipt: d.has_receipt === 1,
     dailySentAt: d.daily_sent_at
   }));
-  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook });
+
+  // Expense analysis from ACCOUNTA (owner 2026-09-26) — the viewed month's
+  // confirmed spend beside POS sales: MoM change, cost/sales ratio, and the
+  // biggest categories. Uses SALESA nett (this module's own sales figure) as
+  // the denominator, not ACCOUNTA's income side.
+  const mm = String(month).padStart(2, "0");
+  const monthStr = `${year}-${mm}`;
+  const pmY = month === 1 ? year - 1 : year;
+  const pmM = month === 1 ? 12 : month - 1;
+  const prevMonthStr = `${pmY}-${String(pmM).padStart(2, "0")}`;
+  const salesNettMonth = days.filter((d) => d.hasSales).reduce((s, d) => s + d.nett, 0);
+  const et = expenseCategoryTotals(monthStr, branchId);   // one grouped query: total + by-category
+  const expenseAnalysis = composeExpenseAnalysis({
+    month: monthStr,
+    salesNett: salesNettMonth,
+    expenseTotal: et.total,
+    expensePrev: expenseAccrualTotal(prevMonthStr, branchId),
+    categorySpends: et.byCategory
+  });
+
+  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook, expenseAnalysis });
 }
