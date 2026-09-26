@@ -449,6 +449,14 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
     setMsg({ kind: "ok", text: "วิเคราะห์ใหม่จากข้อมูลล่าสุดแล้ว" });
   };
 
+  // MTD bill count (owner 2026-09-26: show จำนวนครั้ง in parentheses beside ยอดขาย).
+  // Sourced from the same-window trend metrics — this is POS bill_count, so it is
+  // only paired with figures that are pure POS (a total inflated by non-POS
+  // revshare would imply a wrong per-transaction figure, so the count is dropped
+  // there).
+  const mtdBills = monthCompare?.trend?.find((m) => m.key === "bills")?.value ?? null;
+  const perTimes = (n: number | null) => (n != null ? ` (${intTh(n)} ครั้ง)` : "");
+
   // Step the day-analysis to the adjacent day that has data (days[] is ascending).
   const dayIdx = selDate ? days.findIndex((d) => d.date === selDate) : -1;
   const gotoDay = (delta: number) => {
@@ -691,7 +699,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
           <div className="rounded-xl bg-slate-50 p-3 space-y-1.5">
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-[11px] text-slate-500">ยอดสะสมต้นเดือน (ถึงวันที่ {monthCompare.throughDay})</span>
-              <span className="text-lg font-bold text-emerald-700">{baht(monthCompare.mtdNett + revshareIncome)}</span>
+              <span className="text-lg font-bold text-emerald-700">{baht(monthCompare.mtdNett + revshareIncome)}<span className="text-[11px] font-normal text-slate-400">{perTimes(revshareIncome > 0 ? null : mtdBills)}</span></span>
             </div>
             {revshareIncome > 0 && <div className="text-[10px] text-violet-600 -mt-1">รวมส่วนแบ่งยอดขายรายเดือน {baht(revshareIncome)} (นอก POS)</div>}
             <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
@@ -808,7 +816,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor }
                 ))}
             </div>
             <div className="text-[11px] text-slate-500">
-              เดือนนี้ทำได้แล้ว {baht(remainingOutlook.mtdNett)} (ถึงวันที่ {remainingOutlook.todayDom})
+              เดือนนี้ทำได้แล้ว {baht(remainingOutlook.mtdNett)}{perTimes(mtdBills)} (ถึงวันที่ {remainingOutlook.todayDom})
             </div>
           </div>
         )}
