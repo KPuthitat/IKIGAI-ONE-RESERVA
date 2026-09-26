@@ -7,6 +7,8 @@ import { sendLinePush } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
 import type { DailyAnalytics, WeeklyAnalytics, MonthlyAnalytics, CompanyOverview } from "./salesa-analytics";
 import type { SalesPushPlan } from "./salesa-push";
+import type { ClinicaMonth } from "./clinica-analytics";
+import { clinicaPaidPct } from "./clinica-shared";
 
 type FlexMsg = { type: "flex"; altText: string; contents: unknown };
 
@@ -25,11 +27,11 @@ const sep = { type: "separator", margin: "md", color: "#eeeeee" };
 
 // Per-branch header colour (owner 2026-09-17) — passed via meta.color; white
 // tints on the eyebrow/subtitle keep it legible on any dark brand colour.
-function header(title: string, subtitle: string, color: string): unknown {
+function header(title: string, subtitle: string, color: string, eyebrow = "IKIGAI OS · ยอดขายรายวัน"): unknown {
   return {
     type: "box", layout: "vertical", backgroundColor: color, paddingAll: "16px", spacing: "xs",
     contents: [
-      { type: "text", text: "IKIGAI OS · ยอดขายรายวัน", size: "xxs", color: "#ffffff99" },
+      { type: "text", text: eyebrow, size: "xxs", color: "#ffffff99" },
       { type: "text", text: title, size: "lg", weight: "bold", color: "#ffffff" },
       { type: "text", text: subtitle, size: "xs", color: "#ffffffcc", wrap: true }
     ]
@@ -242,6 +244,54 @@ export function salesaMonthlyFlex(m: MonthlyAnalytics, meta: DailyCardMeta): Fle
       header: header("สรุปยอดขายประจำเดือน", `${m.label} · ${meta.branchName}`, meta.color),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายเดือน")
+    }
+  };
+}
+
+// ── CLINICA monthly summary (owner 2026-09-26: ส่งรายงานคลินิกให้ผู้บริหารเหมือน
+//    ร้านอาหาร) ────────────────────────────────────────────────────────────────
+export function clinicaMonthlyFlex(c: ClinicaMonth, meta: DailyCardMeta, monthLabel: string): FlexMsg {
+  const paidPct = clinicaPaidPct(c);
+  const momLine: unknown = c.billNetMomPct == null
+    ? { type: "text", text: "เทียบเดือนก่อน: ยังไม่มีข้อมูล", size: "xxs", color: "#bbbbbb", wrap: true }
+    : { type: "text", size: "xxs", wrap: true, contents: [{ type: "span", text: "เทียบเดือนก่อน ", color: "#999999" }, pctSpan(c.billNetMomPct), ...(c.prevBillNet != null ? [{ type: "span", text: `  (${baht(c.prevBillNet)})`, color: "#bbbbbb" }] : [])] };
+
+  const body: unknown[] = [
+    { type: "text", text: meta.branchName, weight: "bold", size: "lg", wrap: true },
+    { type: "text", text: `สรุปโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true },
+    ...adviceBlock(c.advice, meta.color),
+    sep,
+    kv("ยอดบิลรวม", `${baht(c.billNet)} (${intTh(c.billCount)} ครั้ง)`, { bold: true, color: "#0f7a4f", size: "md" }),
+    momLine,
+    kv("เงินเข้าจริง (สด+พร้อมเพย์)", `${baht(c.paid)} (${paidPct}%)`, { size: "xs", color: "#0f7a4f" }),
+    kv("รอเบิก (บิลเดือนนี้)", `${baht(c.due)} (${100 - paidPct}%)`, { size: "xs", color: "#b0392f" }),
+    kv("คนไข้ (บิล)", `${intTh(c.patientCount)} คน`, { size: "xs" }),
+    ...(c.avgPerBill != null ? [kv("เฉลี่ยต่อบิล", baht(c.avgPerBill), { size: "xs" })] : []),
+  ];
+  if (c.arTotal > 0.5) {
+    body.push(sep);
+    body.push(kv("รอเบิกค้างสะสม (ทุกงวด)", baht(c.arTotal), { size: "xs", bold: true, color: "#b0392f" }));
+    if (c.arAging.d90p > 0.5) body.push(kv("• เกิน 90 วัน", baht(c.arAging.d90p), { size: "xxs", color: "#b0392f" }));
+  }
+  if (c.categories.length) {
+    body.push(sep);
+    body.push({ type: "text", text: "โครงสร้างรายได้", size: "xs", weight: "bold", color: "#0e2724", margin: "md" });
+    for (const cat of c.categories.slice(0, 4)) {
+      body.push({ type: "box", layout: "horizontal", contents: [
+        { type: "text", text: cat.label, size: "xs", color: "#333333", flex: 6, wrap: true },
+        { type: "text", text: `${baht(cat.net)} (${intTh(cat.count)})`, size: "xs", color: "#1a1a2e", align: "end", flex: 4 }
+      ] });
+    }
+  }
+
+  return {
+    type: "flex",
+    altText: `สรุปคลินิกประจำเดือน ${monthLabel} · ${meta.branchName} · ${baht(c.billNet)}`,
+    contents: {
+      type: "bubble", size: "giga",
+      header: header("สรุปคลินิกประจำเดือน", `${monthLabel} · ${meta.branchName}`, meta.color, "IKIGAI OS · รายงานคลินิก"),
+      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
+      footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายเดือน (คลินิก)")
     }
   };
 }

@@ -42,7 +42,13 @@ function Bar({ value, max, tone = "bg-brand" }: { value: number; max: number; to
   );
 }
 
-export default function ClinicaSection({ c }: { c: ClinicaMonth }) {
+export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disabledReason }: {
+  c: ClinicaMonth;
+  onSendReport?: () => void;
+  sentAt?: string | null;
+  canSend?: boolean;
+  disabledReason?: string;
+}) {
   const maxCat = Math.max(1, ...c.categories.map((x) => x.net));
   const maxItem = Math.max(1, ...c.topItems.map((x) => x.net));
   const maxDx = Math.max(1, ...c.topDiagnoses.map((x) => x.count));
@@ -62,7 +68,19 @@ export default function ClinicaSection({ c }: { c: ClinicaMonth }) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold text-slate-800">คลินิก · วิเคราะห์เชิงลึก</h2>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h2 className="text-lg font-bold text-slate-800">คลินิก · วิเคราะห์เชิงลึก</h2>
+        {onSendReport && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {sentAt && <span className="text-xs text-emerald-600">✓ ส่งสรุปเดือนแล้ว</span>}
+            {!canSend && disabledReason && <span className="text-xs text-amber-600">{disabledReason}</span>}
+            <button onClick={onSendReport} disabled={!canSend} title={!canSend ? disabledReason : undefined}
+              className="btn-success text-sm px-4 py-2 disabled:opacity-50">
+              {sentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* บทสรุป & คำแนะนำจากน้องฮูก — mirrors the restaurant report's summary card
           (owner 2026-09-26). Sits on top so the read starts with the takeaway. */}

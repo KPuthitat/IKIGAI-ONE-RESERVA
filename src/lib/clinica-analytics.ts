@@ -5,6 +5,7 @@
 // money figure carries its count (ครั้ง) for the parenthesised display.
 
 import { getDb } from "./db";
+import { clinicaPaidPct } from "./clinica-shared";
 
 function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
 function relPct(cur: number, base: number | null): number | null {
@@ -71,26 +72,30 @@ export function clinicaAdvice(c: Omit<ClinicaMonth, "advice">): string[] {
     out.push(`ยอดบิลรวมใกล้เคียงเดือนก่อน (${c.billNetMomPct >= 0 ? "+" : ""}${c.billNetMomPct}%)`);
   }
 
-  // 2) Cash collection — how much of this month's billing is real cash in vs AR.
-  //    paid + due = billNet per bill, so derive due% as 100 − paid% to keep the
-  //    two shares summing to 100 (independent rounding could give 101%).
+  // 2) Cash collection — how much of THIS MONTH's billing is real cash in vs AR.
+  //    paid + due = billNet per bill, so derive due% as 100 − paid%; clamp to
+  //    [0,100] so an overpayment/credit (paid > billNet) can't print a negative
+  //    รอเบิก%.
   if (c.billNet > 0) {
-    const paidPct = Math.round((c.paid / c.billNet) * 100);
+    const paidPct = clinicaPaidPct(c);
     out.push(`เงินเข้าจริง (สด+พร้อมเพย์) ${bahtTh(c.paid)} (${paidPct}%) · รอเบิก ${bahtTh(c.due)} (${100 - paidPct}%)`);
   }
 
-  // 3) Overdue AR — the most actionable warning (all periods, as of today).
+  // 3) Overdue AR — the most actionable warning. This is the CUMULATIVE unpaid
+  //    balance across all periods as of today (not this month's รอเบิก above), so
+  //    the wording says "สะสม" to keep the two lines from reading as contradictory.
   if (c.arAging.d90p > 0.5) {
-    out.push(`⚠️ รอเบิกค้างเกิน 90 วัน ${bahtTh(c.arAging.d90p)} — ควรเร่งตามเก็บ`);
+    out.push(`⚠️ รอเบิกค้างสะสมเกิน 90 วัน ${bahtTh(c.arAging.d90p)} — ควรเร่งตามเก็บ`);
   } else if (c.arAging.d61_90 > 0.5) {
-    out.push(`รอเบิกค้าง 61–90 วัน ${bahtTh(c.arAging.d61_90)} — ใกล้ครบกำหนด ควรติดตาม`);
+    out.push(`รอเบิกค้างสะสม 61–90 วัน ${bahtTh(c.arAging.d61_90)} — ใกล้ครบกำหนด ควรติดตาม`);
   }
 
   // 4) Payer concentration — dependency risk on a single INSURER/corporate payer.
-  //    A dominant general-cash base (ผู้ป่วยทั่วไป) is healthy, not a risk, so the
-  //    cash and unspecified groups are excluded from the warning.
-  const GENERAL_PAYERS = new Set(["ผู้ป่วยทั่วไป", "(ไม่ระบุ)"]);
-  const topInsurer = c.payers.find((p) => !GENERAL_PAYERS.has(p.group));
+  //    A dominant general-cash base is healthy, not a risk, so the cash/self-pay
+  //    and unspecified groups are excluded (matched loosely — the HIS "กลุ่มลูกค้า"
+  //    label is free text, e.g. ผู้ป่วยทั่วไป / ลูกค้าทั่วไป / เงินสด / ชำระเงินเอง).
+  const isGeneralPayer = (g: string) => g === "(ไม่ระบุ)" || /ทั่วไป|เงินสด|ชำระเงินเอง/.test(g);
+  const topInsurer = c.payers.find((p) => !isGeneralPayer(p.group));
   if (topInsurer && c.billNet > 0) {
     const share = Math.round((topInsurer.net / c.billNet) * 100);
     if (share >= 50) out.push(`พึ่งพากลุ่ม "${topInsurer.group}" สูง ${share}% ของยอดบิล — ควรกระจายฐานคนไข้`);

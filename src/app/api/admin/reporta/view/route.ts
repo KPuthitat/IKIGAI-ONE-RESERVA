@@ -109,7 +109,11 @@ export function GET(req: Request) {
   const target = getMonthlyTarget(branchId);
   const tp = target != null ? targetProgress(target, monthCompare.mtdNett, monthCompare.throughDay, year, month) : null;
   const monthTarget = tp ? applyRevshareToTarget(tp, revshareIncome) : null;
-  const monthSentAt = monthlySentAt(branchId, `${year}-${String(month).padStart(2, "0")}`);
+  const ymKey = `${year}-${String(month).padStart(2, "0")}`;
+  const monthSentAt = monthlySentAt(branchId, ymKey);
+  // Clinic monthly report has its own sent-marker (prefixed key), independent of
+  // the restaurant monthly card (owner 2026-09-26).
+  const clinicaSentAt = monthlySentAt(branchId, `clinica:${ymKey}`);
   const annual = annualProjection(branchId, todayIso);  // full-year (monthly×12) projection
   // Insight panels (channels / discount / marketing / receipt) can be viewed for
   // this month or the current ISO week (owner 2026-09-18). The top MTD/target/
@@ -163,5 +167,5 @@ export function GET(req: Request) {
   // imported HIS data (owner 2026-09-26).
   const clinica = isClinicaBranch(branchId) ? clinicaMonth(branchId, year, month, todayIso) : null;
 
-  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook, expenseAnalysis, todayCol, clinica });
+  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, clinicaSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook, expenseAnalysis, todayCol, clinica });
 }
