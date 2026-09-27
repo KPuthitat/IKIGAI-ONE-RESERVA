@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
-import { isSalesaBranch, getLineGroupId, setLineGroupId, getMonthlyTarget, setMonthlyTarget, getMerchantName, setMerchantName, getCardColor, setCardColor, branchOpensOn, setBranchOpensOn, getBranchHours, setBranchHours } from "@/lib/salesa-db";
+import { isSalesaBranch, getLineGroupId, setLineGroupId, getMonthlyTarget, setMonthlyTarget, getMerchantName, setMerchantName, getCardColor, setCardColor, branchOpensOn, setBranchOpensOn, getBranchHours, setBranchBreak } from "@/lib/salesa-db";
 
 // REPORTA settings — the HOD LINE group id the daily/weekly cards are pushed to
 // (per branch). The IKIGAI OS platform OA must be a member of that group.
@@ -28,8 +28,8 @@ const Body = z.object({
   merchantName: z.string().max(200).nullable().optional(),
   cardColor: z.string().max(9).nullable().optional(),
   opensOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  hours: z.object({
-    open: z.string().regex(HHMM), close: z.string().regex(HHMM),
+  // Open/close are managed in RESERVA (branches); ANALYTICA only sets the break.
+  break: z.object({
     breakStart: z.string().regex(HHMM).nullable(), breakEnd: z.string().regex(HHMM).nullable(),
     breakWeekdayOnly: z.boolean(),
   }).nullable().optional()
@@ -45,8 +45,8 @@ export async function POST(req: Request) {
   if (parsed.data.merchantName !== undefined) setMerchantName(branchId!, parsed.data.merchantName);
   if (parsed.data.cardColor !== undefined) setCardColor(branchId!, parsed.data.cardColor);
   if (parsed.data.opensOn !== undefined) setBranchOpensOn(branchId!, parsed.data.opensOn);
-  if (parsed.data.hours !== undefined) {
-    try { setBranchHours(branchId!, parsed.data.hours); }
+  if (parsed.data.break !== undefined) {
+    try { setBranchBreak(branchId!, parsed.data.break); }
     catch { return NextResponse.json({ error: "bad_hours" }, { status: 400 }); }
   }
   return NextResponse.json({ ok: true, lineGroupId: getLineGroupId(branchId!), monthlyTarget: getMonthlyTarget(branchId!), merchantName: getMerchantName(branchId!), cardColor: getCardColor(branchId!), opensOn: branchOpensOn(branchId!), hours: getBranchHours(branchId!) });

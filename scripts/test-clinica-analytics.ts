@@ -172,17 +172,32 @@ process.env.DATABASE_PATH = TMP;
       && hoursLabel({ open: "11:00", close: "21:00", breakStart: "14:00", breakEnd: "16:00", breakWeekdayOnly: true }) === "11:00–21:00 · พัก 14:00–16:00 (จ–ศ)";
   })());
   const sdb = await import("../src/lib/salesa-db");
-  sdb.setBranchHours(branch, { open: "16:00", close: "21:00", breakStart: null, breakEnd: null, breakWeekdayOnly: true });
-  ok("hours: บันทึก/อ่านกลับ (16–21 ไม่มีพัก)", (() => {
+  // Open/close are LINKED to RESERVA (branches); the break is ANALYTICA-only.
+  db.prepare("UPDATE branches SET open_time='11:00', close_time='21:00' WHERE id=?").run(branch);
+  ok("hours: เปิด–ปิด ดึงจาก RESERVA (branches) = 11:00–21:00", (() => {
     const h = sdb.getBranchHours(branch);
-    return !!h && h.open === "16:00" && h.close === "21:00" && h.breakStart === null;
+    return !!h && h.open === "11:00" && h.close === "21:00" && h.breakStart === null;
   })());
-  sdb.setBranchHours(branch, null);
-  ok("hours: ล้างค่า → null", sdb.getBranchHours(branch) === null);
+  sdb.setBranchBreak(branch, { breakStart: "14:00", breakEnd: "16:00", breakWeekdayOnly: true });
+  ok("hours: ตั้งพัก 14–16 (จ–ศ) แล้วอ่านกลับ", (() => {
+    const h = sdb.getBranchHours(branch);
+    return !!h && h.breakStart === "14:00" && h.breakEnd === "16:00" && h.breakWeekdayOnly === true;
+  })());
+  sdb.setBranchBreak(branch, null);
+  ok("hours: ล้างพัก → เปิด–ปิดยังอยู่ (จาก RESERVA)", (() => { const h = sdb.getBranchHours(branch); return !!h && h.breakStart === null && h.open === "11:00"; })());
+  db.prepare("UPDATE branches SET open_time='', close_time='' WHERE id=?").run(branch);
+  ok("hours: RESERVA เวลาว่าง/ไม่ถูกต้อง → null", sdb.getBranchHours(branch) === null);
+  db.prepare("UPDATE branches SET open_time='11:00', close_time='21:00' WHERE id=?").run(branch);
   const throws = (fn: () => void) => { try { fn(); return false; } catch { return true; } };
-  ok("hours: เวลาผิดรูปแบบ → throw", throws(() => sdb.setBranchHours(branch, { open: "9am", close: "21:00", breakStart: null, breakEnd: null, breakWeekdayOnly: true })));
-  ok("hours: ปิดก่อนเปิด → throw", throws(() => sdb.setBranchHours(branch, { open: "21:00", close: "09:00", breakStart: null, breakEnd: null, breakWeekdayOnly: true })));
-  ok("hours: พักนอกเวลาทำการ → throw", throws(() => sdb.setBranchHours(branch, { open: "11:00", close: "21:00", breakStart: "22:00", breakEnd: "23:00", breakWeekdayOnly: true })));
+  ok("hours: พักนอกเวลาทำการ → throw", throws(() => sdb.setBranchBreak(branch, { breakStart: "22:00", breakEnd: "23:00", breakWeekdayOnly: true })));
+  ok("hours: พักสิ้นสุดก่อนเริ่ม → throw", throws(() => sdb.setBranchBreak(branch, { breakStart: "16:00", breakEnd: "14:00", breakWeekdayOnly: true })));
+  ok("hours: พักครึ่งเดียว (มีแค่เริ่ม) → throw", throws(() => sdb.setBranchBreak(branch, { breakStart: "14:00", breakEnd: null, breakWeekdayOnly: true })));
+  // Clamp: a stored break that no longer fits narrowed RESERVA hours is not surfaced.
+  sdb.setBranchBreak(branch, { breakStart: "14:00", breakEnd: "16:00", breakWeekdayOnly: true });
+  db.prepare("UPDATE branches SET open_time='15:00' WHERE id=?").run(branch);
+  ok("hours: พักที่ตกนอกเวลาใหม่ → ไม่แสดง (clamp)", (() => { const h = sdb.getBranchHours(branch); return !!h && h.open === "15:00" && h.breakStart === null; })());
+  db.prepare("UPDATE branches SET open_time='11:00' WHERE id=?").run(branch);
+  ok("hours: ขยายเวลากลับ → พักเดิมกลับมาแสดง", (() => { const h = sdb.getBranchHours(branch); return !!h && h.breakStart === "14:00" && h.breakEnd === "16:00"; })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
