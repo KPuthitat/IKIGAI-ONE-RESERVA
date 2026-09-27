@@ -9,6 +9,7 @@ import { getMyEnrollment, type MjActor } from "@/lib/mounjaro-db";
 import { moduleHits } from "@/lib/module-usage";
 import { getMonthlyTarget, isSalesaBranch } from "@/lib/salesa-db";
 import { monthComparison, targetProgress } from "@/lib/salesa-analytics";
+import { clinicaRangeAgg } from "@/lib/clinica-db";
 import TeamGoalHero from "@/app/components/TeamGoalHero";
 
 export const dynamic = "force-dynamic";
@@ -26,8 +27,8 @@ export default function StaffHomePage({
 
   // Team goal hero (owner 2026-09-20): the active branch's monthly sales target,
   // progress this month, and rotating encouragement — a shared banner so the whole
-  // branch pulls toward the number together. Best-effort: only for a POS branch
-  // with a target set, and never breaks the landing if salesa data isn't there.
+  // branch pulls toward the number together. Best-effort: any branch (POS or
+  // clinic) with a target set, and never breaks the landing if data isn't there.
   let goal: {
     branchName: string; target: number; mtd: number; pct: number;
     projected: number; projectedPct: number; onTrack: boolean; throughDay: number;
@@ -40,7 +41,11 @@ export default function StaffHomePage({
         const todayIso = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
         const y = Number(todayIso.slice(0, 4)), m = Number(todayIso.slice(5, 7));
         const mc = monthComparison(bid, y, m, todayIso);
-        const tp = mc.throughDay > 0 ? targetProgress(target, mc.mtdNett, mc.throughDay, y, m) : null;
+        // Fold in a clinic branch's billed net (owner 2026-09-27: คลินิกยอดไม่ขึ้น) —
+        // its revenue lives in clinica_bills, not POS, so add it to the MTD.
+        const clinicNet = clinicaRangeAgg(bid, `${todayIso.slice(0, 7)}-01`, todayIso).nett;
+        const mtd = Math.round((mc.mtdNett + clinicNet) * 100) / 100;
+        const tp = mc.throughDay > 0 ? targetProgress(target, mtd, mc.throughDay, y, m) : null;
         if (tp) {
           goal = {
             branchName: user.branches.find((b) => b.id === bid)?.name ?? "",
