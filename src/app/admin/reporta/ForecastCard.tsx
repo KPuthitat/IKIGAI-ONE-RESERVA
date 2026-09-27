@@ -10,11 +10,34 @@ import type { BranchForecast } from "@/lib/forecast";
 // Team-tagged event notes (owner 2026-09-27: "เพิ่มโน้ตเหตุการณ์รายวันให้ทีมแท็ก
 // เองด้วย") hang off each upcoming day — the team pins local context (news, a
 // nearby event, a road closure) that the plan and the exec LINE card then carry.
+// A backdated section (owner 2026-09-27: "ให้ทีมแท็กโน้ตย้อนหลังได้ด้วย") lets the
+// team tag past days too, for record-keeping / after-the-fact context.
 
 const baht = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
 // Keep in sync with EVENT_NOTE_MAX in src/lib/event-notes.ts (that module pulls in
 // getDb, so it can't be imported into this client component).
 const EVENT_NOTE_MAX = 200;
+const PAST_WINDOW_DAYS = 30;
+
+function bkkToday(): string { return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10); }
+function addDaysIso(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function dateLabel(iso: string): string {
+  // Parse + format in UTC so the label matches the ISO calendar date regardless
+  // of the viewer's browser timezone (a bare `T00:00:00` would shift a day back
+  // for viewers behind UTC).
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+const NOTES_URL = "/api/admin/reporta/event-notes";
+async function postNote(date: string, note: string) {
+  return fetch(NOTES_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date, note }) }).then((x) => x.json());
+}
+async function deleteNote(id: number) {
+  return fetch(`${NOTES_URL}?id=${id}`, { method: "DELETE" }).then((x) => x.json());
+}
 
 type EventNote = { id: number; eventDate: string; note: string; createdByName: string | null };
 
@@ -32,6 +55,15 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
   const [busy, setBusy] = useState(false);
   const [noteErr, setNoteErr] = useState<string | null>(null);
 
+  // Backdated notes (past PAST_WINDOW_DAYS days), lazily loaded when expanded.
+  const today = bkkToday();
+  const pastFrom = addDaysIso(today, -PAST_WINDOW_DAYS);
+  const [pastOpen, setPastOpen] = useState(false);
+  const [pastNotes, setPastNotes] = useState<EventNote[]>([]);
+  const [pastLoading, setPastLoading] = useState(false);
+  const [pastDate, setPastDate] = useState(today);
+  const [pastDraft, setPastDraft] = useState("");
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -48,7 +80,7 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
   useEffect(() => {
     if (!from || !to) return;
     let alive = true;   // guard against an out-of-order response after a fast days-toggle
-    fetch(`/api/admin/reporta/event-notes?from=${from}&to=${to}`, { cache: "no-store" })
+    fetch(`${NOTES_URL}?from=${from}&to=${to}`, { cache: "no-store" })
       .then((x) => x.json())
       .then((r) => {
         if (!alive || !r.ok) return;
@@ -60,15 +92,23 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
     return () => { alive = false; };
   }, [from, to]);
 
+  useEffect(() => {
+    if (!pastOpen) return;
+    let alive = true; setPastLoading(true);
+    fetch(`${NOTES_URL}?from=${pastFrom}&to=${today}`, { cache: "no-store" })
+      .then((x) => x.json())
+      .then((r) => { if (alive && r.ok) setPastNotes(r.notes as EventNote[]); })
+      .catch(() => {})
+      .finally(() => { if (alive) setPastLoading(false); });
+    return () => { alive = false; };
+  }, [pastOpen, pastFrom, today]);
+
   const addNote = async (date: string) => {
     const text = draft.trim();
     if (!text || busy) return;
     setBusy(true); setNoteErr(null);
     try {
-      const r = await fetch("/api/admin/reporta/event-notes", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, note: text }),
-      }).then((x) => x.json());
+      const r = await postNote(date, text);
       if (r.ok && r.note) {
         setNotesByDate((prev) => ({ ...prev, [date]: [...(prev[date] ?? []), r.note] }));
         setDraft(""); setOpenFor(null);
@@ -81,13 +121,40 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
     if (busy) return;
     setBusy(true); setNoteErr(null);
     try {
-      const r = await fetch(`/api/admin/reporta/event-notes?id=${id}`, { method: "DELETE" }).then((x) => x.json());
+      const r = await deleteNote(id);
       // ok, or 404 (a teammate already deleted it) → drop the stale pill either way.
       if (r.ok || r.error === "not_found") setNotesByDate((prev) => ({ ...prev, [date]: (prev[date] ?? []).filter((n) => n.id !== id) }));
       else setNoteErr(r.message ?? "ลบโน้ตไม่สำเร็จ");
     } catch { setNoteErr("ลบโน้ตไม่สำเร็จ"); }
     finally { setBusy(false); }
   };
+
+  const addPastNote = async () => {
+    const text = pastDraft.trim();
+    if (!text || !pastDate || busy) return;
+    setBusy(true); setNoteErr(null);
+    try {
+      const r = await postNote(pastDate, text);
+      if (r.ok && r.note) { setPastNotes((prev) => [...prev, r.note]); setPastDraft(""); }
+      else setNoteErr(r.message ?? "เพิ่มโน้ตไม่สำเร็จ");
+    } catch { setNoteErr("เพิ่มโน้ตไม่สำเร็จ"); }
+    finally { setBusy(false); }
+  };
+
+  const removePastNote = async (id: number) => {
+    if (busy) return;
+    setBusy(true); setNoteErr(null);
+    try {
+      const r = await deleteNote(id);
+      if (r.ok || r.error === "not_found") setPastNotes((prev) => prev.filter((n) => n.id !== id));
+      else setNoteErr(r.message ?? "ลบโน้ตไม่สำเร็จ");
+    } catch { setNoteErr("ลบโน้ตไม่สำเร็จ"); }
+    finally { setBusy(false); }
+  };
+
+  const pastGroups = Object.entries(
+    pastNotes.reduce((acc, n) => { (acc[n.eventDate] ??= []).push(n); return acc; }, {} as Record<string, EventNote[]>)
+  ).sort((a, b) => (a[0] < b[0] ? 1 : -1));   // newest date first
 
   return (
     <div className="card space-y-3">
@@ -178,6 +245,51 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
           </div>
         </>
       )}
+
+      {/* Backdated notes — tag past days too (owner 2026-09-27) */}
+      <div className="border-t border-slate-100 pt-2">
+        <button type="button" onClick={() => { setPastOpen((v) => !v); setNoteErr(null); }}
+          className="text-[12px] font-semibold text-slate-600 hover:text-slate-800">
+          {pastOpen ? "▾" : "▸"} 📌 โน้ตเหตุการณ์ย้อนหลัง
+        </button>
+        {pastOpen && (
+          <div className="mt-2 space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <input type="date" value={pastDate} max={today} min={pastFrom} onChange={(e) => setPastDate(e.target.value)}
+                className="rounded-md border border-slate-200 px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-violet-300" />
+              <input value={pastDraft} onChange={(e) => setPastDraft(e.target.value)} maxLength={EVENT_NOTE_MAX}
+                onKeyDown={(e) => { if (e.key === "Enter") addPastNote(); }}
+                placeholder="เช่น ฝนตกหนักทั้งวัน / ลูกค้ากลุ่มใหญ่มา / ไฟดับ"
+                className="flex-1 min-w-[8rem] rounded-md border border-slate-200 px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-violet-300" />
+              <button type="button" onClick={addPastNote} disabled={busy || !pastDraft.trim() || !pastDate}
+                className="text-[12px] font-semibold text-violet-700 px-2 py-1 disabled:opacity-40">บันทึก</button>
+            </div>
+            {pastLoading ? (
+              <p className="text-[11px] text-slate-400">กำลังโหลด…</p>
+            ) : pastGroups.length === 0 ? (
+              <p className="text-[11px] text-slate-400">ยังไม่มีโน้ตย้อนหลัง ({PAST_WINDOW_DAYS} วันล่าสุด)</p>
+            ) : (
+              <div className="space-y-1.5">
+                {pastGroups.map(([date, ns]) => (
+                  <div key={date}>
+                    <div className="text-[11px] text-slate-500">{dateLabel(date)}</div>
+                    <div className="mt-0.5 flex flex-wrap gap-1">
+                      {ns.map((n) => (
+                        <span key={n.id} className="inline-flex items-center gap-1 rounded-full bg-violet-50 text-violet-700 text-[11px] px-2 py-0.5"
+                          title={n.createdByName ? `แท็กโดย ${n.createdByName}` : undefined}>
+                          📌 {n.note}
+                          <button type="button" onClick={() => removePastNote(n.id)} disabled={busy}
+                            className="text-violet-400 hover:text-rose-500 disabled:opacity-50" aria-label="ลบโน้ต">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

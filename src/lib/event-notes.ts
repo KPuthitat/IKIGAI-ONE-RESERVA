@@ -11,6 +11,15 @@ import { getDb } from "./db";
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 export const EVENT_NOTE_MAX = 200;
 
+/** True only for a real calendar date in YYYY-MM-DD form — the regex alone would
+ *  admit junk like 2026-02-30, which would insert a row that can never match a
+ *  forecast day. Round-trip through Date (UTC) and compare. */
+function isRealIsoDate(iso: string): boolean {
+  if (!ISO.test(iso)) return false;
+  const d = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso;
+}
+
 export type EventNote = {
   id: number;
   branchId: number;
@@ -56,7 +65,7 @@ export function eventNotesByDate(branchId: number, startIso: string, endIso: str
 /** Add a note. Trims and length-caps the text; rejects a blank note or a bad
  *  date. Returns the created row, or null when the input is invalid. */
 export function addEventNote(branchId: number, eventDate: string, note: string, userId: number | null): EventNote | null {
-  if (!ISO.test(eventDate)) return null;
+  if (!isRealIsoDate(eventDate)) return null;
   const text = note.trim().slice(0, EVENT_NOTE_MAX);
   if (!text) return null;
   const info = getDb().prepare(

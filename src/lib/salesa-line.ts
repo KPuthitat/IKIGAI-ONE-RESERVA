@@ -386,7 +386,10 @@ export function salesaForecastFlex(fc: BranchForecast, meta: DailyCardMeta): Fle
         { type: "text", text: r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)}` : "—"), size: "sm", color: r.closed ? "#b0392f" : "#1a1a2e", align: "end", flex: 5 }
       ] },
       ...(badge ? [{ type: "text", text: badge, size: "xxs", color: "#b8860b", wrap: true }] : []),
-      ...r.eventNotes.map((n) => ({ type: "text", text: `📌 ${n}`, size: "xxs", color: "#7c3aed", wrap: true })),
+      // Cap the notes rendered per day so a heavily-tagged plan can't blow past
+      // LINE's flex message size limit (the +N line keeps the count honest).
+      ...r.eventNotes.slice(0, 3).map((n) => ({ type: "text", text: `📌 ${n}`, size: "xxs", color: "#7c3aed", wrap: true })),
+      ...(r.eventNotes.length > 3 ? [{ type: "text", text: `📌 +${r.eventNotes.length - 3} เพิ่มเติม`, size: "xxs", color: "#7c3aed", wrap: true }] : []),
       ...(r.suggestions.length ? [{ type: "text", text: `• ${r.suggestions[0]}`, size: "xxs", color: "#555555", wrap: true }] : []),
     ] });
   }
