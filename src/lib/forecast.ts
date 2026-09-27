@@ -8,6 +8,7 @@ import { getDb } from "./db";
 import { listRange } from "./salesa-db";
 import { isClinicaBranch, clinicaDailyNetRange } from "./clinica-db";
 import { fetchBranchWeather } from "./weather";
+import { eventNotesByDate } from "./event-notes";
 
 function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
 function addDaysIso(iso: string, n: number): string {
@@ -65,6 +66,7 @@ export type ForecastDay = {
   holiday: string | null;
   payday: boolean;                  // 25th → end of month / 1st: salary window
   weather: ForecastWeather | null;  // filled best-effort by the API layer
+  eventNotes: string[];             // team-tagged context for this day (filled by the API layer)
   suggestions: string[];
 };
 export type BranchForecast = {
@@ -132,7 +134,7 @@ export function branchForecast(branchId: number, fromIso: string, days: number, 
       if (payday && !isClinic) suggestions.push("ช่วงเงินเดือนออก — มักคึกคัก เตรียมของ/คนเพิ่ม");
     }
 
-    rows.push({ date, dow, dowLabel: TH_WEEKDAYS[dow], closed, weekdayAvg, predictedNett, holiday, payday, weather: null, suggestions });
+    rows.push({ date, dow, dowLabel: TH_WEEKDAYS[dow], closed, weekdayAvg, predictedNett, holiday, payday, weather: null, eventNotes: [], suggestions });
   }
 
   return { fromDate: fromIso, days, hasBaseline, momentumPct, lat: null, lon: null, rows };
@@ -151,6 +153,15 @@ export function attachWeather(fc: BranchForecast, weatherByDate: Record<string, 
   }
 }
 
+/** Fold team-tagged event notes (keyed by ISO date) onto the plan. Pure — the DB
+ *  read happens in the API layer so `branchForecast` stays testable without a DB. */
+export function attachEventNotes(fc: BranchForecast, notesByDate: Record<string, string[]>): void {
+  for (const r of fc.rows) {
+    const notes = notesByDate[r.date];
+    if (notes && notes.length) r.eventNotes = notes;
+  }
+}
+
 /** Build a branch's forward plan (clamped 3–7 days, starting tomorrow), with a
  *  best-effort weather fold. One place so the GET preview and the LINE send agree. */
 export async function forecastForBranch(branchId: number, days: number): Promise<BranchForecast> {
@@ -163,6 +174,8 @@ export async function forecastForBranch(branchId: number, days: number): Promise
   const fc = branchForecast(branchId, fromIso, d, closed, isClinicaBranch(branchId));
   fc.lat = b?.latitude ?? null;
   fc.lon = b?.longitude ?? null;
+  // Team-tagged event notes for the plan window (owner 2026-09-27).
+  attachEventNotes(fc, eventNotesByDate(branchId, fromIso, addDaysIso(fromIso, d - 1)));
   // The plan starts tomorrow, so ask Open-Meteo for d+1 forecast days (today
   // through today+d) to cover tomorrow…today+d; attachWeather keys by exact date,
   // so today's entry is simply ignored.
