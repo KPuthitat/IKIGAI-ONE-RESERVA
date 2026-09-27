@@ -296,10 +296,12 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
        FROM clinica_visits WHERE branch_id=? AND visit_date BETWEEN ? AND ?`
   ).get(branchId, start, end) as { v: number; pts: number };
 
+  // Visits with no diagnosis code are counted under "ไม่ระบุ ICD10" rather than
+  // dropped (owner 2026-09-27) — so the total reconciles with the visit count.
   const topDiagnoses = (db.prepare(
-    `SELECT dx_th name, COUNT(*) cnt FROM clinica_visits
-       WHERE branch_id=? AND visit_date BETWEEN ? AND ? AND COALESCE(dx_th,'')<>''
-       GROUP BY dx_th ORDER BY cnt DESC LIMIT 10`
+    `SELECT COALESCE(NULLIF(dx_th,''),'ไม่ระบุ ICD10') name, COUNT(*) cnt FROM clinica_visits
+       WHERE branch_id=? AND visit_date BETWEEN ? AND ?
+       GROUP BY name ORDER BY cnt DESC LIMIT 10`
   ).all(branchId, start, end) as Array<{ name: string; cnt: number }>).map((r) => ({ name: r.name, count: r.cnt }));
 
   const doctors = (db.prepare(
