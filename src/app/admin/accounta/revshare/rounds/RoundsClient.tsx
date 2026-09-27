@@ -11,6 +11,11 @@ import PinPromptModal from "@/app/components/PinPromptModal";
 import { useConfirm } from "@/app/components/useConfirm";
 import { DailyCardPreview, WeeklyCardPreview, DrinkWelfareCardPreview, SendPreviewModal } from "./CardPreviews";
 
+// Calendar-day span (inclusive) between two ISO dates — mirrors the notify
+// route's daySpan so the weekly preview's "รวม N วัน" matches the sent card.
+const daySpan = (start: string, end: string) =>
+  Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000) + 1;
+
 type DrinkSummary = { count: number; total: number; byTier: Array<{ amount: number; count: number; subtotal: number }>; cashCount: number; cashTotal: number };
 type DrinkWelfareData = {
   weeks: Array<{ weekStart: string; start: string; end: string; label: string; summary: DrinkSummary }>;
@@ -400,7 +405,7 @@ export default function RoundsClient({
                           {partner.line_group_id && (
                             <button type="button" onClick={() => setSendModal({
                               key: `d:${r.period_start}`, heading: "ส่งสรุปยอดขายประจำวัน",
-                              preview: <DailyCardPreview shop={shop} sellerName={sellerName} dateLabel={roundLabel(r.period_start, r.period_start)} sales={r.sales_amount} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} billCount={r.bill_count} />,
+                              preview: <DailyCardPreview shop={shop} sellerName={sellerName} dateLabel={roundLabel(r.period_start, r.period_start)} sales={r.sales_amount} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} billCount={r.bill_count} partnerId={partner.id} date={r.period_start} />,
                               body: { kind: "daily", date: r.period_start }
                             })} className="text-[11px] text-emerald-600 hover:underline mr-3">
                               {sentKey === `d:${r.period_start}` || r.sent_at ? "✓ ส่งแล้ว" : "ส่งยอดวันนี้"}
@@ -418,7 +423,7 @@ export default function RoundsClient({
                         {partner.line_group_id && (
                           <button type="button" onClick={() => setSendModal({
                             key: `w:${w.rounds[0].period_start}`, heading: "ส่งสรุปยอดขายประจำสัปดาห์",
-                            preview: <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={w.label} transferAmount={w.total} dayCount={w.rounds.length} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} />,
+                            preview: <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={w.label} transferAmount={w.total} dayCount={daySpan(w.rounds[0].period_start, w.rounds[w.rounds.length - 1].period_start)} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} partnerId={partner.id} start={w.rounds[0].period_start} end={w.rounds[w.rounds.length - 1].period_start} />,
                             body: { kind: "weekly", week_start: w.rounds[0].period_start }
                           })} className="ml-2 text-[11px] font-bold text-emerald-600 hover:underline">
                             {sentKey === `w:${w.rounds[0].period_start}` ? "✓ ส่งแล้ว" : "ส่งสรุปสัปดาห์"}
