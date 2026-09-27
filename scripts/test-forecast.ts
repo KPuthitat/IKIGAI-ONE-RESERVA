@@ -46,6 +46,7 @@ process.env.DATABASE_PATH = TMP;
     return !!d && d.weather?.rainChance === 70 && d.suggestions.some((s) => s.includes("ฝน")) && d.suggestions.some((s) => s.includes("ร้อน"));
   })());
   ok("forecast: days=3 → 3 แถว", branchForecast(999999, "2026-12-04", 3, [], false).rows.length === 3);
+  ok("forecast: isClinic flag propagates (payday badge gating)", branchForecast(999999, "2026-12-04", 3, [], true).isClinic === true && branchForecast(999999, "2026-12-04", 3, [], false).isClinic === false);
 
   // ── Team-tagged event notes (owner 2026-09-27) ──────────────────────────────
   const branch = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('en','NAMA')").run().lastInsertRowid);

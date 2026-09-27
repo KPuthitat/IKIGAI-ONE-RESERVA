@@ -178,8 +178,17 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
     pastNotes.reduce((acc, n) => { (acc[n.eventDate] ??= []).push(n); return acc; }, {} as Record<string, EventNote[]>)
   ).sort((a, b) => (a[0] < b[0] ? 1 : -1));   // newest date first
 
-  // Peak predicted sales across the visible days — scales each card's magnitude bar.
-  const maxPred = fc ? Math.max(0, ...fc.rows.map((r) => (!r.closed && r.predictedNett != null ? r.predictedNett : 0))) : 0;
+  // One pass over the days: peak (scales each card's bar), open-day count, total
+  // predicted and the strongest day — for the plan summary (owner 2026-09-27).
+  let maxPred = 0, totalPred = 0, openCount = 0;
+  let strongest: BranchForecast["rows"][number] | null = null;
+  if (fc) for (const r of fc.rows) {
+    if (!r.closed && r.predictedNett != null) {
+      openCount += 1; totalPred += r.predictedNett;
+      if (r.predictedNett > maxPred) maxPred = r.predictedNett;
+      if (strongest == null || r.predictedNett > (strongest.predictedNett ?? 0)) strongest = r;
+    }
+  }
 
   return (
     <div className="card space-y-3">
@@ -197,7 +206,7 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
               </button>
             ))}
           </div>
-          <button type="button" onClick={() => onSend(days)} disabled={!hasLineGroup || !fc?.hasBaseline}
+          <button type="button" onClick={() => onSend(days)} disabled={!hasLineGroup || !fc?.hasBaseline || loading}
             className="btn-success text-sm px-4 py-2 disabled:opacity-50" title={!hasLineGroup ? "ยังไม่ได้ตั้งกลุ่ม LINE" : undefined}>
             ส่งเข้ากลุ่ม
           </button>
@@ -215,6 +224,13 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
           {fc.momentumPct != null && (
             <div className="text-[11px] text-slate-500">โมเมนตัมล่าสุด (2 สัปดาห์ล่าสุด เทียบ 6 สัปดาห์ก่อน) <span className={fc.momentumPct >= 0 ? "text-emerald-600" : "text-rose-600"}>{fc.momentumPct >= 0 ? "▲" : "▼"} {Math.abs(fc.momentumPct).toFixed(1)}%</span></div>
           )}
+          {/* Plan summary (owner 2026-09-27): total predicted + strongest day at a glance. */}
+          {openCount > 0 && (
+            <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 flex flex-wrap gap-x-5 gap-y-1">
+              <span>แผน {fc.days} วันนี้ · คาดยอดรวม <span className="font-bold text-emerald-700">~{baht(totalPred)}</span></span>
+              {strongest && <span>วันแรงสุด <span className="font-semibold text-slate-800">{bigDate(strongest.date, strongest.dow)}</span> (~{baht(strongest.predictedNett ?? 0)})</span>}
+            </div>
+          )}
           {/* Horizontal swipe strip (owner 2026-09-27: "เอาเป็นสไลด์ข้าง") — one
               card per day, weather icon + high/low temp + rain, a magnitude bar
               for the predicted sales, holiday/suggestions and the note tagging. */}
@@ -225,25 +241,34 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
               const wline = weatherLine(r.weather);
               const wsummary = r.weather && r.weather.summary !== "อากาศปกติ" ? r.weather.summary : null;
               const barPct = !r.closed && r.predictedNett != null && r.predictedNett > 0 && maxPred > 0 ? Math.max(6, Math.round((r.predictedNett / maxPred) * 100)) : 0;
+              // The payday badge already states this, so drop the duplicate suggestion line.
+              const shownSug = r.payday ? r.suggestions.filter((s) => !s.startsWith("ช่วงเงินเดือนออก")) : r.suggestions;
               return (
-              <div key={r.date} className="snap-start shrink-0 w-52 rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-1.5">
-                <div className="flex items-start justify-between gap-1">
-                  <div>
-                    <div className="text-base font-bold tracking-wide text-slate-800">{bigDate(r.date, r.dow)}</div>
-                    {(wsummary || wline) && <div className="text-[11px] text-slate-500 mt-0.5">{[wsummary, wline].filter(Boolean).join(" · ")}</div>}
+              <div key={r.date} className="snap-start shrink-0 w-52 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-1.5">
+                  <div className="min-w-0">
+                    <div className="text-[15px] font-extrabold text-slate-800">{bigDate(r.date, r.dow)}</div>
+                    {(wsummary || wline) && <div className="text-[11px] text-slate-500 mt-0.5 truncate">{[wsummary, wline].filter(Boolean).join(" · ")}</div>}
                   </div>
-                  {icon && <div className="text-2xl leading-none" title={r.weather?.summary ?? undefined}>{icon}</div>}
+                  {icon && <span className="shrink-0 text-xl leading-none" title={r.weather?.summary ?? undefined}>{icon}</span>}
                 </div>
-                <div className={`text-lg font-bold tabular-nums ${r.closed ? "text-rose-500" : "text-slate-900"}`}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)}` : "—")}</div>
-                {barPct > 0 && (
-                  <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                    <div className="h-full rounded-full bg-brand" style={{ width: `${barPct}%` }} />
+                <div>
+                  <div className={`font-extrabold ${r.closed ? "text-base text-rose-500" : "text-xl text-slate-900"}`}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)}` : "—")}</div>
+                  {barPct > 0 && (
+                    <div className="mt-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-brand" style={{ width: `${barPct}%` }} />
+                    </div>
+                  )}
+                </div>
+                {(r.holiday || (r.payday && !r.closed && !fc.isClinic)) && (
+                  <div className="flex flex-wrap gap-1">
+                    {r.holiday && <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold px-2 py-0.5">🎌 {r.holiday}</span>}
+                    {r.payday && !r.closed && !fc.isClinic && <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold px-2 py-0.5">เงินเดือนออก</span>}
                   </div>
                 )}
-                {r.holiday && <div className="text-[11px] text-amber-700 font-medium">🎌 {r.holiday}</div>}
-                {r.suggestions.length > 0 && (
+                {shownSug.length > 0 && (
                   <ul className="space-y-0.5">
-                    {r.suggestions.map((s, i) => (
+                    {shownSug.map((s, i) => (
                       <li key={i} className="flex gap-1 text-[11px] text-slate-600 leading-snug"><span className="text-brand">•</span><span>{s}</span></li>
                     ))}
                   </ul>
