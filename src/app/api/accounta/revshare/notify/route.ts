@@ -15,6 +15,7 @@ import { drinkWelfareSummary } from "@/lib/partner-drink-orders";
 // line_group_id + the IKIGAI OS platform OA to be in that group.
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const YM = /^\d{4}-\d{2}$/;
 const Body = z.object({
   partner: z.number().int().positive(),
   year: z.number().int(),
@@ -22,6 +23,8 @@ const Body = z.object({
   kind: z.enum(["settlement", "weekly", "daily", "drink_welfare"]),
   week_start: z.string().regex(ISO).optional(),
   date: z.string().regex(ISO).optional(),
+  months: z.array(z.string().regex(YM)).optional(),   // settlement: combined months (owner 2026-09-27)
+  invoice_no: z.string().nullable().optional(),
   pin: z.string().optional()
 });
 
@@ -37,12 +40,14 @@ export async function POST(req: Request) {
   }
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
-  const { partner: partnerId, year, month, kind, week_start, date, pin } = parsed.data;
+  const { partner: partnerId, year, month, kind, week_start, date, months, invoice_no, pin } = parsed.data;
 
   // Daily + weekly sends are PIN-gated (owner 2026-06-24: ตรวจสอบยอดแล้วกด PIN
   // ก่อนส่งเข้ากลุ่ม) — proves the operator verified the figure before it goes
   // out to the partner.
-  if (kind === "daily" || kind === "weekly" || kind === "drink_welfare") {
+  // All partner-facing sends are PIN-gated (owner 2026-09-27: settlement joins
+  // daily/weekly/drink — every card to a partner group is confirmed with a PIN).
+  if (kind === "daily" || kind === "weekly" || kind === "drink_welfare" || kind === "settlement") {
     const status = verifyAdminPin(user.id, pin ?? "");
     if (!status.ok) {
       return NextResponse.json({ error: status.reason }, { status: status.reason === "no_pin" ? 400 : 403 });
@@ -54,7 +59,10 @@ export async function POST(req: Request) {
   if (!partner.line_group_id) {
     return NextResponse.json({ error: "no_group", message: "ยังไม่ได้ตั้ง LINE group ของคู่ค้านี้ (ตั้งที่หน้าตั้งค่าคู่ค้า)" }, { status: 400 });
   }
-  const preview = previewSettlement(partnerId, branchId, year, month);
+  // `months` (settlement only) rolls the combined span into the figure so the
+  // sent card matches the operator's on-screen preview (owner 2026-09-27). For
+  // daily/weekly it's undefined → anchor-month behaviour, unchanged.
+  const preview = previewSettlement(partnerId, branchId, year, month, kind === "settlement" ? months : undefined);
   if (!preview) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const sellerRow = getDb().prepare(
@@ -108,7 +116,7 @@ export async function POST(req: Request) {
       totalSales: r.totalSales, tierGP: r.tierGP, floorApplied: r.floorApplied, topup: r.topup,
       billedGP: r.billedGP, avgGpPct: r.avgGpPct,
       vatEnabled: partner.vat_enabled, vatAmount: r.vatAmount, whtAmount: r.whtAmount, netAmount: r.netAmount,
-      invoiceNo: preview.stored?.invoice_no ?? null
+      invoiceNo: (invoice_no?.trim() || preview.stored?.invoice_no) ?? null
     });
   }
 

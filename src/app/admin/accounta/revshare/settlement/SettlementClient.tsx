@@ -7,6 +7,9 @@ import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
 import { fmtMoney } from "@/lib/format";
 import { TH_MONTHS_FULL, partnerShopName } from "@/lib/revshare";
+import { SendPreviewModal } from "../rounds/CardPreviews";
+
+const PIN_ERRORS = new Set(["wrong_pin", "pin_invalid", "no_pin", "user_not_found"]);
 
 type Result = {
   totalSales: number; tierGP: number; floorApplied: number; billedGP: number; topup: number;
@@ -36,6 +39,7 @@ export default function SettlementClient({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
   // Which months are rolled into this settlement (the anchor is always in).
   const [selected, setSelected] = useState<Set<string>>(new Set(initial.months));
 
@@ -86,17 +90,25 @@ export default function SettlementClient({
     } finally { setBusy(false); }
   }
 
-  async function sendNotify() {
-    setBusy(true); setErr(null);
-    try {
-      const res = await fetch(apiUrl("/api/accounta/revshare/notify"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ partner: partner.id, year, month, kind: "settlement" })
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "ส่ง LINE ไม่สำเร็จ")); return; }
+  // Confirm + send the monthly settlement card. PIN-gated server-side (owner
+  // 2026-09-27) — the send button opens the preview+PIN modal instead of firing
+  // on click, so the partner-facing card is confirmed like the daily/weekly ones.
+  async function confirmSend(pin: string): Promise<{ ok: boolean; message?: string }> {
+    const res = await fetch(apiUrl("/api/accounta/revshare/notify"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      // Send the SAME covered months + invoice the preview shows, so the sent
+      // card matches it exactly (owner 2026-09-27).
+      body: JSON.stringify({ partner: partner.id, year, month, kind: "settlement", months: coveredMonths, invoice_no: invoiceNo.trim() || null, pin })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok && j.ok) {
+      setSendOpen(false);
       setSent(true); setTimeout(() => setSent(false), 2200);
-    } finally { setBusy(false); }
+      return { ok: true };
+    }
+    if (j.error === "no_pin" || j.error === "user_pin_not_set") return { ok: false, message: "ยังไม่ได้ตั้ง PIN — ตั้งที่หน้าลงเวลาก่อน" };
+    if (PIN_ERRORS.has(j.error)) return { ok: false, message: "PIN ไม่ถูกต้อง" };
+    return { ok: false, message: humanizeApiError(j, "ส่ง LINE ไม่สำเร็จ") };
   }
 
   const STATUS = {
@@ -104,6 +116,21 @@ export default function SettlementClient({
     issued: { t: "ออกใบเรียกเก็บแล้ว", c: "bg-emerald-100 text-emerald-700" },
     paid: { t: "รับชำระแล้ว", c: "bg-sky-100 text-sky-700" }
   } as const;
+
+  // One card mock, shown both inline on the page and inside the send-confirm
+  // modal, so they can never drift apart.
+  const settlementCard = (
+    <FlexCardPreview
+      shop={shop}
+      partnerLegal={partner.name !== shop ? partner.name : null}
+      sellerName={seller.name}
+      sellerCompany={seller.company}
+      monthLabel={periodLabel}
+      combined={combined}
+      invoiceNo={invoiceNo.trim() || null}
+      r={r} withVat={withVat} grandTotal={grandTotal}
+    />
+  );
 
   return (
     <div className="space-y-4">
@@ -268,25 +295,24 @@ export default function SettlementClient({
           <div className="text-sm font-bold text-slate-800">สรุปยอดขายประจำเดือน (พร้อมส่วนแบ่งยอดขาย)</div>
           <div className="flex items-center gap-2 flex-wrap">
             {partner.line_group_id
-              ? <button type="button" onClick={sendNotify} disabled={busy} className="rounded-full bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งสรุปประจำเดือนเข้ากลุ่มคู่ค้า"}</button>
+              ? <button type="button" onClick={() => setSendOpen(true)} disabled={busy} className="rounded-full bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">{sent ? "✓ ส่งแล้ว" : "ส่งสรุปประจำเดือนเข้ากลุ่มคู่ค้า"}</button>
               : <span className="text-[11px] text-slate-400">ตั้ง LINE group ในหน้าตั้งค่าคู่ค้าเพื่อส่งได้</span>}
             <a href={apiUrl(`/api/accounta/revshare/statement/pdf?partner=${partner.id}&year=${year}&month=${month}`)} className="btn-secondary text-sm" download>ดาวน์โหลด PDF</a>
           </div>
         </div>
         <p className="text-[11px] text-slate-400">ตัวอย่างข้อความแจ้งเตือนที่คู่ค้าจะเห็นใน LINE · ยอดขายรายวัน/รายสัปดาห์ส่งจากหน้ารอบยอดขาย</p>
-        <div className="rounded-2xl bg-slate-100 p-4 sm:p-6">
-          <FlexCardPreview
-            shop={shop}
-            partnerLegal={partner.name !== shop ? partner.name : null}
-            sellerName={seller.name}
-            sellerCompany={seller.company}
-            monthLabel={periodLabel}
-            combined={combined}
-            invoiceNo={invoiceNo.trim() || null}
-            r={r} withVat={withVat} grandTotal={grandTotal}
-          />
-        </div>
+        <div className="rounded-2xl bg-slate-100 p-4 sm:p-6">{settlementCard}</div>
       </div>
+
+      {sendOpen && (
+        <SendPreviewModal
+          heading="ส่งสรุปประจำเดือนเข้ากลุ่มคู่ค้า"
+          preview={settlementCard}
+          busy={busy}
+          onConfirm={confirmSend}
+          onClose={() => setSendOpen(false)}
+        />
+      )}
     </div>
   );
 }
