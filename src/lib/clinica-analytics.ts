@@ -7,6 +7,7 @@
 import { getDb } from "./db";
 import { clinicaPaidPct } from "./clinica-shared";
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
+import { eventNotesForDay, eventNotesForRange, type EventNoteDay } from "./event-notes";
 
 function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
 function addDaysIso(iso: string, n: number): string {
@@ -79,6 +80,7 @@ export type ClinicaWeek = {
   prevWeekNet: number | null; prevWeekDays: number;
   wowNetPct: number | null; wowBillsPct: number | null; wowPatientsPct: number | null;
   topItems: NamedNet[];             // top revenue items this week
+  eventNotes: EventNoteDay[];       // team-tagged context per day this week (owner 2026-09-27)
 };
 
 const CAT_LABEL: Record<string, string> = { service: "ค่าบริการ/ตรวจ", drug: "ยา", lab: "แล็บ", package: "แพ็กเกจตรวจสุขภาพ", other: "อื่นๆ" };
@@ -429,6 +431,7 @@ export function clinicaWeek(branchId: number, weekStartIso: string, topN = 5): C
     wowBillsPct: relPct(kpi.bills, prev.bills),
     wowPatientsPct: relPct(kpi.pts, prev.pts),
     topItems,
+    eventNotes: eventNotesForRange(branchId, start, end, thaiDate),
   };
 }
 
@@ -441,6 +444,7 @@ export type ClinicaDailyReport = {
   prevSameDowNet: number | null; wowPct: number | null; wowLabel: string;   // vs same weekday last week
   categories: CatRow[];
   topItems: NamedNet[];
+  eventNotes: string[];             // team-tagged context for this day (owner 2026-09-27)
 };
 
 /** One clinic day's rollup for the daily exec card (owner 2026-09-27: คลินิกจะ
@@ -487,5 +491,6 @@ export function clinicaDay(branchId: number, date: string): ClinicaDailyReport {
     avgPerBill: kpi.bills > 0 ? round2(kpi.net / kpi.bills) : null,
     prevSameDowNet, wowPct: relPct(kpi.net, prevSameDowNet), wowLabel: `วัน${dow}ที่แล้ว`,
     categories, topItems,
+    eventNotes: eventNotesForDay(branchId, date),
   };
 }

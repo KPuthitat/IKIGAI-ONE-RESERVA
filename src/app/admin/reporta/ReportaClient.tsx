@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import OwlMascot from "@/app/components/OwlMascot";
 import ClinicaSection, { type ClinicaMonth } from "./ClinicaSection";
 import ClinicaWeekCard from "./ClinicaWeekCard";
+import EventNotesView from "./EventNotesView";
 import ForecastCard from "./ForecastCard";
 import type { ClinicaWeek } from "@/lib/clinica-analytics";
 import { hourSpan, hoursLabel, type HoursWindow } from "@/lib/hours";
@@ -55,7 +56,9 @@ type DailyAnalytics = {
   metrics: MetricCompare[];
   topItems: MenuRank[]; bottomItems: MenuRank[]; topCategories: MenuRank[];
   peakHour: number | null; advice: string[];
+  eventNotes: string[];
 };
+type EventNoteDay = { date: string; dateLabel: string; notes: string[] };
 type MetricCompare = { key: string; label: string; value: number; kind: "baht" | "int"; wowPct: number | null; momPct: number | null };
 type MonthCompare = { throughDay: number; mtdNett: number; prevMonthNett: number | null; prevMonthPct: number | null; lastYearNett: number | null; lastYearPct: number | null; trend?: MtdMetric[] };
 type MenuMomentum = { name: string; thisNett: number; prevNett: number; deltaPct: number | null; isNew: boolean };
@@ -67,6 +70,7 @@ type WeeklyAnalytics = {
   prevWeekDays: number; prevWeekNett: number | null; wowNettPct: number | null; wowBillsPct: number | null; wowPaxPct: number | null;
   topItems: MenuRank[]; topCategories: MenuRank[];
   menuRisers: MenuMomentum[]; menuFallers: MenuMomentum[];
+  eventNotes: EventNoteDay[];
 };
 type WeekdayStat = { dow: number; label: string; avgNett: number; days: number; avgBills: number };
 type DiscountInsight = { avgDiscountPct: number | null; totalDiscount: number; highDiscAvgNett: number | null; lowDiscAvgNett: number | null; days: number };
@@ -1175,6 +1179,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           ) : (
             <p className="text-sm text-slate-400">ยังไม่มีไฟล์เมนู (Overview) ของวันนี้ — นำเข้าเพื่อดูเมนูทำรายได้สูงสุด/น้อยสุด</p>
           )}
+          <EventNotesView days={[{ notes: daily.eventNotes }]} />
         </div>
       )}
 
@@ -1242,6 +1247,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                 )}
               </>
             )}
+            <EventNotesView days={weekly.eventNotes} />
           </>
         )}
       </div>
@@ -2131,6 +2137,7 @@ function DailyPreview({ a, branchName, operator, color }: { a: DailyAnalytics; b
       {r.void_amount > 0 && <PRow label="ยกเลิกบิล (Void)" value={`${baht(r.void_amount)} · ${intTh(r.void_bill_count)} บิล`} tone="red" />}
       <PMenu title="เมนูทำรายได้สูงสุด" list={a.topItems} />
       <PMenu title="หมวดทำรายได้สูงสุด" list={a.topCategories} />
+      <EventNotesView days={[{ notes: a.eventNotes }]} />
     </CardShell>
   );
 }
@@ -2148,6 +2155,7 @@ function WeeklyPreview({ w, branchName, operator, color }: { w: WeeklyAnalytics;
       {w.avgPerDay != null && <PRow label="เฉลี่ยต่อวัน" value={`${baht(w.avgPerDay)} บาท`} />}
       {w.bestDate && <PRow label="วันขายดีสุด" value={`${w.days.find((d) => d.date === w.bestDate)?.dateLabel ?? w.bestDate} · ${baht(w.bestNett ?? 0)}`} />}
       <PMenu title="เมนูทำรายได้สูงสุดประจำสัปดาห์" list={w.topItems} />
+      <EventNotesView days={w.eventNotes} />
     </CardShell>
   );
 }

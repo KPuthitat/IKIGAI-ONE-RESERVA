@@ -98,6 +98,34 @@ function metricCompareLine(m: { wowPct: number | null; momPct: number | null }, 
   };
 }
 
+// Team-tagged event notes on a report card (owner 2026-09-27: "ให้โน้ตย้อนหลังไป
+// โผล่ในรายงานรายวัน/สัปดาห์ด้วย"). Capped so a heavily-tagged period can't push the
+// flex message past LINE's size limit.
+function eventNotesBlock(notes: string[]): unknown[] {
+  if (!notes.length) return [];
+  const shown = notes.slice(0, 6);
+  return [
+    sep,
+    { type: "text", text: "โน้ตเหตุการณ์จากทีม", size: "xs", weight: "bold", color: "#7c3aed", margin: "md" },
+    ...shown.map((n) => ({ type: "text", text: `📌 ${n}`, size: "xxs", color: "#7c3aed", wrap: true })),
+    ...(notes.length > shown.length ? [{ type: "text", text: `📌 +${notes.length - shown.length} เพิ่มเติม`, size: "xxs", color: "#7c3aed", wrap: true }] : []),
+  ];
+}
+function eventNotesWeekBlock(days: Array<{ dateLabel: string; notes: string[] }>): unknown[] {
+  const items: Array<{ label: string; note: string }> = [];
+  for (const d of days) for (const n of d.notes) items.push({ label: d.dateLabel, note: n });
+  if (!items.length) return [];
+  const shown = items.slice(0, 12);
+  const out: unknown[] = [sep, { type: "text", text: "โน้ตเหตุการณ์จากทีม", size: "xs", weight: "bold", color: "#7c3aed", margin: "md" }];
+  let lastLabel = "";
+  for (const it of shown) {
+    if (it.label !== lastLabel) { out.push({ type: "text", text: it.label, size: "xxs", weight: "bold", color: "#7c3aed", wrap: true }); lastLabel = it.label; }
+    out.push({ type: "text", text: `📌 ${it.note}`, size: "xxs", color: "#7c3aed", wrap: true });
+  }
+  if (items.length > shown.length) out.push({ type: "text", text: `📌 +${items.length - shown.length} เพิ่มเติม`, size: "xxs", color: "#7c3aed", wrap: true });
+  return out;
+}
+
 export function salesaDailyFlex(a: DailyAnalytics, meta: DailyCardMeta): FlexMsg {
   const r = a.row;
   const body: unknown[] = [
@@ -137,6 +165,7 @@ export function salesaDailyFlex(a: DailyAnalytics, meta: DailyCardMeta): FlexMsg
   body.push(...menuBlock("เมนูทำรายได้สูงสุด", a.topItems));
   body.push(...menuBlock("หมวดทำรายได้สูงสุด", a.topCategories));
   if (a.bottomItems.length) body.push(...menuBlock("เมนูทำรายได้น้อยสุด (ในรายการที่มี)", a.bottomItems));
+  body.push(...eventNotesBlock(a.eventNotes));
 
   return {
     type: "flex",
@@ -198,6 +227,7 @@ export function salesaWeeklyFlex(w: WeeklyAnalytics, meta: DailyCardMeta): FlexM
     body.push({ type: "text", text: "เมนูร่วง (เทียบสัปดาห์ก่อน)", size: "xs", weight: "bold", color: "#b0392f", margin: "md" });
     w.menuFallers.forEach((m) => body.push(momoLine(m, false)));
   }
+  body.push(...eventNotesWeekBlock(w.eventNotes));
 
   return {
     type: "flex",
@@ -331,6 +361,7 @@ export function clinicaDailyFlex(c: ClinicaDailyReport, meta: DailyCardMeta): Fl
       { type: "text", text: it.name, size: "xs", color: "#333333", flex: 6, wrap: true },
       { type: "text", text: `${baht(it.net)} (${intTh(it.qty)})`, size: "xs", color: "#1a1a2e", align: "end", flex: 4 }] });
   }
+  body.push(...eventNotesBlock(c.eventNotes));
   return {
     type: "flex", altText: `สรุปคลินิกรายวัน ${c.dateLabel} · ${meta.branchName} · ${baht(c.billNet)}`,
     contents: { type: "bubble", size: "giga",
@@ -360,6 +391,7 @@ export function clinicaWeeklyFlex(c: ClinicaWeek, meta: DailyCardMeta): FlexMsg 
       { type: "text", text: it.name, size: "xs", color: "#333333", flex: 6, wrap: true },
       { type: "text", text: `${baht(it.net)} (${intTh(it.qty)})`, size: "xs", color: "#1a1a2e", align: "end", flex: 4 }] });
   }
+  body.push(...eventNotesWeekBlock(c.eventNotes));
   return {
     type: "flex", altText: `สรุปคลินิกรายสัปดาห์ ${c.label} · ${meta.branchName} · ${baht(c.totalNet)}`,
     contents: { type: "bubble", size: "giga",

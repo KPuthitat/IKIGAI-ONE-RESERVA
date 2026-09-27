@@ -2,6 +2,7 @@
 
 import type { ClinicaWeek } from "@/lib/clinica-analytics";
 import { Pct } from "./ClinicaSection";
+import EventNotesView from "./EventNotesView";
 
 // The body of the clinic สรุปรายสัปดาห์ card (owner 2026-09-27: "การ์ดสัปดาห์เต็ม +
 // เทียบสัปดาห์ก่อน"). Mirrors the restaurant weekly card — KPIs, เทียบสัปดาห์ก่อน with
@@ -72,6 +73,7 @@ export default function ClinicaWeekCard({ w }: { w: ClinicaWeek }) {
           </div>
         </>
       )}
+      <EventNotesView days={w.eventNotes} />
     </>
   );
 }
