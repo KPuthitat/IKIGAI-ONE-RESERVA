@@ -144,6 +144,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
               <div className="text-xs text-slate-500">ยอดขายรวม (วันที่ 1–{ov.throughDay})</div>
               <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">฿{baht(t.mtdNett)}</div>
               <div className="text-[11px] mt-0.5">เทียบเดือนก่อน <Pct pct={t.momPct} />{t.prevSameNett != null ? <span className="text-slate-400"> (฿{baht(t.prevSameNett)})</span> : null}</div>
+              <div className="text-[11px]">เทียบปีก่อน <Pct pct={t.lastYearPct} />{t.lastYearNett != null ? <span className="text-slate-400"> (฿{baht(t.lastYearNett)})</span> : null}</div>
               {ov.revshareIncome > 0 && <div className="text-[10px] text-violet-600 mt-0.5">รวมส่วนแบ่งยอดขายรายเดือน ฿{baht(ov.revshareIncome)} (นอก POS)</div>}
             </div>
             {ov.isCurrentMonth && (
@@ -207,6 +208,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                     <th className="text-left py-1.5 pr-2 sticky left-0 bg-white z-10">สาขา</th>
                     <th className="text-right py-1.5 px-2">ยอดขาย</th>
                     <th className="text-right py-1.5 px-2">เทียบเดือนก่อน</th>
+                    <th className="text-right py-1.5 px-2">เทียบปีก่อน</th>
                     <th className="text-right py-1.5 px-2">เป้าเดือน</th>
                     <th className="text-right py-1.5 px-2">ทำได้</th>
                     {ov.isCurrentMonth && <th className="text-right py-1.5 px-2">วันนี้</th>}
@@ -225,6 +227,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                       </td>
                       <td className="py-2 px-2 text-right font-semibold text-slate-700">฿{baht(b.mtdNett)}</td>
                       <td className="py-2 px-2 text-right"><Pct pct={b.momPct} /></td>
+                      <td className="py-2 px-2 text-right"><Pct pct={b.lastYearPct} /></td>
                       <td className="py-2 px-2 text-right text-slate-500">{b.monthTarget != null ? `฿${baht(b.monthTarget)}` : "—"}</td>
                       <td className="py-2 px-2 text-right text-slate-500">{b.pctOfTarget != null ? `${b.pctOfTarget.toFixed(0)}%` : "—"}</td>
                       {ov.isCurrentMonth && <td className="py-2 px-2 text-right text-slate-500">{b.todayNett != null ? `฿${baht(b.todayNett)}` : "—"}</td>}
@@ -237,6 +240,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                     <td className="py-2 pr-2 sticky left-0 bg-white">รวมบริษัท</td>
                     <td className="py-2 px-2 text-right">฿{baht(t.mtdNett)}</td>
                     <td className="py-2 px-2 text-right"><Pct pct={t.momPct} /></td>
+                    <td className="py-2 px-2 text-right"><Pct pct={t.lastYearPct} /></td>
                     <td className="py-2 px-2 text-right text-slate-500">{ov.target ? `฿${baht(ov.target.target)}` : "—"}</td>
                     <td className="py-2 px-2 text-right text-slate-500">{ov.target ? `${ov.target.pctOfTarget.toFixed(0)}%` : "—"}</td>
                     {ov.isCurrentMonth && <td className="py-2 px-2 text-right text-slate-500">฿{baht(t.todayNett ?? 0)}</td>}

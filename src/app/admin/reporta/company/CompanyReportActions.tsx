@@ -57,6 +57,7 @@ function CompanyCardPreview({ ov, companyName, monthLabel, operator, color }: { 
           <span className="font-bold text-emerald-700">{baht(t.mtdNett)}</span>
         </div>
         <div className="text-[11px] text-slate-500">เทียบเดือนก่อน <Pct pct={t.momPct} />{t.prevSameNett != null && <span className="text-slate-400"> ({baht(t.prevSameNett)})</span>}</div>
+        <div className="text-[11px] text-slate-500">เทียบปีก่อน <Pct pct={t.lastYearPct} />{t.lastYearNett != null && <span className="text-slate-400"> ({baht(t.lastYearNett)})</span>}</div>
         <div className="flex justify-between gap-2 text-[12px] text-slate-600"><span>จำนวนบิลรวม</span><span>{t.bills.toLocaleString("th-TH")} บิล</span></div>
         <div className="flex justify-between gap-2 text-[12px] text-slate-600"><span>ลูกค้ารวม</span><span>{t.pax.toLocaleString("th-TH")} คน</span></div>
         {ov.isCurrentMonth && t.todayNett != null && (
