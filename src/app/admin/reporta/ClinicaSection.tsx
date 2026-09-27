@@ -44,13 +44,14 @@ function Bar({ value, max, tone = "bg-brand" }: { value: number; max: number; to
   );
 }
 
-export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disabledReason, hours }: {
+export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disabledReason, hours, onSendDay }: {
   c: ClinicaMonth;
   onSendReport?: () => void;
   sentAt?: string | null;
   canSend?: boolean;
   disabledReason?: string;
   hours?: HoursWindow | null;
+  onSendDay?: (date: string) => void;   // send one day's clinic summary to the HOD group
 }) {
   const [showAllDays, setShowAllDays] = useState(false);
   const maxCat = Math.max(1, ...c.categories.map((x) => x.net));
@@ -202,8 +203,13 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
                         <FileChip label="OPD" present={d.hasOpd} />
                       </div>
                     </div>
-                    <div className="text-right whitespace-nowrap">
+                    <div className="flex items-center gap-2 whitespace-nowrap">
                       <div className="text-sm font-bold text-slate-900">{d.hasInvoice ? baht(d.net) : "—"}</div>
+                      {onSendDay && d.hasInvoice && (
+                        <button type="button" onClick={() => onSendDay(d.date)}
+                          className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                          title="ส่งสรุปคลินิกวันนี้เข้ากลุ่มบริหาร">ส่ง</button>
+                      )}
                     </div>
                   </div>
                 ))}

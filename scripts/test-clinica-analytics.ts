@@ -162,6 +162,14 @@ process.env.DATABASE_PATH = TMP;
     const o = sa.companyOverview([cb], 2026, 8, "2026-08-31");
     return o.total.lastYearNett === 600 && near(o.total.lastYearPct!, 150);
   })());
+  // Daily clinic rollup (owner 2026-09-27: คลินิกนำเข้ารายวัน → สรุปรายวัน + ส่งกลุ่ม).
+  const cd = ca.clinicaDay(branch, "2026-08-05");
+  ok("clinicaDay: 08-05 → ยอด 300 · 1 บิล · 1 คน · เข้าจริง 300 รอเบิก 0", near(cd.billNet, 300) && cd.billCount === 1 && cd.patientCount === 1 && near(cd.paid, 300) && near(cd.due, 0));
+  ok("clinicaDay: หมวด ยา 200 · บริการ 100 · topItems 2", (() => {
+    const cat = new Map(cd.categories.map((x) => [x.key, x.net]));
+    return near(cat.get("drug") ?? 0, 200) && near(cat.get("service") ?? 0, 100) && cd.topItems.length === 2;
+  })());
+  ok("clinicaDay: ไม่มีวันก่อนหน้า → wow null · วันว่าง hasData false", cd.prevSameDowNet === null && cd.wowPct === null && ca.clinicaDay(branch, "2026-03-15").hasData === false);
 
   // Operating hours (owner 2026-09-27): span helper + per-branch round-trip.
   const { hourSpan, hoursLabel } = await import("../src/lib/hours");

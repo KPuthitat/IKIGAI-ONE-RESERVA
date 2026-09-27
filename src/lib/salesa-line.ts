@@ -7,7 +7,7 @@ import { sendLinePush } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
 import type { DailyAnalytics, WeeklyAnalytics, MonthlyAnalytics, CompanyOverview } from "./salesa-analytics";
 import type { SalesPushPlan } from "./salesa-push";
-import type { ClinicaMonth } from "./clinica-analytics";
+import type { ClinicaMonth, ClinicaWeek, ClinicaDailyReport } from "./clinica-analytics";
 import { clinicaPaidPct } from "./clinica-shared";
 
 type FlexMsg = { type: "flex"; altText: string; contents: unknown };
@@ -299,6 +299,72 @@ export function clinicaMonthlyFlex(c: ClinicaMonth, meta: DailyCardMeta, monthLa
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายเดือน (คลินิก)")
     }
+  };
+}
+
+/** Clinic daily exec card (owner 2026-09-27) — one day vs the same weekday last week. */
+export function clinicaDailyFlex(c: ClinicaDailyReport, meta: DailyCardMeta): FlexMsg {
+  const paidPct = c.billNet > 0 ? Math.round((c.paid / c.billNet) * 100) : 0;
+  const wowLine: unknown = c.prevSameDowNet == null ? null
+    : { type: "text", size: "xxs", wrap: true, contents: [{ type: "span", text: `เทียบ${c.wowLabel} `, color: "#999999" }, pctSpan(c.wowPct), { type: "span", text: `  (${baht(c.prevSameDowNet)})`, color: "#bbbbbb" }] };
+  const body: unknown[] = [
+    { type: "text", text: meta.branchName, weight: "bold", size: "lg", wrap: true },
+    { type: "text", text: `สรุปโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true },
+    sep,
+    kv("ยอดบิลวันนี้", `${baht(c.billNet)} (${intTh(c.billCount)} ครั้ง)`, { bold: true, color: "#0f7a4f", size: "md" }),
+    ...(wowLine ? [wowLine] : []),
+    kv("เงินเข้าจริง (เงินสด/พร้อมเพย์)", `${baht(c.paid)} (${paidPct}%)`, { size: "xs", color: "#0f7a4f" }),
+    kv("รอเบิก", baht(c.due), { size: "xs", color: "#b0392f" }),
+    kv("คนไข้", `${intTh(c.patientCount)} คน`, { size: "xs" }),
+    ...(c.avgPerBill != null ? [kv("เฉลี่ยต่อบิล", baht(c.avgPerBill), { size: "xs" })] : []),
+  ];
+  if (c.categories.length) {
+    body.push(sep, { type: "text", text: "โครงสร้างรายได้", size: "xs", weight: "bold", color: "#0e2724", margin: "md" });
+    for (const cat of c.categories.slice(0, 4)) body.push({ type: "box", layout: "horizontal", contents: [
+      { type: "text", text: cat.label, size: "xs", color: "#333333", flex: 6, wrap: true },
+      { type: "text", text: `${baht(cat.net)} (${intTh(cat.count)})`, size: "xs", color: "#1a1a2e", align: "end", flex: 4 }] });
+  }
+  if (c.topItems.length) {
+    body.push(sep, { type: "text", text: "รายการทำเงินสูงสุด", size: "xs", weight: "bold", color: "#0e2724", margin: "md" });
+    for (const it of c.topItems.slice(0, 4)) body.push({ type: "box", layout: "horizontal", contents: [
+      { type: "text", text: it.name, size: "xs", color: "#333333", flex: 6, wrap: true },
+      { type: "text", text: `${baht(it.net)} (${intTh(it.qty)})`, size: "xs", color: "#1a1a2e", align: "end", flex: 4 }] });
+  }
+  return {
+    type: "flex", altText: `สรุปคลินิกรายวัน ${c.dateLabel} · ${meta.branchName} · ${baht(c.billNet)}`,
+    contents: { type: "bubble", size: "giga",
+      header: header("สรุปคลินิกรายวัน", `${c.dateLabel} · ${meta.branchName}`, meta.color, "IKIGAI OS · รายงานคลินิก"),
+      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
+      footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายวัน (คลินิก)") }
+  };
+}
+
+/** Clinic weekly exec card (owner 2026-09-27) — Mon–Sun vs the previous week. */
+export function clinicaWeeklyFlex(c: ClinicaWeek, meta: DailyCardMeta): FlexMsg {
+  const wowLine: unknown = c.prevWeekNet == null
+    ? { type: "text", text: "เทียบสัปดาห์ก่อน: ยังไม่มีข้อมูล", size: "xxs", color: "#bbbbbb", wrap: true }
+    : { type: "text", size: "xxs", wrap: true, contents: [{ type: "span", text: "เทียบสัปดาห์ก่อน ", color: "#999999" }, pctSpan(c.wowNetPct), { type: "span", text: `  (${baht(c.prevWeekNet)})`, color: "#bbbbbb" }] };
+  const body: unknown[] = [
+    { type: "text", text: meta.branchName, weight: "bold", size: "lg", wrap: true },
+    { type: "text", text: `สรุปโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true },
+    sep,
+    kv("ยอดบิลรวมสัปดาห์", `${baht(c.totalNet)} (${intTh(c.totalBills)} ครั้ง)`, { bold: true, color: "#0f7a4f", size: "md" }),
+    wowLine,
+    kv("คนไข้รวม", `${intTh(c.totalPatients)} คน`, { size: "xs" }),
+    ...(c.avgPerDay != null ? [kv("เฉลี่ยต่อวัน", baht(c.avgPerDay), { size: "xs" })] : []),
+  ];
+  if (c.topItems.length) {
+    body.push(sep, { type: "text", text: "รายการทำเงินสูงสุดประจำสัปดาห์", size: "xs", weight: "bold", color: "#0e2724", margin: "md" });
+    for (const it of c.topItems.slice(0, 5)) body.push({ type: "box", layout: "horizontal", contents: [
+      { type: "text", text: it.name, size: "xs", color: "#333333", flex: 6, wrap: true },
+      { type: "text", text: `${baht(it.net)} (${intTh(it.qty)})`, size: "xs", color: "#1a1a2e", align: "end", flex: 4 }] });
+  }
+  return {
+    type: "flex", altText: `สรุปคลินิกรายสัปดาห์ ${c.label} · ${meta.branchName} · ${baht(c.totalNet)}`,
+    contents: { type: "bubble", size: "giga",
+      header: header("สรุปคลินิกรายสัปดาห์", `${c.label} · ${meta.branchName}`, meta.color, "IKIGAI OS · รายงานคลินิก"),
+      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
+      footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายสัปดาห์ (คลินิก)") }
   };
 }
 

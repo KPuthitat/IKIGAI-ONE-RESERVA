@@ -6,9 +6,9 @@ import { getDb } from "@/lib/db";
 import { isSalesaBranch, getLineGroupId, markDailySent, markWeeklySent, markMonthlySent, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics } from "@/lib/salesa-analytics";
 import { isClinicaBranch } from "@/lib/clinica-db";
-import { clinicaMonth } from "@/lib/clinica-analytics";
+import { clinicaMonth, clinicaWeek, clinicaDay } from "@/lib/clinica-analytics";
 import { salesPushPlan } from "@/lib/salesa-push";
-import { salesaDailyFlex, salesaWeeklyFlex, salesaMonthlyFlex, salesaPushFlex, clinicaMonthlyFlex, notifySalesaHod } from "@/lib/salesa-line";
+import { salesaDailyFlex, salesaWeeklyFlex, salesaMonthlyFlex, salesaPushFlex, clinicaMonthlyFlex, clinicaWeeklyFlex, clinicaDailyFlex, notifySalesaHod } from "@/lib/salesa-line";
 import { thMonthLabel } from "@/lib/th-month";
 
 // Push a REPORTA summary to the branch's HOD LINE group. PIN-gated (owner
@@ -18,7 +18,7 @@ import { thMonthLabel } from "@/lib/th-month";
 export const dynamic = "force-dynamic";
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const Body = z.object({
-  kind: z.enum(["daily", "weekly", "monthly", "push", "clinica"]),
+  kind: z.enum(["daily", "weekly", "monthly", "push", "clinica", "clinica-daily", "clinica-weekly"]),
   date: z.string().regex(ISO).optional(),
   week: z.string().regex(ISO).optional(),
   year: z.number().int().optional(),
@@ -77,6 +77,18 @@ export async function POST(req: Request) {
     const cm = clinicaMonth(branchId, year, month);
     if (!cm.hasData) return NextResponse.json({ error: "no_data", message: "เดือนนี้ยังไม่มีข้อมูลคลินิก" }, { status: 400 });
     flex = clinicaMonthlyFlex(cm, meta, thMonthLabel(`${year}-${String(month).padStart(2, "0")}`));
+  } else if (kind === "clinica-daily") {
+    if (!date) return NextResponse.json({ error: "date_required" }, { status: 400 });
+    if (!isClinicaBranch(branchId)) return NextResponse.json({ error: "not_clinica", message: "สาขานี้ยังไม่มีข้อมูลคลินิก (นำเข้าไฟล์ HIS ก่อน)" }, { status: 400 });
+    const cd = clinicaDay(branchId, date);
+    if (!cd.hasData) return NextResponse.json({ error: "no_data", message: "วันนี้ยังไม่มีข้อมูลคลินิก" }, { status: 400 });
+    flex = clinicaDailyFlex(cd, meta);
+  } else if (kind === "clinica-weekly") {
+    if (!week) return NextResponse.json({ error: "week_required" }, { status: 400 });
+    if (!isClinicaBranch(branchId)) return NextResponse.json({ error: "not_clinica", message: "สาขานี้ยังไม่มีข้อมูลคลินิก (นำเข้าไฟล์ HIS ก่อน)" }, { status: 400 });
+    const cw = clinicaWeek(branchId, week);
+    if (cw.dayCount === 0) return NextResponse.json({ error: "no_days", message: "สัปดาห์นี้ยังไม่มีข้อมูลคลินิก" }, { status: 400 });
+    flex = clinicaWeeklyFlex(cw, meta);
   } else {
     // push: short-horizon sales-push brief for the HOD.
     if (!days || !target) return NextResponse.json({ error: "push_input_required", message: "ระบุจำนวนวันและยอดเป้าหมาย" }, { status: 400 });
@@ -94,6 +106,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: res.error ?? "send_failed", message: msg }, { status: 502 });
   }
 
+  // Clinic daily/weekly don't write a sent-marker: those markers (salesa_daily,
+  // salesa_weekly_sent) belong to the RESTAURANT reports and share the same key,
+  // so stamping them here would corrupt a hybrid branch's restaurant sent-state.
+  // The clinic daily/weekly cards simply send (re-send is fine); only the monthly
+  // clinic report tracks "sent" (via its own clinica:-prefixed key).
   if (kind === "daily" && date) markDailySent(branchId, date, user.id);
   else if (kind === "weekly" && week) markWeeklySent(branchId, weeklyAnalytics(branchId, week).weekStart, user.id);
   else if (year && month) {

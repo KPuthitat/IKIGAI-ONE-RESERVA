@@ -627,6 +627,30 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
     });
   };
 
+  // Clinic daily + weekly exec sends (owner 2026-09-27: คลินิกนำเข้ารายวัน → ส่ง
+  // รายวัน/รายสัปดาห์เข้ากลุ่มบริหารเหมือนร้านอาหาร).
+  const sendClinicaDaily = (date: string) => {
+    setPin({
+      title: `ส่งสรุปคลินิกวันที่ ${thaiDate(date)}`,
+      run: async (p) => {
+        const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "clinica-daily", date, pin: p }) }).then((x) => x.json());
+        if (r.ok) setMsg({ kind: "ok", text: `ส่งรายงานผู้บริหาร (คลินิก รายวัน ${thaiDate(date)}) แล้ว` });
+        return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
+      }
+    });
+  };
+  const sendClinicaWeekly = (ws: string) => {
+    setPin({
+      title: `ส่งสรุปคลินิกรายสัปดาห์ ${clinicaWeekly?.label ?? ""}`,
+      preview: clinicaWeekly ? <ClinicaWeekCard w={clinicaWeekly} /> : undefined,
+      run: async (p) => {
+        const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "clinica-weekly", week: ws, pin: p }) }).then((x) => x.json());
+        if (r.ok) setMsg({ kind: "ok", text: "ส่งรายงานผู้บริหาร (คลินิก รายสัปดาห์) แล้ว" });
+        return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
+      }
+    });
+  };
+
   // แผนดันยอด — น้องฮูกแนะนำ (owner 2026-09-18).
   const runPush = async () => {
     const target = Math.floor(Number(pushTarget.replace(/[, ]/g, "")) || 0);
@@ -820,7 +844,8 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
             : !monthComplete ? "ส่งได้เมื่อจบเดือน (เดือนนี้ยังไม่จบ)" : undefined;
           return (
             <ClinicaSection c={clinica} onSendReport={() => sendClinica(year, month)}
-              sentAt={clinicaSentAt} canSend={hasLineGroup && monthComplete} disabledReason={reason} hours={branchHours} />
+              sentAt={clinicaSentAt} canSend={hasLineGroup && monthComplete} disabledReason={reason} hours={branchHours}
+              onSendDay={hasLineGroup ? sendClinicaDaily : undefined} />
           );
         })()}
 
@@ -1029,6 +1054,12 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                 className="btn-secondary text-sm px-3 py-1.5 disabled:opacity-50" title="ดึงข้อมูลล่าสุดมาวิเคราะห์ใหม่">
                 {analyzing ? "กำลังวิเคราะห์…" : "↻ วิเคราะห์อีกครั้ง"}
               </button>
+              {clinicaWeekly && clinicaWeekly.dayCount > 0 && (
+                <button type="button" onClick={() => sendClinicaWeekly(clinicaWeekly.weekStart)} disabled={!hasLineGroup}
+                  className="btn-success text-sm px-4 py-2 disabled:opacity-50" title={!hasLineGroup ? "ยังไม่ได้ตั้งกลุ่ม LINE" : undefined}>
+                  ส่งรายงานผู้บริหาร
+                </button>
+              )}
             </div>
           </div>
           {clinicaWeekly && <ClinicaWeekCard w={clinicaWeekly} />}
