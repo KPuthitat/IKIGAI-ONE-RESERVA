@@ -245,7 +245,7 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
               // The payday badge already states this, so drop the duplicate suggestion line.
               const shownSug = r.payday ? r.suggestions.filter((s) => !s.startsWith("ช่วงเงินเดือนออก")) : r.suggestions;
               return (
-              <div key={r.date} className="snap-start shrink-0 w-52 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-2">
+              <div key={r.date} className="snap-start shrink-0 w-52 rounded-xl bg-slate-50 p-3 flex flex-col gap-2">
                 <div className="flex items-start justify-between gap-1.5">
                   <div className="min-w-0">
                     <div className="text-[15px] font-bold text-slate-800">{bigDate(r.date, r.dow)}</div>
@@ -258,8 +258,8 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
                       read as an odd oversized/extrabold figure (owner 2026-09-27). */}
                   <div className={`text-base font-bold ${r.closed ? "text-rose-500" : "text-slate-900"}`}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)}` : "—")}</div>
                   {barPct > 0 && (
-                    <div className="mt-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-brand" style={{ width: `${barPct}%` }} />
+                    <div className="mt-1 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                      <div className="h-full rounded-full bg-brand" style={{ width: `${barPct}%` }} />
                     </div>
                   )}
                 </div>
