@@ -131,7 +131,7 @@ export function branchForecast(branchId: number, fromIso: string, days: number, 
         if (predictedNett >= meanWeekday * 1.1) suggestions.push(isClinic ? "คาดคนไข้เยอะ — เตรียมคิว/เวชภัณฑ์ให้พอ" : "คาดขายดี — จัดกำลังคนเต็ม เตรียมของให้พอ");
         else if (predictedNett <= meanWeekday * 0.85) suggestions.push(isClinic ? "คาดเงียบ — จัดตารางเบา" : "คาดเงียบ — ลดกำลังคน / จัดโปรฯ กระตุ้น");
       }
-      if (holiday) suggestions.push(`${holiday} — พฤติกรรมลูกค้าอาจเปลี่ยน เช็กสต็อก/กำลังคนล่วงหน้า`);
+      if (holiday) suggestions.push(isClinic ? `${holiday} — พฤติกรรมคนไข้อาจเปลี่ยน เช็กคิว/กำลังคนล่วงหน้า` : `${holiday} — พฤติกรรมลูกค้าอาจเปลี่ยน เช็กสต็อก/กำลังคนล่วงหน้า`);
       if (payday && !isClinic) suggestions.push("ช่วงเงินเดือนออก — มักคึกคัก เตรียมของ/คนเพิ่ม");
     }
 
@@ -149,8 +149,10 @@ export function attachWeather(fc: BranchForecast, weatherByDate: Record<string, 
     if (!w) continue;
     r.weather = w;
     if (r.closed) continue;
-    if (w.rainChance != null && w.rainChance >= 60) r.suggestions.push("ฝนน่าจะตก — เดลิเวอรีอาจเพิ่ม หน้าร้านอาจลด เตรียมร่ม/ที่นั่งในร่ม");
-    if (w.tempMax != null && w.tempMax >= 35) r.suggestions.push("อากาศร้อน — เครื่องดื่ม/ของเย็นน่าจะขายดี");
+    // Clinic has no delivery / dine-in seating, so its weather advice differs
+    // from the restaurant's (owner 2026-09-27).
+    if (w.rainChance != null && w.rainChance >= 60) r.suggestions.push(fc.isClinic ? "ฝนน่าจะตก — คนไข้อาจเดินทางลำบาก เผื่อคิว/นัดหมายบางลง" : "ฝนน่าจะตก — เดลิเวอรีอาจเพิ่ม หน้าร้านอาจลด เตรียมร่ม/ที่นั่งในร่ม");
+    if (w.tempMax != null && w.tempMax >= 35) r.suggestions.push(fc.isClinic ? "อากาศร้อน — เตรียมน้ำดื่ม/ที่พักรอให้คนไข้สบาย" : "อากาศร้อน — เครื่องดื่ม/ของเย็นน่าจะขายดี");
   }
 }
 

@@ -13,7 +13,7 @@ import type { BranchForecast, ForecastWeather } from "@/lib/forecast";
 // A backdated section (owner 2026-09-27: "ให้ทีมแท็กโน้ตย้อนหลังได้ด้วย") lets the
 // team tag past days too, for record-keeping / after-the-fact context.
 
-const baht = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
+const baht = (n: number) => `${Math.round(n).toLocaleString("th-TH")} บาท`;
 // Keep in sync with EVENT_NOTE_MAX in src/lib/event-notes.ts (that module pulls in
 // getDb, so it can't be imported into this client component).
 const EVENT_NOTE_MAX = 200;
@@ -228,8 +228,8 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
           {/* Plan summary (owner 2026-09-27): total predicted + strongest day at a glance. */}
           {openCount > 0 && (
             <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 flex flex-wrap gap-x-5 gap-y-1">
-              <span>แผน {fc.days} วันนี้ · คาดยอดรวม <span className="font-bold text-emerald-700">~{baht(totalPred)}</span></span>
-              {strongest && <span>วันแรงสุด <span className="font-semibold text-slate-800">{bigDate(strongest.date, strongest.dow)}</span> (~{baht(strongest.predictedNett ?? 0)})</span>}
+              <span>แผน {fc.days} วันนี้ · คาดยอดรวม <span className="font-bold text-emerald-700">{baht(totalPred)}</span> (โดยประมาณ)</span>
+              {strongest && <span>วันแรงสุด <span className="font-semibold text-slate-800">{bigDate(strongest.date, strongest.dow)}</span> ({baht(strongest.predictedNett ?? 0)})</span>}
             </div>
           )}
           {/* Horizontal swipe strip (owner 2026-09-27: "เอาเป็นสไลด์ข้าง") — one
@@ -256,7 +256,8 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
                 <div>
                   {/* Match the page's KPI numbers (text-base font-bold) so this doesn't
                       read as an odd oversized/extrabold figure (owner 2026-09-27). */}
-                  <div className={`text-base font-bold ${r.closed ? "text-rose-500" : "text-slate-900"}`}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)}` : "—")}</div>
+                  <div className={`text-base font-bold ${r.closed ? "text-rose-500" : "text-slate-900"}`}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? baht(r.predictedNett) : "—")}</div>
+                  {!r.closed && r.predictedNett != null && <div className="text-[10px] text-slate-400 leading-none">โดยประมาณ</div>}
                   {barPct > 0 && (
                     <div className="mt-1 h-1.5 rounded-full bg-slate-200 overflow-hidden">
                       <div className="h-full rounded-full bg-brand" style={{ width: `${barPct}%` }} />

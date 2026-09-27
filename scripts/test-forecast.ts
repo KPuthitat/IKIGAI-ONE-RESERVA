@@ -46,6 +46,15 @@ process.env.DATABASE_PATH = TMP;
     return !!d && d.weather?.rainChance === 70 && d.suggestions.some((s) => s.includes("ฝน")) && d.suggestions.some((s) => s.includes("ร้อน"));
   })());
   ok("forecast: days=3 → 3 แถว", branchForecast(999999, "2026-12-04", 3, [], false).rows.length === 3);
+  // Clinic weather advice must not mention delivery / dine-in seating (owner 2026-09-27).
+  ok("forecast: clinic weather advice is clinic-appropriate (no เดลิเวอรี/ที่นั่ง)", (() => {
+    const cf = branchForecast(999999, "2026-12-04", 7, [], true);
+    attachWeather(cf, { "2026-12-05": { tempMax: 36, tempMin: 26, rainChance: 70, summary: "ฝน" } });
+    const d = cf.rows.find((r) => r.date === "2026-12-05");
+    if (!d) return false;
+    const joined = d.suggestions.join(" ");
+    return joined.includes("คนไข้") && !joined.includes("เดลิเวอรี") && !joined.includes("ที่นั่ง");
+  })());
   ok("forecast: isClinic flag propagates (payday badge gating)", branchForecast(999999, "2026-12-04", 3, [], true).isClinic === true && branchForecast(999999, "2026-12-04", 3, [], false).isClinic === false);
 
   // ── Team-tagged event notes (owner 2026-09-27) ──────────────────────────────
