@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { BranchForecast } from "@/lib/forecast";
+import type { BranchForecast, ForecastWeather } from "@/lib/forecast";
 
 // Forward plan (owner 2026-09-27): next few days' predicted sales + holidays +
 // weather + a น้องฮูก suggestion each. Fetched on its own (the weather lookup is a
@@ -30,6 +30,28 @@ function dateLabel(iso: string): string {
   // for viewers behind UTC).
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 }
+
+// Weather glyphs for the forward-plan strip (owner 2026-09-27: "มีไอคอนสภาพอากาศ
+// ด้วยดีไหม"). Derived from Open-Meteo's rain chance + high temp.
+function weatherIcon(w: ForecastWeather | null): string {
+  if (!w) return "";
+  if (w.rainChance != null && w.rainChance >= 60) return "🌧️";
+  if (w.rainChance != null && w.rainChance >= 30) return "🌦️";
+  if (w.tempMax != null && w.tempMax >= 35) return "☀️";
+  return "⛅";
+}
+function weatherLine(w: ForecastWeather | null): string {
+  if (!w) return "";
+  const temp = w.tempMax != null
+    ? (w.tempMin != null ? `${Math.round(w.tempMin)}–${Math.round(w.tempMax)}°` : `${Math.round(w.tempMax)}°`)
+    : "";
+  const rain = w.rainChance != null && w.rainChance >= 30 ? `💧${Math.round(w.rainChance)}%` : "";
+  return [temp, rain].filter(Boolean).join("  ");
+}
+// Big date header the owner asked for (owner 2026-09-27: "วันที่เป็นตัวใหญ่ๆ …
+// เช่น MON 28/09").
+const EN_DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const bigDate = (iso: string, dow: number) => `${EN_DOW[dow] ?? ""} ${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 const NOTES_URL = "/api/admin/reporta/event-notes";
 async function postNote(date: string, note: string) {
@@ -156,6 +178,9 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
     pastNotes.reduce((acc, n) => { (acc[n.eventDate] ??= []).push(n); return acc; }, {} as Record<string, EventNote[]>)
   ).sort((a, b) => (a[0] < b[0] ? 1 : -1));   // newest date first
 
+  // Peak predicted sales across the visible days — scales each card's magnitude bar.
+  const maxPred = fc ? Math.max(0, ...fc.rows.map((r) => (!r.closed && r.predictedNett != null ? r.predictedNett : 0))) : 0;
+
   return (
     <div className="card space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -190,30 +215,42 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
           {fc.momentumPct != null && (
             <div className="text-[11px] text-slate-500">โมเมนตัมล่าสุด (2 สัปดาห์ล่าสุด เทียบ 6 สัปดาห์ก่อน) <span className={fc.momentumPct >= 0 ? "text-emerald-600" : "text-rose-600"}>{fc.momentumPct >= 0 ? "▲" : "▼"} {Math.abs(fc.momentumPct).toFixed(1)}%</span></div>
           )}
-          <div className="divide-y divide-slate-100">
+          {/* Horizontal swipe strip (owner 2026-09-27: "เอาเป็นสไลด์ข้าง") — one
+              card per day, weather icon + high/low temp + rain, a magnitude bar
+              for the predicted sales, holiday/suggestions and the note tagging. */}
+          <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x snap-mandatory">
             {fc.rows.map((r) => {
               const dayNotes = notesByDate[r.date] ?? [];
+              const icon = weatherIcon(r.weather);
+              const wline = weatherLine(r.weather);
+              const wsummary = r.weather && r.weather.summary !== "อากาศปกติ" ? r.weather.summary : null;
+              const barPct = !r.closed && r.predictedNett != null && r.predictedNett > 0 && maxPred > 0 ? Math.max(6, Math.round((r.predictedNett / maxPred) * 100)) : 0;
               return (
-              <div key={r.date} className="py-2">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-sm font-semibold text-slate-800">{r.dowLabel} {Number(r.date.slice(8, 10))}</span>
-                  <span className={`text-sm font-bold tabular-nums ${r.closed ? "text-rose-500" : "text-slate-900"}`}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)}` : "—")}</span>
+              <div key={r.date} className="snap-start shrink-0 w-52 rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-1.5">
+                <div className="flex items-start justify-between gap-1">
+                  <div>
+                    <div className="text-base font-bold tracking-wide text-slate-800">{bigDate(r.date, r.dow)}</div>
+                    {(wsummary || wline) && <div className="text-[11px] text-slate-500 mt-0.5">{[wsummary, wline].filter(Boolean).join(" · ")}</div>}
+                  </div>
+                  {icon && <div className="text-2xl leading-none" title={r.weather?.summary ?? undefined}>{icon}</div>}
                 </div>
-                {(r.holiday || (r.weather && r.weather.summary !== "อากาศปกติ")) && (
-                  <div className="text-[11px] text-amber-700 mt-0.5">
-                    {[r.holiday, r.weather && r.weather.summary !== "อากาศปกติ" ? `${r.weather.summary}${r.weather.tempMax != null ? ` ${Math.round(r.weather.tempMax)}°` : ""}` : null].filter(Boolean).join(" · ")}
+                <div className={`text-lg font-bold tabular-nums ${r.closed ? "text-rose-500" : "text-slate-900"}`}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)}` : "—")}</div>
+                {barPct > 0 && (
+                  <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div className="h-full rounded-full bg-brand" style={{ width: `${barPct}%` }} />
                   </div>
                 )}
+                {r.holiday && <div className="text-[11px] text-amber-700 font-medium">🎌 {r.holiday}</div>}
                 {r.suggestions.length > 0 && (
-                  <ul className="mt-0.5 space-y-0.5">
+                  <ul className="space-y-0.5">
                     {r.suggestions.map((s, i) => (
-                      <li key={i} className="flex gap-1.5 text-[11px] text-slate-600"><span className="text-brand">•</span><span>{s}</span></li>
+                      <li key={i} className="flex gap-1 text-[11px] text-slate-600 leading-snug"><span className="text-brand">•</span><span>{s}</span></li>
                     ))}
                   </ul>
                 )}
                 {/* Team-tagged event notes for this day */}
                 {dayNotes.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1">
                     {dayNotes.map((n) => (
                       <span key={n.id} className="inline-flex items-center gap-1 rounded-full bg-violet-50 text-violet-700 text-[11px] px-2 py-0.5"
                         title={n.createdByName ? `แท็กโดย ${n.createdByName}` : undefined}>
@@ -225,19 +262,21 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
                   </div>
                 )}
                 {openFor === r.date ? (
-                  <div className="mt-1 flex items-center gap-1.5">
+                  <div className="flex flex-col gap-1 mt-auto">
                     <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={EVENT_NOTE_MAX}
                       onKeyDown={(e) => { if (e.key === "Enter") addNote(r.date); if (e.key === "Escape") { setOpenFor(null); setDraft(""); } }}
-                      placeholder="เช่น มีงานวิ่งใกล้ร้าน / ถนนปิด / เทศกาล"
-                      className="flex-1 rounded-md border border-slate-200 px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-violet-300" />
-                    <button type="button" onClick={() => addNote(r.date)} disabled={busy || !draft.trim()}
-                      className="text-[12px] font-semibold text-violet-700 px-2 py-1 disabled:opacity-40">บันทึก</button>
-                    <button type="button" onClick={() => { setOpenFor(null); setDraft(""); }}
-                      className="text-[12px] text-slate-400 hover:text-slate-600 px-1 py-1">ยกเลิก</button>
+                      placeholder="เช่น มีงานวิ่งใกล้ร้าน / ถนนปิด"
+                      className="w-full rounded-md border border-slate-200 px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-violet-300" />
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => addNote(r.date)} disabled={busy || !draft.trim()}
+                        className="text-[12px] font-semibold text-violet-700 disabled:opacity-40">บันทึก</button>
+                      <button type="button" onClick={() => { setOpenFor(null); setDraft(""); }}
+                        className="text-[12px] text-slate-400 hover:text-slate-600">ยกเลิก</button>
+                    </div>
                   </div>
                 ) : (
                   <button type="button" onClick={() => { setOpenFor(r.date); setDraft(""); setNoteErr(null); }}
-                    className="mt-1 text-[11px] text-violet-600 hover:text-violet-800">+ โน้ตเหตุการณ์</button>
+                    className="text-[11px] text-violet-600 hover:text-violet-800 text-left mt-auto">+ โน้ตเหตุการณ์</button>
                 )}
               </div>
               );
