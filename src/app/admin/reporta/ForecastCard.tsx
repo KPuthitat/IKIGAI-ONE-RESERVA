@@ -247,13 +247,15 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
               <div key={r.date} className="snap-start shrink-0 w-52 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-2">
                 <div className="flex items-start justify-between gap-1.5">
                   <div className="min-w-0">
-                    <div className="text-[15px] font-extrabold text-slate-800">{bigDate(r.date, r.dow)}</div>
+                    <div className="text-[15px] font-bold text-slate-800">{bigDate(r.date, r.dow)}</div>
                     {(wsummary || wline) && <div className="text-[11px] text-slate-500 mt-0.5 truncate">{[wsummary, wline].filter(Boolean).join(" · ")}</div>}
                   </div>
                   {icon && <span className="shrink-0 text-xl leading-none" title={r.weather?.summary ?? undefined}>{icon}</span>}
                 </div>
                 <div>
-                  <div className={`font-extrabold ${r.closed ? "text-base text-rose-500" : "text-xl text-slate-900"}`}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)}` : "—")}</div>
+                  {/* Match the page's KPI numbers (text-base font-bold) so this doesn't
+                      read as an odd oversized/extrabold figure (owner 2026-09-27). */}
+                  <div className={`text-base font-bold ${r.closed ? "text-rose-500" : "text-slate-900"}`}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)}` : "—")}</div>
                   {barPct > 0 && (
                     <div className="mt-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                       <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-brand" style={{ width: `${barPct}%` }} />
