@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { branchTodayCol } from "@/lib/daily-col";
 import { isClinicaBranch } from "@/lib/clinica-db";
 import { clinicaMonth, clinicaWeek } from "@/lib/clinica-analytics";
-import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
+import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR, getBranchHours } from "@/lib/salesa-db";
 import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars, revshareIncomeForBranch, applyRevshareToTarget, remainingMonthOutlook, composeExpenseAnalysis } from "@/lib/salesa-analytics";
 import { expenseCategoryTotals, expenseAccrualTotal } from "@/lib/accounta-db";
 import { salesPushPlan } from "@/lib/salesa-push";
@@ -171,6 +171,7 @@ export function GET(req: Request) {
   // Clinic (CLINICA) analytics for the viewed month — only for a branch that has
   // imported HIS data (owner 2026-09-26).
   const clinica = isClinicaBranch(branchId) ? clinicaMonth(branchId, year, month, todayIso, target) : null;
+  const branchHours = getBranchHours(branchId);   // pins the peak-hours chart axis
 
-  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, clinicaSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook, expenseAnalysis, todayCol, clinica });
+  return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, clinicaSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook, expenseAnalysis, todayCol, clinica, branchHours });
 }

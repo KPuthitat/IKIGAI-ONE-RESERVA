@@ -8,12 +8,21 @@ import { useState } from "react";
 const DEFAULT_COLOR = "#0e2724";
 const PRESETS = ["#0e2724", "#1e3a5f", "#5b21b6", "#9d174d", "#b45309", "#334155", "#166534", "#7c2d12"];
 
-export default function ReportaSettingsClient({ initialGroupId, initialTarget, initialMerchant, initialColor, initialOpensOn }: { initialGroupId: string | null; initialTarget: number | null; initialMerchant: string | null; initialColor: string | null; initialOpensOn: string | null }) {
+type Hours = { open: string; close: string; breakStart: string | null; breakEnd: string | null; breakWeekdayOnly: boolean };
+
+export default function ReportaSettingsClient({ initialGroupId, initialTarget, initialMerchant, initialColor, initialOpensOn, initialHours }: { initialGroupId: string | null; initialTarget: number | null; initialMerchant: string | null; initialColor: string | null; initialOpensOn: string | null; initialHours: Hours | null }) {
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
   const [target, setTarget] = useState(initialTarget != null ? String(initialTarget) : "");
   const [merchant, setMerchant] = useState(initialMerchant ?? "");
   const [color, setColor] = useState(initialColor ?? DEFAULT_COLOR);
   const [opensOn, setOpensOn] = useState(initialOpensOn ?? "");
+  // Operating hours (owner 2026-09-27). Empty open/close = ไม่ตั้ง (chart falls
+  // back to the hours that have data).
+  const [openT, setOpenT] = useState(initialHours?.open ?? "");
+  const [closeT, setCloseT] = useState(initialHours?.close ?? "");
+  const [breakStartT, setBreakStartT] = useState(initialHours?.breakStart ?? "");
+  const [breakEndT, setBreakEndT] = useState(initialHours?.breakEnd ?? "");
+  const [breakWeekday, setBreakWeekday] = useState(initialHours?.breakWeekdayOnly ?? true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -22,6 +31,11 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget, i
     const t = target.replace(/[, ]/g, "").trim();
     const targetNum = t === "" ? null : Number(t);
     if (targetNum != null && !Number.isFinite(targetNum)) { setMsg({ kind: "err", text: "เป้ายอดต้องเป็นตัวเลข" }); setSaving(false); return; }
+    // Hours: both open & close, or neither. A half-filled break is dropped.
+    if ((openT && !closeT) || (!openT && closeT)) { setMsg({ kind: "err", text: "กรอกเวลาเปิดและปิดให้ครบ" }); setSaving(false); return; }
+    const hours: Hours | null = openT && closeT
+      ? { open: openT, close: closeT, breakStart: (breakStartT && breakEndT) ? breakStartT : null, breakEnd: (breakStartT && breakEndT) ? breakEndT : null, breakWeekdayOnly: breakWeekday }
+      : null;
     try {
       const r = await fetch("/api/admin/reporta/settings", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -29,12 +43,12 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget, i
         // branches.opens_on column (also editable in RESERVA), so re-sending an
         // untouched value could revert a concurrent edit there.
         body: JSON.stringify({
-          lineGroupId: groupId.trim() || null, monthlyTarget: targetNum, merchantName: merchant.trim() || null, cardColor: color,
+          lineGroupId: groupId.trim() || null, monthlyTarget: targetNum, merchantName: merchant.trim() || null, cardColor: color, hours,
           ...(opensOn !== (initialOpensOn ?? "") ? { opensOn: opensOn || null } : {})
         })
       }).then((x) => x.json());
       if (r.ok) setMsg({ kind: "ok", text: "บันทึกแล้ว" });
-      else setMsg({ kind: "err", text: r.error ?? "บันทึกไม่สำเร็จ" });
+      else setMsg({ kind: "err", text: r.error === "bad_hours" ? "เวลาทำการไม่ถูกต้อง" : (r.error ?? "บันทึกไม่สำเร็จ") });
     } catch { setMsg({ kind: "err", text: "บันทึกผิดพลาด" }); }
     setSaving(false);
   };
@@ -89,6 +103,27 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget, i
           </div>
         </div>
         <p className="text-xs text-slate-500 mt-1.5">แนะนำสีเข้มเพื่อให้ตัวอักษรสีขาวอ่านง่าย · แต่ละสาขาตั้งคนละสีได้ ระบบจำไว้ให้</p>
+      </div>
+      <div>
+        <label className="label">เวลาทำการ (เวลาที่คนไข้/ลูกค้าเข้ามาก จะอิงช่วงนี้)</label>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input type="time" value={openT} onChange={(e) => setOpenT(e.target.value)} className="input !w-32" aria-label="เวลาเปิด" />
+          <span className="text-slate-400">–</span>
+          <input type="time" value={closeT} onChange={(e) => setCloseT(e.target.value)} className="input !w-32" aria-label="เวลาปิด" />
+        </div>
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-slate-500">พักช่วง (ถ้ามี)</span>
+          <input type="time" value={breakStartT} onChange={(e) => setBreakStartT(e.target.value)} className="input !w-28" aria-label="พักเริ่ม" />
+          <span className="text-slate-400">–</span>
+          <input type="time" value={breakEndT} onChange={(e) => setBreakEndT(e.target.value)} className="input !w-28" aria-label="พักถึง" />
+          <label className="flex items-center gap-1.5 text-xs text-slate-600 ml-1">
+            <input type="checkbox" checked={breakWeekday} onChange={(e) => setBreakWeekday(e.target.checked)} />
+            พักเฉพาะวันธรรมดา (เสาร์–อาทิตย์ ไม่พัก)
+          </label>
+        </div>
+        <p className="text-xs text-slate-500 mt-1.5">
+          กราฟ<b>ช่วงเวลาที่ลูกค้า/คนไข้เข้ามาก</b>จะตรึงแกนตามเวลานี้ · เช่น คลินิก 09:00–21:00 (ตามใบอนุญาต สพ.7/สพ.19) · ร้านอาหาร 11:00–21:00 พัก 14:00–16:00 (จ–ศ) · เว้นว่าง = อิงเฉพาะชั่วโมงที่มีบิล
+        </p>
       </div>
       <button onClick={save} disabled={saving} className="btn-primary text-sm disabled:opacity-50">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
     </div>
