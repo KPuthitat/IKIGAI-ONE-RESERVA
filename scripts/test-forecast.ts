@@ -56,6 +56,7 @@ process.env.DATABASE_PATH = TMP;
   addEventNote(branch, "2026-12-05", "ถนนหน้าร้านปิด", null);   // 2nd note same day
   addEventNote(branch, "2026-12-07", "เทศกาลกินเจ", null);
   ok("event-notes: reject blank + bad date", addEventNote(branch, "2026-12-05", "   ", null) === null && addEventNote(branch, "bad-date", "x", null) === null);
+  ok("event-notes: reject impossible calendar date (regex-valid but not real)", addEventNote(branch, "2026-02-30", "x", null) === null && addEventNote(branch, "2026-13-01", "x", null) === null);
 
   const list = listEventNotes(branch, "2026-12-01", "2026-12-31");
   ok("event-notes: list returns 3 in range, date/id order", list.length === 3 && list[0].eventDate === "2026-12-05" && list[2].eventDate === "2026-12-07");
