@@ -7,6 +7,7 @@ import ClinicaWeekCard from "./ClinicaWeekCard";
 import EventNotesView from "./EventNotesView";
 import ForecastCard from "./ForecastCard";
 import type { ClinicaWeek } from "@/lib/clinica-analytics";
+import type { BranchForecast } from "@/lib/forecast";
 import { hourSpan, hoursLabel, type HoursWindow } from "@/lib/hours";
 import ClinicaImportClient from "./clinica/ClinicaImportClient";
 import { clinicaPaidPct } from "@/lib/clinica-shared";
@@ -657,9 +658,13 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
   };
 
   // Send the forward plan (next 3–7 days) to the HOD group (owner 2026-09-27).
+  // The preview re-fetches the forecast for the same `days` (the send route runs
+  // the identical forecastForBranch), so what's shown matches what's sent —
+  // fresh notes/weather included (owner: "พรีวิวไม่ตรงกับที่ส่งจริง").
   const sendForecast = (days: number) => {
     setPin({
       title: `ส่งแผนล่วงหน้า ${days} วัน`,
+      preview: <ForecastPreview days={days} branchName={branchName} operator={operatorName} color={cardColor} />,
       run: async (p) => {
         const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "forecast", days, pin: p }) }).then((x) => x.json());
         if (r.ok) setMsg({ kind: "ok", text: "ส่งแผนล่วงหน้าเข้ากลุ่มบริหารแล้ว" });
@@ -2156,6 +2161,58 @@ function WeeklyPreview({ w, branchName, operator, color }: { w: WeeklyAnalytics;
       {w.bestDate && <PRow label="วันขายดีสุด" value={`${w.days.find((d) => d.date === w.bestDate)?.dateLabel ?? w.bestDate} · ${baht(w.bestNett ?? 0)}`} />}
       <PMenu title="เมนูทำรายได้สูงสุดประจำสัปดาห์" list={w.topItems} />
       <EventNotesView days={w.eventNotes} />
+    </CardShell>
+  );
+}
+
+/** Preview of the forward-plan LINE card. It re-fetches the forecast for the same
+ *  `days` the send uses (both hit forecastForBranch server-side), so the preview
+ *  reflects what is actually sent — fresh notes/weather and all — instead of a
+ *  stale client snapshot (owner 2026-09-27: "พรีวิวไม่ตรงกับที่ส่งจริง"). Number
+ *  format (2dp + บาท) and Thai weekday label match salesaForecastFlex. */
+function ForecastPreview({ days, branchName, operator, color }: { days: number; branchName: string; operator: string; color: string }) {
+  const [fc, setFc] = useState<BranchForecast | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true; setLoading(true);
+    fetch(`/api/admin/reporta/forecast?days=${days}`, { cache: "no-store" })
+      .then((x) => x.json())
+      .then((r) => { if (alive && r.ok) setFc(r.forecast as BranchForecast); })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [days]);
+  return (
+    <CardShell color={color} title="แผนล่วงหน้า" subtitle={`${days} วันข้างหน้า · ${branchName}`}>
+      <div className="font-bold text-slate-800">{branchName}</div>
+      <div className="text-[11px] text-slate-400">วางแผนโดย: {operator}</div>
+      {loading ? (
+        <div className="text-[11px] text-slate-400 py-2">กำลังโหลดตัวอย่าง…</div>
+      ) : !fc ? (
+        <div className="text-[11px] text-slate-400 py-2">โหลดตัวอย่างไม่สำเร็จ</div>
+      ) : (
+        <>
+          {fc.momentumPct != null && (
+            <div className="text-[10px] text-slate-500">โมเมนตัมล่าสุด <span className={fc.momentumPct >= 0 ? "text-emerald-600" : "text-rose-600"}>{fc.momentumPct >= 0 ? "▲" : "▼"} {Math.abs(fc.momentumPct).toFixed(1)}%</span></div>
+          )}
+          {sepline}
+          {fc.rows.map((r) => {
+            const badge = [r.holiday, r.weather && r.weather.summary !== "อากาศปกติ" ? r.weather.summary : null].filter(Boolean).join(" · ");
+            return (
+              <div key={r.date} className="py-0.5">
+                <div className="flex justify-between text-sm">
+                  <span className="font-semibold text-slate-700">{r.dowLabel} {Number(r.date.slice(8, 10))}</span>
+                  <span className={r.closed ? "text-rose-500" : "font-bold text-slate-900"}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)} บาท` : "—")}</span>
+                </div>
+                {badge && <div className="text-[10px] text-amber-700">{badge}</div>}
+                {r.eventNotes.slice(0, 3).map((n, i) => <div key={i} className="text-[10px] text-violet-700">📌 {n}</div>)}
+                {r.eventNotes.length > 3 && <div className="text-[10px] text-violet-700">📌 +{r.eventNotes.length - 3} เพิ่มเติม</div>}
+                {r.suggestions.length > 0 && <div className="text-[10px] text-slate-500">• {r.suggestions[0]}</div>}
+              </div>
+            );
+          })}
+        </>
+      )}
     </CardShell>
   );
 }

@@ -71,6 +71,7 @@ export type ForecastDay = {
 };
 export type BranchForecast = {
   fromDate: string; days: number; hasBaseline: boolean;
+  isClinic: boolean;                // clinic branch → payday is not treated as a driver
   momentumPct: number | null;       // recent 2 weeks vs trailing 8 weeks, %
   lat: number | null; lon: number | null;
   rows: ForecastDay[];
@@ -137,7 +138,7 @@ export function branchForecast(branchId: number, fromIso: string, days: number, 
     rows.push({ date, dow, dowLabel: TH_WEEKDAYS[dow], closed, weekdayAvg, predictedNett, holiday, payday, weather: null, eventNotes: [], suggestions });
   }
 
-  return { fromDate: fromIso, days, hasBaseline, momentumPct, lat: null, lon: null, rows };
+  return { fromDate: fromIso, days, hasBaseline, isClinic, momentumPct, lat: null, lon: null, rows };
 }
 
 /** Fold a best-effort weather forecast (keyed by ISO date) onto the plan, adding
