@@ -14,7 +14,7 @@ process.env.DATABASE_PATH = TMP;
   const { getDb } = await import("../src/lib/db");
   const db = getDb();   // init schema (salesa_daily etc.)
   const { branchForecast, holidayOn, attachWeather, attachEventNotes } = await import("../src/lib/forecast");
-  const { addEventNote, listEventNotes, eventNotesByDate, deleteEventNote } = await import("../src/lib/event-notes");
+  const { addEventNote, listEventNotes, eventNotesByDate, eventNotesForDay, eventNotesForRange, deleteEventNote } = await import("../src/lib/event-notes");
 
   let passed = 0, failed = 0;
   const ok = (n: string, c: boolean) => { if (c) { passed++; console.log(`  ✓ ${n}`); } else { failed++; console.error(`  ✗ FAIL: ${n}`); } };
@@ -65,6 +65,16 @@ process.env.DATABASE_PATH = TMP;
 
   const byDate = eventNotesByDate(branch, "2026-12-01", "2026-12-31");
   ok("event-notes: byDate groups (2 on 12-05, 1 on 12-07)", byDate["2026-12-05"]?.length === 2 && byDate["2026-12-07"]?.length === 1);
+
+  // Report-fold readers (owner 2026-09-27: notes in daily/weekly reports).
+  ok("event-notes: forDay returns just that day's strings", (() => {
+    const d = eventNotesForDay(branch, "2026-12-05");
+    return d.length === 2 && d.includes("มีงานวิ่งใกล้ร้าน") && eventNotesForDay(branch, "2026-12-06").length === 0;
+  })());
+  ok("event-notes: forRange groups per day with a label, ascending", (() => {
+    const rng = eventNotesForRange(branch, "2026-12-01", "2026-12-31", (iso) => `L:${iso}`);
+    return rng.length === 2 && rng[0].date === "2026-12-05" && rng[0].dateLabel === "L:2026-12-05" && rng[0].notes.length === 2 && rng[1].date === "2026-12-07";
+  })());
 
   const fcNotes = branchForecast(branch, "2026-12-04", 7, [], false);
   attachEventNotes(fcNotes, byDate);

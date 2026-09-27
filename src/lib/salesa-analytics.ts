@@ -7,6 +7,7 @@ import type { MenuEntry } from "./salesa-parse";
 import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTarget, branchIdsWithTarget, branchOpensOn, type DailyRow } from "./salesa-db";
 import { clinicaRangeAgg, clinicaMaxBillDayInMonth, clinicaBranchesWithBillsInYear, clinicaMonthlyNet, clinicaDailyNet, clinicaYtdProjection } from "./clinica-db";
 import { getDb } from "./db";
+import { eventNotesForDay, eventNotesForRange, type EventNoteDay } from "./event-notes";
 
 function addDaysIso(iso: string, n: number): string {
   const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n);
@@ -66,6 +67,7 @@ export type DailyAnalytics = {
   topCategories: MenuRank[];
   peakHour: number | null;      // busiest hour by nett (receipt data), else null
   advice: string[];             // auto summary + short recommendations (2–4 lines)
+  eventNotes: string[];         // team-tagged context for this day (owner 2026-09-27)
 };
 
 /** Auto-generated executive summary + short recommendations for one day
@@ -180,7 +182,8 @@ export function dailyAnalytics(branchId: number, date: string, topN = 5): DailyA
     bottomItems: items.length > topN ? attachUnits(items.slice(-topN).reverse(), unitsByName) : [],
     topCategories: cats.slice(0, topN),
     peakHour,
-    advice: dailyAdvice({ metrics, wowHasData, wowLabel: `วัน${weekdayTh}ที่แล้ว`, momHasData, momLabel: `สะสม ${dom} วันแรก · เดือนก่อน`, discountPct, voidPct, topItems, peakHour })
+    advice: dailyAdvice({ metrics, wowHasData, wowLabel: `วัน${weekdayTh}ที่แล้ว`, momHasData, momLabel: `สะสม ${dom} วันแรก · เดือนก่อน`, discountPct, voidPct, topItems, peakHour }),
+    eventNotes: eventNotesForDay(branchId, date)
   };
 }
 
@@ -437,6 +440,7 @@ export type WeeklyAnalytics = {
   topCategories: MenuRank[];
   menuRisers: MenuMomentum[];   // biggest revenue gains vs last week (owner B)
   menuFallers: MenuMomentum[];  // biggest revenue drops vs last week
+  eventNotes: EventNoteDay[];   // team-tagged context per day this week (owner 2026-09-27)
 };
 
 /** A menu's week-over-week revenue change (owner 2026-09-17, B). */
@@ -509,7 +513,8 @@ export function weeklyAnalytics(branchId: number, weekStart: string, topN = 5): 
     topItems: attachUnits(items.slice(0, topN), unitsByName),
     topCategories: cats.slice(0, topN),
     menuRisers,
-    menuFallers
+    menuFallers,
+    eventNotes: eventNotesForRange(branchId, start, end, thaiDate)
   };
 }
 

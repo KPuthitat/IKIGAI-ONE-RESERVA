@@ -62,6 +62,22 @@ export function eventNotesByDate(branchId: number, startIso: string, endIso: str
   return out;
 }
 
+/** Just the note strings for a single day, for a daily report card. */
+export function eventNotesForDay(branchId: number, date: string): string[] {
+  return listEventNotes(branchId, date, date).map((n) => n.note);
+}
+
+/** A day's worth of notes, with a display label supplied by the caller (keeps
+ *  this DB module free of formatting deps). */
+export type EventNoteDay = { date: string; dateLabel: string; notes: string[] };
+
+/** Notes over a range, grouped per day (ascending), only days that have notes —
+ *  for a weekly report card. `label` formats each ISO date (e.g. thaiDate). */
+export function eventNotesForRange(branchId: number, startIso: string, endIso: string, label: (iso: string) => string): EventNoteDay[] {
+  const grouped = eventNotesByDate(branchId, startIso, endIso);
+  return Object.keys(grouped).sort().map((date) => ({ date, dateLabel: label(date), notes: grouped[date] }));
+}
+
 /** Add a note. Trims and length-caps the text; rejects a blank note or a bad
  *  date. Returns the created row, or null when the input is invalid. */
 export function addEventNote(branchId: number, eventDate: string, note: string, userId: number | null): EventNote | null {
