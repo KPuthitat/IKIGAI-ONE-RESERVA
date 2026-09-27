@@ -115,7 +115,7 @@ type ExpenseCategoryRow = { name: string; spent: number; pctOfSales: number | nu
 type ExpenseAnalysis = { month: string; salesNett: number; expenseTotal: number; expensePrev: number | null; expensePrevPct: number | null; expenseToSalesPct: number | null; netProxy: number; categories: ExpenseCategoryRow[] };
 type TodayCol = { date: string; headcount: number; ftCount: number; ptCount: number; otherCount: number; laborCost: number; salesNett: number | null; colPct: number | null };
 // Festival / important-day analysis (owner 2026-09-20): each วันสำคัญ × each branch.
-type FestivalCell = { branchId: number; branchName: string; sales: number | null; monthAvg: number | null; upliftPct: number | null };
+type FestivalCell = { branchId: number; branchName: string; sales: number | null; baseline: number | null; upliftPct: number | null };
 type FestivalRow = { date: string; dateLabel: string; nameTh: string; branches: FestivalCell[] };
 type FestivalData = { year: number; branches: Array<{ id: number; name: string }>; rows: FestivalRow[] };
 // Full-year growth bars (owner 2026-09-21): per branch, monthly nett across the year.
@@ -1399,7 +1399,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                       ))}
                     </tbody>
                   </table>
-                  <p className="text-[11px] text-slate-400 mt-2">▲/▼ = ยอดวันนั้นเทียบกับยอดขายเฉลี่ยต่อวันของสาขาในเดือนเดียวกัน · แสดงเฉพาะวันสำคัญที่มีข้อมูลแล้ว</p>
+                  <p className="text-[11px] text-slate-400 mt-2">▲/▼ = ยอดวันนั้นเทียบกับค่าเฉลี่ยวันประเภทเดียวกัน (วันธรรมดา/เสาร์–อาทิตย์) ในเดือนเดียวกัน · แสดงเฉพาะวันสำคัญที่มีข้อมูลแล้ว</p>
                 </div>
               )}
             </div>

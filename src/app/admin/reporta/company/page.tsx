@@ -3,7 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { requirePermission, canModule, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu } from "@/lib/salesa-analytics";
+import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu, upcomingSpecialDaysOutlook } from "@/lib/salesa-analytics";
 import { getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import { companyMonthLabor } from "@/lib/daily-col";
 import { fmtMoney } from "@/lib/format";
@@ -68,6 +68,9 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
   const wk = companyWeekCompare(companyBranchIds, today);
   const bars = annualBranchBars(year, today, companyBranchIds);
   const fest = festivalAnalysis(year, today, companyBranchIds);
+  // Forward-looking special-days plan (owner 2026-09-27) — next 60 days of
+  // holidays with predicted uplift + prep suggestions for the exec team.
+  const upcoming = upcomingSpecialDaysOutlook(companyBranchIds, today, 60);
   const thDate = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return `${d} ${TH_MONTHS[m]}`; };
   // Top menu / categories รวมทุกสาขา. Window = 1..today for the current month, the
   // FULL month for a past month (matches the per-branch monthly view, and doesn't
@@ -317,6 +320,49 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
             </div>
           )}
 
+          {/* Upcoming special days — forward plan (owner 2026-09-27). For each
+              holiday in the next 60 days, the predicted uplift (from that day's own
+              history, vs the same day-type baseline) + prep suggestions per branch. */}
+          {upcoming.days.length > 0 && (
+            <div className="card space-y-3">
+              <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                <div className="text-sm font-bold text-slate-800">วันสำคัญที่กำลังจะมาถึง — เตรียมรับมือ</div>
+                <div className="text-[11px] text-slate-400">คาดการณ์จากประวัติวันเดียวกันปีก่อนๆ · 60 วันข้างหน้า</div>
+              </div>
+              <div className="space-y-3">
+                {upcoming.days.map((d) => (
+                  <div key={d.date} className="rounded-xl border border-slate-200 p-3">
+                    <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                      <div className="font-semibold text-slate-800">{d.nameTh}</div>
+                      <div className="text-[11px] text-slate-500">วัน{d.dowLabel}ที่ {Number(d.date.slice(8, 10))} {TH_MONTHS[Number(d.date.slice(5, 7))]} · อีก {d.daysAway} วัน{d.weekend ? " · เสาร์–อาทิตย์" : ""}</div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {d.branches.map((b) => (
+                        <div key={b.branchId} className="rounded-lg bg-slate-50 p-2.5">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-sm font-medium text-slate-700">{b.branchName}</span>
+                            {b.expectedUpliftPct != null
+                              ? <span className="text-[11px]">คาด <Pct pct={b.expectedUpliftPct} /></span>
+                              : <span className="text-[11px] text-slate-300">ยังไม่มีประวัติ</span>}
+                          </div>
+                          {b.expectedNett != null && (
+                            <div className="text-[11px] text-slate-500">คาดยอด ~฿{baht(b.expectedNett)} (ปกติ ฿{baht(b.baselineDaily ?? 0)}/วัน)</div>
+                          )}
+                          <ul className="mt-1 space-y-0.5">
+                            {b.suggestions.map((s, i) => (
+                              <li key={i} className="flex gap-1 text-[11px] text-slate-600 leading-snug"><span className="text-brand">•</span><span>{s}</span></li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-400">% คาด = ค่าเฉลี่ยอัพลิฟต์ของวันนี้ในอดีต เทียบกับค่าเฉลี่ยวันประเภทเดียวกัน (วันธรรมดา/เสาร์–อาทิตย์) · “generic” = ยังไม่มีประวัติวันนี้ ใช้ค่าเฉลี่ยวันหยุดทั่วไปแทน</p>
+            </div>
+          )}
+
           {/* Festival / important-day uplift (owner 2026-09-21), company-scoped.
               Collapsed by default (owner 2026-09-26: "วันสำคัญให้ซ่อนไว้ จะดูค่อยเปิด")
               — native <details> so a server component can toggle with no JS. */}
@@ -351,7 +397,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                   </tbody>
                 </table>
               </div>
-              <p className="text-[11px] text-slate-400 mt-2">▲/▼ = ยอดวันนั้นเทียบกับยอดขายเฉลี่ยต่อวันของสาขาในเดือนเดียวกัน</p>
+              <p className="text-[11px] text-slate-400 mt-2">▲/▼ = ยอดวันนั้นเทียบกับค่าเฉลี่ยวันประเภทเดียวกัน (วันธรรมดา/เสาร์–อาทิตย์) ในเดือนเดียวกัน</p>
             </details>
           )}
 
