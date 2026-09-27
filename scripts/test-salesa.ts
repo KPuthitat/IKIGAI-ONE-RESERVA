@@ -551,10 +551,12 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const fbA = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('fa','FEST-A',1)").run().lastInsertRowid);
   const fbB = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('fb','FEST-B',2)").run().lastInsertRowid);
   const fput = (bid: number, d: string, nett: number) => sdb.upsertDaily(bid, uid, { date: d, dateEnd: d, merchant: "FST", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 10, pax: 18, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / 10, avgPax: 1.8, avgSalesPax: nett / 18, payments: [], types: [], sources: [] });
-  // Songkran 13 Apr: branch A spikes (300 vs 100-avg → +200%), branch B flat (100 vs 100 → 0%).
+  // Songkran 13 Apr (Mon): branch A spikes (300 vs 100 weekday-avg → +200%), branch
+  // B flat (100 vs 100 → 0%). 14/15 Apr are also seeded Songkran holidays, so the
+  // baseline uses NORMAL weekdays (16/17 Apr) — not other holidays (owner 2026-09-27).
   db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-04-13", "วันสงกรานต์", "Songkran");
-  fput(fbA, "2026-04-13", 300); fput(fbA, "2026-04-14", 100); fput(fbA, "2026-04-15", 100);
-  fput(fbB, "2026-04-13", 100); fput(fbB, "2026-04-14", 100); fput(fbB, "2026-04-15", 100);
+  fput(fbA, "2026-04-13", 300); fput(fbA, "2026-04-16", 100); fput(fbA, "2026-04-17", 100);
+  fput(fbB, "2026-04-13", 100); fput(fbB, "2026-04-16", 100); fput(fbB, "2026-04-17", 100);
   // A festival with no sales at all (both branches) — must be dropped from the table.
   db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-01-01", "วันขึ้นปีใหม่", "New Year");
   // A future festival (after today 2026-09-20) — even if seeded, must be excluded.
@@ -568,9 +570,9 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   })());
   const songkran = fa.rows.find((r) => r.date === "2026-04-13");
   ok("festival: Songkran row present with Thai name", !!songkran && songkran.nameTh === "วันสงกรานต์");
-  ok("festival: branch A uplift +200% on Songkran", (() => {
+  ok("festival: branch A uplift +200% on Songkran (vs same-day-type baseline)", (() => {
     const c = songkran?.branches.find((x) => x.branchId === fbA);
-    return !!c && c.sales === 300 && near(c.monthAvg ?? -1, 100) && c.upliftPct === 200;
+    return !!c && c.sales === 300 && near(c.baseline ?? -1, 100) && c.upliftPct === 200;
   })());
   ok("festival: branch B flat (0% uplift)", (() => {
     const c = songkran?.branches.find((x) => x.branchId === fbB);
@@ -582,6 +584,41 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("festival: allowedBranchIds scopes columns to branch B only",
     faScoped.branches.length === 1 && faScoped.branches[0].id === fbB &&
     (faScoped.rows.find((r) => r.date === "2026-04-13")?.branches.length === 1));
+
+  // ── 14b) upcoming special-days outlook (owner 2026-09-27): for each holiday in
+  // the horizon, predict each branch's uplift from its OWN history of that day,
+  // measured against the SAME day-type baseline (weekday vs weekend). ──
+  const fbC = Number(db.prepare("INSERT INTO branches (slug,name,display_order) VALUES ('fc','FEST-C',3)").run().lastInsertRowid);
+  // A custom weekday special day with one past occurrence (Tue 14 Oct 2025 = 300)
+  // whose month has weekday peers (100,100) AND much-bigger weekend days (1000,1000):
+  // the weekday-only baseline is 100 → +200%, proving day-type segmentation.
+  db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2025-10-14", "วันทดสอบพิเศษ", "TestSpecial");
+  db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-10-14", "วันทดสอบพิเศษ", "TestSpecial");
+  fput(fbC, "2025-10-14", 300); fput(fbC, "2025-10-13", 100); fput(fbC, "2025-10-15", 100);
+  fput(fbC, "2025-10-18", 1000); fput(fbC, "2025-10-19", 1000); // weekend decoys — must be ignored
+  // Recent weekday baseline (in the trailing-8-week window before today 2026-09-20) = 200.
+  // Avoid 12 Aug (seeded วันแม่) so these plain weekdays don't feed the generic uplift.
+  fput(fbC, "2026-08-11", 200); fput(fbC, "2026-08-13", 200); fput(fbC, "2026-09-08", 200);
+  // Recent weekend baseline = 500 (distinct from the weekday 200).
+  fput(fbC, "2026-08-15", 500); fput(fbC, "2026-09-05", 500);
+  // A future weekend special day with NO same-name history → generic fallback.
+  db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-10-17", "วันทดสอบเสาร์", "TestSat");
+  // A special day 96 days out — beyond the 60-day horizon, must be excluded.
+  db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-12-25", "วันทดสอบไกล", "TestFar");
+
+  const outlook = analytics.upcomingSpecialDaysOutlook([fbA, fbB, fbC], "2026-09-20", 60);
+  const wkday = outlook.days.find((d) => d.date === "2026-10-14");
+  ok("outlook: upcoming weekday special day present, correct label + daysAway", !!wkday && wkday.nameTh === "วันทดสอบพิเศษ" && wkday.weekend === false && wkday.daysAway === 24);
+  ok("outlook: holiday beyond horizon (96 วัน) excluded", !outlook.days.some((d) => d.date === "2026-12-25"));
+  const cW = wkday?.branches.find((b) => b.branchId === fbC);
+  ok("outlook: FEST-C uplift +200% from same-day history, day-type baseline (not 550)", !!cW && cW.expectedUpliftPct === 200 && cW.basis === "same-day" && cW.sampleCount === 1);
+  ok("outlook: FEST-C weekday baseline ฿200, expected ฿600 (200×3)", !!cW && cW.baselineDaily === 200 && cW.expectedNett === 600);
+  ok("outlook: FEST-C prep suggestions cover วัตถุดิบ/อัตรากำลัง/โปรโมชั่น", !!cW && cW.suggestions.length >= 3 && cW.suggestions.some((s) => s.startsWith("วัตถุดิบ")) && cW.suggestions.some((s) => s.startsWith("โปรโมชั่น")));
+  const wkend = outlook.days.find((d) => d.date === "2026-10-17");
+  const cE = wkend?.branches.find((b) => b.branchId === fbC);
+  ok("outlook: weekend special day uses the WEEKEND baseline ฿500 (not weekday ฿200)", !!wkend && wkend.weekend === true && !!cE && cE.baselineDaily === 500);
+  ok("outlook: weekend day with no same-name history falls back to generic", !!cE && cE.basis === "generic" && cE.expectedUpliftPct === 200 && cE.expectedNett === 1500);
+  ok("outlook: no branches → empty", analytics.upcomingSpecialDaysOutlook([], "2026-09-20", 60).days.length === 0);
 
   // ── 15) annual target prorated to a branch's open span (owner 2026-09-21):
   // a branch whose branches.opens_on is mid-year (ไฮโปเปิด 25/07) must not be

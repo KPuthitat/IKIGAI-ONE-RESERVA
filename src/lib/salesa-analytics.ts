@@ -5,7 +5,7 @@
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
 import type { MenuEntry } from "./salesa-parse";
 import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTarget, branchIdsWithTarget, branchOpensOn, type DailyRow } from "./salesa-db";
-import { clinicaRangeAgg, clinicaMaxBillDayInMonth, clinicaBranchesWithBillsInYear, clinicaMonthlyNet, clinicaDailyNet, clinicaYtdProjection } from "./clinica-db";
+import { clinicaRangeAgg, clinicaMaxBillDayInMonth, clinicaBranchesWithBillsInYear, clinicaMonthlyNet, clinicaDailyNet, clinicaYtdProjection, isClinicaBranch, clinicaDailyNetRange } from "./clinica-db";
 import { getDb } from "./db";
 import { eventNotesForDay, eventNotesForRange, type EventNoteDay } from "./event-notes";
 
@@ -19,6 +19,19 @@ function daysInMonth(y: number, m: number): number {
 const TH_WEEKDAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 function thaiWeekday(iso: string): string {
   return TH_WEEKDAYS[new Date(`${iso}T00:00:00Z`).getUTCDay()];
+}
+function dowOf(iso: string): number { return new Date(`${iso}T00:00:00Z`).getUTCDay(); }
+// A special day's uplift compares against its OWN day-type — a weekday holiday vs
+// the weekday average, a weekend holiday vs the weekend average (owner 2026-09-27).
+function isWeekendIso(iso: string): boolean { const d = dowOf(iso); return d === 0 || d === 6; }
+/** Average daily nett of the "normal" days in the same calendar month and of the
+ *  same day-type as `date` — excluding `date` itself and any OTHER holiday, so a
+ *  holiday-dense month's baseline stays a true normal-day figure (owner 2026-09-27).
+ *  Shared by the festival table and the upcoming-days forecast so they never diverge. */
+function sameTypeBaseline(monthDays: Array<{ d: string; n: number }>, date: string, holidaySet: Set<string>): number | null {
+  const weekend = isWeekendIso(date);
+  const peers = monthDays.filter((x) => x.d !== date && !holidaySet.has(x.d) && isWeekendIso(x.d) === weekend);
+  return peers.length ? peers.reduce((s, x) => s + x.n, 0) / peers.length : null;
 }
 function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
 function pct(part: number, whole: number): number | null {
@@ -1418,8 +1431,8 @@ export function insightBundle(branchId: number, r: InsightRange): InsightBundle 
 export type FestivalBranchCell = {
   branchId: number; branchName: string;
   sales: number | null;      // that day's nett (null = no data)
-  monthAvg: number | null;   // avg daily nett that month (excl. the day itself)
-  upliftPct: number | null;  // (sales − monthAvg) / monthAvg × 100
+  baseline: number | null;   // avg daily nett of the SAME day-type that month (excl. the day)
+  upliftPct: number | null;  // (sales − baseline) / baseline × 100
 };
 export type FestivalRow = { date: string; dateLabel: string; nameTh: string; branches: FestivalBranchCell[] };
 export type FestivalAnalysis = { year: number; branches: Array<{ id: number; name: string }>; rows: FestivalRow[] };
@@ -1455,6 +1468,7 @@ export function festivalAnalysis(year: number, todayIso: string, allowedBranchId
   const holidays = db.prepare(
     "SELECT date, name_th FROM public_holidays WHERE substr(date, 1, 4) = ? ORDER BY date"
   ).all(yr) as Array<{ date: string; name_th: string }>;
+  const holidaySet = new Set(holidays.map((h) => h.date));
 
   // Pull only the branches we'll actually render (small droplet — avoid loading
   // every branch's year of dailies just to discard them for a per-branch admin).
@@ -1478,17 +1492,180 @@ export function festivalAnalysis(year: number, todayIso: string, allowedBranchId
     if (h.date > todayIso) continue; // future festival — no sales yet
     const cells: FestivalBranchCell[] = branches.map((br) => {
       const sales = byBranchDate.get(`${br.id}:${h.date}`) ?? null;
-      const monthDays = (byBranchMonth.get(`${br.id}:${h.date.slice(0, 7)}`) ?? []).filter((x) => x.d !== h.date);
-      const monthAvg = monthDays.length ? monthDays.reduce((s, x) => s + x.n, 0) / monthDays.length : null;
-      const upliftPct = (sales != null && monthAvg != null && monthAvg > 0)
-        ? Math.round(((sales - monthAvg) / monthAvg) * 1000) / 10 : null;
-      return { branchId: br.id, branchName: br.name, sales, monthAvg: monthAvg != null ? round2(monthAvg) : null, upliftPct };
+      // Baseline = same-month, same-day-type NORMAL days (excl. this day and other
+      // holidays) — a Songkran-Monday reads against weekdays, a Saturday festival
+      // against weekends (owner 2026-09-27).
+      const baseline = sameTypeBaseline(byBranchMonth.get(`${br.id}:${h.date.slice(0, 7)}`) ?? [], h.date, holidaySet);
+      const upliftPct = (sales != null && baseline != null && baseline > 0)
+        ? Math.round(((sales - baseline) / baseline) * 1000) / 10 : null;
+      return { branchId: br.id, branchName: br.name, sales, baseline: baseline != null ? round2(baseline) : null, upliftPct };
     });
     if (cells.some((c) => c.sales != null)) {
       rows.push({ date: h.date, dateLabel: thaiDate(h.date), nameTh: h.name_th, branches: cells });
     }
   }
   return { year, branches, rows };
+}
+
+// ── Upcoming special-days outlook (owner 2026-09-27) ─────────────────────────
+// Look ahead at public holidays / special days in the next `horizonDays`, and for
+// each one use past occurrences' sales history to predict this year's, so the exec
+// team can prep วัตถุดิบ / อัตรากำลัง / โปรโมชั่น ahead of time. Uplift is measured
+// against the SAME day-type baseline (weekday vs weekend), matching festivalAnalysis.
+
+export type SpecialDayBranchPrep = {
+  branchId: number; branchName: string; isClinic: boolean;
+  baselineDaily: number | null;      // recent typical daily nett of the upcoming day's type
+  expectedUpliftPct: number | null;  // avg historical uplift for this day (or generic holiday)
+  expectedNett: number | null;       // baselineDaily × (1 + uplift)
+  sampleCount: number;               // past occurrences that fed the uplift
+  basis: "same-day" | "generic" | "none";
+  suggestions: string[];
+};
+export type SpecialDayPrep = {
+  date: string; dateLabel: string; nameTh: string;
+  dow: number; dowLabel: string; weekend: boolean; daysAway: number;
+  branches: SpecialDayBranchPrep[];
+};
+export type SpecialDaysOutlook = { fromDate: string; horizonDays: number; days: SpecialDayPrep[] };
+
+/** A branch's realised daily net over an inclusive range — POS for a restaurant,
+ *  billed net for a clinic — as a date→nett map (positive days only). */
+function branchDailyNetMap(branchId: number, isClinic: boolean, startIso: string, endIso: string): Map<string, number> {
+  const m = new Map<string, number>();
+  if (isClinic) {
+    for (const d of clinicaDailyNetRange(branchId, startIso, endIso)) if (d.net > 0) m.set(d.date, d.net);
+  } else {
+    for (const d of listRange(branchId, startIso, endIso)) if (d.has_sales && d.nett > 0) m.set(d.sale_date, d.nett);
+  }
+  return m;
+}
+
+/** Average uplift (%) of the given past special-day dates for one branch, each
+ *  measured against its own month's same-day-type NORMAL-day average (via the
+ *  shared `sameTypeBaseline`, so it agrees with the festival table). */
+function avgUpliftForDates(daily: Map<string, number>, byMonth: Map<string, Array<{ d: string; n: number }>>, dates: string[], holidaySet: Set<string>): { uplift: number | null; count: number } {
+  const ups: number[] = [];
+  for (const d of dates) {
+    const sales = daily.get(d);
+    if (sales == null) continue;
+    const base = sameTypeBaseline(byMonth.get(d.slice(0, 7)) ?? [], d, holidaySet);
+    if (base != null && base > 0) ups.push(((sales - base) / base) * 100);
+  }
+  if (!ups.length) return { uplift: null, count: 0 };
+  return { uplift: round2(ups.reduce((s, n) => s + n, 0) / ups.length), count: ups.length };
+}
+
+function specialDaySuggestions(isClinic: boolean, upliftPct: number | null, expectedNett: number | null, holiday: string): string[] {
+  const out: string[] = [];
+  if (upliftPct == null) {
+    out.push("ยังไม่มีประวัติวันนี้ — เตรียมตามวันปกติ แล้วเฝ้าดูหน้างาน");
+    return out;
+  }
+  const up = Math.round(upliftPct), absUp = Math.abs(up);
+  const strongUp = upliftPct >= 15, strongDown = upliftPct <= -15;
+  if (isClinic) {
+    if (strongUp) {
+      out.push(`คนไข้มักมากกว่าวันปกติ ~${up}% — เปิดคิว/นัดหมายเพิ่ม`);
+      out.push("เตรียมเวชภัณฑ์/ยาให้พอ และจัดกำลังแพทย์–พยาบาลเผื่อ");
+    } else if (strongDown) {
+      out.push(`คนไข้มักน้อยกว่าวันปกติ ~${absUp}% — จัดตารางเวรเบาลงได้`);
+    } else {
+      out.push("คนไข้ใกล้เคียงวันปกติ — เตรียมกำลังคน/เวชภัณฑ์ตามปกติ");
+    }
+    return out;
+  }
+  if (strongUp) {
+    out.push(`วัตถุดิบ: เตรียมเพิ่มจากวันปกติ ~${up}%${expectedNett != null ? ` (คาดยอด ฿${Math.round(expectedNett).toLocaleString("th-TH")})` : ""}`);
+    out.push("อัตรากำลัง: จัดกะ/คนให้พอรับลูกค้าที่มากขึ้น");
+    out.push(`โปรโมชั่น: จัดเซ็ต/โปรฯ รับ${holiday} ดึงยอดเพิ่ม`);
+  } else if (strongDown) {
+    out.push(`วัตถุดิบ: ลดของสดลง ~${absUp}% — วันนี้มักเงียบ`);
+    out.push("อัตรากำลัง: จัดกำลังคนเบาลงได้");
+    out.push("โปรโมชั่น: จัดโปรฯ/โปรโมทเดลิเวอรีกระตุ้นยอด");
+  } else {
+    out.push("ยอดใกล้เคียงวันปกติ — เตรียมวัตถุดิบ/กำลังคนตามปกติ");
+  }
+  return out;
+}
+
+/** Forward-looking special-days plan for a set of branches. For each upcoming
+ *  holiday within the horizon, predicts each branch's uplift from its own history
+ *  of that same day (falling back to a generic-holiday average), and hands the
+ *  exec team prep suggestions. */
+export function upcomingSpecialDaysOutlook(branchIds: number[], todayIso: string, horizonDays = 60): SpecialDaysOutlook {
+  const out: SpecialDaysOutlook = { fromDate: todayIso, horizonDays, days: [] };
+  if (!branchIds.length) return out;
+  const db = getDb();
+  const endIso = addDaysIso(todayIso, horizonDays);
+
+  const upcoming = db.prepare(
+    "SELECT date, name_th FROM public_holidays WHERE date > ? AND date <= ? ORDER BY date"
+  ).all(todayIso, endIso) as Array<{ date: string; name_th: string }>;
+  if (!upcoming.length) return out;
+
+  // Past special days (for the uplift history), grouped by name for same-day
+  // matching plus a flat list for the generic-holiday fallback.
+  const past = db.prepare(
+    "SELECT date, name_th FROM public_holidays WHERE date <= ? ORDER BY date"
+  ).all(todayIso) as Array<{ date: string; name_th: string }>;
+  const pastByName = new Map<string, string[]>();
+  const pastAll: string[] = [];
+  for (const p of past) {
+    pastAll.push(p.date);
+    const arr = pastByName.get(p.name_th) ?? []; arr.push(p.date); pastByName.set(p.name_th, arr);
+  }
+  // Every holiday date (past + upcoming) is excluded from a "normal-day" baseline
+  // so a holiday-dense month doesn't drag the baseline toward the festival level.
+  const holidaySet = new Set<string>([...pastAll, ...upcoming.map((h) => h.date)]);
+
+  // Branch metadata + 2-year daily history (covers prior-year special days and a
+  // recent baseline) — built once per branch, with the trailing-8-week weekday and
+  // weekend baselines precomputed (they depend only on the branch, not the holiday).
+  const lookbackStart = addDaysIso(todayIso, -730);
+  const recentStart = addDaysIso(todayIso, -56);
+  const branchMeta = branchIds.map((id) => {
+    const row = db.prepare("SELECT name, display_order AS ord FROM branches WHERE id = ?").get(id) as { name: string; ord: number } | undefined;
+    const isClinic = isClinicaBranch(id);
+    const daily = branchDailyNetMap(id, isClinic, lookbackStart, endIso);
+    // Group by month for baseline lookups, and accumulate the recent same-type avgs.
+    const byMonth = new Map<string, Array<{ d: string; n: number }>>();
+    const recent = { wkday: [] as number[], wkend: [] as number[] };
+    for (const [d, n] of daily) {
+      const arr = byMonth.get(d.slice(0, 7)) ?? []; arr.push({ d, n }); byMonth.set(d.slice(0, 7), arr);
+      if (d >= recentStart && d <= todayIso) (isWeekendIso(d) ? recent.wkend : recent.wkday).push(n);
+    }
+    const avg = (xs: number[]) => xs.length ? round2(xs.reduce((s, n) => s + n, 0) / xs.length) : null;
+    return { id, name: row?.name ?? `สาขา #${id}`, ord: row?.ord ?? 0, isClinic, daily, byMonth, baseWkday: avg(recent.wkday), baseWkend: avg(recent.wkend) };
+  }).filter((b) => b.daily.size > 0) // only branches with any sales history
+    .sort((a, b) => (a.ord - b.ord) || a.name.localeCompare(b.name, "th"));
+  if (!branchMeta.length) return out;
+
+  for (const h of upcoming) {
+    const weekend = isWeekendIso(h.date);
+    const dow = dowOf(h.date);
+    const daysAway = Math.round((Date.parse(`${h.date}T00:00:00Z`) - Date.parse(`${todayIso}T00:00:00Z`)) / 86_400_000);
+    const branches: SpecialDayBranchPrep[] = branchMeta.map((b) => {
+      // Recent baseline for the upcoming day's own type (trailing 8 weeks).
+      const baselineDaily = weekend ? b.baseWkend : b.baseWkday;
+
+      // Uplift: this exact special day's history first, else any past holiday.
+      const same = avgUpliftForDates(b.daily, b.byMonth, pastByName.get(h.name_th) ?? [], holidaySet);
+      let uplift = same.uplift, count = same.count, basis: SpecialDayBranchPrep["basis"] = "same-day";
+      if (uplift == null) {
+        const generic = avgUpliftForDates(b.daily, b.byMonth, pastAll, holidaySet);
+        uplift = generic.uplift; count = generic.count; basis = generic.uplift != null ? "generic" : "none";
+      }
+      const expectedNett = (baselineDaily != null && uplift != null) ? round2(baselineDaily * (1 + uplift / 100)) : null;
+      return {
+        branchId: b.id, branchName: b.name, isClinic: b.isClinic,
+        baselineDaily, expectedUpliftPct: uplift, expectedNett, sampleCount: count, basis,
+        suggestions: specialDaySuggestions(b.isClinic, uplift, expectedNett, h.name_th),
+      };
+    });
+    out.days.push({ date: h.date, dateLabel: thaiDate(h.date), nameTh: h.name_th, dow, dowLabel: TH_WEEKDAYS[dow], weekend, daysAway, branches });
+  }
+  return out;
 }
 
 // ── Full-year growth bars (owner 2026-09-21) ─────────────────────────────────
