@@ -842,10 +842,14 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const bidCol = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('col','REST-COL')").run().lastInsertRowid);
   const ftU = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,employment_type,monthly_salary) VALUES ('ftcol','x','FT','staff','active','ft',30000)").run().lastInsertRowid);
   const ptU = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,employment_type,hourly_rate) VALUES ('ptcol','x','PT','staff','active','pt',100)").run().lastInsertRowid);
-  const teIns = db.prepare("INSERT INTO time_entries (user_id,branch_id,type,ts) VALUES (?,?,?,?)");
-  // 8-hour completed shift on 2026-09-26 (09:00–17:00 Bangkok) for both.
-  teIns.run(ftU, bidCol, "in", "2026-09-26T02:00:00Z"); teIns.run(ftU, bidCol, "out", "2026-09-26T10:00:00Z");
-  teIns.run(ptU, bidCol, "in", "2026-09-26T02:00:00Z"); teIns.run(ptU, bidCol, "out", "2026-09-26T10:00:00Z");
+  // Roster-based COL (owner 2026-09-27): book both on an 8h shift (09:00–17:00)
+  // via roster_assignments × shift_codes → FT 30000/30 + PT 8×100.
+  const scol = Number(db.prepare("INSERT INTO shift_codes (branch_id,code,name,start_time,end_time) VALUES (?,?,?,?,?)").run(bidCol, "D8", "D8", "09:00", "17:00").lastInsertRowid);
+  const pcolA = Number(db.prepare("INSERT INTO roster_positions (branch_id,title) VALUES (?,?)").run(bidCol, "P1").lastInsertRowid);
+  const pcolB = Number(db.prepare("INSERT INTO roster_positions (branch_id,title) VALUES (?,?)").run(bidCol, "P2").lastInsertRowid);
+  const raIns = db.prepare("INSERT INTO roster_assignments (branch_id,assignment_date,position_id,user_id,shift_code_id) VALUES (?,?,?,?,?)");
+  raIns.run(bidCol, "2026-09-26", pcolA, ftU, scol);
+  raIns.run(bidCol, "2026-09-26", pcolB, ptU, scol);
   sdb.upsertDaily(bidCol, uid, { date: "2026-09-26", dateEnd: "2026-09-26", merchant: "COL", nett: 10000, gross: 10000, grossBeforeCharges: 10000, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 10, pax: 15, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: 1000, avgPax: 1.5, avgSalesPax: 666, payments: [], types: [], sources: [] });
   const tc = dcol.branchTodayCol(bidCol, "2026-09-26");
   ok("COL วันนี้: เข้างาน 2 คน (ประจำ 1 · พาร์ทไทม์ 1)", tc.headcount === 2 && tc.ftCount === 1 && tc.ptCount === 1);

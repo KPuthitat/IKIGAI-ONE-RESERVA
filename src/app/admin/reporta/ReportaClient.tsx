@@ -885,7 +885,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <div className="text-[11px] text-slate-500">พนักงานเข้างาน</div>
+                <div className="text-[11px] text-slate-500">พนักงานตามตาราง</div>
                 <div className="text-lg font-bold text-slate-800 tabular-nums">{todayCol.headcount} คน</div>
                 <div className="text-[10px] text-slate-400">ประจำ {todayCol.ftCount} · พาร์ทไทม์ {todayCol.ptCount}{todayCol.otherCount > 0 ? ` · อื่นๆ ${todayCol.otherCount}` : ""}</div>
               </div>
@@ -901,7 +901,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
               </div>
             </div>
             <p className="text-[10px] text-slate-400">
-              คิดจากชั่วโมงที่ลงเวลาจริง × ค่าจ้าง (พาร์ทไทม์ รายชม. · ประจำ เงินเดือน÷30÷8) · คนที่ยังทำงานอยู่คิดถึงตอนนี้ · นับเฉพาะพนักงานจริง (ไม่รวมบัญชีทดสอบ/ลาออก)
+              คิดจากกะที่ลงตารางวันนี้ × ค่าจ้าง (พาร์ทไทม์ ชม.กะ × รายชม. · ประจำ เงินเดือน÷30 ต่อวัน) · นับรวมคนที่ไม่ต้องลงเวลา · เฉพาะพนักงานจริง (ไม่รวมบัญชีทดสอบ/ลาออก)
             </p>
           </div>
         )}
