@@ -8,7 +8,8 @@ import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics } from "@/lib/salesa-
 import { isClinicaBranch } from "@/lib/clinica-db";
 import { clinicaMonth, clinicaWeek, clinicaDay } from "@/lib/clinica-analytics";
 import { salesPushPlan } from "@/lib/salesa-push";
-import { salesaDailyFlex, salesaWeeklyFlex, salesaMonthlyFlex, salesaPushFlex, clinicaMonthlyFlex, clinicaWeeklyFlex, clinicaDailyFlex, notifySalesaHod } from "@/lib/salesa-line";
+import { forecastForBranch } from "@/lib/forecast";
+import { salesaDailyFlex, salesaWeeklyFlex, salesaMonthlyFlex, salesaPushFlex, salesaForecastFlex, clinicaMonthlyFlex, clinicaWeeklyFlex, clinicaDailyFlex, notifySalesaHod } from "@/lib/salesa-line";
 import { thMonthLabel } from "@/lib/th-month";
 
 // Push a REPORTA summary to the branch's HOD LINE group. PIN-gated (owner
@@ -18,7 +19,7 @@ import { thMonthLabel } from "@/lib/th-month";
 export const dynamic = "force-dynamic";
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const Body = z.object({
-  kind: z.enum(["daily", "weekly", "monthly", "push", "clinica", "clinica-daily", "clinica-weekly"]),
+  kind: z.enum(["daily", "weekly", "monthly", "push", "clinica", "clinica-daily", "clinica-weekly", "forecast"]),
   date: z.string().regex(ISO).optional(),
   week: z.string().regex(ISO).optional(),
   year: z.number().int().optional(),
@@ -89,6 +90,10 @@ export async function POST(req: Request) {
     const cw = clinicaWeek(branchId, week);
     if (cw.dayCount === 0) return NextResponse.json({ error: "no_days", message: "สัปดาห์นี้ยังไม่มีข้อมูลคลินิก" }, { status: 400 });
     flex = clinicaWeeklyFlex(cw, meta);
+  } else if (kind === "forecast") {
+    const fc = await forecastForBranch(branchId, days ?? 7);
+    if (!fc.hasBaseline) return NextResponse.json({ error: "no_baseline", message: "ยังมีข้อมูลย้อนหลังไม่พอจะคาดการณ์ — นำเข้าไฟล์ให้ครบก่อน" }, { status: 400 });
+    flex = salesaForecastFlex(fc, meta);
   } else {
     // push: short-horizon sales-push brief for the HOD.
     if (!days || !target) return NextResponse.json({ error: "push_input_required", message: "ระบุจำนวนวันและยอดเป้าหมาย" }, { status: 400 });

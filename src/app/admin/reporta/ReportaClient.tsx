@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import OwlMascot from "@/app/components/OwlMascot";
 import ClinicaSection, { type ClinicaMonth } from "./ClinicaSection";
 import ClinicaWeekCard from "./ClinicaWeekCard";
+import ForecastCard from "./ForecastCard";
 import type { ClinicaWeek } from "@/lib/clinica-analytics";
 import { hourSpan, hoursLabel, type HoursWindow } from "@/lib/hours";
 import ClinicaImportClient from "./clinica/ClinicaImportClient";
@@ -651,6 +652,18 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
     });
   };
 
+  // Send the forward plan (next 3–7 days) to the HOD group (owner 2026-09-27).
+  const sendForecast = (days: number) => {
+    setPin({
+      title: `ส่งแผนล่วงหน้า ${days} วัน`,
+      run: async (p) => {
+        const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "forecast", days, pin: p }) }).then((x) => x.json());
+        if (r.ok) setMsg({ kind: "ok", text: "ส่งแผนล่วงหน้าเข้ากลุ่มบริหารแล้ว" });
+        return r.ok ? { ok: true } : { ok: false, message: r.message ?? r.error };
+      }
+    });
+  };
+
   // แผนดันยอด — น้องฮูกแนะนำ (owner 2026-09-18).
   const runPush = async () => {
     const target = Math.floor(Number(pushTarget.replace(/[, ]/g, "")) || 0);
@@ -1036,6 +1049,11 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           </>
         )}
       </div>
+
+      {/* Forward plan — น้องฮูก predicts the next 3–7 days + holidays/weather +
+          suggestions (owner 2026-09-27). Shown for every branch (restaurant-focused;
+          a clinic gets a lighter version). */}
+      <ForecastCard hasLineGroup={hasLineGroup} onSend={sendForecast} />
 
       {/* Clinic weekly rollup (owner 2026-09-27: "การ์ดสัปดาห์เต็ม + เทียบสัปดาห์ก่อน") —
           mirrors the restaurant สรุปรายสัปดาห์ card with clinic metrics + the same
