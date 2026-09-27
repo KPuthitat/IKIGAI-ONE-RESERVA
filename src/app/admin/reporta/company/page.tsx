@@ -351,39 +351,46 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
             </details>
           )}
 
-          {/* Top menu / categories รวมทุกสาขา (owner 2026-09-21) */}
-          {(menu.items.length > 0 || menu.categories.length > 0) && (
+          {/* Top menu / categories — PER BRANCH, labelled (owner 2026-09-27:
+              "เมนูขายดีรวมสาขา แยกเถอะ … แยกเลเบล"). Two restaurants' menus can't be
+              read as one merged ranking, so each branch has its own list. */}
+          {menu.byBranch.length > 0 && (
             <div className="card">
-              <div className="text-sm font-bold text-slate-800 mb-1">ขายดีรวมทุกสาขา — {TH_MONTHS[month]} {year + 543}{isCurMonth ? ` (วันที่ 1–${menuDay})` : ""}</div>
+              <div className="text-sm font-bold text-slate-800 mb-2">ขายดีแยกตามสาขา — {TH_MONTHS[month]} {year + 543}{isCurMonth ? ` (วันที่ 1–${menuDay})` : ""}</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <div className="text-xs font-semibold text-slate-500 mb-1">เมนูทำรายได้สูงสุด</div>
-                  {menu.items.length === 0 ? <p className="text-xs text-slate-400">ยังไม่มีข้อมูลเมนู</p> : (
-                    <div className="space-y-1">
-                      {menu.items.map((it, i) => (
-                        <div key={it.name} className="flex items-baseline justify-between gap-2 text-sm">
-                          <span className="text-slate-700 truncate">{i + 1}. {it.name}{it.branchCount > 1 && <span className="text-[10px] text-slate-400 ml-1">({it.branchCount} สาขา)</span>}</span>
-                          <span className="tabular-nums text-slate-600 whitespace-nowrap">฿{baht(it.nett)}</span>
+                {menu.byBranch.map((b) => (
+                  <div key={b.branchId} className="rounded-xl border border-slate-200 p-3">
+                    <div className="text-sm font-bold text-slate-700 mb-1.5">{b.branchName}</div>
+                    {b.items.length > 0 && (
+                      <>
+                        <div className="text-[11px] font-semibold text-slate-500 mb-1">เมนูทำรายได้สูงสุด</div>
+                        <div className="space-y-1">
+                          {b.items.map((it, i) => (
+                            <div key={it.name} className="flex items-baseline justify-between gap-2 text-sm">
+                              <span className="text-slate-700 truncate">{i + 1}. {it.name}</span>
+                              <span className="tabular-nums text-slate-600 whitespace-nowrap">฿{baht(it.nett)}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-500 mb-1">หมวดทำรายได้สูงสุด</div>
-                  {menu.categories.length === 0 ? <p className="text-xs text-slate-400">ยังไม่มีข้อมูลหมวด</p> : (
-                    <div className="space-y-1">
-                      {menu.categories.map((c, i) => (
-                        <div key={c.name} className="flex items-baseline justify-between gap-2 text-sm">
-                          <span className="text-slate-700 truncate">{i + 1}. {c.name}{c.branchCount > 1 && <span className="text-[10px] text-slate-400 ml-1">({c.branchCount} สาขา)</span>}</span>
-                          <span className="tabular-nums text-slate-600 whitespace-nowrap">฿{baht(c.nett)}</span>
+                      </>
+                    )}
+                    {b.categories.length > 0 && (
+                      <>
+                        <div className="text-[11px] font-semibold text-slate-500 mt-2 mb-1">หมวดทำรายได้สูงสุด</div>
+                        <div className="space-y-1">
+                          {b.categories.map((c, i) => (
+                            <div key={c.name} className="flex items-baseline justify-between gap-2 text-sm">
+                              <span className="text-slate-700 truncate">{i + 1}. {c.name}</span>
+                              <span className="tabular-nums text-slate-600 whitespace-nowrap">฿{baht(c.nett)}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                      </>
+                    )}
+                  </div>
+                ))}
               </div>
-              <p className="text-[11px] text-slate-400 mt-2">ยอดขายสุทธิรวมทุกสาขาในบริษัท · แสดงสูงสุด 8 อันดับ · (N สาขา) = ขายที่กี่สาขา</p>
+              <p className="text-[11px] text-slate-400 mt-2">ยอดขายสุทธิของแต่ละสาขา · แสดงสูงสุด 8 อันดับต่อสาขา</p>
             </div>
           )}
         </>
