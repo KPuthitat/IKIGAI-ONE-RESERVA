@@ -48,10 +48,11 @@ function weatherLine(w: ForecastWeather | null): string {
   const rain = w.rainChance != null && w.rainChance >= 30 ? `💧${Math.round(w.rainChance)}%` : "";
   return [temp, rain].filter(Boolean).join("  ");
 }
-// Big date header the owner asked for (owner 2026-09-27: "วันที่เป็นตัวใหญ่ๆ …
-// เช่น MON 28/09").
-const EN_DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const bigDate = (iso: string, dow: number) => `${EN_DOW[dow] ?? ""} ${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+// Big date header, full Thai (owner 2026-09-27: "MON 28/09 เป็น วันจันทร์ที่ 28
+// กันยายน") — e.g. "วันจันทร์ที่ 28 กันยายน".
+const TH_DOW = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+const TH_MONTHS = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+const bigDate = (iso: string, dow: number) => `วัน${TH_DOW[dow] ?? ""}ที่ ${Number(iso.slice(8, 10))} ${TH_MONTHS[Number(iso.slice(5, 7))] ?? ""}`;
 
 const NOTES_URL = "/api/admin/reporta/event-notes";
 async function postNote(date: string, note: string) {
