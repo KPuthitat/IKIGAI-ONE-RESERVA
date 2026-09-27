@@ -16,8 +16,8 @@ export type StaffOption = {
 const staffLabel = (s: StaffOption) => s.nickname_th?.trim() || nameWithPrefix(s.title_prefix, s.display_name);
 
 export default function MeetingDetailClient({
-  meeting, items, staff, aiEnabled = false
-}: { meeting: MeetingRow; items: ActionItemRow[]; staff: StaffOption[]; aiEnabled?: boolean }) {
+  meeting, items, staff, aiEnabled = false, brandColor = "#0B1F3A"
+}: { meeting: MeetingRow; items: ActionItemRow[]; staff: StaffOption[]; aiEnabled?: boolean; brandColor?: string }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const refresh = () => startTransition(() => router.refresh());
@@ -26,12 +26,13 @@ export default function MeetingDetailClient({
   // ── ส่งเชคลิสต์เข้ากลุ่ม LINE ──
   const [notifyBusy, setNotifyBusy] = useState(false);
   const [notifyMsg, setNotifyMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [confirmSend, setConfirmSend] = useState(false);   // preview-before-send modal (owner 2026-09-27)
   async function sendChecklist() {
     setNotifyBusy(true); setNotifyMsg(null);
     try {
       const res = await fetch(apiUrl(`/api/admin/persona/meetings/${meeting.id}/notify`), { method: "POST" });
       const j = await res.json().catch(() => ({}));
-      if (res.ok) { setNotifyMsg({ ok: true, text: "ส่งเชคลิสต์เข้ากลุ่มแล้ว" }); return; }
+      if (res.ok) { setConfirmSend(false); setNotifyMsg({ ok: true, text: "ส่งเชคลิสต์เข้ากลุ่มแล้ว" }); return; }
       const text = j.reason === "empty" ? "ยังไม่มีรายการค้างให้ส่ง"
         : j.reason === "no_group" ? "ยังไม่ได้ตั้งค่ากลุ่ม LINE ที่จะแจ้งเตือน"
         : "ส่งเข้ากลุ่มไม่สำเร็จ ลองใหม่อีกครั้ง";
@@ -159,7 +160,7 @@ export default function MeetingDetailClient({
           </h2>
           <div className="flex items-center gap-2">
             {items.some((i) => i.status === "open") && (
-              <button type="button" disabled={notifyBusy} onClick={sendChecklist}
+              <button type="button" disabled={notifyBusy} onClick={() => { setNotifyMsg(null); setConfirmSend(true); }}
                 className="text-xs px-3 py-1.5 rounded-md border border-emerald-300 text-emerald-700 font-medium hover:bg-emerald-50 disabled:opacity-50">
                 {notifyBusy ? "กำลังส่ง…" : "ส่งเชคลิสต์เข้ากลุ่ม LINE"}
               </button>
@@ -239,6 +240,49 @@ export default function MeetingDetailClient({
         )}
 
         <AddItem meetingId={meeting.id} staff={staff} onAdded={refresh} />
+      </div>
+
+      {confirmSend && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto" onMouseDown={(e) => { if (e.target === e.currentTarget) setConfirmSend(false); }}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3 my-8" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-slate-800">ส่งเชคลิสต์เข้ากลุ่ม LINE</h3>
+            <p className="text-[11px] text-slate-400">ตัวอย่างข้อความที่จะส่งเข้ากลุ่ม</p>
+            <div className="rounded-2xl bg-slate-100 p-3"><ChecklistCardPreview meeting={meeting} items={items} headerColor={brandColor} /></div>
+            {notifyMsg && !notifyMsg.ok && <p className="text-rose-600 text-xs font-medium">✗ {notifyMsg.text}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setConfirmSend(false)} disabled={notifyBusy} className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium disabled:opacity-50">ยกเลิก</button>
+              <button type="button" onClick={sendChecklist} disabled={notifyBusy} className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">{notifyBusy ? "กำลังส่ง…" : "ยืนยันส่งเข้ากลุ่ม"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Mock of the checklist LINE card (mirrors buildChecklistFlex) so the sender
+ *  sees exactly what lands in the group before sending (owner 2026-09-27). */
+function ChecklistCardPreview({ meeting, items, headerColor }: { meeting: MeetingRow; items: ActionItemRow[]; headerColor: string }) {
+  // Match notifyMeetingChecklist: open items, sort_order then id, first 50.
+  const open = items.filter((i) => i.status === "open").sort((a, b) => a.sort_order - b.sort_order || a.id - b.id).slice(0, 50);
+  return (
+    <div className="w-full rounded-[18px] overflow-hidden bg-white shadow-lg ring-1 ring-black/5">
+      <div className="px-4 py-3" style={{ backgroundColor: headerColor }}>
+        <div className="text-[11px] font-bold text-white">เชคลิสต์งานหลังการประชุม</div>
+        <div className="text-[11px] text-white/80 mt-0.5">{meeting.title}</div>
+      </div>
+      <div className="px-4 py-3 space-y-2">
+        <div className="flex gap-2 text-[11px]"><span className="text-slate-400">สาขา</span><span className="text-slate-600">{meeting.branch_name ?? "ทุกสาขา"} · {meeting.meeting_date}</span></div>
+        <div className="border-t border-slate-100" />
+        {open.map((it, i) => (
+          <div key={it.id}>
+            <div className="flex gap-1.5 text-[13px] text-slate-800"><span className="text-slate-400">{i + 1}.</span><span>{it.title}</span></div>
+            {(it.assignee_name || it.due_date) && (
+              <div className="text-[11px] text-slate-400 ml-4">{[it.assignee_name ? `ผู้รับผิดชอบ: ${nameWithPrefix(it.assignee_prefix, it.assignee_name)}` : null, it.due_date ? `ครบกำหนด: ${it.due_date}` : null].filter(Boolean).join("  ·  ")}</div>
+            )}
+          </div>
+        ))}
+        <div className="text-[10px] text-slate-400 pt-1">เมื่อทำรายการใดเสร็จ ระบบจะแจ้งความคืบหน้าในกลุ่มนี้อัตโนมัติ</div>
       </div>
     </div>
   );

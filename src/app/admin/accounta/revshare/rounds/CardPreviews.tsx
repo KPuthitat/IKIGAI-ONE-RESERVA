@@ -89,8 +89,8 @@ export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, 
   );
 }
 
-export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount, dayCount, vatRate, salesIncludesVat = false, partnerId, start, end }: {
-  shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number; salesIncludesVat?: boolean; partnerId: number; start: string; end: string;
+export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount, dayCount, vatRate, salesIncludesVat = false, partnerId, start, end, showCategories = true }: {
+  shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number; salesIncludesVat?: boolean; partnerId: number; start: string; end: string; showCategories?: boolean;
 }) {
   const v = salesVat(transferAmount, vatRate, salesIncludesVat);
   return (
@@ -106,7 +106,7 @@ export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount,
         <div className="text-xl font-bold tabular-nums" style={{ color: "#0f6e56" }}>{baht(v.total)}</div>
       </div>
       <div className="border-t border-slate-100 my-1" />
-      <CategoryBreakdown partnerId={partnerId} start={start} end={end} />
+      {showCategories && <CategoryBreakdown partnerId={partnerId} start={start} end={end} />}
       <div className="text-[9px] text-slate-400 text-center pt-1">ส่วนแบ่งยอดขายจะเรียกเก็บอีกครั้งตอนสรุปสิ้นเดือน</div>
     </Shell>
   );

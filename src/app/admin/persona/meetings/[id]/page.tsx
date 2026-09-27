@@ -23,6 +23,11 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
   // (company-wide, branch_id NULL, open to any admin) — matches the route guards.
   if (meeting.branch_id != null && !userCanAdminBranch(user, meeting.branch_id)) notFound();
   const items = listActionItems(db, id);
+  // Header colour of the checklist LINE card = the branch brand colour (matches
+  // buildChecklistFlex), so the send preview shows the real colour.
+  const brandColor = (meeting.branch_id != null
+    ? (db.prepare("SELECT brand_color FROM branches WHERE id = ?").get(meeting.branch_id) as { brand_color: string | null } | undefined)?.brand_color
+    : null) || "#0B1F3A";
 
   const staff = (user.activeBranchId
     ? db.prepare(`
@@ -39,7 +44,7 @@ export default function MeetingDetailPage({ params }: { params: { id: string } }
   return (
     <div className="space-y-4">
       <Link href="/admin/persona/meetings" className="text-sm text-brand hover:underline">← กลับรายการประชุม</Link>
-      <MeetingDetailClient meeting={meeting} items={items} staff={staff} aiEnabled={meetingPrepEnabled()} />
+      <MeetingDetailClient meeting={meeting} items={items} staff={staff} aiEnabled={meetingPrepEnabled()} brandColor={brandColor} />
     </div>
   );
 }

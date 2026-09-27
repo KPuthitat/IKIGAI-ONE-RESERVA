@@ -592,10 +592,20 @@ export default function RoundsClient({
       {xferPinOpen && (
         <PinPromptModal
           title="ยืนยันรอบโอน"
-          description={<p className="text-xs text-slate-600">
-            โอนยอดช่วง <b>{xferPreview?.label}</b> รวม <b>฿{fmtMoney(xferPreview?.vat.total ?? 0)}</b> — ใส่ PIN เพื่อยืนยัน
-            {partner.line_group_id ? " และส่งการ์ดเข้ากลุ่ม LINE คู่ค้า" : ""}
-          </p>}
+          description={<div className="space-y-2">
+            {partner.line_group_id && xferPreview && (
+              <div className="rounded-xl bg-slate-100 p-2">
+                <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={xferPreview.label}
+                  transferAmount={xferPreview.totalSales} dayCount={xferPreview.dayCount} vatRate={vatRate}
+                  salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} partnerId={partner.id}
+                  start={xferPreview.start} end={xferPreview.end} showCategories={false} />
+              </div>
+            )}
+            <p className="text-xs text-slate-600">
+              โอนยอดช่วง <b>{xferPreview?.label}</b> รวม <b>฿{fmtMoney(xferPreview?.vat.total ?? 0)}</b> — ใส่ PIN เพื่อยืนยัน
+              {partner.line_group_id ? " และส่งการ์ดเข้ากลุ่ม LINE คู่ค้า" : ""}
+            </p>
+          </div>}
           submitLabel="ยืนยันโอน"
           onSubmit={confirmXfer}
           onClose={() => setXferPinOpen(false)}
