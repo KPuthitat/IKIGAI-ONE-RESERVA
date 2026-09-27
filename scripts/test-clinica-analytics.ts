@@ -151,6 +151,17 @@ process.env.DATABASE_PATH = TMP;
     const p = cdb.clinicaYtdProjection(cb, "2026-08-31");
     return near(p.ytd, 1500) && p.projected > p.ytd;
   })());
+  // YoY (owner 2026-09-27: เทียบปีก่อน) — clinic + company, same month last year.
+  cdb.importInvoice(branch, invParse("2025-08-10", "2025-08-10", [bill("LY1", "2025-08-10", "17:00:00", "ผู้ป่วยทั่วไป", 400, 400, 0, [item("GEN001", "[HSC] บริการ", 400)])]));
+  ok("clinic YoY: ส.ค.69 = 800 vs ส.ค.68 = 400 → +100%", (() => {
+    const my = ca.clinicaMonth(branch, 2026, 8, "2026-08-31");
+    return my.lastYearBillNet === 400 && near(my.billNetYoyPct!, 100);
+  })());
+  cdb.importInvoice(cb, invParse("2025-08-03", "2025-08-03", [bill("CLY", "2025-08-03", "10:00:00", "ผู้ป่วยทั่วไป", 600, 600, 0, [item("GEN001", "[HSC] บริการ", 600)])]));
+  ok("company YoY: รวม 1500 vs ปีก่อน 600 → +150%", (() => {
+    const o = sa.companyOverview([cb], 2026, 8, "2026-08-31");
+    return o.total.lastYearNett === 600 && near(o.total.lastYearPct!, 150);
+  })());
 
   // Operating hours (owner 2026-09-27): span helper + per-branch round-trip.
   const { hourSpan, hoursLabel } = await import("../src/lib/hours");

@@ -128,6 +128,7 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
           <div className="text-xl font-bold text-slate-800 tabular-nums">{baht(c.billNet)}</div>
           <div className="text-[11px] text-slate-400">{c.billCount.toLocaleString("th-TH")} ครั้ง</div>
           <div className="text-[11px] mt-0.5">เทียบเดือนก่อน <Pct pct={c.billNetMomPct} />{c.prevBillNet != null && <span className="text-slate-400"> ({baht(c.prevBillNet)})</span>}</div>
+          <div className="text-[11px]">เทียบปีก่อน <Pct pct={c.billNetYoyPct} />{c.lastYearBillNet != null && <span className="text-slate-400"> ({baht(c.lastYearBillNet)})</span>}</div>
         </div>
         <div className="card">
           <div className="text-xs text-slate-500">เงินเข้าจริง (เงินสด/พร้อมเพย์)</div>

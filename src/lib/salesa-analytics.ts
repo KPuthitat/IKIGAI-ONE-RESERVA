@@ -748,6 +748,7 @@ export function companyAnnualProjection(todayIso: string): AnnualProjection | nu
 export type CompanyBranchRow = {
   branchId: number; branchName: string;
   mtdNett: number; prevSameNett: number | null; momPct: number | null;
+  lastYearNett: number | null; lastYearPct: number | null;   // same month last year, same 1..throughDay window
   revshareIncome: number;    // ส่วนแบ่งยอดขาย (RevShare) settled this month, already IN mtdNett
   bills: number; pax: number;
   todayNett: number | null;
@@ -755,7 +756,7 @@ export type CompanyBranchRow = {
 };
 export type CompanyOverview = {
   year: number; month: number; throughDay: number; isCurrentMonth: boolean; branchCount: number;
-  total: { mtdNett: number; prevSameNett: number | null; momPct: number | null; bills: number; pax: number; todayNett: number | null };
+  total: { mtdNett: number; prevSameNett: number | null; momPct: number | null; lastYearNett: number | null; lastYearPct: number | null; bills: number; pax: number; todayNett: number | null };
   revshareIncome: number;    // company-wide ส่วนแบ่งยอดขาย added into total.mtdNett this month
   target: TargetProgress | null; targetedBranchCount: number;
   annual: AnnualProjection | null;
@@ -838,6 +839,8 @@ export function companyOverview(branchIds: number[], year: number, month: number
   // Same-store compare: only branches with data in BOTH windows count toward the
   // company MoM %, so a newly-opened branch doesn't inflate the trend.
   let cmpCur = 0, cmpPrev = 0, anyCmp = false;
+  // Same-store YoY (owner 2026-09-27: เทียบปีก่อน) — same month last year, same window.
+  let cmpLyCur = 0, cmpLyPrev = 0, anyLy = false;
   // Targeted-branch MTD is tracked POS vs revshare separately: the revshare lump
   // is added FLAT to the projection (not run-rate-annualized by targetProgress).
   let tTargetSum = 0, tMtdTargetedPos = 0, tRevTargeted = 0, targetedCount = 0;
@@ -863,6 +866,7 @@ export function companyOverview(branchIds: number[], year: number, month: number
   for (const b of brows) {
     const cur = throughDay > 0 ? mergeMtd(aggMtd(b.id, year, month, throughDay), clinicAggMtd(b.id, year, month)) : null;
     const prev = throughDay > 0 ? mergeMtd(aggMtd(b.id, pmY, pm, throughDay), clinicAggMtd(b.id, pmY, pm)) : null;
+    const ly = throughDay > 0 ? mergeMtd(aggMtd(b.id, year - 1, month, throughDay), clinicAggMtd(b.id, year - 1, month)) : null;
     const posNett = cur?.nett ?? 0;
     // ส่วนแบ่งยอดขาย (RevShare) settled this month — added into the displayed nett,
     // target and totals. Kept OUT of the same-period MoM % (below), which stays a
@@ -870,6 +874,7 @@ export function companyOverview(branchIds: number[], year: number, month: number
     const revshareIncome = revshareIncomeForBranch(b.id, year, month);
     const mtdNett = round2(posNett + revshareIncome);
     const prevSameNett = prev?.nett ?? null;
+    const lastYearNett = ly?.nett ?? null;
     const bills = cur?.bills ?? 0;
     const pax = cur?.pax ?? 0;
     const todayNett = isCurrentMonth
@@ -878,9 +883,10 @@ export function companyOverview(branchIds: number[], year: number, month: number
       : null;
     const monthTarget = getMonthlyTarget(b.id);
     const pctOfTarget = monthTarget && monthTarget > 0 ? round2((mtdNett / monthTarget) * 100) : null;
-    rows.push({ branchId: b.id, branchName: b.name, mtdNett, prevSameNett, momPct: relPct(posNett, prevSameNett), revshareIncome, bills, pax, todayNett, monthTarget, pctOfTarget });
+    rows.push({ branchId: b.id, branchName: b.name, mtdNett, prevSameNett, momPct: relPct(posNett, prevSameNett), lastYearNett, lastYearPct: relPct(posNett, lastYearNett), revshareIncome, bills, pax, todayNett, monthTarget, pctOfTarget });
     tMtd += mtdNett; tBills += bills; tPax += pax; tRev += revshareIncome;
     if (cur && prev) { cmpCur += cur.nett; cmpPrev += prev.nett; anyCmp = true; }
+    if (cur && ly) { cmpLyCur += cur.nett; cmpLyPrev += ly.nett; anyLy = true; }
     if (todayNett != null) { tToday += todayNett; anyToday = true; }
     if (monthTarget && monthTarget > 0) { tTargetSum += monthTarget; tMtdTargetedPos += posNett; tRevTargeted += revshareIncome; targetedCount++; }
   }
@@ -889,6 +895,8 @@ export function companyOverview(branchIds: number[], year: number, month: number
     mtdNett: round2(tMtd),
     prevSameNett: anyCmp ? round2(cmpPrev) : null,   // comparable (same-store) prev
     momPct: anyCmp ? relPct(cmpCur, cmpPrev) : null, // comparable current vs prev
+    lastYearNett: anyLy ? round2(cmpLyPrev) : null,  // comparable same month last year
+    lastYearPct: anyLy ? relPct(cmpLyCur, cmpLyPrev) : null,
     bills: tBills, pax: tPax,
     todayNett: isCurrentMonth ? round2(anyToday ? tToday : 0) : null
   };

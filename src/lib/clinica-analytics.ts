@@ -43,6 +43,7 @@ export type ClinicaMonth = {
   billNet: number; billCount: number; patientCount: number; avgPerBill: number | null;
   paid: number; due: number;                 // เงินเข้าจริง / รอเบิก จากบิลเดือนนี้
   prevBillNet: number | null; billNetMomPct: number | null;
+  lastYearBillNet: number | null; billNetYoyPct: number | null;   // same month last year
   // patient mix (new vs returning), daily trend, demographics, target
   newPatients: number; returningPatients: number;
   daily: DailyPoint[];
@@ -216,6 +217,14 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
   ).get(branchId, pStart, pEnd) as { net: number }).net;
   const prevBillNet = prevNet > 0 ? round2(prevNet) : null;
 
+  // Same month, last year (owner 2026-09-27: เทียบปีก่อน). Whole-month, matching
+  // the MoM baseline above.
+  const [lyStart, lyEnd] = monthBounds(year - 1, month);
+  const lyNet = (db.prepare(
+    `SELECT COALESCE(SUM(net),0) net FROM clinica_bills WHERE branch_id=? AND bill_date BETWEEN ? AND ?`
+  ).get(branchId, lyStart, lyEnd) as { net: number }).net;
+  const lastYearBillNet = lyNet > 0 ? round2(lyNet) : null;
+
   const payers = (db.prepare(
     `SELECT COALESCE(NULLIF(payer_group,''),'(ไม่ระบุ)') grp, ROUND(SUM(net),2) net, COUNT(*) cnt,
             ROUND(SUM(paid),2) paid, ROUND(SUM(due),2) due
@@ -357,6 +366,7 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
     avgPerBill: kpi.bills > 0 ? round2(kpi.net / kpi.bills) : null,
     paid: round2(kpi.paid), due: round2(kpi.due),
     prevBillNet, billNetMomPct: relPct(kpi.net, prevBillNet),
+    lastYearBillNet, billNetYoyPct: relPct(kpi.net, lastYearBillNet),
     newPatients, returningPatients, daily, monthDays, demographics, target,
     payers, arTotal, arByPayer, arAging: agingRounded,
     categories, topItems,

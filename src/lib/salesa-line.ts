@@ -255,6 +255,9 @@ export function clinicaMonthlyFlex(c: ClinicaMonth, meta: DailyCardMeta, monthLa
   const momLine: unknown = c.billNetMomPct == null
     ? { type: "text", text: "เทียบเดือนก่อน: ยังไม่มีข้อมูล", size: "xxs", color: "#bbbbbb", wrap: true }
     : { type: "text", size: "xxs", wrap: true, contents: [{ type: "span", text: "เทียบเดือนก่อน ", color: "#999999" }, pctSpan(c.billNetMomPct), ...(c.prevBillNet != null ? [{ type: "span", text: `  (${baht(c.prevBillNet)})`, color: "#bbbbbb" }] : [])] };
+  // เทียบปีก่อน (owner 2026-09-27) — omit the line entirely when there's no year-ago data.
+  const yoyLine: unknown = c.lastYearBillNet == null ? null
+    : { type: "text", size: "xxs", wrap: true, contents: [{ type: "span", text: "เทียบปีก่อน ", color: "#999999" }, pctSpan(c.billNetYoyPct), { type: "span", text: `  (${baht(c.lastYearBillNet)})`, color: "#bbbbbb" }] };
 
   const body: unknown[] = [
     { type: "text", text: meta.branchName, weight: "bold", size: "lg", wrap: true },
@@ -263,6 +266,7 @@ export function clinicaMonthlyFlex(c: ClinicaMonth, meta: DailyCardMeta, monthLa
     sep,
     kv("ยอดบิลรวม", `${baht(c.billNet)} (${intTh(c.billCount)} ครั้ง)`, { bold: true, color: "#0f7a4f", size: "md" }),
     momLine,
+    ...(yoyLine ? [yoyLine] : []),
     kv("เงินเข้าจริง (เงินสด/พร้อมเพย์)", `${baht(c.paid)} (${paidPct}%)`, { size: "xs", color: "#0f7a4f" }),
     kv("รอเบิก (บิลเดือนนี้)", `${baht(c.due)} (${100 - paidPct}%)`, { size: "xs", color: "#b0392f" }),
     kv("คนไข้ (บิล)", `${intTh(c.patientCount)} คน`, { size: "xs" }),
@@ -357,12 +361,19 @@ export function salesaCompanyFlex(ov: CompanyOverview, meta: CompanyCardMeta): F
         { type: "span", text: "เทียบเดือนก่อน ", color: "#999999" }, pctSpan(t.momPct),
         { type: "span", text: `  (${baht(t.prevSameNett)})`, color: "#bbbbbb" }
       ] };
+  // เทียบปีก่อน (owner 2026-09-27) — only when there is year-ago data to compare.
+  const yoyLine = t.lastYearNett == null ? null
+    : { type: "text", size: "xxs", wrap: true, contents: [
+        { type: "span", text: "เทียบปีก่อน ", color: "#999999" }, pctSpan(t.lastYearPct),
+        { type: "span", text: `  (${baht(t.lastYearNett)})`, color: "#bbbbbb" }
+      ] };
 
   const body: unknown[] = [
     { type: "text", text: `รวม ${ov.branchCount} สาขา · สรุปโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true },
     sep,
     kv(`ยอดขายรวม (วันที่ 1–${ov.throughDay})`, baht(t.mtdNett), { bold: true, color: "#0f7a4f", size: "md" }),
     momLine,
+    ...(yoyLine ? [yoyLine] : []),
     kv("จำนวนบิลรวม", `${intTh(t.bills)} บิล`, { size: "xs" }),
     kv("ลูกค้ารวม", `${intTh(t.pax)} คน`, { size: "xs" }),
     ...(ov.isCurrentMonth && t.todayNett != null ? [kv("ยอดขายวันนี้ (รวมสาขา)", baht(t.todayNett), { size: "xs" })] : []),
