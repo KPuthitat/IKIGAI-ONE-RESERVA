@@ -966,7 +966,9 @@ export function companyWeekCompare(branchIds: number[], todayIso: string): Compa
 // it per branch (after that branch's own alias folding) — branches that spell the
 // same dish differently stay separate. branchCount = how many branches sold it.
 export type CompanyMenuRank = { name: string; nett: number; branchCount: number };
-export type CompanyTopMenu = { start: string; end: string; items: CompanyMenuRank[]; categories: CompanyMenuRank[] };
+export type NamedNett = { name: string; nett: number };
+export type CompanyBranchMenu = { branchId: number; branchName: string; items: NamedNett[]; categories: NamedNett[] };
+export type CompanyTopMenu = { start: string; end: string; items: CompanyMenuRank[]; categories: CompanyMenuRank[]; byBranch: CompanyBranchMenu[] };
 export function companyTopMenu(branchIds: number[], start: string, end: string, topN = 8): CompanyTopMenu {
   const agg = (kind: "item" | "category"): CompanyMenuRank[] => {
     const m = new Map<string, { nett: number; branches: Set<number> }>();
@@ -982,7 +984,18 @@ export function companyTopMenu(branchIds: number[], start: string, end: string, 
       .sort((a, b) => (b.nett - a.nett) || a.name.localeCompare(b.name, "th"))  // stable tie-break
       .slice(0, topN);
   };
-  return { start, end, items: agg("item"), categories: agg("category") };
+  // Per-branch top lists (owner 2026-09-27: "เมนูขายดีรวมสาขา แยกเถอะ … แยกเลเบล").
+  // Two different restaurants' menus can't be read as one merged ranking, so each
+  // branch gets its own labelled list.
+  const branchTop = (id: number, kind: "item" | "category"): NamedNett[] =>
+    menuRange(id, start, end, kind).filter((r) => r.nett > 0)
+      .map((r) => ({ name: r.name, nett: round2(r.nett) }))
+      .sort((a, b) => (b.nett - a.nett) || a.name.localeCompare(b.name, "th"))
+      .slice(0, topN);
+  const byBranch: CompanyBranchMenu[] = orderedBranches(branchIds)
+    .map((b) => ({ branchId: b.id, branchName: b.name, items: branchTop(b.id, "item"), categories: branchTop(b.id, "category") }))
+    .filter((b) => b.items.length > 0 || b.categories.length > 0);
+  return { start, end, items: agg("item"), categories: agg("category"), byBranch };
 }
 
 // ── A · weekday performance, D · discount insight, E · channel mix ──────────
