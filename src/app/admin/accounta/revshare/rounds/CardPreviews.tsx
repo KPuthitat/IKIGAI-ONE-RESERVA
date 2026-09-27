@@ -4,11 +4,49 @@
 // revshareWeeklyFlex) so the owner sees exactly what lands in the partner's
 // group before sending (owner 2026-06-24: พรีวิวการ์ดทุกแบบก่อนกดส่ง).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { fmtMoney } from "@/lib/format";
 import { salesVat } from "@/lib/revshare";
+import { apiUrl } from "@/lib/url";
 
 const baht = (n: number) => `${fmtMoney(n)} บาท`;
+
+/** Live "ยอดขายแยกตามหมวด" block — fetches the same partnerCategorySales the send
+ *  route uses, so the preview shows the real category breakdown instead of a note
+ *  (owner 2026-09-27). Top 8 by sales, rest collapse into "อื่นๆ" (mirrors
+ *  categoryBox in revshare-line.ts). */
+function CategoryBreakdown({ partnerId, start, end }: { partnerId: number; start: string; end: string }) {
+  const [cats, setCats] = useState<Array<{ name: string; sales: number }> | null>(null);
+  const [state, setState] = useState<"loading" | "ok" | "error">("loading");
+  useEffect(() => {
+    let alive = true; setState("loading");
+    fetch(apiUrl(`/api/accounta/revshare/categories?partner=${partnerId}&start=${start}&end=${end}`), { cache: "no-store" })
+      .then(async (x) => { if (!x.ok) throw new Error(String(x.status)); return x.json(); })
+      .then((r) => {
+        if (!alive) return;
+        if (r.ok) { setCats(r.categories as Array<{ name: string; sales: number }>); setState("ok"); }
+        else setState("error");
+      })
+      .catch(() => { if (alive) setState("error"); });
+    return () => { alive = false; };
+  }, [partnerId, start, end]);
+  if (state === "loading") return <div className="text-[9px] text-slate-400 text-center pt-1">กำลังโหลดยอดขายแยกตามหมวด…</div>;
+  // Distinguish a load failure (auth/param/server) from a genuinely empty day, so
+  // the owner isn't wrongly told to import a file (owner 2026-09-27 review).
+  if (state === "error") return <div className="text-[9px] text-rose-400 text-center pt-1">โหลดยอดขายแยกตามหมวดไม่สำเร็จ</div>;
+  if (!cats || !cats.length) return <div className="text-[9px] text-slate-400 text-center pt-1">ยังไม่มียอดขายแยกตามหมวด (นำเข้าไฟล์ Overview วันนั้นใน ANALYTICA ก่อน)</div>;
+  const TOP = 8;
+  const top = cats.slice(0, TOP);
+  const rest = cats.slice(TOP);
+  const restSum = rest.reduce((s, c) => s + c.sales, 0);
+  return (
+    <div className="space-y-1">
+      <div className="text-[11px] font-bold" style={{ color: "#7a4f16" }}>ยอดขายแยกตามหมวด</div>
+      {top.map((c) => <Row key={c.name} label={c.name} value={baht(c.sales)} />)}
+      {rest.length > 0 && <Row label={`อื่นๆ (${rest.length} หมวด)`} value={baht(restSum)} />}
+    </div>
+  );
+}
 
 function Shell({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
@@ -31,8 +69,8 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
   );
 }
 
-export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, salesIncludesVat = false, billCount }: {
-  shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number; salesIncludesVat?: boolean; billCount?: number | null;
+export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, salesIncludesVat = false, billCount, partnerId, date }: {
+  shop: string; sellerName: string; dateLabel: string; sales: number; vatRate: number; salesIncludesVat?: boolean; billCount?: number | null; partnerId: number; date: string;
 }) {
   const v = salesVat(sales, vatRate, salesIncludesVat);
   return (
@@ -45,14 +83,14 @@ export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, 
       <Row label="VAT 7%" value={baht(v.vat)} />
       {billCount != null && <Row label="จำนวนบิล" value={`${billCount.toLocaleString("th-TH")} บิล`} />}
       <div className="border-t border-slate-100 my-1" />
-      <div className="text-[9px] text-slate-500 text-center">การ์ดจริงจะแสดง “ยอดขายแยกตามหมวด” ต่อท้ายด้วย (จากไฟล์ Overview ที่นำเข้า ANALYTICA วันนั้น)</div>
-      <div className="text-[9px] text-slate-400 text-center">ยอดสะสมจะสรุปอีกครั้งในใบประจำสัปดาห์/เดือน</div>
+      <CategoryBreakdown partnerId={partnerId} start={date} end={date} />
+      <div className="text-[9px] text-slate-400 text-center pt-1">ยอดสะสมจะสรุปอีกครั้งในใบประจำสัปดาห์/เดือน</div>
     </Shell>
   );
 }
 
-export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount, dayCount, vatRate, salesIncludesVat = false }: {
-  shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number; salesIncludesVat?: boolean;
+export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount, dayCount, vatRate, salesIncludesVat = false, partnerId, start, end }: {
+  shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number; salesIncludesVat?: boolean; partnerId: number; start: string; end: string;
 }) {
   const v = salesVat(transferAmount, vatRate, salesIncludesVat);
   return (
@@ -67,8 +105,9 @@ export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount,
         <div className="text-[11px] text-slate-500">ยอดวางบิลประจำสัปดาห์ (รวม VAT)</div>
         <div className="text-xl font-bold tabular-nums" style={{ color: "#0f6e56" }}>{baht(v.total)}</div>
       </div>
-      <div className="text-[9px] text-slate-500 text-center pt-1">การ์ดจริงจะแสดง “ยอดขายแยกตามหมวด” ของสัปดาห์ต่อท้ายด้วย</div>
-      <div className="text-[9px] text-slate-400 text-center">ส่วนแบ่งยอดขายจะเรียกเก็บอีกครั้งตอนสรุปสิ้นเดือน</div>
+      <div className="border-t border-slate-100 my-1" />
+      <CategoryBreakdown partnerId={partnerId} start={start} end={end} />
+      <div className="text-[9px] text-slate-400 text-center pt-1">ส่วนแบ่งยอดขายจะเรียกเก็บอีกครั้งตอนสรุปสิ้นเดือน</div>
     </Shell>
   );
 }
