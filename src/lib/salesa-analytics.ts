@@ -5,7 +5,7 @@
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
 import type { MenuEntry } from "./salesa-parse";
 import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTarget, branchIdsWithTarget, branchOpensOn, type DailyRow } from "./salesa-db";
-import { clinicaRangeAgg, clinicaMaxBillDayInMonth, clinicaBranchesWithBillsInYear, clinicaMonthlyNet, clinicaYtdProjection } from "./clinica-db";
+import { clinicaRangeAgg, clinicaMaxBillDayInMonth, clinicaBranchesWithBillsInYear, clinicaMonthlyNet, clinicaDailyNet, clinicaYtdProjection } from "./clinica-db";
 import { getDb } from "./db";
 
 function addDaysIso(iso: string, n: number): string {
@@ -1582,22 +1582,40 @@ export function annualBranchDailyBars(year: number, todayIso: string, allowedBra
     : Date.UTC(year, 11, 31);
   const dayCount = Math.max(1, Math.floor((endMs - startMs) / 86_400_000) + 1);
 
-  const branches = branchesWithSalesInYear(yr, allowedBranchIds);
+  // Restaurants (POS) + clinic branches that billed this year, so the clinic
+  // shows in the full-year daily chart too (owner 2026-09-27), consistent with
+  // the monthly bars.
+  const posBranches = branchesWithSalesInYear(yr, allowedBranchIds);
+  const cliBranches = clinicaBranchesWithBillsInYear(year, allowedBranchIds);
+  const seen = new Set(posBranches.map((b) => b.id));
+  const branches = [...posBranches, ...cliBranches.filter((c) => !seen.has(c.id)).map((c) => ({ id: c.id, name: c.name }))];
   if (!branches.length) return { year, dayCount, startIso, branches: [] };
 
-  const bids = branches.map((b) => b.id);
-  const rows = db.prepare(`
-    SELECT branch_id AS b, sale_date AS d, SUM(nett) AS n
-    FROM salesa_daily
-    WHERE substr(sale_date, 1, 4) = ? AND has_sales = 1 AND nett > 0
-      AND branch_id IN (${bids.map(() => "?").join(",")})
-    GROUP BY branch_id, sale_date
-  `).all(yr, ...bids) as Array<{ b: number; d: string; n: number }>;
+  const dayIdxOf = (d: string) => Math.floor((Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))) - startMs) / 86_400_000);
+  const bids = posBranches.map((b) => b.id);
   const byBranchDay = new Map<number, number>(); // key = branchId * 512 + dayIdx  (512 > 366)
-  for (const r of rows) {
-    const t = Date.UTC(Number(r.d.slice(0, 4)), Number(r.d.slice(5, 7)) - 1, Number(r.d.slice(8, 10)));
-    const idx = Math.floor((t - startMs) / 86_400_000);
-    if (idx >= 0 && idx < dayCount) byBranchDay.set(r.b * 512 + idx, round2(r.n));
+  if (bids.length) {
+    const rows = db.prepare(`
+      SELECT branch_id AS b, sale_date AS d, SUM(nett) AS n
+      FROM salesa_daily
+      WHERE substr(sale_date, 1, 4) = ? AND has_sales = 1 AND nett > 0
+        AND branch_id IN (${bids.map(() => "?").join(",")})
+      GROUP BY branch_id, sale_date
+    `).all(yr, ...bids) as Array<{ b: number; d: string; n: number }>;
+    for (const r of rows) {
+      const idx = dayIdxOf(r.d);
+      if (idx >= 0 && idx < dayCount) byBranchDay.set(r.b * 512 + idx, round2(r.n));
+    }
+  }
+  // Fold each clinic branch's per-day billed net into the same map. Include all
+  // non-zero days (incl. refund/negative) so this chart's total matches the
+  // monthly bars + YTD, which sum all clinic bills.
+  for (const c of cliBranches) {
+    for (const r of clinicaDailyNet(c.id, year)) {
+      if (!r.net) continue;
+      const idx = dayIdxOf(r.date);
+      if (idx >= 0 && idx < dayCount) byBranchDay.set(c.id * 512 + idx, round2((byBranchDay.get(c.id * 512 + idx) ?? 0) + r.net));
+    }
   }
 
   const out: BranchYearDailyBars[] = branches.map((br) => {

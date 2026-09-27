@@ -776,8 +776,10 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
             prevTitle="เดือนก่อน" nextTitle="เดือนถัดไป" />
         </div>
 
-        {/* Month-level cumulative comparisons (owner 2026-09-17). */}
-        {monthCompare && monthCompare.throughDay > 0 && (
+        {/* Month-level cumulative comparisons (owner 2026-09-17). POS-based, so
+            hidden for a clinic (its headline + target live in ClinicaSection —
+            owner 2026-09-27: อย่าให้ขึ้น ฿0 ทับของคลินิก). */}
+        {!isClinic && monthCompare && monthCompare.throughDay > 0 && (
           <div className="rounded-xl bg-slate-50 p-3 space-y-1.5">
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-[11px] text-slate-500">ยอดสะสมต้นเดือน (ถึงวันที่ {monthCompare.throughDay})</span>
