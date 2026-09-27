@@ -1,0 +1,52 @@
+// Forward-plan forecast tests (owner 2026-09-27): holidays, closed-day handling,
+// payday flag, plan shape. Run: node --import tsx scripts/test-forecast.ts
+
+import fs from "node:fs";
+import path from "node:path";
+
+const TMP = path.join(process.cwd(), "data", "test-forecast.db");
+function cleanup() { for (const f of [TMP, `${TMP}-wal`, `${TMP}-shm`]) { try { fs.rmSync(f, { force: true }); } catch { /* ignore */ } } }
+cleanup();
+fs.mkdirSync(path.dirname(TMP), { recursive: true });
+process.env.DATABASE_PATH = TMP;
+
+(async () => {
+  const { getDb } = await import("../src/lib/db");
+  getDb();   // init schema (salesa_daily etc.)
+  const { branchForecast, holidayOn, attachWeather } = await import("../src/lib/forecast");
+
+  let passed = 0, failed = 0;
+  const ok = (n: string, c: boolean) => { if (c) { passed++; console.log(`  ✓ ${n}`); } else { failed++; console.error(`  ✗ FAIL: ${n}`); } };
+
+  ok("holidayOn: 5 ธ.ค. = วันพ่อ · วันธรรมดาไม่ใช่วันหยุด", holidayOn("2026-12-05") === "วันพ่อแห่งชาติ" && holidayOn("2026-09-16") === null);
+
+  // No POS history → no baseline, but the plan still lays out the days, closed
+  // days, holidays and payday flags.
+  const fc = branchForecast(999999, "2026-12-04", 7, [1], false);  // closed Mondays
+  ok("forecast: 7 แถว เริ่ม 2026-12-04", fc.rows.length === 7 && fc.rows[0].date === "2026-12-04");
+  ok("forecast: ไม่มีข้อมูลย้อนหลัง → hasBaseline false · predicted null", fc.hasBaseline === false && fc.rows[0].predictedNett === null);
+  ok("forecast: วันจันทร์ปิดทำการ (closed + ปิดทำการประจำ)", (() => {
+    const mon = fc.rows.find((r) => r.dow === 1);
+    return !!mon && mon.closed === true && mon.predictedNett === 0 && mon.suggestions.includes("ปิดทำการประจำ");
+  })());
+  ok("forecast: 5 ธ.ค. ติดธงวันพ่อ", (() => {
+    const d = fc.rows.find((r) => r.date === "2026-12-05");
+    return !!d && d.holiday === "วันพ่อแห่งชาติ";
+  })());
+  ok("forecast: payday flag ช่วงสิ้นเดือน (29–31, 1)", (() => {
+    const p = branchForecast(999999, "2026-12-29", 5, [], false);
+    return p.rows.find((r) => r.date === "2026-12-31")?.payday === true && p.rows.find((r) => r.date === "2027-01-01")?.payday === true && p.rows.find((r) => r.date === "2026-12-29")?.payday === true;
+  })());
+
+  // attachWeather folds weather + a rain/heat suggestion onto an open day.
+  attachWeather(fc, { "2026-12-05": { tempMax: 36, tempMin: 26, rainChance: 70, summary: "ฝนน่าจะตก · ร้อนจัด" } });
+  ok("forecast: attachWeather เติมอากาศ + คำแนะนำฝน/ร้อน", (() => {
+    const d = fc.rows.find((r) => r.date === "2026-12-05");
+    return !!d && d.weather?.rainChance === 70 && d.suggestions.some((s) => s.includes("ฝน")) && d.suggestions.some((s) => s.includes("ร้อน"));
+  })());
+  ok("forecast: days=3 → 3 แถว", branchForecast(999999, "2026-12-04", 3, [], false).rows.length === 3);
+
+  console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
+  cleanup();
+  process.exit(failed === 0 ? 0 : 1);
+})().catch((e) => { console.error(e); cleanup(); process.exit(1); });

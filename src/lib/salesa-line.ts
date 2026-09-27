@@ -8,6 +8,7 @@ import { getPlatformChannel } from "./messaging-channels";
 import type { DailyAnalytics, WeeklyAnalytics, MonthlyAnalytics, CompanyOverview } from "./salesa-analytics";
 import type { SalesPushPlan } from "./salesa-push";
 import type { ClinicaMonth, ClinicaWeek, ClinicaDailyReport } from "./clinica-analytics";
+import type { BranchForecast } from "./forecast";
 import { clinicaPaidPct } from "./clinica-shared";
 
 type FlexMsg = { type: "flex"; altText: string; contents: unknown };
@@ -365,6 +366,35 @@ export function clinicaWeeklyFlex(c: ClinicaWeek, meta: DailyCardMeta): FlexMsg 
       header: header("สรุปคลินิกรายสัปดาห์", `${c.label} · ${meta.branchName}`, meta.color, "IKIGAI OS · รายงานคลินิก"),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายสัปดาห์ (คลินิก)") }
+  };
+}
+
+/** Forward plan card (owner 2026-09-27) — next few days' predicted sales +
+ *  holidays/weather + a น้องฮูก suggestion each, for the branch team. */
+export function salesaForecastFlex(fc: BranchForecast, meta: DailyCardMeta): FlexMsg {
+  const body: unknown[] = [
+    { type: "text", text: meta.branchName, weight: "bold", size: "lg", wrap: true },
+    { type: "text", text: `วางแผนโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true },
+    ...(fc.momentumPct != null ? [{ type: "text", size: "xxs", wrap: true, contents: [{ type: "span", text: "โมเมนตัมล่าสุด ", color: "#999999" }, pctSpan(fc.momentumPct)] }] : []),
+    sep,
+  ];
+  for (const r of fc.rows) {
+    const badge = [r.holiday, r.weather && r.weather.summary !== "อากาศปกติ" ? r.weather.summary : null].filter(Boolean).join(" · ");
+    body.push({ type: "box", layout: "vertical", margin: "md", spacing: "none", contents: [
+      { type: "box", layout: "horizontal", contents: [
+        { type: "text", text: `${r.dowLabel} ${Number(r.date.slice(8, 10))}`, size: "sm", weight: "bold", color: "#0e2724", flex: 5, wrap: true },
+        { type: "text", text: r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)}` : "—"), size: "sm", color: r.closed ? "#b0392f" : "#1a1a2e", align: "end", flex: 5 }
+      ] },
+      ...(badge ? [{ type: "text", text: badge, size: "xxs", color: "#b8860b", wrap: true }] : []),
+      ...(r.suggestions.length ? [{ type: "text", text: `• ${r.suggestions[0]}`, size: "xxs", color: "#555555", wrap: true }] : []),
+    ] });
+  }
+  return {
+    type: "flex", altText: `แผนล่วงหน้า ${fc.days} วัน · ${meta.branchName}`,
+    contents: { type: "bubble", size: "giga",
+      header: header("แผนล่วงหน้า", `${fc.days} วันข้างหน้า · ${meta.branchName}`, meta.color, "IKIGAI OS · ANALYTICA"),
+      body: { type: "box", layout: "vertical", spacing: "none", paddingAll: "16px", contents: body },
+      footer: footer("คาดจากค่าเฉลี่ยรายวัน + โมเมนตัม + วันหยุด/อากาศ · แนะนำโดยน้องฮูก") }
   };
 }
 

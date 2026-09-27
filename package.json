@@ -49,7 +49,8 @@
     "db:init": "node --import tsx scripts/init-db.ts",
     "db:seed": "node --import tsx scripts/seed.ts",
     "db:backup": "node scripts/backup-local.mjs",
-    "cron:run": "node --import tsx scripts/cron.ts"
+    "cron:run": "node --import tsx scripts/cron.ts",
+    "test:forecast": "node --import tsx scripts/test-forecast.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

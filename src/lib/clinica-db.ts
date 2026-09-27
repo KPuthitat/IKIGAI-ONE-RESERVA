@@ -123,6 +123,15 @@ export function clinicaBranchesWithBillsInYear(year: number, allowed?: number[] 
   return rows;
 }
 
+/** Per-DAY billed net for a clinic branch over an inclusive ISO range (for the
+ *  forward-plan baseline). */
+export function clinicaDailyNetRange(branchId: number, startIso: string, endIso: string): Array<{ date: string; net: number }> {
+  return getDb().prepare(
+    `SELECT bill_date date, ROUND(SUM(net),2) net FROM clinica_bills
+       WHERE branch_id=? AND bill_date BETWEEN ? AND ? AND bill_date<>'' GROUP BY bill_date`
+  ).all(branchId, startIso, endIso) as Array<{ date: string; net: number }>;
+}
+
 /** Per-DAY billed net for a clinic branch in a year (for the full-year daily bars). */
 export function clinicaDailyNet(branchId: number, year: number): Array<{ date: string; net: number }> {
   return getDb().prepare(
