@@ -2091,12 +2091,12 @@ function runMigrations(db: Database.Database): void {
     if (!ssCols.some((c) => c.name === "card_color")) {
       db.exec("ALTER TABLE salesa_settings ADD COLUMN card_color TEXT");
     }
-    // Per-branch operating hours (owner 2026-09-27): the peak-hours chart is
-    // pinned to the branch's real เวลาทำการ instead of whatever hours happened to
-    // have a bill. "HH:MM" open/close + an optional lunch break; break_weekday_only
-    // = the break applies Mon–Fri only (weekends no break). Clinic e.g. 09:00–21:00
-    // (สพ.7/สพ.19), a restaurant 11:00–21:00 with a 14:00–16:00 weekday break.
-    for (const col of ["open_time", "close_time", "break_start", "break_end"]) {
+    // ANALYTICA-only lunch break for the peak-hours chart (owner 2026-09-27). The
+    // open/close hours themselves are shared with RESERVA on branches.open_time/
+    // close_time — this only adds the break, which RESERVA doesn't model.
+    // break_weekday_only = the break applies Mon–Fri only (weekends no break),
+    // e.g. a restaurant 14:00–16:00 weekday break.
+    for (const col of ["break_start", "break_end"]) {
       if (!ssCols.some((c) => c.name === col)) db.exec(`ALTER TABLE salesa_settings ADD COLUMN ${col} TEXT`);
     }
     if (!ssCols.some((c) => c.name === "break_weekday_only")) {
