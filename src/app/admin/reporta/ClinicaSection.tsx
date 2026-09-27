@@ -3,6 +3,7 @@
 import { useState } from "react";
 import OwlMascot from "@/app/components/OwlMascot";
 import { thaiDate } from "@/lib/revshare";   // shared "15 มิถุนายน 2569" formatter (client-safe, pure)
+import { hourSpan, hoursLabel, type HoursWindow } from "@/lib/hours";
 // Type-only import (erased from the client bundle, so the server-only db code in
 // clinica-analytics is never pulled in) — the single source of truth for the
 // shape, re-exported for the rest of the client tree.
@@ -43,33 +44,34 @@ function Bar({ value, max, tone = "bg-brand" }: { value: number; max: number; to
   );
 }
 
-export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disabledReason }: {
+export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disabledReason, hours }: {
   c: ClinicaMonth;
   onSendReport?: () => void;
   sentAt?: string | null;
   canSend?: boolean;
   disabledReason?: string;
+  hours?: HoursWindow | null;
 }) {
   const [showAllDays, setShowAllDays] = useState(false);
   const maxCat = Math.max(1, ...c.categories.map((x) => x.net));
   const maxItem = Math.max(1, ...c.topItems.map((x) => x.net));
   const maxDx = Math.max(1, ...c.topDiagnoses.map((x) => x.count));
-  const maxHour = Math.max(1, ...c.hours.map((x) => x.count));
   const maxPayer = Math.max(1, ...c.payers.map((x) => x.net));
   const maxDaily = Math.max(1, ...c.daily.map((x) => x.net));
   const totalPatientsMix = c.newPatients + c.returningPatients;
   const maxDemoAge = Math.max(1, ...c.demographics.ageBands.map((x) => x.count));
   const arPct = c.billNet > 0 ? Math.round((c.due / c.billNet) * 100) : 0;
-  // Contiguous hour axis (zero-fill gaps between the earliest and latest hour so
-  // the time axis reads honestly).
-  const hourBars: Array<{ hour: number; count: number }> = (() => {
+  // Hour axis: pinned to the branch's operating hours when set (owner 2026-09-27:
+  // "ตรึงเป็นเวลาเปิด"), but always extended to cover any hour that has a bill so
+  // nothing is hidden. Break hours are flagged so they can render muted.
+  const hourBars: Array<{ hour: number; count: number; brk: boolean }> = (() => {
     if (!c.hours.length) return [];
-    const lo = c.hours[0].hour, hi = c.hours[c.hours.length - 1].hour;
     const byHour = new Map(c.hours.map((h) => [h.hour, h.count]));
-    const out: Array<{ hour: number; count: number }> = [];
-    for (let h = lo; h <= hi; h++) out.push({ hour: h, count: byHour.get(h) ?? 0 });
-    return out;
+    const span = hourSpan(hours, c.hours[0].hour, c.hours[c.hours.length - 1].hour);
+    if (!span) return [];
+    return span.hours.map((h) => ({ hour: h, count: byHour.get(h) ?? 0, brk: span.isBreak(h) }));
   })();
+  const maxHour = Math.max(1, ...hourBars.map((h) => h.count));
   // Zero-fill missing days between the first and last billed day so a sparse
   // month reads honestly (same rule as the hour axis).
   const dailyBars = (() => {
@@ -407,11 +409,12 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
             <div className="flex items-end gap-1 h-20">
               {hourBars.map((h) => (
                 <div key={h.hour} className="flex-1 flex flex-col items-center justify-end gap-0.5">
-                  <div className="w-full bg-amber-400 rounded-t" style={{ height: `${Math.max(4, Math.round((h.count / maxHour) * 64))}px` }} title={`${h.count} ครั้ง`} />
+                  <div className={`w-full rounded-t ${h.brk ? "bg-slate-200" : "bg-amber-400"}`} style={{ height: `${Math.max(4, Math.round((h.count / maxHour) * 64))}px` }} title={h.brk ? `พัก · ${h.count} ครั้ง` : `${h.count} ครั้ง`} />
                   <span className="text-[9px] text-slate-400">{String(h.hour).padStart(2, "0")}</span>
                 </div>
               ))}
             </div>
+            {hoursLabel(hours) && <p className="text-[10px] text-slate-400">เวลาทำการ {hoursLabel(hours)} · แกนตรึงตามเวลาทำการ</p>}
           </div>
         )}
       </div>

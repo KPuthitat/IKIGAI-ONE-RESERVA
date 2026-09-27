@@ -5,6 +5,7 @@ import OwlMascot from "@/app/components/OwlMascot";
 import ClinicaSection, { type ClinicaMonth } from "./ClinicaSection";
 import ClinicaWeekCard from "./ClinicaWeekCard";
 import type { ClinicaWeek } from "@/lib/clinica-analytics";
+import { hourSpan, hoursLabel, type HoursWindow } from "@/lib/hours";
 import ClinicaImportClient from "./clinica/ClinicaImportClient";
 import { clinicaPaidPct } from "@/lib/clinica-shared";
 
@@ -233,6 +234,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
   const [todayCol, setTodayCol] = useState<TodayCol | null>(null);
   const [clinica, setClinica] = useState<ClinicaMonth | null>(null);
   const [clinicaWeekly, setClinicaWeekly] = useState<ClinicaWeek | null>(null);
+  const [branchHours, setBranchHours] = useState<HoursWindow | null>(null);
   const [revshareIncome, setRevshareIncome] = useState(0);   // ส่วนแบ่งยอดขาย this month
   const [monthSentAt, setMonthSentAt] = useState<string | null>(null);
   const [clinicaSentAt, setClinicaSentAt] = useState<string | null>(null);
@@ -306,6 +308,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
       setTodayCol(r.todayCol ?? null);
       setClinica(r.clinica ?? null);
       setClinicaSentAt(r.clinicaSentAt ?? null);
+      setBranchHours(r.branchHours ?? null);
       if (r.cardColor) setCardColor(r.cardColor);
     }
   }, [year, month, panelPeriod]);
@@ -817,7 +820,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
             : !monthComplete ? "ส่งได้เมื่อจบเดือน (เดือนนี้ยังไม่จบ)" : undefined;
           return (
             <ClinicaSection c={clinica} onSendReport={() => sendClinica(year, month)}
-              sentAt={clinicaSentAt} canSend={hasLineGroup && monthComplete} disabledReason={reason} />
+              sentAt={clinicaSentAt} canSend={hasLineGroup && monthComplete} disabledReason={reason} hours={branchHours} />
           );
         })()}
 
@@ -1759,7 +1762,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                   <h2 className="font-bold text-slate-800">ช่วงเวลาขายดี (พีคไทม์)</h2>
                   <p className="text-xs text-slate-500 mt-0.5">ยอดขาย/จำนวนบิลตามชั่วโมง จากไฟล์ใบเสร็จ (ไม่รวมบิลพนักงาน)</p>
                 </div>
-                <HourBars hours={insights.receipt.hourly} peak={insights.receipt.peakHour} />
+                <HourBars hours={insights.receipt.hourly} peak={insights.receipt.peakHour} hoursWindow={branchHours} />
               </div>
 
               <div className="grid lg:grid-cols-2 gap-4">
@@ -1903,21 +1906,30 @@ function FileChip({ label, present }: { label: string; present?: boolean }) {
     : <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 border border-amber-300 px-2 py-0.5 text-[10px] font-medium">ขาด{label}</span>;
 }
 
-function HourBars({ hours, peak }: { hours: Array<{ hour: number; bills: number; nett: number }>; peak: number | null }) {
+function HourBars({ hours, peak, hoursWindow }: { hours: Array<{ hour: number; bills: number; nett: number }>; peak: number | null; hoursWindow?: HoursWindow | null }) {
   if (!hours.length) return <div className="text-xs text-slate-400">ยังไม่มีข้อมูลใบเสร็จ</div>;
-  const max = Math.max(1, ...hours.map((h) => h.nett));
+  // Pin the axis to the branch's operating hours when set (owner 2026-09-27),
+  // extended to cover any hour with data so no bill is hidden.
+  const hourNums = hours.map((h) => h.hour);
+  const span = hourSpan(hoursWindow, Math.min(...hourNums), Math.max(...hourNums));
+  const byHour = new Map(hours.map((h) => [h.hour, h]));
+  const rows = span
+    ? span.hours.map((hr) => ({ hour: hr, bills: byHour.get(hr)?.bills ?? 0, nett: byHour.get(hr)?.nett ?? 0, brk: span.isBreak(hr) }))
+    : hours.map((h) => ({ ...h, brk: false }));
+  const max = Math.max(1, ...rows.map((h) => h.nett));
   return (
     <div className="space-y-1">
-      {hours.map((h) => (
-        <div key={h.hour} className="flex items-center gap-2">
+      {rows.map((h) => (
+        <div key={h.hour} className={`flex items-center gap-2 ${h.brk ? "opacity-60" : ""}`}>
           <span className="w-12 text-xs text-slate-500 shrink-0 tabular-nums">{String(h.hour).padStart(2, "0")}:00</span>
           <div className="flex-1 h-4 rounded bg-slate-100 overflow-hidden">
             <div className={`h-full ${h.hour === peak ? "bg-emerald-500" : "bg-emerald-300"}`} style={{ width: `${Math.max(3, (h.nett / max) * 100)}%` }} />
           </div>
-          <span className="w-36 text-right text-xs text-slate-700 shrink-0">{baht(h.nett)} · {intTh(h.bills)} บิล</span>
+          <span className="w-36 text-right text-xs text-slate-700 shrink-0">{h.brk && h.nett === 0 ? <span className="text-slate-400">พักเที่ยง</span> : <>{baht(h.nett)} · {intTh(h.bills)} บิล</>}</span>
         </div>
       ))}
       {peak != null && <div className="text-xs text-slate-500 pt-1">ช่วงพีค <b className="text-emerald-600">{String(peak).padStart(2, "0")}:00</b> — จัดกำลังคน/เตรียมของให้พร้อม · ช่วงร้างจัด Happy Hour กระตุ้น</div>}
+      {hoursLabel(hoursWindow) && <div className="text-[11px] text-slate-400">เวลาทำการ {hoursLabel(hoursWindow)}</div>}
     </div>
   );
 }

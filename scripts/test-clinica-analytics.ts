@@ -152,6 +152,38 @@ process.env.DATABASE_PATH = TMP;
     return near(p.ytd, 1500) && p.projected > p.ytd;
   })());
 
+  // Operating hours (owner 2026-09-27): span helper + per-branch round-trip.
+  const { hourSpan, hoursLabel } = await import("../src/lib/hours");
+  ok("hours: span 09–21 (มีบิล 16–21) → คลุม 09..21", (() => {
+    const s = hourSpan({ open: "09:00", close: "21:00", breakStart: "14:00", breakEnd: "16:00", breakWeekdayOnly: false }, 16, 21);
+    return !!s && s.hours[0] === 9 && s.hours[s.hours.length - 1] === 21 && s.isBreak(14) && s.isBreak(15) && !s.isBreak(16);
+  })());
+  ok("hours: span ขยายคลุมบิลนอกเวลา (บิล 08:00) → เริ่ม 08 ไม่ตัดทิ้ง", (() => {
+    const s = hourSpan({ open: "09:00", close: "21:00", breakStart: null, breakEnd: null, breakWeekdayOnly: true }, 8, 21);
+    return !!s && s.hours[0] === 8 && s.hours[s.hours.length - 1] === 21;
+  })());
+  ok("hours: พักเฉพาะวันธรรมดา → ไม่มัด (aggregate มีเสาร์อาทิตย์)", (() => {
+    const s = hourSpan({ open: "11:00", close: "21:00", breakStart: "14:00", breakEnd: "16:00", breakWeekdayOnly: true }, 11, 21);
+    return !!s && !s.isBreak(14) && !s.isBreak(15);
+  })());
+  ok("hours: ไม่ตั้ง → ใช้ช่วงบิล · label ถูกต้อง", (() => {
+    const s = hourSpan(null, 16, 21);
+    return !!s && s.hours[0] === 16 && s.hours[s.hours.length - 1] === 21
+      && hoursLabel({ open: "11:00", close: "21:00", breakStart: "14:00", breakEnd: "16:00", breakWeekdayOnly: true }) === "11:00–21:00 · พัก 14:00–16:00 (จ–ศ)";
+  })());
+  const sdb = await import("../src/lib/salesa-db");
+  sdb.setBranchHours(branch, { open: "16:00", close: "21:00", breakStart: null, breakEnd: null, breakWeekdayOnly: true });
+  ok("hours: บันทึก/อ่านกลับ (16–21 ไม่มีพัก)", (() => {
+    const h = sdb.getBranchHours(branch);
+    return !!h && h.open === "16:00" && h.close === "21:00" && h.breakStart === null;
+  })());
+  sdb.setBranchHours(branch, null);
+  ok("hours: ล้างค่า → null", sdb.getBranchHours(branch) === null);
+  const throws = (fn: () => void) => { try { fn(); return false; } catch { return true; } };
+  ok("hours: เวลาผิดรูปแบบ → throw", throws(() => sdb.setBranchHours(branch, { open: "9am", close: "21:00", breakStart: null, breakEnd: null, breakWeekdayOnly: true })));
+  ok("hours: ปิดก่อนเปิด → throw", throws(() => sdb.setBranchHours(branch, { open: "21:00", close: "09:00", breakStart: null, breakEnd: null, breakWeekdayOnly: true })));
+  ok("hours: พักนอกเวลาทำการ → throw", throws(() => sdb.setBranchHours(branch, { open: "11:00", close: "21:00", breakStart: "22:00", breakEnd: "23:00", breakWeekdayOnly: true })));
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

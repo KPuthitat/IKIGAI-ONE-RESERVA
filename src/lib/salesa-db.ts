@@ -588,6 +588,52 @@ export function setMonthlyTarget(branchId: number, target: number | null): void 
   ).run(branchId, clean);
 }
 
+// ── Per-branch operating hours (owner 2026-09-27) ───────────────────────────
+// Real เวลาทำการ, so the peak-hours chart is pinned to it. "HH:MM" open/close +
+// an optional lunch break; breakWeekdayOnly = the break is Mon–Fri only.
+export type BranchHours = {
+  open: string; close: string;              // "HH:MM"
+  breakStart: string | null; breakEnd: string | null;
+  breakWeekdayOnly: boolean;
+};
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** The branch's operating hours, or null when open/close aren't both set. */
+export function getBranchHours(branchId: number): BranchHours | null {
+  const r = getDb().prepare(
+    "SELECT open_time, close_time, break_start, break_end, break_weekday_only FROM salesa_settings WHERE branch_id = ?"
+  ).get(branchId) as { open_time: string | null; close_time: string | null; break_start: string | null; break_end: string | null; break_weekday_only: number | null } | undefined;
+  if (!r?.open_time || !r.close_time) return null;
+  const brk = r.break_start && r.break_end ? { breakStart: r.break_start, breakEnd: r.break_end } : { breakStart: null, breakEnd: null };
+  return { open: r.open_time, close: r.close_time, ...brk, breakWeekdayOnly: (r.break_weekday_only ?? 1) === 1 };
+}
+
+/** Set (or clear, with null) the branch's operating hours. Invalid times are
+ *  rejected as a no-op-throw so the API can surface a clear error. */
+export function setBranchHours(branchId: number, h: BranchHours | null): void {
+  let open: string | null = null, close: string | null = null, bs: string | null = null, be: string | null = null, wk = 1;
+  if (h) {
+    const mins = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+    if (!HHMM.test(h.open) || !HHMM.test(h.close)) throw new Error("bad_time");
+    if ((h.breakStart && !HHMM.test(h.breakStart)) || (h.breakEnd && !HHMM.test(h.breakEnd))) throw new Error("bad_time");
+    if (mins(h.close) <= mins(h.open)) throw new Error("bad_range");   // close must be after open
+    open = h.open; close = h.close;
+    // A break needs both ends, must be ordered, and sit within opening hours.
+    if (h.breakStart && h.breakEnd) {
+      if (mins(h.breakEnd) <= mins(h.breakStart) || mins(h.breakStart) < mins(h.open) || mins(h.breakEnd) > mins(h.close)) throw new Error("bad_range");
+      bs = h.breakStart; be = h.breakEnd;
+    }
+    wk = h.breakWeekdayOnly ? 1 : 0;
+  }
+  getDb().prepare(
+    `INSERT INTO salesa_settings (branch_id, open_time, close_time, break_start, break_end, break_weekday_only, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(branch_id) DO UPDATE SET open_time = excluded.open_time, close_time = excluded.close_time,
+       break_start = excluded.break_start, break_end = excluded.break_end, break_weekday_only = excluded.break_weekday_only,
+       updated_at = datetime('now')`
+  ).run(branchId, open, close, bs, be, wk);
+}
+
 // ── Monthly card sent-tracking (owner F) ────────────────────────────────────
 
 export function markMonthlySent(branchId: number, ym: string, userId: number): void {

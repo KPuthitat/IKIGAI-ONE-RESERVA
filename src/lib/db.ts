@@ -2091,6 +2091,17 @@ function runMigrations(db: Database.Database): void {
     if (!ssCols.some((c) => c.name === "card_color")) {
       db.exec("ALTER TABLE salesa_settings ADD COLUMN card_color TEXT");
     }
+    // Per-branch operating hours (owner 2026-09-27): the peak-hours chart is
+    // pinned to the branch's real เวลาทำการ instead of whatever hours happened to
+    // have a bill. "HH:MM" open/close + an optional lunch break; break_weekday_only
+    // = the break applies Mon–Fri only (weekends no break). Clinic e.g. 09:00–21:00
+    // (สพ.7/สพ.19), a restaurant 11:00–21:00 with a 14:00–16:00 weekday break.
+    for (const col of ["open_time", "close_time", "break_start", "break_end"]) {
+      if (!ssCols.some((c) => c.name === col)) db.exec(`ALTER TABLE salesa_settings ADD COLUMN ${col} TEXT`);
+    }
+    if (!ssCols.some((c) => c.name === "break_weekday_only")) {
+      db.exec("ALTER TABLE salesa_settings ADD COLUMN break_weekday_only INTEGER NOT NULL DEFAULT 1");
+    }
     const sdCols = db.prepare("PRAGMA table_info(salesa_daily)").all() as Array<{ name: string }>;
     if (!sdCols.some((c) => c.name === "has_receipt")) {
       db.exec("ALTER TABLE salesa_daily ADD COLUMN has_receipt INTEGER NOT NULL DEFAULT 0");
