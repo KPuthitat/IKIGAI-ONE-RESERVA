@@ -147,6 +147,11 @@ process.env.DATABASE_PATH = TMP;
     const row = bars.branches.find((b) => b.branchId === cb);
     return !!row && near(row.total, 1500) && row.months[7] === 1500;
   })());
+  ok("annual daily: สาขาคลินิกอยู่ในกราฟรายวันทั้งปี · รวม 1500", (() => {
+    const b = sa.annualBranchDailyBars(2026, "2026-08-31", [cb]);
+    const row = b.branches.find((x) => x.branchId === cb);
+    return !!row && near(row.total, 1500);
+  })());
   ok("annual: YTD ของคลินิก = 1500 · คาดสิ้นปี > YTD (run-rate)", (() => {
     const p = cdb.clinicaYtdProjection(cb, "2026-08-31");
     return near(p.ytd, 1500) && p.projected > p.ytd;

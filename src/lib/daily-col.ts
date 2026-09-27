@@ -174,7 +174,16 @@ export function branchTodayCol(branchId: number, todayBkk: string): TodayCol {
   const salesRow = db.prepare(
     `SELECT SUM(nett) AS nett FROM salesa_daily WHERE branch_id = ? AND has_sales = 1 AND sale_date = ?`
   ).get(branchId, todayBkk) as { nett: number | null } | undefined;
-  const salesNett = salesRow?.nett != null ? Math.round(salesRow.nett * 100) / 100 : null;
+  // A clinic branch's revenue is in clinica_bills, so add it to the COL denominator
+  // (owner 2026-09-27) — otherwise COL% reads "—" for a clinic that has revenue.
+  const cliRow = db.prepare(
+    `SELECT COALESCE(SUM(net),0) AS net FROM clinica_bills WHERE branch_id = ? AND bill_date = ?`
+  ).get(branchId, todayBkk) as { net: number };
+  // Keep the original shape for a restaurant (a recorded POS row stays numeric,
+  // even 0/negative); a clinic-only day surfaces once its bills sum non-zero.
+  const salesNett = (salesRow?.nett != null || cliRow.net !== 0)
+    ? Math.round(((salesRow?.nett ?? 0) + cliRow.net) * 100) / 100
+    : null;
   const colPct = salesNett && salesNett > 0 ? Math.round((laborCost / salesNett) * 1000) / 10 : null;
 
   return { date: todayBkk, headcount, ftCount, ptCount, otherCount: headcount - ftCount - ptCount, laborCost, salesNett, colPct };
@@ -242,8 +251,16 @@ export function companyMonthLabor(
     (db.prepare(
       `SELECT sale_date AS date, SUM(nett) AS nett FROM salesa_daily
        WHERE branch_id IN (${bph}) AND has_sales = 1 AND sale_date >= ? AND sale_date <= ? GROUP BY sale_date`
-    ).all(...companyBranchIds, first, end) as Array<{ date: string; nett: number }>).map((r) => [r.date, r.nett])
+    ).all(...companyBranchIds, first, end) as Array<{ date: string; nett: number }>).map((r) => [r.date, r.nett] as [string, number])
   );
+  // Fold clinic branches' billed net per date (owner 2026-09-27) so a hybrid
+  // company's COL% denominator isn't understated.
+  for (const r of db.prepare(
+    `SELECT bill_date AS date, SUM(net) AS net FROM clinica_bills
+       WHERE branch_id IN (${bph}) AND bill_date <> '' AND bill_date >= ? AND bill_date <= ? GROUP BY bill_date`
+  ).all(...companyBranchIds, first, end) as Array<{ date: string; net: number }>) {
+    salesByDate.set(r.date, (salesByDate.get(r.date) ?? 0) + r.net);
+  }
 
   // totalLabor spans every elapsed day; the COL% ratio compares labour and
   // sales over the SAME days (those with recorded sales), so a day whose POS

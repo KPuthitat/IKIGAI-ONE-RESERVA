@@ -123,6 +123,14 @@ export function clinicaBranchesWithBillsInYear(year: number, allowed?: number[] 
   return rows;
 }
 
+/** Per-DAY billed net for a clinic branch in a year (for the full-year daily bars). */
+export function clinicaDailyNet(branchId: number, year: number): Array<{ date: string; net: number }> {
+  return getDb().prepare(
+    `SELECT bill_date date, ROUND(SUM(net),2) net FROM clinica_bills
+       WHERE substr(bill_date,1,4)=? AND branch_id=? AND bill_date<>'' GROUP BY bill_date`
+  ).all(String(year), branchId) as Array<{ date: string; net: number }>;
+}
+
 /** Per-month billed net for a clinic branch in a year (index 0=Jan … 11=Dec). */
 export function clinicaMonthlyNet(branchId: number, year: number): number[] {
   const out = new Array(12).fill(0) as number[];

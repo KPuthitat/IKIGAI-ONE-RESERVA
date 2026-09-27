@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { branchTodayCol } from "@/lib/daily-col";
-import { isClinicaBranch } from "@/lib/clinica-db";
+import { isClinicaBranch, clinicaRangeAgg } from "@/lib/clinica-db";
 import { clinicaMonth, clinicaWeek } from "@/lib/clinica-analytics";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR, getBranchHours } from "@/lib/salesa-db";
 import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars, revshareIncomeForBranch, applyRevshareToTarget, remainingMonthOutlook, composeExpenseAnalysis } from "@/lib/salesa-analytics";
@@ -158,7 +158,12 @@ export function GET(req: Request) {
   const pmY = month === 1 ? year - 1 : year;
   const pmM = month === 1 ? 12 : month - 1;
   const prevMonthStr = `${pmY}-${String(pmM).padStart(2, "0")}`;
-  const salesNettMonth = days.filter((d) => d.hasSales).reduce((s, d) => s + d.nett, 0);
+  // A clinic branch's revenue is in clinica_bills, so add it to the denominator
+  // (owner 2026-09-27) — otherwise cost/sales ratio uses 0 and the net proxy goes
+  // wrongly negative.
+  const isClinic = isClinicaBranch(branchId);
+  const clinicNettMonth = isClinic ? clinicaRangeAgg(branchId, `${monthStr}-01`, `${monthStr}-31`).nett : 0;
+  const salesNettMonth = days.filter((d) => d.hasSales).reduce((s, d) => s + d.nett, 0) + clinicNettMonth;
   const et = expenseCategoryTotals(monthStr, branchId);   // one grouped query: total + by-category
   const expenseAnalysis = composeExpenseAnalysis({
     month: monthStr,
@@ -170,7 +175,7 @@ export function GET(req: Request) {
 
   // Clinic (CLINICA) analytics for the viewed month — only for a branch that has
   // imported HIS data (owner 2026-09-26).
-  const clinica = isClinicaBranch(branchId) ? clinicaMonth(branchId, year, month, todayIso, target) : null;
+  const clinica = isClinic ? clinicaMonth(branchId, year, month, todayIso, target) : null;
   const branchHours = getBranchHours(branchId);   // pins the peak-hours chart axis
 
   return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, view: { year, month, days }, monthCompare, weekdays, discount, channels, monthTarget, monthSentAt, clinicaSentAt, annual, revshareIncome, insights, insightRange: range, remainingOutlook, expenseAnalysis, todayCol, clinica, branchHours });
