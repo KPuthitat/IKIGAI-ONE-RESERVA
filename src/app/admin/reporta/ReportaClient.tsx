@@ -6,7 +6,7 @@ import ClinicaSection, { type ClinicaMonth } from "./ClinicaSection";
 import ClinicaWeekCard from "./ClinicaWeekCard";
 import EventNotesView from "./EventNotesView";
 import ForecastCard from "./ForecastCard";
-import type { ClinicaWeek } from "@/lib/clinica-analytics";
+import type { ClinicaWeek, ClinicaDailyReport } from "@/lib/clinica-analytics";
 import type { BranchForecast } from "@/lib/forecast";
 import { hourSpan, hoursLabel, type HoursWindow } from "@/lib/hours";
 import ClinicaImportClient from "./clinica/ClinicaImportClient";
@@ -638,6 +638,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
   const sendClinicaDaily = (date: string) => {
     setPin({
       title: `ส่งสรุปคลินิกวันที่ ${thaiDate(date)}`,
+      preview: <ClinicaDailyPreview date={date} branchName={branchName} operator={operatorName} color={cardColor} />,
       run: async (p) => {
         const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "clinica-daily", date, pin: p }) }).then((x) => x.json());
         if (r.ok) setMsg({ kind: "ok", text: `ส่งรายงานผู้บริหาร (คลินิก รายวัน ${thaiDate(date)}) แล้ว` });
@@ -2252,6 +2253,62 @@ function ClinicaPreview({ c, branchName, operator, color }: { c: ClinicaMonth; b
       <PRow label="รอเบิก (บิลเดือนนี้)" value={`${baht(c.due)} (${100 - paidPct}%)`} tone="red" />
       <PRow label="คนไข้ (บิล)" value={`${intTh(c.patientCount)} คน`} />
       {c.arTotal > 0.5 && <PRow label="รอเบิกค้างสะสม (ทุกงวด)" value={baht(c.arTotal)} tone="red" />}
+    </CardShell>
+  );
+}
+
+/** Preview of the clinic daily LINE card (owner 2026-09-27: พรีวิวทุกปุ่มที่จะส่ง
+ *  การ์ด). Self-fetches clinicaDay for the date — the same rollup the notify route
+ *  builds — so the preview matches what's sent. Mirrors clinicaDailyFlex. */
+function ClinicaDailyPreview({ date, branchName, operator, color }: { date: string; branchName: string; operator: string; color: string }) {
+  const [c, setC] = useState<ClinicaDailyReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true; setLoading(true);
+    fetch(`/api/admin/reporta/view?clinicaDaily=${date}`, { cache: "no-store" })
+      .then((x) => x.json())
+      .then((r) => { if (alive && r.ok) setC(r.clinicaDaily as ClinicaDailyReport); })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [date]);
+  const paidPct = c && c.billNet > 0 ? Math.round((c.paid / c.billNet) * 100) : 0;
+  return (
+    <CardShell color={color} title="สรุปคลินิกรายวัน" subtitle={`${thaiDate(date)} · ${branchName}`}>
+      <div className="font-bold text-slate-800">{branchName}</div>
+      <div className="text-[11px] text-slate-400">สรุปโดย: {operator}</div>
+      {loading ? (
+        <div className="text-[11px] text-slate-400 py-2">กำลังโหลดตัวอย่าง…</div>
+      ) : !c || !c.hasData ? (
+        <div className="text-[11px] text-slate-400 py-2">วันนี้ยังไม่มีข้อมูลคลินิก</div>
+      ) : (
+        <>
+          {sepline}
+          <PRow label="ยอดบิลวันนี้" value={`${baht(c.billNet)} (${intTh(c.billCount)} ครั้ง)`} bold tone="green" />
+          {c.prevSameDowNet != null && <Cmp parts={[{ label: `เทียบ${c.wowLabel}`, pct: c.wowPct }]} />}
+          <PRow label="เงินเข้าจริง (เงินสด/พร้อมเพย์)" value={`${baht(c.paid)} (${paidPct}%)`} tone="green" />
+          <PRow label="รอเบิก" value={baht(c.due)} tone="red" />
+          <PRow label="คนไข้" value={`${intTh(c.patientCount)} คน`} />
+          {c.avgPerBill != null && <PRow label="เฉลี่ยต่อบิล" value={baht(c.avgPerBill)} />}
+          {c.categories.length > 0 && (
+            <div className="pt-1">
+              <div className="text-[11px] font-bold text-slate-600">โครงสร้างรายได้</div>
+              {c.categories.slice(0, 4).map((cat) => (
+                <div key={cat.key} className="flex justify-between gap-2 text-[11px] text-slate-600"><span className="truncate">{cat.label}</span><span className="whitespace-nowrap">{baht(cat.net)} ({intTh(cat.count)})</span></div>
+              ))}
+            </div>
+          )}
+          {c.topItems.length > 0 && (
+            <div className="pt-1">
+              <div className="text-[11px] font-bold text-slate-600">รายการทำเงินสูงสุด</div>
+              {c.topItems.slice(0, 4).map((it) => (
+                <div key={it.name} className="flex justify-between gap-2 text-[11px] text-slate-600"><span className="truncate">{it.name}</span><span className="whitespace-nowrap">{baht(it.net)} ({intTh(it.qty)})</span></div>
+              ))}
+            </div>
+          )}
+          <EventNotesView days={[{ notes: c.eventNotes }]} />
+        </>
+      )}
     </CardShell>
   );
 }
