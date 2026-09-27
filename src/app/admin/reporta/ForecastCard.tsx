@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { BranchForecast, ForecastWeather } from "@/lib/forecast";
 
 // Forward plan (owner 2026-09-27): next few days' predicted sales + holidays +
@@ -31,22 +31,41 @@ function dateLabel(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 }
 
-// Weather glyphs for the forward-plan strip (owner 2026-09-27: "มีไอคอนสภาพอากาศ
-// ด้วยดีไหม"). Derived from Open-Meteo's rain chance + high temp.
-function weatherIcon(w: ForecastWeather | null): string {
-  if (!w) return "";
-  if (w.rainChance != null && w.rainChance >= 60) return "🌧️";
-  if (w.rainChance != null && w.rainChance >= 30) return "🌦️";
-  if (w.tempMax != null && w.tempMax >= 35) return "☀️";
-  return "⛅";
+// Inline SVG icons — the owner asked for real icons, not emoji (owner 2026-09-27:
+// "ทำแบบไม่เอาอิโมจิ … ให้เอาเป็นไอคอนตัวแทน"). Monochrome, currentColor, so a
+// parent's text-color class tints them.
+type IconProps = { className?: string };
+// Decorative by default (aria-hidden) — text sits next to each one. The one
+// icon that carries meaning on its own (the weather glyph) labels itself below.
+const svg = (children: ReactNode) => (p: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={p.className}>{children}</svg>
+);
+const IconSun = svg(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>);
+const IconCloud = svg(<path d="M17.5 18a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7.06 9 4.5 4.5 0 0 0 7 18h10.5Z" />);
+const IconCloudSun = svg(<><path d="M12 3v1.5M5.6 5.6l1 1M3.5 12H5M18.4 5.6l-1 1" /><circle cx="12" cy="10" r="2.4" /><path d="M17.5 20a3.5 3.5 0 0 0 .3-6.98A4.7 4.7 0 0 0 9 12.2 3.8 3.8 0 0 0 8.5 20h9Z" /></>);
+const IconRain = svg(<><path d="M17.5 15a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7.06 6 4.5 4.5 0 0 0 7 15h10.5Z" /><path d="M8 18l-1 2.5M12 18l-1 2.5M16 18l-1 2.5" /></>);
+const IconDroplet = svg(<path d="M12 3.5s5 5.1 5 8.6a5 5 0 0 1-10 0c0-3.5 5-8.6 5-8.6Z" />);
+const IconPin = svg(<><path d="M12 21s-6-5.3-6-10a6 6 0 1 1 12 0c0 4.7-6 10-6 10Z" /><circle cx="12" cy="11" r="2" /></>);
+const IconCalendarStar = svg(<><rect x="3.5" y="4.5" width="17" height="16" rx="2" /><path d="M3.5 9h17M8 3v3M16 3v3" /><path d="M12 12l.9 1.8 2 .3-1.45 1.4.34 2L12 17.6l-1.8.95.34-2L9.1 14.1l2-.3.9-1.7Z" /></>);
+
+// Weather glyph for the forward-plan strip. Derived from Open-Meteo's rain chance
+// + high temp (owner 2026-09-27 asked for the icon; real icon not emoji).
+function WeatherGlyph({ w, className }: { w: ForecastWeather | null; className?: string }) {
+  if (!w) return null;
+  const cls = (tint: string) => [className, tint].filter(Boolean).join(" ");
+  const glyph =
+    w.rainChance != null && w.rainChance >= 60 ? <IconRain className={cls("text-sky-500")} />
+    : w.rainChance != null && w.rainChance >= 30 ? <IconCloud className={cls("text-sky-400")} />
+    : w.tempMax != null && w.tempMax >= 35 ? <IconSun className={cls("text-amber-500")} />
+    : <IconCloudSun className={cls("text-slate-400")} />;
+  // Restore the weather-summary tooltip the old emoji carried, and give the
+  // lone meaning-bearing icon an accessible name.
+  const label = w.summary || "สภาพอากาศ";
+  return <span className="inline-flex" title={label} role="img" aria-label={label}>{glyph}</span>;
 }
-function weatherLine(w: ForecastWeather | null): string {
-  if (!w) return "";
-  const temp = w.tempMax != null
-    ? (w.tempMin != null ? `${Math.round(w.tempMin)}–${Math.round(w.tempMax)}°` : `${Math.round(w.tempMax)}°`)
-    : "";
-  const rain = w.rainChance != null && w.rainChance >= 30 ? `💧${Math.round(w.rainChance)}%` : "";
-  return [temp, rain].filter(Boolean).join("  ");
+function tempLabel(w: ForecastWeather | null): string {
+  if (!w || w.tempMax == null) return "";
+  return w.tempMin != null ? `${Math.round(w.tempMin)}–${Math.round(w.tempMax)}°` : `${Math.round(w.tempMax)}°`;
 }
 // Big date header, full Thai (owner 2026-09-27: "MON 28/09 เป็น วันจันทร์ที่ 28
 // กันยายน") — e.g. "วันจันทร์ที่ 28 กันยายน".
@@ -238,9 +257,9 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
           <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x snap-mandatory">
             {fc.rows.map((r) => {
               const dayNotes = notesByDate[r.date] ?? [];
-              const icon = weatherIcon(r.weather);
-              const wline = weatherLine(r.weather);
               const wsummary = r.weather && r.weather.summary !== "อากาศปกติ" ? r.weather.summary : null;
+              const temp = tempLabel(r.weather);
+              const rainPct = r.weather?.rainChance != null && r.weather.rainChance >= 30 ? Math.round(r.weather.rainChance) : null;
               const barPct = !r.closed && r.predictedNett != null && r.predictedNett > 0 && maxPred > 0 ? Math.max(6, Math.round((r.predictedNett / maxPred) * 100)) : 0;
               // The payday badge already states this, so drop the duplicate suggestion line.
               const shownSug = r.payday ? r.suggestions.filter((s) => !s.startsWith("ช่วงเงินเดือนออก")) : r.suggestions;
@@ -249,9 +268,15 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
                 <div className="flex items-start justify-between gap-1.5">
                   <div className="min-w-0">
                     <div className="text-[15px] font-bold text-slate-800">{bigDate(r.date, r.dow)}</div>
-                    {(wsummary || wline) && <div className="text-[11px] text-slate-500 mt-0.5 truncate">{[wsummary, wline].filter(Boolean).join(" · ")}</div>}
+                    {(wsummary || temp || rainPct != null) && (
+                      <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                        {wsummary && <span className="truncate min-w-0">{wsummary}</span>}
+                        {temp && <span>{temp}</span>}
+                        {rainPct != null && <span className="inline-flex items-center gap-0.5"><IconDroplet className="w-3 h-3 text-sky-500" />{rainPct}%</span>}
+                      </div>
+                    )}
                   </div>
-                  {icon && <span className="shrink-0 text-xl leading-none" title={r.weather?.summary ?? undefined}>{icon}</span>}
+                  <WeatherGlyph w={r.weather} className="w-5 h-5 shrink-0" />
                 </div>
                 <div>
                   {/* Match the page's KPI numbers (text-base font-bold) so this doesn't
@@ -266,7 +291,7 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
                 </div>
                 {(r.holiday || (r.payday && !r.closed && !fc.isClinic)) && (
                   <div className="flex flex-wrap gap-1">
-                    {r.holiday && <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold px-2 py-0.5">🎌 {r.holiday}</span>}
+                    {r.holiday && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold px-2 py-0.5"><IconCalendarStar className="w-3 h-3 shrink-0" />{r.holiday}</span>}
                     {r.payday && !r.closed && !fc.isClinic && <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold px-2 py-0.5">เงินเดือนออก</span>}
                   </div>
                 )}
@@ -283,7 +308,7 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
                     {dayNotes.map((n) => (
                       <span key={n.id} className="inline-flex items-center gap-1 rounded-full bg-violet-50 text-violet-700 text-[11px] px-2 py-0.5"
                         title={n.createdByName ? `แท็กโดย ${n.createdByName}` : undefined}>
-                        📌 {n.note}
+                        <IconPin className="w-3 h-3 shrink-0" /> {n.note}
                         <button type="button" onClick={() => removeNote(r.date, n.id)} disabled={busy}
                           className="text-violet-400 hover:text-rose-500 disabled:opacity-50" aria-label="ลบโน้ต">×</button>
                       </span>
@@ -317,8 +342,8 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
       {/* Backdated notes — tag past days too (owner 2026-09-27) */}
       <div className="border-t border-slate-100 pt-2">
         <button type="button" onClick={() => { setPastOpen((v) => !v); setNoteErr(null); }}
-          className="text-[12px] font-semibold text-slate-600 hover:text-slate-800">
-          {pastOpen ? "▾" : "▸"} 📌 โน้ตเหตุการณ์ย้อนหลัง
+          className="inline-flex items-center gap-1 text-[12px] font-semibold text-slate-600 hover:text-slate-800">
+          {pastOpen ? "▾" : "▸"} <IconPin className="w-3 h-3 shrink-0" /> โน้ตเหตุการณ์ย้อนหลัง
         </button>
         {pastOpen && (
           <div className="mt-2 space-y-2">
@@ -345,7 +370,7 @@ export default function ForecastCard({ hasLineGroup, onSend }: { hasLineGroup: b
                       {ns.map((n) => (
                         <span key={n.id} className="inline-flex items-center gap-1 rounded-full bg-violet-50 text-violet-700 text-[11px] px-2 py-0.5"
                           title={n.createdByName ? `แท็กโดย ${n.createdByName}` : undefined}>
-                          📌 {n.note}
+                          <IconPin className="w-3 h-3 shrink-0" /> {n.note}
                           <button type="button" onClick={() => removePastNote(n.id)} disabled={busy}
                             className="text-violet-400 hover:text-rose-500 disabled:opacity-50" aria-label="ลบโน้ต">×</button>
                         </span>
