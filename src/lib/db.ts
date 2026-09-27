@@ -2077,6 +2077,26 @@ function runMigrations(db: Database.Database): void {
       decided_at TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (branch_id, pair_key)
     );
+    -- Team-tagged daily event notes (owner 2026-09-27: "เพิ่มโน้ตเหตุการณ์รายวัน
+    -- ให้ทีมแท็กเองด้วย"). Free-form context a branch's team pins to a specific day
+    -- — local news, a nearby event, a road closure, a festival — so the ANALYTICA
+    -- forward plan and the exec LINE card carry that context alongside holidays and
+    -- weather. Several notes per day are allowed (different people tag different
+    -- things); each row is deletable on its own.
+    CREATE TABLE IF NOT EXISTS branch_event_notes (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id   INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      event_date  TEXT NOT NULL,                          -- 'YYYY-MM-DD'
+      note        TEXT NOT NULL,
+      -- ON DELETE SET NULL: notes are tagged by ordinary staff who later resign;
+      -- the 1-year resignation-purge (resignation-sweep.ts) DELETEs users and
+      -- relies on children cascading/nulling, so a plain FK here would abort it.
+      -- The note text (the event context) still stands once the author is gone.
+      created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_branch_event_notes_bd
+      ON branch_event_notes(branch_id, event_date);
   `);
   // Columns added after salesa_settings first shipped — ALTER for existing
   // installs (owner 2026-09-17). Idempotent.
