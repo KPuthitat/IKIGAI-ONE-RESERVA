@@ -431,3 +431,61 @@ export function clinicaWeek(branchId: number, weekStartIso: string, topN = 5): C
     topItems,
   };
 }
+
+const TH_WEEKDAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+
+export type ClinicaDailyReport = {
+  date: string; dateLabel: string; hasData: boolean;
+  billNet: number; billCount: number; patientCount: number;
+  paid: number; due: number; avgPerBill: number | null;
+  prevSameDowNet: number | null; wowPct: number | null; wowLabel: string;   // vs same weekday last week
+  categories: CatRow[];
+  topItems: NamedNet[];
+};
+
+/** One clinic day's rollup for the daily exec card (owner 2026-09-27: คลินิกจะ
+ *  นำเข้ารายวัน → สรุปรายวันเหมือนร้านอาหาร). Compares to the same weekday last week. */
+export function clinicaDay(branchId: number, date: string): ClinicaDailyReport {
+  const db = getDb();
+  const kpi = db.prepare(
+    `SELECT COALESCE(SUM(net),0) net, COUNT(*) bills, COUNT(DISTINCT NULLIF(hn,'')) pts,
+            COALESCE(SUM(paid),0) paid, COALESCE(SUM(due),0) due
+       FROM clinica_bills WHERE branch_id=? AND bill_date=?`
+  ).get(branchId, date) as { net: number; bills: number; pts: number; paid: number; due: number };
+
+  const prevIso = addDaysIso(date, -7);
+  const prevNet = (db.prepare(
+    `SELECT COALESCE(SUM(net),0) net FROM clinica_bills WHERE branch_id=? AND bill_date=?`
+  ).get(branchId, prevIso) as { net: number }).net;
+  const prevSameDowNet = prevNet > 0 ? round2(prevNet) : null;
+
+  const categories = (db.prepare(
+    `SELECT CASE
+              WHEN i.name LIKE '%[LAB]%' THEN 'lab'
+              WHEN i.code LIKE 'GEN%' OR i.name LIKE '%[HSC]%' OR i.name LIKE '%[HSC-GRP]%' OR i.name LIKE '%[PHY]%' OR i.name LIKE '%[EMR]%' THEN 'service'
+              WHEN i.code LIKE 'IKGPH%' THEN 'drug'
+              WHEN i.code LIKE 'LN%' OR i.name LIKE '%ตรวจสุขภาพ%' THEN 'package'
+              ELSE 'other' END cat,
+            ROUND(SUM(i.line_net),2) net, COUNT(*) cnt
+       FROM clinica_bill_items i JOIN clinica_bills b ON b.id=i.bill_id
+       WHERE b.branch_id=? AND b.bill_date=? GROUP BY cat ORDER BY net DESC`
+  ).all(branchId, date) as Array<{ cat: string; net: number; cnt: number }>)
+    .map((r) => ({ key: r.cat, label: CAT_LABEL[r.cat] ?? r.cat, net: r.net, count: r.cnt }));
+
+  const topItems = (db.prepare(
+    `SELECT i.name, ROUND(SUM(i.line_net),2) net, ROUND(SUM(i.qty),2) qty
+       FROM clinica_bill_items i JOIN clinica_bills b ON b.id=i.bill_id
+       WHERE b.branch_id=? AND b.bill_date=? AND COALESCE(i.name,'')<>''
+       GROUP BY i.name ORDER BY net DESC LIMIT 6`
+  ).all(branchId, date) as NamedNet[]);
+
+  const dow = TH_WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
+  return {
+    date, dateLabel: thaiDate(date), hasData: kpi.bills > 0,
+    billNet: round2(kpi.net), billCount: kpi.bills, patientCount: kpi.pts,
+    paid: round2(kpi.paid), due: round2(kpi.due),
+    avgPerBill: kpi.bills > 0 ? round2(kpi.net / kpi.bills) : null,
+    prevSameDowNet, wowPct: relPct(kpi.net, prevSameDowNet), wowLabel: `วัน${dow}ที่แล้ว`,
+    categories, topItems,
+  };
+}
