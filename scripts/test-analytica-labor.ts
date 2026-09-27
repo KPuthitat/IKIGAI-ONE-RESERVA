@@ -28,18 +28,28 @@ process.env.DATABASE_PATH = TMP;
   const pt = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,employment_type,hourly_rate) VALUES ('pt','x','PT','staff','active','pt',100)").run().lastInsertRowid);
   const ft = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,employment_type,monthly_salary) VALUES ('ft','x','FT','staff','active','ft',24000)").run().lastInsertRowid);
 
-  const at = (date: string, hhmm: string) => new Date(`${date}T${hhmm}:00+07:00`).toISOString();
-  const punch = (uid: number, date: string, hhmm: string, type: "in" | "out", branch: number) =>
-    db.prepare("INSERT INTO time_entries (user_id, type, ts, branch_id) VALUES (?,?,?,?)").run(uid, type, at(date, hhmm), branch);
-  const shift = (uid: number, date: string, inHH: string, outHH: string, branch: number) => { punch(uid, date, inHH, "in", branch); punch(uid, date, outHH, "out", branch); };
+  // Roster-based COL (owner 2026-09-27): cost from roster_assignments × shift_codes,
+  // not clocked hours. shift_code(branch, start, end) → its worked hours; a
+  // roster_assignment(user, date, position, shift) books that user for the day.
+  const shiftCode = (branch: number, code: string, st: string, et: string) =>
+    Number(db.prepare("INSERT INTO shift_codes (branch_id, code, name, start_time, end_time) VALUES (?,?,?,?,?)").run(branch, code, code, st, et).lastInsertRowid);
+  const pos = (branch: number, title: string) =>
+    Number(db.prepare("INSERT INTO roster_positions (branch_id, title) VALUES (?,?)").run(branch, title).lastInsertRowid);
+  const book = (branch: number, date: string, position: number, uid: number, shiftId: number) =>
+    db.prepare("INSERT INTO roster_assignments (branch_id, assignment_date, position_id, user_id, shift_code_id) VALUES (?,?,?,?,?)").run(branch, date, position, uid, shiftId);
 
-  // Day 1: PT 8h + FT 8h at A → 8*100 + 8*100 = 1600.
-  shift(pt, "2026-09-01", "09:00", "17:00", A);
-  shift(ft, "2026-09-01", "09:00", "17:00", A);
+  const A8 = shiftCode(A, "A8", "09:00", "17:00");   // 8h
+  const A2 = shiftCode(A, "A2", "09:00", "11:00");   // 2h
+  const B4 = shiftCode(B, "B4", "09:00", "13:00");   // 4h
+  const posA1 = pos(A, "A1"), posA2 = pos(A, "A2"), posB1 = pos(B, "B1");
+
+  // Day 1: PT 8h + FT (full-day share) at A → PT 8*100=800 + FT 24000/30=800 = 1600.
+  book(A, "2026-09-01", posA1, pt, A8);
+  book(A, "2026-09-01", posA2, ft, A8);
   // Day 2: PT 4h at B → 4*100 = 400.
-  shift(pt, "2026-09-02", "09:00", "13:00", B);
+  book(B, "2026-09-02", posB1, pt, B4);
   // Day 3: PT 2h at A (labor ฿200) but NO sales imported yet — must not inflate COL%.
-  shift(pt, "2026-09-03", "09:00", "11:00", A);
+  book(A, "2026-09-03", posA1, pt, A2);
 
   // has_sales = 1 so it counts as sales (matches the rest of the ANALYTICA page).
   const sale = (branch: number, date: string, nett: number) =>
@@ -64,6 +74,25 @@ process.env.DATABASE_PATH = TMP;
   ok("avg COL = 14.3% — over days WITH sales only (2000 ÷ 14000), not inflated by the no-sales day", r.avgColPct === 14.3);
   ok("no company branches → empty", companyMonthLabor([], 2026, 9, "2026-09-05").days.length === 0);
   ok("past month uses the full month window (Aug = 31 days)", companyMonthLabor([A, B], 2026, 8, "2026-09-05").dayCount === 31);
+
+  // branchTodayCol (the "today" widget) — roster-based, all branches (owner 2026-09-27).
+  const { branchTodayCol } = await import("../src/lib/daily-col");
+  const A4 = shiftCode(A, "A4", "09:00", "13:00");   // 4h
+  // FT booked a 4h shift today → cost = 24000/30 = 800 (full daily share, NOT ÷8
+  // and NOT pro-rated by the 4h). The FT never clocked in — roster alone counts.
+  book(A, "2026-09-06", posA1, ft, A4);
+  const t = branchTodayCol(A, "2026-09-06");
+  ok("today: FT on a 4h shift costs the full ฿800 (salary/30, not ÷8, no clock)", t.laborCost === 800);
+  ok("today: headcount counts the rostered FT (1 คน, ประจำ 1)", t.headcount === 1 && t.ftCount === 1 && t.ptCount === 0);
+  ok("today: a day with no roster → 0 คน, ฿0", (() => { const z = branchTodayCol(A, "2026-09-20"); return z.headcount === 0 && z.laborCost === 0; })());
+  // Day-off shift codes (kind='day_off') must NOT be costed/counted.
+  const Aoff = Number(db.prepare("INSERT INTO shift_codes (branch_id,code,name,start_time,end_time,kind) VALUES (?,?,?,?,?,'day_off')").run(A, "OFF", "OFF", "00:00", "00:00").lastInsertRowid);
+  book(A, "2026-09-07", posA1, pt, Aoff);
+  ok("today: day-off shift is skipped (0 คน, ฿0 — not 24h)", (() => { const z = branchTodayCol(A, "2026-09-07"); return z.headcount === 0 && z.laborCost === 0; })());
+  // A staffer on approved leave that day is excluded from cost + headcount.
+  book(A, "2026-09-08", posA1, pt, A8);
+  db.prepare("INSERT INTO leave_requests (user_id, type, date_from, date_to, days, status) VALUES (?, 'annual', ?, ?, 1, 'approved')").run(pt, "2026-09-08", "2026-09-08");
+  ok("today: approved-leave day is excluded (0 คน, ฿0)", (() => { const z = branchTodayCol(A, "2026-09-08"); return z.headcount === 0 && z.laborCost === 0; })());
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();

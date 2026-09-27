@@ -1,60 +1,90 @@
 import { getDb } from "@/lib/db";
-import { computeWorkedMinutesByDay } from "@/lib/service-charge";
 
 // Daily Cost-of-Labour (%COL) for the management dashboard (owner 2026-06-13).
-// Labour cost uses ACTUAL clocked hours (time_entries) — not the rostered plan
-// — times each staff's rate. COL% = labour cost / that day's recorded sales.
-// This is the daily, actual-hours counterpart to calcColPct() in
-// ascenda-engine.ts (which is monthly + rostered for the KPI scorecard).
+// Labour cost is costed from the ROSTERED plan (roster_assignments × shift_codes),
+// NOT clocked hours (owner 2026-09-27): staff who don't clock in (salaried /
+// managers) still count, and each day's cost reflects the shift booked that day.
+//   • FT (ประจำ): monthly_salary / 30 per rostered working day — independent of
+//     shift length (a paid rest-day-inclusive daily wage; the old "/8 hours" is
+//     gone, since dividing by that day's shift hours and multiplying back cancels).
+//   • PT (พาร์ทไทม์): that day's rostered shift hours × hourly_rate.
+// COL% = labour cost / that day's recorded sales.
 
 export type DailyColRow = {
   date: string; // YYYY-MM-DD (Bangkok)
   revenue: number | null; // recorded daily sales, null when not entered
-  laborCost: number; // baht, from actual clocked hours × rate
+  laborCost: number; // baht, from the rostered plan × rate
   colPct: number | null; // laborCost / revenue × 100, null when no revenue
 };
 
-/** FT monthly salary → nominal hourly. FT staff are paid for their weekly rest
- *  days too (Thai standard: daily wage = monthly salary / 30), so the salary
- *  spreads across all 30 paid days, then / 8 hours (owner 2026-09-26). Mirrors
- *  calcColPct, so the two COL figures stay consistent. */
-function ftHourly(monthlySalary: number): number {
-  return monthlySalary / 30 / 8;
+const HHMM = /^\d{2}:\d{2}$/;
+const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+/** Worked hours of one shift (end − start − break); handles an overnight shift.
+ *  A zero-length shift (start == end) is 0, not 24h. */
+function shiftHours(start: string, end: string, bs: string | null, be: string | null): number {
+  if (!HHMM.test(start) || !HHMM.test(end)) return 0;
+  let s = toMin(start), e = toMin(end);
+  if (e < s) e += 1440;                         // overnight (e.g. 22:00→02:00); e==s → 0
+  let mins = e - s;
+  if (bs && be && HHMM.test(bs) && HHMM.test(be)) {
+    let bStart = toMin(bs), bEnd = toMin(be);
+    if (bEnd < bStart) bEnd += 1440;            // break that spans midnight
+    const b = bEnd - bStart;
+    if (b > 0) mins -= b;
+  }
+  return mins > 0 ? mins / 60 : 0;
 }
 
-/** Per-day labour cost from clocked minutes × each staff's stored rate — the
- *  single rate model shared by the branch (getDailyColRows) and company
- *  (companyMonthLabor) COL views. PT: hours × hourly_rate; FT: hours ×
- *  monthly_salary/30/8. Non-clocking staff contribute nothing (no minutes). */
-function laborCostByDay(
-  db: ReturnType<typeof getDb>, minutesByDay: Map<string, Map<number, number>>
-): Map<string, number> {
-  const userIds = new Set<number>();
-  for (const m of minutesByDay.values()) for (const uid of m.keys()) userIds.add(uid);
-  const rateByUser = new Map<number, { type: string | null; hourly: number | null; monthly: number | null }>();
-  if (userIds.size > 0) {
-    const ph = [...userIds].map(() => "?").join(",");
-    for (const u of db.prepare(
-      // Exclude disabled/resigned and test accounts so the historical daily/
-      // monthly COL matches branchTodayCol's "today" definition (CLAUDE.md:
-      // status NOT IN ('disabled','resigned'), skip is_test_account).
-      `SELECT id, employment_type, hourly_rate, monthly_salary FROM users
-        WHERE id IN (${ph}) AND status NOT IN ('disabled','resigned') AND COALESCE(is_test_account,0) = 0`
-    ).all(...userIds) as Array<{ id: number; employment_type: string | null; hourly_rate: number | null; monthly_salary: number | null }>) {
-      rateByUser.set(u.id, { type: u.employment_type, hourly: u.hourly_rate, monthly: u.monthly_salary });
-    }
+export type RosterCostDay = { cost: number; headcount: number; ftCount: number; ptCount: number };
+
+/** Per-day roster labour cost + headcount for a set of branches over an inclusive
+ *  date range — the single rate model shared by the today snapshot, the branch
+ *  daily view and the company monthly view. Real staff only (no disabled/
+ *  resigned/test). A user holding two shifts in a day is counted once (FT: one
+ *  daily share; PT: summed shift hours). */
+function rosterCostByDay(
+  db: ReturnType<typeof getDb>, branchIds: number[], startDate: string, endDate: string
+): Map<string, RosterCostDay> {
+  const out = new Map<string, RosterCostDay>();
+  if (branchIds.length === 0) return out;
+  const ph = branchIds.map(() => "?").join(",");
+  const rows = db.prepare(
+    // kind='work' skips day-off codes; a staffer on approved leave that day is
+    // excluded (they aren't working) — mirrors ascenda-engine's roster costing.
+    `SELECT ra.assignment_date date, ra.user_id uid, u.employment_type type,
+            u.hourly_rate hourly, u.monthly_salary monthly,
+            sc.start_time st, sc.end_time et, sc.break_start bs, sc.break_end be
+       FROM roster_assignments ra
+       JOIN shift_codes sc ON sc.id = ra.shift_code_id
+       JOIN users u ON u.id = ra.user_id
+      WHERE ra.branch_id IN (${ph}) AND ra.assignment_date >= ? AND ra.assignment_date <= ?
+        AND sc.kind = 'work'
+        AND u.status NOT IN ('disabled','resigned') AND COALESCE(u.is_test_account,0) = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM leave_requests lr
+           WHERE lr.user_id = ra.user_id AND lr.status = 'approved'
+             AND lr.date_from <= ra.assignment_date AND lr.date_to >= ra.assignment_date
+        )`
+  ).all(...branchIds, startDate, endDate) as Array<{
+    date: string; uid: number; type: string | null; hourly: number | null; monthly: number | null;
+    st: string; et: string; bs: string | null; be: string | null;
+  }>;
+  // Aggregate per (date, user): a user may hold more than one shift a day.
+  const perDay = new Map<string, Map<number, { type: string | null; hourly: number | null; monthly: number | null; hours: number }>>();
+  for (const r of rows) {
+    const dm = perDay.get(r.date) ?? new Map<number, { type: string | null; hourly: number | null; monthly: number | null; hours: number }>();
+    const u = dm.get(r.uid) ?? { type: r.type, hourly: r.hourly, monthly: r.monthly, hours: 0 };
+    u.hours += shiftHours(r.st, r.et, r.bs, r.be);
+    dm.set(r.uid, u); perDay.set(r.date, dm);
   }
-  const out = new Map<string, number>();
-  for (const [date, userMin] of minutesByDay) {
-    let cost = 0;
-    for (const [uid, mins] of userMin) {
-      const r = rateByUser.get(uid);
-      if (!r) continue;
-      const hours = mins / 60;
-      if (r.type === "pt" && r.hourly) cost += hours * r.hourly;
-      else if (r.type === "ft" && r.monthly) cost += hours * ftHourly(r.monthly);
+  for (const [date, dm] of perDay) {
+    let cost = 0, headcount = 0, ftCount = 0, ptCount = 0;
+    for (const u of dm.values()) {
+      headcount++;
+      if (u.type === "ft" && u.monthly) { cost += u.monthly / 30; ftCount++; }
+      else if (u.type === "pt" && u.hourly) { cost += u.hours * u.hourly; ptCount++; }
     }
-    out.set(date, Math.round(cost * 100) / 100);
+    out.set(date, { cost: Math.round(cost * 100) / 100, headcount, ftCount, ptCount });
   }
   return out;
 }
@@ -73,23 +103,7 @@ export function getDailyColRows(branchId: number, days: number): DailyColRow[] {
     dates.push(new Date(base - i * 86_400_000).toISOString().slice(0, 10));
   }
   const oldest = dates[dates.length - 1];
-  const startIso = new Date(`${oldest}T00:00:00+07:00`).toISOString();
-  const endIso = new Date(`${todayBkk}T23:59:59+07:00`).toISOString();
-
-  const entries = db
-    .prepare(
-      `SELECT user_id, ts, type FROM time_entries
-       WHERE branch_id = ? AND ts >= ? AND ts <= ?
-       ORDER BY ts ASC`
-    )
-    .all(branchId, startIso, endIso) as Array<{
-    user_id: number;
-    ts: string;
-    type: "in" | "out";
-  }>;
-
-  const minutesByDay = computeWorkedMinutesByDay(entries); // Map<date, Map<userId, minutes>>
-  const laborByDay = laborCostByDay(db, minutesByDay);
+  const laborByDay = rosterCostByDay(db, [branchId], oldest, todayBkk);
 
   // Recorded sales per date.
   const revRows = db
@@ -101,7 +115,7 @@ export function getDailyColRows(branchId: number, days: number): DailyColRow[] {
   const revByDate = new Map(revRows.map((r) => [r.date, r.revenue]));
 
   return dates.map((date) => {
-    const laborCost = laborByDay.get(date) ?? 0;
+    const laborCost = laborByDay.get(date)?.cost ?? 0;
     const revenue = revByDate.has(date) ? revByDate.get(date)! : null;
     const colPct =
       revenue && revenue > 0 ? Math.round((laborCost / revenue) * 1000) / 10 : null;
@@ -110,66 +124,30 @@ export function getDailyColRows(branchId: number, days: number): DailyColRow[] {
 }
 
 // ── ANALYTICA: today's COL snapshot for one branch (owner 2026-09-26) ────────
-// "วันนี้มีพนักงานเข้างานกี่คน (ประจำ/พาร์ทไทม์), เป็นต้นทุนแรงงานกี่บาท, กี่ %
-// ของยอดขายวันนี้." Headcount counts everyone who clocked IN today (including
-// staff still on shift). Unlike getDailyColRows/companyMonthLabor (which cost
-// only completed shifts), this snapshot closes open shifts at "now" so the
-// current day's cost is live rather than 0 until people clock out.
+// "วันนี้มีพนักงานกี่คน (ประจำ/พาร์ทไทม์), เป็นต้นทุนแรงงานกี่บาท, กี่ % ของยอดขาย
+// วันนี้." Headcount + cost come from today's ROSTER (owner 2026-09-27), so staff
+// who don't clock are included and the cost is the full booked shift — the same
+// roster model as getDailyColRows / companyMonthLabor.
 
 export type TodayCol = {
   date: string;             // Bangkok YYYY-MM-DD
-  headcount: number;        // distinct real staff who clocked in today
+  headcount: number;        // distinct real staff rostered today
   ftCount: number;          // of those, full-time
   ptCount: number;          // of those, part-time
   otherCount: number;       // of those, neither (contract/unset) — so the split reconciles
-  laborCost: number;        // baht — worked hours × rate, open shifts counted up to now
+  laborCost: number;        // baht — rostered shift × rate (FT salary/30, PT hours × rate)
   salesNett: number | null; // this branch's POS nett today
   colPct: number | null;    // laborCost / salesNett × 100
 };
 
 export function branchTodayCol(branchId: number, todayBkk: string): TodayCol {
   const db = getDb();
-  const startIso = new Date(`${todayBkk}T00:00:00+07:00`).toISOString();
-  const endIso = new Date(`${todayBkk}T23:59:59+07:00`).toISOString();
-  const rawEntries = db.prepare(
-    `SELECT user_id, ts, type FROM time_entries
-     WHERE branch_id = ? AND ts >= ? AND ts <= ? ORDER BY ts ASC`
-  ).all(branchId, startIso, endIso) as Array<{ user_id: number; ts: string; type: "in" | "out" }>;
-
-  // Restrict to real staff — exclude disabled/resigned and test accounts, and
-  // capture employment_type in the SAME lookup for the FT/PT split (CLAUDE.md).
-  const allIds = [...new Set(rawEntries.map((e) => e.user_id))];
-  const empByUser = new Map<number, string | null>();
-  if (allIds.length) {
-    const ph = allIds.map(() => "?").join(",");
-    for (const u of db.prepare(
-      `SELECT id, employment_type FROM users
-        WHERE id IN (${ph}) AND status NOT IN ('disabled','resigned') AND COALESCE(is_test_account,0) = 0`
-    ).all(...allIds) as Array<{ id: number; employment_type: string | null }>) {
-      empByUser.set(u.id, u.employment_type);
-    }
-  }
-  const entries = rawEntries.filter((e) => empByUser.has(e.user_id));
-
-  // Close any still-open shift at "now" so the cost is live through the day, not
-  // 0 until people clock out. (No effect on a fully clocked-out past day.)
-  const nowIso = new Date().toISOString();
-  const net = new Map<number, number>();
-  for (const e of entries) net.set(e.user_id, (net.get(e.user_id) ?? 0) + (e.type === "in" ? 1 : -1));
-  const withOpen = [...entries];
-  for (const [uid, n] of net) if (n > 0) withOpen.push({ user_id: uid, ts: nowIso, type: "out" });
-  withOpen.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
-  const laborCost = laborCostByDay(db, computeWorkedMinutesByDay(withOpen)).get(todayBkk) ?? 0;
-
-  // Headcount = distinct real staff with a clock-IN today (incl. still on shift).
-  const inUserIds = [...new Set(entries.filter((e) => e.type === "in").map((e) => e.user_id))];
-  let ftCount = 0, ptCount = 0;
-  for (const uid of inUserIds) {
-    const t = empByUser.get(uid);
-    if (t === "ft") ftCount++;
-    else if (t === "pt") ptCount++;
-  }
-  const headcount = inUserIds.length;
+  // Roster-based (owner 2026-09-27): everyone booked on today's roster counts —
+  // including staff who don't clock — and the cost is the full booked shift, not
+  // pro-rated to "now". FT = salary/30/day, PT = shift hours × rate.
+  const r = rosterCostByDay(db, [branchId], todayBkk, todayBkk).get(todayBkk)
+    ?? { cost: 0, headcount: 0, ftCount: 0, ptCount: 0 };
+  const laborCost = r.cost, headcount = r.headcount, ftCount = r.ftCount, ptCount = r.ptCount;
 
   const salesRow = db.prepare(
     `SELECT SUM(nett) AS nett FROM salesa_daily WHERE branch_id = ? AND has_sales = 1 AND sale_date = ?`
@@ -193,7 +171,7 @@ export function branchTodayCol(branchId: number, todayBkk: string): TodayCol {
 
 export type CompanyLaborDay = {
   date: string;            // YYYY-MM-DD (Bangkok)
-  laborCost: number;       // baht — actual clocked hours × each staff's rate
+  laborCost: number;       // baht — rostered plan × each staff's rate
   salesNett: number | null;// SALESA daily nett (company), null when no import that day
   colPct: number | null;   // laborCost / salesNett × 100
 };
@@ -207,10 +185,10 @@ export type CompanyMonthLabor = {
   avgColPct: number | null;// totalLabor / totalSales × 100
 };
 
-/** Company-wide daily labour cost (actual clocked hours × each staff's stored
- *  rate) for a month, plus the monthly per-day average. Mirrors getDailyColRows'
- *  rate model (PT: hours × hourly_rate; FT: hours × monthly_salary/30/8). COL%
- *  is against the SALESA daily nett so it matches the rest of the ANALYTICA
+/** Company-wide daily labour cost (rostered plan × each staff's stored rate) for
+ *  a month, plus the monthly per-day average. Mirrors getDailyColRows'
+ *  roster model (PT: shift hours × hourly_rate; FT: monthly_salary/30 per day).
+ *  COL% is against the SALESA daily nett so it matches the rest of the ANALYTICA
  *  page. Current month → through today; a past month → the full month. */
 export function companyMonthLabor(
   companyBranchIds: number[], year: number, month: number, todayBkk: string
@@ -236,14 +214,7 @@ export function companyMonthLabor(
 
   const db = getDb();
   const bph = companyBranchIds.map(() => "?").join(",");
-  const startIso = new Date(`${first}T00:00:00+07:00`).toISOString();
-  const endIso = new Date(`${end}T23:59:59+07:00`).toISOString();
-  const entries = db.prepare(
-    `SELECT user_id, ts, type FROM time_entries
-     WHERE branch_id IN (${bph}) AND ts >= ? AND ts <= ? ORDER BY ts ASC`
-  ).all(...companyBranchIds, startIso, endIso) as Array<{ user_id: number; ts: string; type: "in" | "out" }>;
-
-  const laborByDay = laborCostByDay(db, computeWorkedMinutesByDay(entries));
+  const laborByDay = rosterCostByDay(db, companyBranchIds, first, end);
 
   // Company POS nett per date — has_sales = 1 to match every other salesa_daily
   // aggregation on this page (a menu-only import is not counted as sales).
@@ -267,7 +238,7 @@ export function companyMonthLabor(
   // sales aren't imported yet doesn't inflate the %.
   let totalLabor = 0, totalSales = 0, laborOnSalesDays = 0;
   const days: CompanyLaborDay[] = dates.map((date) => {
-    const laborCost = laborByDay.get(date) ?? 0;
+    const laborCost = laborByDay.get(date)?.cost ?? 0;
     const salesNett = salesByDate.has(date) ? Math.round(salesByDate.get(date)! * 100) / 100 : null;
     const colPct = salesNett && salesNett > 0 ? Math.round((laborCost / salesNett) * 1000) / 10 : null;
     totalLabor += laborCost;
