@@ -107,7 +107,19 @@ export function pairKey(a: string, b: string): string {
  *  first, then alphabetical — so the same group renders the same label in every
  *  view and period. */
 export function groupLabel(members: string[]): string {
+  return orderNames(members).join(" / ");
+}
+
+/** Stable ordering of a group's spellings: shortest first (usually the base
+ *  name), then alphabetical. Shared so every "pick one / join all" view agrees. */
+function orderNames(members: string[]): string[] {
   const uniq = [...new Set(members.map((m) => m.trim()).filter(Boolean))];
   uniq.sort((a, b) => (a.length - b.length) || a.localeCompare(b, "th"));
-  return uniq.join(" / ");
+  return uniq;
+}
+
+/** The single canonical spelling for a group when only one name may be shown
+ *  (e.g. to break a tie between equally-recent spellings). */
+export function canonicalName(members: string[]): string {
+  return orderNames(members)[0] ?? "";
 }
