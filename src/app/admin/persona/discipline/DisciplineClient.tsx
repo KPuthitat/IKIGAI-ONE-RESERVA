@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import { nameWithPrefix } from "@/lib/name";
@@ -34,6 +34,7 @@ export default function DisciplineClient({
   warnings: WarningRow[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t } = useLang();
   const [pending, startTransition] = useTransition();
   const [creating, setCreating] = useState(false);
@@ -88,6 +89,33 @@ export default function DisciplineClient({
     return () => ctrl.abort();
   }, [userId]);
 
+  // Draft not preloadable — the target staff isn't in this branch's list.
+  const [prefillWarn, setPrefillWarn] = useState<string | null>(null);
+  // Prefill from a walk-off record (owner 2026-09-28): the payroll daily breakdown
+  // links here with ?wo=1&user=<id>&date=<iso> so the admin lands on a DRAFT warning
+  // to review and issue. The evidence NOTE is deliberately NOT passed in the URL
+  // (PDPA — it would land in access logs/history); the admin fills the specifics
+  // from the note shown on the payroll page. Runs once on mount, then strips the
+  // query so a reload doesn't re-open the draft.
+  useEffect(() => {
+    if (searchParams.get("wo") !== "1") return;
+    const uid = Number(searchParams.get("user"));
+    const date = searchParams.get("date") ?? "";
+    const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date);
+    setCreating(true);
+    if (Number.isInteger(uid) && uid > 0) {
+      if (staffList.some((s) => s.id === uid)) setUserId(uid);
+      else setPrefillWarn("พนักงานที่ละทิ้งงานไม่ได้อยู่ในสาขาที่เลือกอยู่ — สลับไปสาขาของพนักงานก่อน แล้วเปิดลิงก์อีกครั้ง");
+    }
+    setReason("conduct");
+    setTitle("ละทิ้งหน้าที่ระหว่างเวลางาน");
+    if (validDate) setEffectiveDate(date);
+    const dateTh = validDate ? ` เมื่อวันที่ ${date}` : "";
+    setBody(`พนักงานละทิ้งหน้าที่ระหว่างเวลาทำงาน${dateTh} (หายไปโดยไม่ได้รับอนุญาต ไม่กลับมาปฏิบัติงานจนสิ้นสุดกะ)\n\n[กรอกรายละเอียดเหตุการณ์จากโน้ตในหน้าเงินเดือน]\n\nการกระทำดังกล่าวถือเป็นการละทิ้งหน้าที่ ขอให้ปรับปรุงและปฏิบัติตามระเบียบการทำงานอย่างเคร่งครัด`);
+    router.replace(apiUrl("/admin/persona/discipline"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function issue() {
     setBusy(true); setErr(null);
     try {
@@ -129,6 +157,7 @@ export default function DisciplineClient({
           <h2 className="font-bold text-rose-800">
             {t("admin.persona.discipline.issueTitle")}
           </h2>
+          {prefillWarn && <div className="text-[13px] rounded-md bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2">{prefillWarn}</div>}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">{t("admin.persona.discipline.field.recipient")} *</label>
