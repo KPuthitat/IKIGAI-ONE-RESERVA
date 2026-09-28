@@ -46,6 +46,10 @@ export type DayPair = {
   branch: string | null;
   branch_id: number | null;
   statusLabel: string | null;
+  // Approved early-start (HH:MM) when it actually applied to THIS pair — i.e. work
+  // was counted from before the shift. Null unless an early OT was approved and a
+  // scheduled shift + clock-out let it take effect (matches what the pay used).
+  otFrom: string | null;
 };
 
 type FieldOv = {
@@ -331,6 +335,9 @@ export function buildLineBreakdown(
       edited: edited || hasFieldOv,
       lateMin,
       earlyMin,
+      // Show the early-start marker only when it actually took effect (otFromTs
+      // set ⇒ approved + scheduled + clocked out; null for execs / no-punch).
+      otFrom: otFromTs ? reqFrom : null,
       holiday,
       double: isDoubleDay,
       publicHoliday: publicHolidaySet.has(date),
@@ -451,7 +458,7 @@ export function buildLineBreakdown(
           holiday: false, double: false, publicHoliday: publicHolidaySet.has(bkkDate(e.ts)),
           holidayChoice: holidayChoiceByDate.get(bkkDate(e.ts)) ?? null,
           branch: effBranchId(bkkDate(e.ts), e.branch_id) != null ? (branchNameById.get(effBranchId(bkkDate(e.ts), e.branch_id)!) ?? null) : null,
-          branch_id: effBranchId(bkkDate(e.ts), e.branch_id), statusLabel: null
+          branch_id: effBranchId(bkkDate(e.ts), e.branch_id), statusLabel: null, otFrom: null
         });
       }
     }
@@ -470,7 +477,7 @@ export function buildLineBreakdown(
         effectiveMinutes: 0, otMinutes: 0, otPay: 0, premiumPay: 0, pay: 0, edited: true,
         lateMin: 0, earlyMin: 0, holiday: false, double: false,
         publicHoliday: publicHolidaySet.has(date), holidayChoice: holidayChoiceByDate.get(date) ?? null,
-        branch: null, branch_id: null, statusLabel: "ขาดงาน"
+        branch: null, branch_id: null, statusLabel: "ขาดงาน", otFrom: null
       });
     }
   }
@@ -487,7 +494,7 @@ export function buildLineBreakdown(
       effectiveMinutes: 0, otMinutes: 0, otPay: 0, premiumPay: 0, pay: 0, edited: false,
       lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), double: false,
       publicHoliday: publicHolidaySet.has(d), holidayChoice: holidayChoiceByDate.get(d) ?? null,
-      branch: null, branch_id: null, statusLabel: label
+      branch: null, branch_id: null, statusLabel: label, otFrom: null
     });
   }
 
