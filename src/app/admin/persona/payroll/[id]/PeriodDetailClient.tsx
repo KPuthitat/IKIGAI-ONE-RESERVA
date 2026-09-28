@@ -1212,6 +1212,7 @@ type BreakdownDay = {
     branch: string | null;
     branch_id: number | null;
     statusLabel: string | null;
+    otFrom: string | null;   // approved early-start (HH:MM) when work counted before the shift
   }>;
   totalMinutes: number;
   effectiveMinutes: number;
@@ -2074,6 +2075,15 @@ function LineEditModal({
                           {p.schedIn && p.schedOut
                             ? `${p.schedIn}–${p.schedOut}`
                             : <span className="text-slate-300">—</span>}
+                          {/* Early-start marker — the worked window began BEFORE the
+                              scheduled start because an early OT was approved, so the
+                              early clock-in was counted (owner 2026-09-28). */}
+                          {!p.statusLabel && p.otFrom && (
+                            <span className="block text-[9px] font-sans text-blue-600"
+                              title="มีการขอทำงานล่วงเวลาก่อนเข้ากะ ระบบจึงเริ่มนับเวลาทำงานตั้งแต่เวลานี้ (เข้าก่อนกะแล้วนับให้) — ถ้ารวมงานทั้งวันไม่ถึง 8 ชม. จะนับเป็นชั่วโมงปกติ ไม่ใช่ค่าล่วงเวลา">
+                              ขอ OT ตั้งแต่ {p.otFrom} น.
+                            </span>
+                          )}
                           {/* OT marker — explains why the worked window ran past
                               the scheduled end (employee requested / admin set OT). */}
                           {!p.statusLabel && day.otUntil && (
