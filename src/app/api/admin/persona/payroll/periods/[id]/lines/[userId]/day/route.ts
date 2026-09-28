@@ -40,6 +40,12 @@ const Body = z.object({
   // ขาดงานไม่ลา ที่แอดมินยืนยันหักเงิน (owner 2026-09-04) — true = หักฐานเงินเดือน
   // salary/30 วันนี้ (พนักงานประจำเต็มเดือน). false = ล้างธง. OMITTED = ไม่แตะค่าเดิม.
   unpaid_absence: z.boolean().nullable().optional(),
+  // ละทิ้งงานกลางคัน (owner 2026-09-28): พนักงานหายไปช่วงพัก ไม่กลับมา — แอดมินลง
+  // เวลาออกให้เพื่อคิดค่าตอบแทนช่วงที่ทำจริง แต่ทำเครื่องหมายวันนั้นว่าละทิ้งงาน (ทำโทษ)
+  // + เก็บโน้ตเป็นหลักฐาน. walk_off true/false = ตั้ง/ล้างธง; OMITTED = ไม่แตะ.
+  walk_off: z.boolean().nullable().optional(),
+  // Free-text evidence note for the day (walk-off reason ฯลฯ). "" / null = clear.
+  note: z.string().max(500).nullable().optional(),
   // Per-day BRANCH reattribution (owner 2026-07-31): book THIS day's worked
   // time to another branch (e.g. ลงเวลานามะ แต่ไปช่วยไฮโปทั้งวัน → ค่าแรงเป็นของ
   // ไฮโป). A branch id moves the day; null reverts to the punched branch;
@@ -83,6 +89,10 @@ export async function PATCH(
   const otUntil = d.ot_until || null;
   // null = not provided (preserve existing flag on upsert); 1/0 = set/clear.
   const unpaidAbsenceParam = d.unpaid_absence === undefined ? null : (d.unpaid_absence ? 1 : 0);
+  const walkOffParam = d.walk_off === undefined ? null : (d.walk_off ? 1 : 0);
+  // undefined = not provided → null (COALESCE preserves the stored note); provided
+  // empty/null → "" (an explicit clear that COALESCE keeps, unlike null); text → set.
+  const noteParam = d.note === undefined ? null : (d.note?.trim() ?? "");
   if ((schedIn === null) !== (schedOut === null)) {
     return NextResponse.json({ error: "need_both_sched" }, { status: 400 });
   }
@@ -177,7 +187,7 @@ export async function PATCH(
     || d.sched_in !== undefined || d.sched_out !== undefined
     || d.break_min !== undefined || d.worked_min !== undefined
     || d.ot_min !== undefined || d.ot_pay !== undefined || d.ot_until !== undefined
-    || d.unpaid_absence !== undefined;
+    || d.unpaid_absence !== undefined || d.walk_off !== undefined || d.note !== undefined;
 
   // If the admin filled only ONE side (the common case for a "ขาด" day —
   // a real IN exists but the OUT is missing, or vice-versa), auto-fill the
@@ -234,7 +244,7 @@ export async function PATCH(
 
   const allNull = !clockIn && !clockOut && !schedIn && !schedOut
     && breakMin === null && workedMin === null && otMin === null && otPay === null
-    && otUntil === null && unpaidAbsenceParam !== 1;
+    && otUntil === null && unpaidAbsenceParam !== 1 && walkOffParam !== 1 && noteParam === null;
 
   try {
     db.transaction(() => {
@@ -252,8 +262,8 @@ export async function PATCH(
             INSERT INTO payroll_line_days
               (period_id, user_id, work_date, clock_in, clock_out,
                sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until,
-               unpaid_absence, edited_by, edited_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               unpaid_absence, walk_off, note, edited_by, edited_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (period_id, user_id, work_date) DO UPDATE SET
               clock_in = excluded.clock_in,
               clock_out = excluded.clock_out,
@@ -264,14 +274,16 @@ export async function PATCH(
               ot_min = excluded.ot_min,
               ot_pay = excluded.ot_pay,
               ot_until = excluded.ot_until,
-              -- unpaid_absence: null in the request = leave the stored flag as-is.
+              -- unpaid_absence / walk_off / note: null in the request = leave as-is.
               unpaid_absence = COALESCE(excluded.unpaid_absence, payroll_line_days.unpaid_absence),
+              walk_off = COALESCE(excluded.walk_off, payroll_line_days.walk_off),
+              note = COALESCE(excluded.note, payroll_line_days.note),
               edited_by = excluded.edited_by,
               edited_at = excluded.edited_at
           `).run(
             periodId, userId, d.work_date, clockIn, clockOut,
             schedIn, schedOut, breakMin, workedMin, otMin, otPay, otUntil,
-            unpaidAbsenceParam, user.id, new Date().toISOString()
+            unpaidAbsenceParam, walkOffParam, noteParam, user.id, new Date().toISOString()
           );
         }
       }
@@ -349,6 +361,7 @@ export async function PATCH(
       work_date: d.work_date, clock_in: clockIn, clock_out: clockOut,
       sched_in: schedIn, sched_out: schedOut, break_min: breakMin,
       worked_min: workedMin, ot_min: otMin, ot_pay: otPay, ot_until: otUntil,
+      walk_off: walkOffParam, note: noteParam,
       branch_id: branchEditing ? (branchToStore === "delete" ? null : branchToStore) : undefined,
       line: after ?? {}
     }),

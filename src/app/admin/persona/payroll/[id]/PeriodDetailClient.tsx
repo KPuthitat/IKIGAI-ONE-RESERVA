@@ -1213,6 +1213,8 @@ type BreakdownDay = {
     branch_id: number | null;
     statusLabel: string | null;
     otFrom: string | null;   // approved early-start (HH:MM) when work counted before the shift
+    walkOff: boolean;        // ละทิ้งงานกลางคัน (ทำโทษ) — ค่าตอบแทนยังคิดจากเวลาที่ลงออกให้
+    note: string | null;     // evidence note recorded for the day
   }>;
   totalMinutes: number;
   effectiveMinutes: number;
@@ -1277,6 +1279,11 @@ function LineEditModal({
   // ขาดงานไม่ลา ที่แอดมินยืนยันหักเงิน (owner 2026-09-04) — FT เต็มเดือนเท่านั้น.
   const [dayAbsence, setDayAbsence] = useState(false);
   const [dayAbsenceInit, setDayAbsenceInit] = useState(false);
+  // ละทิ้งงานกลางคัน (owner 2026-09-28) + evidence note.
+  const [dayWalkOff, setDayWalkOff] = useState(false);
+  const [dayWalkOffInit, setDayWalkOffInit] = useState(false);
+  const [dayNote, setDayNote] = useState("");
+  const [dayNoteInit, setDayNoteInit] = useState("");
   // Sibling branches the day can be moved to (from the breakdown response) +
   // this period's own branch. The picker shows only when there is a choice.
   const [branchOptions, setBranchOptions] = useState<Array<{ id: number; name: string; status: string }>>([]);
@@ -1433,6 +1440,10 @@ function LineEditModal({
     setDayHolidayChoice(vChoice); setDayHolidayInit(vChoice);
     const vAbsence = !!ov?.unpaid_absence;
     setDayAbsence(vAbsence); setDayAbsenceInit(vAbsence);
+    const vWalkOff = day.pairs.some((p) => p.walkOff);
+    const vNote = day.pairs.find((p) => p.note)?.note ?? "";
+    setDayWalkOff(vWalkOff); setDayWalkOffInit(vWalkOff);
+    setDayNote(vNote); setDayNoteInit(vNote);
     setDayInit({ in: vIn, out: vOut, schedIn: vSchedIn, schedOut: vSchedOut,
       brk: vBreak, worked: vWorked, otUntil: vOtUntil, otPay: vOtPay });
     setDayHad({
@@ -1457,6 +1468,7 @@ function LineEditModal({
       setDayBranchId(vBranch); setDayBranchInit(vBranch); }
     setDayHolidayChoice(""); setDayHolidayInit("");
     setDayAbsence(false); setDayAbsenceInit(false);
+    setDayWalkOff(false); setDayWalkOffInit(false); setDayNote(""); setDayNoteInit("");
     setDayInit({ in: "", out: "", schedIn: "", schedOut: "",
       brk: "", worked: "", otUntil: "", otPay: "" });
     setDayHad({ clock: false, sched: false, brk: false, worked: false, otUntil: false, otPay: false });
@@ -1508,14 +1520,16 @@ function LineEditModal({
     const branchDirty = dayBranchId !== dayBranchInit;
     const holidayChoiceDirty = dayHolidayChoice !== dayHolidayInit;
     const absenceDirty = dayAbsence !== dayAbsenceInit;
-    const anyDirty = clockDirty || schedDirty || breakDirty || workedDirty || otUntilDirty || otPayDirty || branchDirty || holidayChoiceDirty || absenceDirty;
+    const walkOffDirty = dayWalkOff !== dayWalkOffInit;
+    const noteDirty = dayNote.trim() !== dayNoteInit.trim();
+    const anyDirty = clockDirty || schedDirty || breakDirty || workedDirty || otUntilDirty || otPayDirty || branchDirty || holidayChoiceDirty || absenceDirty || walkOffDirty || noteDirty;
     const hadAny = selDay?.override != null;
     // A pure branch move sends ONLY the branch (no clock/field keys) so the
     // server never pins an unnecessary clock override — and the clock/sched
     // pair validations below don't apply (the day's punches are untouched).
     // A choice-only change behaves the same (no clock/field keys sent).
     const onlyBranch = (branchDirty || holidayChoiceDirty) && !clockDirty && !schedDirty && !breakDirty
-      && !workedDirty && !otUntilDirty && !otPayDirty && !hadAny;
+      && !workedDirty && !otUntilDirty && !otPayDirty && !walkOffDirty && !noteDirty && !hadAny;
 
     if (!anyDirty && !hadAny) {
       setDayMsg("ไม่มีการเปลี่ยนแปลง");
@@ -1523,6 +1537,11 @@ function LineEditModal({
     }
     if (!onlyBranch && (!dayIn) !== (!dayOut)) {
       setDayMsg("ต้องกรอกทั้งเวลาเข้าและออก (หรือเว้นว่างทั้งคู่)");
+      return;
+    }
+    // ละทิ้งงานต้องมีเวลาออก — ค่าตอบแทนคิดจากเวลาที่ลงออกให้ (owner 2026-09-28).
+    if (dayWalkOff && (!dayIn || !dayOut)) {
+      setDayMsg("ทำเครื่องหมาย “ละทิ้งงาน” ต้องกรอกบันทึกเวลาเข้าและออกด้วย (เวลาออก = เวลาที่หายไป)");
       return;
     }
     const sendSched = schedDirty || dayHad.sched;
@@ -1556,6 +1575,10 @@ function LineEditModal({
       // ขาดงานไม่ลา (หักเงิน) — sent ONLY when the toggle changed so a normal
       // edit never clears an existing confirmation.
       const absenceField = absenceDirty ? { unpaid_absence: dayAbsence } : {};
+      // ละทิ้งงาน + โน้ต — sent ONLY when changed, so an unrelated edit never
+      // touches an existing flag/note.
+      const walkOffField = walkOffDirty ? { walk_off: dayWalkOff } : {};
+      const noteField = noteDirty ? { note: dayNote.trim() || null } : {};
       const body = onlyBranch
         ? { work_date: selectedDate, ...branchField, ...holidayField, ...absenceField, admin_pin: dayPin }
         : {
@@ -1573,6 +1596,8 @@ function LineEditModal({
             ...branchField,
             ...holidayField,
             ...absenceField,
+            ...walkOffField,
+            ...noteField,
             admin_pin: dayPin
           };
       const res = await fetch(
@@ -2008,7 +2033,7 @@ function LineEditModal({
                               {/* Tags row — กะ on worked days; status rows
                                   (วันหยุด/ลา/ขาดงาน) show their label in the next
                                   column. Uniform pill size (owner 2026-06-18). */}
-                              {((!p.statusLabel && day.shift) || day.edited || p.holiday || p.double || (!p.statusLabel && p.branch)) && (
+                              {((!p.statusLabel && day.shift) || day.edited || p.holiday || p.double || p.walkOff || (!p.statusLabel && p.branch)) && (
                                 <div className="flex flex-wrap items-center gap-1">
                                   {!p.statusLabel && day.shift && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded font-sans font-bold min-w-[2.5rem] text-center"
@@ -2026,6 +2051,10 @@ function LineEditModal({
                                   )}
                                   {day.edited && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-sans">แก้ไขแล้ว</span>
+                                  )}
+                                  {p.walkOff && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-sans font-bold"
+                                      title="ละทิ้งงานกลางคัน (หายไปช่วงพัก ไม่กลับมา) — ลงเวลาออกให้คิดค่าตอบแทนช่วงที่ทำจริง แต่บันทึกไว้เป็นหลักฐาน/ทำโทษ">ละทิ้งงาน</span>
                                   )}
                                   {p.holiday && !p.double && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-sans">วันพิเศษ ×1.5</span>
@@ -2067,6 +2096,10 @@ function LineEditModal({
                                     <span className="text-amber-600">กลับก่อน {p.earlyMin} น.</span>
                                   )}
                                 </span>
+                              )}
+                              {p.note && (
+                                <span className="block text-[9px] font-sans text-slate-500 whitespace-normal max-w-[16rem]"
+                                  title={p.note}>โน้ต: {p.note}</span>
                               )}
                             </>
                           )}
@@ -2303,6 +2336,27 @@ function LineEditModal({
                   </span>
                 </label>
               )}
+              {/* ละทิ้งงานกลางคัน (owner 2026-09-28) — พนักงานหายไปช่วงพัก ไม่กลับมา.
+                  ติ๊กเพื่อทำเครื่องหมายวันนั้นว่าละทิ้งงาน (ทำโทษ) แล้วลงเวลาออกด้านล่างให้
+                  ตรงกับเวลาที่หายไป เพื่อคิดค่าตอบแทนช่วงที่ทำจริง · โน้ตเก็บเป็นหลักฐาน. */}
+              <label className={`flex items-start gap-2 rounded-md border px-3 py-2 ${
+                dayWalkOff ? "border-rose-300 bg-rose-50" : "border-slate-200 bg-slate-50"
+              } ${locked ? "opacity-60" : "cursor-pointer"}`}>
+                <input type="checkbox" className="mt-0.5" disabled={locked}
+                  checked={dayWalkOff} onChange={(e) => setDayWalkOff(e.target.checked)} />
+                <span className="text-[11px] leading-relaxed">
+                  <b className="text-rose-700">ละทิ้งงานกลางคัน (หายไป ไม่กลับมา)</b> — ทำเครื่องหมายไว้เป็นหลักฐาน/ทำโทษ
+                  <span className="block text-slate-500">
+                    ค่าตอบแทนยังคิดจาก “บันทึกเวลาออก” ที่กรอกให้ด้านล่าง (เวลาที่หายไป) — กรอกเวลาออก + โน้ตเหตุการณ์ให้ครบ
+                  </span>
+                </span>
+              </label>
+              <div>
+                <label className="label">โน้ต/หลักฐานประจำวัน (ถ้ามี)</label>
+                <textarea className="input min-h-[2.5rem]" disabled={locked} value={dayNote} maxLength={500}
+                  placeholder="เช่น หายไปตอนพักเที่ยง 12:30 ไม่กลับมา แจ้งหัวหน้ากะแล้ว"
+                  onChange={(e) => setDayNote(e.target.value)} />
+              </div>
               {/* ลงเวลาทำงานวันหยุดแทนพนักงาน (owner 2026-08-03) — วันที่พนักงานไม่ได้
                   ลงเวลาเอง (โดนเรียกเข้าวันหยุด ฯลฯ) admin กรอกให้ได้ตรงนี้. */}
               {selDay == null && !locked && (
