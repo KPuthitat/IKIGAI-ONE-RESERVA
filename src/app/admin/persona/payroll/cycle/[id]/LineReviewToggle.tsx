@@ -23,7 +23,15 @@ export default function LineReviewToggle({
   const [err, setErr] = useState(false);
   const [, startTransition] = useTransition();
 
-  if (draftPeriodIds.length === 0) return null;   // locked (finalized/paid) — review not applicable
+  // Locked (finalized/paid) — can't change the review state any more, but still
+  // show a static "✓ ตรวจแล้ว" badge when it WAS reviewed so the sign-off stays
+  // visible on the finalized cycle (owner 2026-09-28). Nothing when never reviewed.
+  if (draftPeriodIds.length === 0) {
+    return reviewed
+      ? <span className="mt-1 inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700"
+          title="ตรวจค่าตอบแทนของคนนี้แล้ว (รอบปิดแล้ว)">✓ ตรวจแล้ว</span>
+      : null;
+  }
 
   async function toggle() {
     setBusy(true);

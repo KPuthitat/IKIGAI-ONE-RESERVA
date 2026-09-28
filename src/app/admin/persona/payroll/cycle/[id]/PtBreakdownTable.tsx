@@ -120,18 +120,18 @@ export default function PtBreakdownTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
-            <th className="py-2 pr-3">{t("admin.persona.payroll.col.staff")}</th>
+            <th className="py-2 pr-3 whitespace-nowrap">{t("admin.persona.payroll.col.staff")}</th>
             {multiBranch && branchCols.map((b) => (
               <th key={b.id} className="py-2 pr-3 text-right whitespace-nowrap">{b.name}</th>
             ))}
-            <th className="py-2 pr-3 text-right">{t("admin.persona.payroll.col.regularHrs")}</th>
-            <th className="py-2 pr-3 text-right">{t("admin.persona.payroll.col.otHrs")}</th>
-            <th className="py-2 pr-3 text-right">{t("admin.persona.payroll.col.basePay")}</th>
-            <th className="py-2 pr-3 text-right">{t("admin.persona.payroll.col.otPay")}</th>
-            <th className="py-2 pr-3 text-right">{t("admin.persona.payroll.col.gross")}</th>
-            <th className="py-2 pr-3 text-right">{t("admin.persona.payroll.col.sso")}</th>
-            <th className="py-2 pr-3 text-right">{t("admin.persona.payroll.col.tax")}</th>
-            <th className="py-2 pr-3 text-right">{t("admin.persona.payroll.col.net")}</th>
+            <th className="py-2 pr-3 text-right whitespace-nowrap">{t("admin.persona.payroll.col.regularHrs")}</th>
+            <th className="py-2 pr-3 text-right whitespace-nowrap">{t("admin.persona.payroll.col.otHrs")}</th>
+            <th className="py-2 pr-3 text-right whitespace-nowrap">{t("admin.persona.payroll.col.basePay")}</th>
+            <th className="py-2 pr-3 text-right whitespace-nowrap">{t("admin.persona.payroll.col.otPay")}</th>
+            <th className="py-2 pr-3 text-right whitespace-nowrap">{t("admin.persona.payroll.col.gross")}</th>
+            <th className="py-2 pr-3 text-right whitespace-nowrap">{t("admin.persona.payroll.col.sso")}</th>
+            <th className="py-2 pr-3 text-right whitespace-nowrap">{t("admin.persona.payroll.col.tax")}</th>
+            <th className="py-2 pr-3 text-right whitespace-nowrap">{t("admin.persona.payroll.col.net")}</th>
           </tr>
         </thead>
         <tbody>
@@ -142,18 +142,20 @@ export default function PtBreakdownTable({
             return (
               <Fragment key={r.user_id}>
                 <tr className="border-b border-slate-100 hover:bg-slate-50/60">
-                  <td className="py-2 pr-3">
+                  <td className="py-2 pr-3 align-top">
                     <button type="button" onClick={() => toggle(r.user_id)} className="flex items-center gap-1.5 text-left group">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                        className={`text-slate-400 group-hover:text-violet-600 transition-transform ${isOpen ? "rotate-90" : ""}`} aria-hidden>
+                        className={`shrink-0 text-slate-400 group-hover:text-violet-600 transition-transform ${isOpen ? "rotate-90" : ""}`} aria-hidden>
                         <path d="M9 6l6 6-6 6" />
                       </svg>
-                      <span className="font-medium text-slate-800 group-hover:text-violet-700">{nameWithPrefix(r.title_prefix, r.display_name)}</span>
-                      {r.salary_tax_mode_snapshot === "wht" && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">{t("admin.persona.employees.taxMode.whtTag")}</span>
-                      )}
+                      <span className="font-medium text-slate-800 group-hover:text-violet-700 whitespace-nowrap">{nameWithPrefix(r.title_prefix, r.display_name)}</span>
                     </button>
-                    <div>
+                    {/* Tax-mode tag + the ตรวจแล้ว sign-off sit on their own line below
+                        the name so nothing wraps into the name (owner 2026-09-28). */}
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1 pl-[18px]">
+                      {r.salary_tax_mode_snapshot === "wht" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 whitespace-nowrap">{t("admin.persona.employees.taxMode.whtTag")}</span>
+                      )}
                       <LineReviewToggle
                         userId={r.user_id}
                         draftPeriodIds={draftPeriodIdsByUser[r.user_id] ?? []}
@@ -163,16 +165,16 @@ export default function PtBreakdownTable({
                   </td>
                   {multiBranch && branchCols.map((b) => {
                     const v = perB[b.id] ?? 0;
-                    return <td key={b.id} className="py-2 pr-3 text-right tabular-nums">{v ? fmtMoney(v) : <span className="text-slate-300">—</span>}</td>;
+                    return <td key={b.id} className="py-2 pr-3 text-right tabular-nums whitespace-nowrap">{v ? fmtMoney(v) : <span className="text-slate-300">—</span>}</td>;
                   })}
-                  <td className="py-2 pr-3 text-right text-slate-600 tabular-nums">{fmtMin(r.total_regular_minutes ?? 0)}</td>
-                  <td className="py-2 pr-3 text-right text-amber-700 tabular-nums">{(r.total_ot_minutes ?? 0) > 0 ? fmtMin(r.total_ot_minutes ?? 0) : "—"}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{fmtMoney(r.total_base_pay ?? 0)}</td>
-                  <td className="py-2 pr-3 text-right text-amber-700 tabular-nums">{(r.total_ot_pay ?? 0) > 0 ? fmtMoney(r.total_ot_pay ?? 0) : "—"}</td>
-                  <td className="py-2 pr-3 text-right">{fmtMoney(r.total_gross ?? 0)}</td>
-                  <td className="py-2 pr-3 text-right text-sky-700">{fmtMoney(r.total_sso ?? 0)}</td>
-                  <td className="py-2 pr-3 text-right text-amber-700">{fmtMoney(r.total_tax ?? 0)}</td>
-                  <td className="py-2 pr-3 text-right font-bold text-emerald-700">{fmtMoney(r.total_net ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right text-slate-600 tabular-nums whitespace-nowrap">{fmtMin(r.total_regular_minutes ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right text-amber-700 tabular-nums whitespace-nowrap">{(r.total_ot_minutes ?? 0) > 0 ? fmtMin(r.total_ot_minutes ?? 0) : "—"}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums whitespace-nowrap">{fmtMoney(r.total_base_pay ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right text-amber-700 tabular-nums whitespace-nowrap">{(r.total_ot_pay ?? 0) > 0 ? fmtMoney(r.total_ot_pay ?? 0) : "—"}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums whitespace-nowrap">{fmtMoney(r.total_gross ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right text-sky-700 tabular-nums whitespace-nowrap">{fmtMoney(r.total_sso ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right text-amber-700 tabular-nums whitespace-nowrap">{fmtMoney(r.total_tax ?? 0)}</td>
+                  <td className="py-2 pr-3 text-right font-bold text-emerald-700 tabular-nums whitespace-nowrap">{fmtMoney(r.total_net ?? 0)}</td>
                 </tr>
                 {isOpen && (
                   <tr className="bg-violet-50/40">
