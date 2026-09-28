@@ -5,7 +5,7 @@
 
 import { getDb } from "./db";
 import type { SalesCloseUp, SalesOverview, SalesReceipt, PayEntry, TypeEntry, MenuEntry } from "./salesa-parse";
-import { groupLabel, pairKey, findMergeCandidates, type MergeCandidate } from "./salesa-names";
+import { groupLabel, canonicalName, pairKey, findMergeCandidates, type MergeCandidate } from "./salesa-names";
 
 export type DailyRow = {
   branch_id: number;
@@ -175,7 +175,13 @@ export function existingKinds(branchId: number, date: string): { sales: boolean;
 /** name → display label for a branch, from confirmed alias groups. Names not in
  *  any group are absent (they resolve to themselves). Range-independent — built
  *  from the whole alias table — so a group's label is identical in every view
- *  and period (keeping cross-period matching, e.g. momentum, correct). */
+ *  and period (keeping cross-period matching, e.g. momentum, correct).
+ *
+ *  A group is labelled by the spelling from its MOST RECENT import — the name the
+ *  branch uses now — instead of joining every past spelling with " / " (owner
+ *  2026-09-28: the joined label got too long and cluttered the screen). Recency is
+ *  read from the whole menu table (not the viewed range) so the label stays stable
+ *  across views. Falls back to the joined label if no member has import history. */
 export function aliasLabelMap(branchId: number): Map<string, string> {
   const rows = getDb().prepare(
     "SELECT name, root FROM salesa_menu_alias WHERE branch_id = ?"
@@ -183,12 +189,41 @@ export function aliasLabelMap(branchId: number): Map<string, string> {
   if (!rows.length) return new Map();
   const byRoot = new Map<string, string[]>();
   for (const r of rows) { const a = byRoot.get(r.root) ?? []; a.push(r.name); byRoot.set(r.root, a); }
+
+  // Latest import date per aliased name — from both namespaces the reports use
+  // (menu-revenue rows and receipt items), keyed by trimmed name so a stray space
+  // doesn't hide a spelling's history. Both tables carry sale_date.
+  const latestByName = new Map<string, string>();
+  const bump = (name: string, d: string) => {
+    const k = name.trim(); if (!k) return;
+    if (d > (latestByName.get(k) ?? "")) latestByName.set(k, d);
+  };
+  for (const r of getDb().prepare(
+    "SELECT name, MAX(sale_date) AS d FROM salesa_menu WHERE branch_id = ? AND kind = 'item' GROUP BY name"
+  ).all(branchId) as Array<{ name: string; d: string }>) bump(r.name, r.d ?? "");
+  for (const r of getDb().prepare(
+    "SELECT name, MAX(sale_date) AS d FROM salesa_receipt_items WHERE branch_id = ? GROUP BY name"
+  ).all(branchId) as Array<{ name: string; d: string }>) bump(r.name, r.d ?? "");
+
   const out = new Map<string, string>();
   for (const members of byRoot.values()) {
-    const label = groupLabel(members);
+    const label = currentGroupLabel(members, latestByName);
     for (const m of members) out.set(m, label);
   }
   return out;
+}
+
+/** The single spelling a group should display under in reports: the member seen
+ *  in the most recent import. Ties (and the no-history case) break to the stable
+ *  canonical spelling — never the joined "A / B" label, which the owner asked to
+ *  drop from the reports (2026-09-28). */
+function currentGroupLabel(members: string[], latestByName: Map<string, string>): string {
+  const uniq = [...new Set(members.map((m) => m.trim()).filter(Boolean))];
+  if (!uniq.length) return groupLabel(members);
+  let bestDate = "";
+  for (const m of uniq) { const d = latestByName.get(m) ?? ""; if (d > bestDate) bestDate = d; }
+  const latest = uniq.filter((m) => (latestByName.get(m) ?? "") === bestDate);
+  return canonicalName(latest);
 }
 
 export type MenuGroup = { root: string; members: string[]; label: string };

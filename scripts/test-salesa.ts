@@ -500,20 +500,24 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     return s.some((p) => [p.a, p.b].includes("ตับหวาน") && [p.a, p.b].includes("ตับหวานอัลตราสมูธ"));
   })());
   sdb.mergeMenuNames(bidM, ["ตับหวาน", "ตับหวานอัลตราสมูธ"], uid);
-  ok("after merge: folded under joined label, nett summed (300+200)", (() => {
+  ok("after merge: folded under the LATEST-import name, nett summed (300+200)", (() => {
+    // ตับหวาน last seen 09-10, ตับหวานอัลตราสมูธ last seen 09-12 → current name is
+    // the newer spelling (owner 2026-09-28: show the name used now, not A / B).
     const r = sdb.menuRange(bidM, "2026-09-01", "2026-09-30", "item");
-    const g = r.find((x) => x.name === "ตับหวาน / ตับหวานอัลตราสมูธ");
-    return !!g && near(g.nett, 500) && !r.some((x) => x.name === "ตับหวานอัลตราสมูธ");
+    const g = r.find((x) => x.name === "ตับหวานอัลตราสมูธ");
+    return !!g && near(g.nett, 500) && !r.some((x) => x.name === "ตับหวาน");
   })());
   ok("merged pair no longer suggested", !sdb.suggestMenuMerges(bidM).some((p) => [p.a, p.b].includes("ตับหวาน")));
-  ok("listMenuGroups shows the group with both members", (() => {
+  ok("listMenuGroups (management view) still shows every spelling", (() => {
     const g = sdb.listMenuGroups(bidM);
     return g.length === 1 && g[0].members.length === 2 && g[0].label === "ตับหวาน / ตับหวานอัลตราสมูธ";
   })());
   sdb.upsertMenu(bidM, uid, { date: "2026-09-14", dateEnd: "2026-09-14", merchant: "RM", categories: [], items: [{ name: "ตับหวาน", nett: 100 }, { name: "ตับหวานอัลตราสมูธ", nett: 40 }] });
-  ok("getMenu folds same-day spellings (100+40)", (() => {
+  ok("getMenu folds same-day spellings (100+40) under the current name", (() => {
+    // Both spellings re-appear on 09-14 (the latest date) → tie breaks to the
+    // shorter base name "ตับหวาน".
     const m = sdb.getMenu(bidM, "2026-09-14");
-    const g = m.items.find((i) => i.name === "ตับหวาน / ตับหวานอัลตราสมูธ");
+    const g = m.items.find((i) => i.name === "ตับหวาน");
     return !!g && near(g.nett, 140) && m.items.filter((i) => i.name.includes("ตับหวาน")).length === 1;
   })());
   const rbufM = parse.parseSalesFile(receiptBuf("15/09/2026", "RM", [
@@ -522,7 +526,7 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ]));
   if (rbufM.kind === "receipt") sdb.upsertReceipts(bidM, uid, rbufM.receipt);
   ok("itemUnitsRange folds units across spellings (1+2=3, bills=2)", (() => {
-    const g = sdb.itemUnitsRange(bidM, "2026-09-01", "2026-09-30").find((x) => x.name === "ตับหวาน / ตับหวานอัลตราสมูธ");
+    const g = sdb.itemUnitsRange(bidM, "2026-09-01", "2026-09-30").find((x) => x.name === "ตับหวาน");
     return !!g && g.units === 3 && g.bills === 2;
   })());
   sdb.unmergeMenuGroup(bidM, sdb.listMenuGroups(bidM)[0].root);
