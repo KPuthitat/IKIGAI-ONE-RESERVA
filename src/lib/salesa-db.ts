@@ -370,30 +370,45 @@ export function listMonth(branchId: number, year: number, month: number): DailyR
   return listRange(branchId, `${year}-${mm}-01`, `${year}-${mm}-${String(last).padStart(2, "0")}`);
 }
 
-/** The branch's authoritative opening date (branches.opens_on, YYYY-MM-DD) or
- *  null if unset. Used to tell whether a branch OPENED this year — so its annual
- *  target is prorated to its available span rather than a full 12 months
- *  (owner 2026-09-21: ไฮโปเปิด 25/07 เป้าทั้งปีต้องคิดจากวันที่ available จริง). We key
- *  off opens_on, NOT the first imported sale: SALESA data only starts in 2026, so
- *  a first-sale heuristic would wrongly prorate every long-standing branch. */
+/** Normalize an opening date to a real Gregorian YYYY-MM-DD, or null.
+ *
+ *  A Buddhist-calendar date picker (Safari on a Thai Mac) commits the ISO value
+ *  with the BUDDHIST year — e.g. it writes "2569-07-25" for 25 Jul 2026 (owner
+ *  2026-09-28: วันเปิดตั้งไว้แล้วแต่เป้าทั้งปียังไม่ prorate). A year that far in the
+ *  future can only be Buddhist Era, so any year ≥ 2400 is converted to CE (−543).
+ *  Then the result must be a real calendar date ("2026-02-31" is rejected — it
+ *  would produce NaN in the annual projection). */
+export function normalizeOpensOn(raw: string | null | undefined): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw?.trim() ?? "");
+  if (!m) return null;
+  const year = Number(m[1]) >= 2400 ? Number(m[1]) - 543 : Number(m[1]);   // Buddhist Era → CE
+  const iso = `${String(year).padStart(4, "0")}-${m[2]}-${m[3]}`;
+  const d = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso ? iso : null;
+}
+
+/** The branch's authoritative opening date (branches.opens_on) as a Gregorian
+ *  YYYY-MM-DD, or null if unset. Used to tell whether a branch OPENED this year —
+ *  so its annual target is prorated to its available span rather than a full 12
+ *  months (owner 2026-09-21: ไฮโปเปิด 25/07 เป้าทั้งปีต้องคิดจากวันที่ available จริง).
+ *  We key off opens_on, NOT the first imported sale: SALESA data only starts in
+ *  2026, so a first-sale heuristic would wrongly prorate every long-standing
+ *  branch. Also normalized on read as a safety net — a one-time migration folds
+ *  existing Buddhist-year values (the Safari date-picker bug) to CE, and this
+ *  guards against any future stray Buddhist write slipping through. */
 export function branchOpensOn(branchId: number): string | null {
   const r = getDb().prepare(
     "SELECT opens_on FROM branches WHERE id = ?"
   ).get(branchId) as { opens_on: string | null } | undefined;
-  return r?.opens_on ?? null;
+  return normalizeOpensOn(r?.opens_on ?? null);
 }
 
 /** Set a branch's authoritative opening date (branches.opens_on, YYYY-MM-DD).
  *  Same column RESERVA settings writes — surfaced in ANALYTICA settings too so
  *  the annual target/projection for a mid-year branch can be prorated from it
- *  (owner 2026-09-24). Blank/invalid clears it. */
+ *  (owner 2026-09-24). Blank/invalid clears it; a Buddhist year is folded to CE. */
 export function setBranchOpensOn(branchId: number, iso: string | null): void {
-  const t = iso?.trim() ?? "";
-  // Require a REAL calendar date, not just the shape — "2026-02-31" matches the
-  // regex but is not a date, and would produce NaN in the annual projection.
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(t) ? new Date(`${t}T00:00:00Z`) : null;
-  const clean = d && !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === t ? t : null;
-  getDb().prepare("UPDATE branches SET opens_on = ? WHERE id = ?").run(clean, branchId);
+  getDb().prepare("UPDATE branches SET opens_on = ? WHERE id = ?").run(normalizeOpensOn(iso), branchId);
 }
 
 export function getMenu(branchId: number, date: string): { items: MenuEntry[]; categories: MenuEntry[] } {

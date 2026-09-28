@@ -1305,6 +1305,18 @@ function runMigrations(db: Database.Database): void {
   if (!bnames2.has("opens_on")) {
     db.exec("ALTER TABLE branches ADD COLUMN opens_on TEXT");
   }
+  // One-time fix (owner 2026-09-28): a Thai Buddhist-calendar date picker (Safari)
+  // committed opens_on with the Buddhist year — e.g. "2569-07-25" for 25 Jul 2026 —
+  // which left a mid-year branch judged against a full-year target. Fold any
+  // clearly-Buddhist year (>= 2400, no real Gregorian opening date reaches it)
+  // back to CE, so every reader (analytics + customer pages) agrees. Idempotent:
+  // once folded the year is < 2400 and never matches again.
+  db.exec(`
+    UPDATE branches
+    SET opens_on = printf('%04d', CAST(substr(opens_on, 1, 4) AS INTEGER) - 543) || substr(opens_on, 5)
+    WHERE opens_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+      AND CAST(substr(opens_on, 1, 4) AS INTEGER) >= 2400
+  `);
   if (!bnames2.has("closed_weekdays")) {
     db.exec("ALTER TABLE branches ADD COLUMN closed_weekdays TEXT"); // JSON array '[1,2]'
   }
