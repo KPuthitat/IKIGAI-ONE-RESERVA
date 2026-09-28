@@ -50,6 +50,10 @@ export type DayPair = {
   // was counted from before the shift. Null unless an early OT was approved and a
   // scheduled shift + clock-out let it take effect (matches what the pay used).
   otFrom: string | null;
+  // ละทิ้งงานกลางคัน (owner 2026-09-28): admin marked this day a walk-off and kept an
+  // evidence note. Pay is still computed from the (admin-entered) clock-out.
+  walkOff: boolean;
+  note: string | null;
 };
 
 type FieldOv = {
@@ -58,6 +62,7 @@ type FieldOv = {
   break_min: number | null; worked_min: number | null;
   ot_min: number | null; ot_pay: number | null; ot_until: string | null;
   unpaid_absence: number | null;
+  walk_off: number | null; note: string | null;
 };
 
 type ShiftTag = { code: string; name: string | null; color: string | null };
@@ -222,7 +227,8 @@ export function buildLineBreakdown(
 
   const overrideRows = db.prepare(`
     SELECT work_date, clock_in, clock_out,
-           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until, unpaid_absence
+           sched_in, sched_out, break_min, worked_min, ot_min, ot_pay, ot_until, unpaid_absence,
+           walk_off, note
     FROM payroll_line_days WHERE period_id = ? AND user_id = ?
   `).all(periodId, userId) as Array<{ work_date: string } & FieldOv>;
   const overrideByDate = new Map<string, { clock_in: string | null; clock_out: string | null }>();
@@ -338,6 +344,8 @@ export function buildLineBreakdown(
       // Show the early-start marker only when it actually took effect (otFromTs
       // set ⇒ approved + scheduled + clocked out; null for execs / no-punch).
       otFrom: otFromTs ? reqFrom : null,
+      walkOff: ov?.walk_off === 1,
+      note: ov?.note || null,   // "" is the cleared sentinel → treat as no note
       holiday,
       double: isDoubleDay,
       publicHoliday: publicHolidaySet.has(date),
@@ -458,7 +466,7 @@ export function buildLineBreakdown(
           holiday: false, double: false, publicHoliday: publicHolidaySet.has(bkkDate(e.ts)),
           holidayChoice: holidayChoiceByDate.get(bkkDate(e.ts)) ?? null,
           branch: effBranchId(bkkDate(e.ts), e.branch_id) != null ? (branchNameById.get(effBranchId(bkkDate(e.ts), e.branch_id)!) ?? null) : null,
-          branch_id: effBranchId(bkkDate(e.ts), e.branch_id), statusLabel: null, otFrom: null
+          branch_id: effBranchId(bkkDate(e.ts), e.branch_id), statusLabel: null, otFrom: null, walkOff: false, note: null
         });
       }
     }
@@ -471,13 +479,17 @@ export function buildLineBreakdown(
     if (o.clock_in && o.clock_out) {
       pushPair(buildOverridePair(date, o.clock_in, o.clock_out));
     } else {
+      // Clock-less override (e.g. a walk-off/note saved on a no-punch day) — still
+      // surface its walk-off flag + evidence note so the record is visible.
+      const ov = fieldOvByDate.get(date);
       day.pairs.push({
         date, workIn: null, workOut: null, durationMinutes: 0,
         schedIn: null, schedOut: null, breakMinutes: 0,
         effectiveMinutes: 0, otMinutes: 0, otPay: 0, premiumPay: 0, pay: 0, edited: true,
         lateMin: 0, earlyMin: 0, holiday: false, double: false,
         publicHoliday: publicHolidaySet.has(date), holidayChoice: holidayChoiceByDate.get(date) ?? null,
-        branch: null, branch_id: null, statusLabel: "ขาดงาน", otFrom: null
+        branch: null, branch_id: null, statusLabel: "ขาดงาน", otFrom: null,
+        walkOff: ov?.walk_off === 1, note: ov?.note || null
       });
     }
   }
@@ -494,7 +506,7 @@ export function buildLineBreakdown(
       effectiveMinutes: 0, otMinutes: 0, otPay: 0, premiumPay: 0, pay: 0, edited: false,
       lateMin: 0, earlyMin: 0, holiday: holidaySet.has(d), double: false,
       publicHoliday: publicHolidaySet.has(d), holidayChoice: holidayChoiceByDate.get(d) ?? null,
-      branch: null, branch_id: null, statusLabel: label, otFrom: null
+      branch: null, branch_id: null, statusLabel: label, otFrom: null, walkOff: false, note: null
     });
   }
 

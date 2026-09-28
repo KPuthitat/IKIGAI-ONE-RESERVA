@@ -4357,6 +4357,11 @@ function runMigrations(db: Database.Database): void {
   // salary/30 สำหรับวันนี้ (พนักงานประจำเต็มเดือน). ระบบ "ขึ้นธง" วันที่น่าสงสัย
   // (มีกะแต่ไม่ตอกบัตร/ตอกไม่ครบ + ไม่มีใบลา) แต่จะไม่หักจนกว่าแอดมินจะติ๊กยืนยัน.
   addPld("unpaid_absence", "INTEGER"); // 1 = admin-confirmed ขาดงานไม่ลา (หักเงิน)
+  // ละทิ้งงานกลางวัน (owner 2026-09-28): พนักงานหายไปช่วงพัก ไม่กลับมา แอดมินลงเวลา
+  // ออกให้เพื่อคำนวณค่าตอบแทนช่วงที่ทำจริง แต่ต้องบันทึกเป็นหลักฐาน + ทำโทษ.
+  // walk_off = 1 ทำเครื่องหมายวันนั้นว่าละทิ้งงาน, note = เหตุการณ์ที่บันทึกไว้.
+  addPld("walk_off", "INTEGER");   // 1 = ละทิ้งงานกลางคัน (ทำโทษ) — ค่าตอบแทนยังคิดจากเวลาที่ลงออกให้
+  addPld("note", "TEXT");          // free-text evidence note for the day (walk-off reason ฯลฯ)
 
   // Phase 1D v2 — add new columns to existing payroll_lines if upgrading
   const plCols = db.prepare("PRAGMA table_info(payroll_lines)").all() as Array<{ name: string }>;
