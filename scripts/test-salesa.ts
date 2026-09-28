@@ -676,6 +676,30 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     return Math.abs(apGap.projectedNett - expectOpen) < 1 && apGap.projectedNett < firstBased - 1000;
   })());
 
+  // ── 15c) Buddhist-year opens_on (owner 2026-09-28): Safari's Thai date picker
+  // commits opens_on with the Buddhist year ("2569-07-25" for 25 Jul 2026), which
+  // left the annual target un-prorated. It must be folded to CE on read + write. ──
+  ok("normalizeOpensOn: Buddhist 2569 → CE 2026", sdb.normalizeOpensOn("2569-07-25") === "2026-07-25");
+  ok("normalizeOpensOn: already-CE value unchanged", sdb.normalizeOpensOn("2026-07-25") === "2026-07-25");
+  ok("normalizeOpensOn: impossible date → null", sdb.normalizeOpensOn("2569-02-31") === null);
+  ok("normalizeOpensOn: blank/garbage → null", sdb.normalizeOpensOn("") === null && sdb.normalizeOpensOn(null) === null && sdb.normalizeOpensOn("nope") === null);
+  // A branch whose opens_on is ALREADY stored as a Buddhist year (the prod bug)
+  // must still prorate — branchOpensOn normalizes on read, no migration needed.
+  const bidBE = Number(db.prepare("INSERT INTO branches (slug,name,opens_on) VALUES ('be','HYPOBE','2569-07-25')").run().lastInsertRowid);
+  sdb.setMonthlyTarget(bidBE, 600000);
+  fput2(bidBE, "2026-08-10", 25000);
+  ok("branchOpensOn folds a Buddhist-year DB value to CE on read", sdb.branchOpensOn(bidBE) === "2026-07-25");
+  ok("annual: Buddhist-year opens_on still prorates (~3.156M, not 7.2M)", (() => {
+    const ap = analytics.annualProjection(bidBE, "2026-09-20");
+    if (!ap) return false;
+    const expect = 7200000 * (160 / 365);
+    return ap.prorated === true && ap.openedIso === "2026-07-25" && Math.abs(ap.annualTarget - expect) < 1;
+  })());
+  // Writing a Buddhist year via setBranchOpensOn stores canonical CE.
+  sdb.setBranchOpensOn(bidBE, "2570-01-15");
+  ok("setBranchOpensOn folds Buddhist → CE on write", sdb.branchOpensOn(bidBE) === "2027-01-15" &&
+    (db.prepare("SELECT opens_on o FROM branches WHERE id=?").get(bidBE) as { o: string }).o === "2027-01-15");
+
   // ── 16) full-year growth bars (owner 2026-09-21): per-branch monthly nett,
   // Jan → last month with data, for reading each branch's growth trend. ──
   const fput3 = (bid: number, d: string, nett: number) => sdb.upsertDaily(bid, uid, { date: d, dateEnd: d, merchant: "BAR", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 4, pax: 7, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / 4, avgPax: 1.8, avgSalesPax: nett / 7, payments: [], types: [], sources: [] });

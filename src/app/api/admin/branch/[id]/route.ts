@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { encryptSecret } from "@/lib/secret-vault";
+import { normalizeOpensOn } from "@/lib/salesa-db";
 
 const Patch = z.object({
   open_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
@@ -76,6 +77,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if ((k === "line_channel_secret" || k === "line_channel_token") && typeof value === "string") {
       value = encryptSecret(value);
     }
+    // A Thai Buddhist-calendar date picker (Safari) commits opens_on with the
+    // Buddhist year; fold it to CE so the annual-target proration keys off the
+    // real Gregorian year (owner 2026-09-28).
+    if (k === "opens_on") value = normalizeOpensOn(typeof value === "string" ? value : null);
     updates[k] = value;
   }
   if (Object.keys(updates).length === 0) return NextResponse.json({ ok: true });
