@@ -843,9 +843,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                   <span className={`font-bold ${annual.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{annual.pctOfTarget.toFixed(0)}% ของเป้า</span>
                 </div>
                 {annual.prorated && (
-                  <div className="text-[11px] text-slate-400">
-                    คิดตามวันที่เปิดจริง{annual.openedIso ? ` (${thaiDate(annual.openedIso)})` : ""} — ไม่ใช่ทั้งปีเต็ม (เต็มปี {baht(annual.fullYearTarget)})
-                  </div>
+                  <div className="text-[11px] text-slate-400">เป้าเฉลี่ยตามวันเปิดจริง (ไม่ใช่ทั้งปีเต็ม)</div>
                 )}
                 <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
                   <div className={`h-full ${annual.pctOfTarget >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, annual.pctOfTarget)}%` }} />
