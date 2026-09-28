@@ -2356,6 +2356,19 @@ function LineEditModal({
                 <textarea className="input min-h-[2.5rem]" disabled={locked} value={dayNote} maxLength={500}
                   placeholder="เช่น หายไปตอนพักเที่ยง 12:30 ไม่กลับมา แจ้งหัวหน้ากะแล้ว"
                   onChange={(e) => setDayNote(e.target.value)} />
+                {/* Draft a warning letter from a SAVED walk-off (owner 2026-09-28).
+                    Shown only once the flag/note are persisted (not dirty), and the
+                    evidence note is NOT put in the URL — it stays in the payroll
+                    record (PDPA); the draft body is a generic template the admin
+                    fills from the note shown on this page. */}
+                {dayWalkOffInit && dayWalkOff === dayWalkOffInit && dayNote.trim() === dayNoteInit.trim() && selectedDate && (
+                  <Link
+                    href={apiUrl(`/admin/persona/discipline?wo=1&user=${line.user_id}&date=${selectedDate}`)}
+                    target="_blank"
+                    className="inline-block mt-1.5 text-[11px] font-semibold text-rose-700 hover:underline">
+                    → สร้างร่างหนังสือตักเตือน (ทำโทษ) จากวันนี้
+                  </Link>
+                )}
               </div>
               {/* ลงเวลาทำงานวันหยุดแทนพนักงาน (owner 2026-08-03) — วันที่พนักงานไม่ได้
                   ลงเวลาเอง (โดนเรียกเข้าวันหยุด ฯลฯ) admin กรอกให้ได้ตรงนี้. */}
