@@ -1533,6 +1533,11 @@ export type SpecialDaysOutlook = { fromDate: string; horizonDays: number; days: 
  *  so the on-screen panel, the preview, and the LINE send all agree. */
 export const SPECIAL_DAYS_HORIZON_DAYS = 60;
 
+/** How far back the uplift history reaches — a rolling 12 months (owner
+ *  2026-09-29). Recent holiday behaviour only, so the forecast reflects the
+ *  business as it is now, not occurrences from years ago. */
+export const SPECIAL_DAYS_UPLIFT_LOOKBACK_DAYS = 365;
+
 /** A branch's realised daily net over an inclusive range — POS for a restaurant,
  *  billed net for a clinic — as a date→nett map (positive days only). */
 function branchDailyNetMap(branchId: number, isClinic: boolean, startIso: string, endIso: string): Map<string, number> {
@@ -1608,26 +1613,34 @@ export function upcomingSpecialDaysOutlook(branchIds: number[], todayIso: string
   ).all(todayIso, endIso) as Array<{ date: string; name_th: string }>;
   if (!upcoming.length) return out;
 
-  // Past special days (for the uplift history), grouped by name for same-day
-  // matching plus a flat list for the generic-holiday fallback.
-  const past = db.prepare(
-    "SELECT date, name_th FROM public_holidays WHERE date <= ? ORDER BY date"
-  ).all(todayIso) as Array<{ date: string; name_th: string }>;
+  // Uplift history is a ROLLING 12 MONTHS (owner 2026-09-29): recent holiday
+  // behaviour only, so the forecast tracks the current business, not occurrences
+  // from years ago. Grouped by name for same-day matching plus a flat list for the
+  // generic-holiday fallback. It stays a % uplift (not absolute baht) so a growing
+  // branch — or a brand-new one with no holiday history of its own — is still
+  // forecast against its own recent normal-day level.
+  const upliftStart = addDaysIso(todayIso, -SPECIAL_DAYS_UPLIFT_LOOKBACK_DAYS);
+  const recentPast = db.prepare(
+    "SELECT date, name_th FROM public_holidays WHERE date > ? AND date <= ? ORDER BY date"
+  ).all(upliftStart, todayIso) as Array<{ date: string; name_th: string }>;
   const pastByName = new Map<string, string[]>();
   const pastAll: string[] = [];
-  for (const p of past) {
+  for (const p of recentPast) {
     pastAll.push(p.date);
     const arr = pastByName.get(p.name_th) ?? []; arr.push(p.date); pastByName.set(p.name_th, arr);
   }
-  // Every holiday date (past + upcoming) is excluded from a "normal-day" baseline
-  // so a holiday-dense month doesn't drag the baseline toward the festival level.
-  const holidaySet = new Set<string>([...pastAll, ...upcoming.map((h) => h.date)]);
 
-  // Branch metadata + 2-year daily history (covers prior-year special days and a
-  // recent baseline) — built once per branch, with the trailing-8-week weekday and
-  // weekend baselines precomputed (they depend only on the branch, not the holiday).
+  // Branch metadata + 2-year daily history (covers a recent baseline and enough
+  // context for holiday exclusion) — built once per branch, with the trailing-8-week
+  // weekday and weekend baselines precomputed (they depend only on the branch).
   const lookbackStart = addDaysIso(todayIso, -730);
   const recentStart = addDaysIso(todayIso, -56);
+  // EVERY holiday across the whole daily-history window — not just the 12-month
+  // uplift sample — is excluded from a "normal-day" baseline, so a holiday-dense
+  // month never drags the baseline toward the festival level.
+  const holidaySet = new Set<string>((db.prepare(
+    "SELECT date FROM public_holidays WHERE date >= ? AND date <= ? ORDER BY date"
+  ).all(lookbackStart, endIso) as Array<{ date: string }>).map((r) => r.date));
   const branchMeta = branchIds.map((id) => {
     const row = db.prepare("SELECT name, display_order AS ord FROM branches WHERE id = ?").get(id) as { name: string; ord: number } | undefined;
     const isClinic = isClinicaBranch(id);

@@ -130,12 +130,16 @@ process.env.DATABASE_PATH = TMP;
 
   // ── เบี้ยประชุม rides the SVC payout + posts to accounta (owner 2026-09-07) ──
   const { postSvcToAccounta } = await import("../src/lib/accounta-db");
-  const mtgU = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status) VALUES ('mtg','x','ผู้ประชุม','staff','active')").run().lastInsertRowid);
+  const mtgU = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,title_prefix,role,status) VALUES ('mtg','x','ผู้ประชุม','นางสาว','staff','active')").run().lastInsertRowid);
   db.prepare("INSERT INTO user_branches (user_id, branch_id, is_primary) VALUES (?,?,1)").run(mtgU, A); // home = branch A
   const meet = Number(db.prepare("INSERT INTO exec_meetings (title, meeting_date, status) VALUES ('ประชุม','2026-09-10','ended')").run().lastInsertRowid);
   db.prepare("INSERT INTO exec_meeting_attendance (meeting_id, user_id, joined_at, ended_at, minutes, fee_amount) VALUES (?,?,datetime('now'),datetime('now'),90,300)").run(meet, mtgU);
   ok("computeBranchSvcPayout: เบี้ยประชุม 300 ที่สาขาบ้าน (sso → net 300)",
     (() => { const r = sc.computeBranchSvcPayout(A, ym).find((x) => x.userId === mtgU); return !!r && near(r.meetingFeeGross, 300) && near(r.meetingFeeNet, 300) && near(r.net, 300); })());
+  // A meeting-fee-only attendee (no service charge that month) must still carry their
+  // คำนำหน้า in the payout name (owner 2026-09-29) — regression guard for the daybook.
+  ok("computeBranchSvcPayout: เบี้ยประชุมล้วน ๆ มีคำนำหน้าในชื่อ (นางสาว ผู้ประชุม)",
+    (() => { const r = sc.computeBranchSvcPayout(A, ym).find((x) => x.userId === mtgU); return r?.displayName === "นางสาว ผู้ประชุม"; })());
   // Post the A batch to accounta and check the เบี้ยประชุม category row.
   const batchA = (db.prepare("SELECT id FROM svc_payout_batches WHERE branch_id=? AND year_month=?").get(A, ym) as { id: number }).id;
   postSvcToAccounta(batchA, uid);
