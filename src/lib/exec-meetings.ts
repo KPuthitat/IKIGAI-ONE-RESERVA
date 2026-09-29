@@ -79,6 +79,10 @@ export type ExecMeetingDetail = ExecMeetingRow & {
     fee_amount: number | null;
     minutes_complete: boolean;  // every วาระ (locked + own) fully answered
     items: MinuteItem[];        // this person's submitted วาระ
+    home_branch_id: number | null;   // primary (else lowest) branch — default fee target
+    home_branch_name: string | null;
+    fee_branch_id: number | null;    // override: book เบี้ยประชุม here instead of home (null = home)
+    fee_branch_name: string | null;
   }>;
 };
 
@@ -211,17 +215,26 @@ export function getExecMeeting(id: number): ExecMeetingDetail | null {
     SELECT i.user_id, u.display_name, u.title_prefix,
            COALESCE(u.meeting_fee_exempt, 0) AS fee_exempt,
            a.joined_at, a.ended_at, a.minutes, a.fee_amount,
-           mm.items, mm.agenda, mm.details, mm.suggestions, mm.action_plan
+           mm.items, mm.agenda, mm.details, mm.suggestions, mm.action_plan,
+           hb.id AS home_branch_id, hb.name AS home_branch_name,
+           fb.branch_id AS fee_branch_id, fbb.name AS fee_branch_name
     FROM exec_meeting_invitees i
     JOIN users u ON u.id = i.user_id
     LEFT JOIN exec_meeting_attendance a ON a.meeting_id = i.meeting_id AND a.user_id = i.user_id
     LEFT JOIN exec_meeting_minutes mm ON mm.meeting_id = i.meeting_id AND mm.user_id = i.user_id
+    LEFT JOIN exec_meeting_fee_branch fb ON fb.meeting_id = i.meeting_id AND fb.user_id = i.user_id
+    LEFT JOIN branches fbb ON fbb.id = fb.branch_id
+    LEFT JOIN branches hb ON hb.id = COALESCE(
+      (SELECT branch_id FROM user_branches WHERE user_id = i.user_id AND is_primary = 1 LIMIT 1),
+      (SELECT MIN(branch_id) FROM user_branches WHERE user_id = i.user_id)
+    )
     WHERE i.meeting_id = ?
     ORDER BY u.display_name COLLATE NOCASE
   `).all(id) as Array<{
     user_id: number; display_name: string; title_prefix: string | null; fee_exempt: number;
     joined_at: string | null; ended_at: string | null; minutes: number | null; fee_amount: number | null;
     items: string | null; agenda: string | null; details: string | null; suggestions: string | null; action_plan: string | null;
+    home_branch_id: number | null; home_branch_name: string | null; fee_branch_id: number | null; fee_branch_name: string | null;
   }>;
 
   return {
@@ -249,7 +262,11 @@ export function getExecMeeting(id: number): ExecMeetingDetail | null {
         minutes: r.minutes,
         fee_amount: r.fee_amount,
         minutes_complete: minutesComplete(topics, saved),
-        items: [...locked, ...own]
+        items: [...locked, ...own],
+        home_branch_id: r.home_branch_id,
+        home_branch_name: r.home_branch_name,
+        fee_branch_id: r.fee_branch_id,
+        fee_branch_name: r.fee_branch_name
       };
     })
   };
@@ -519,4 +536,25 @@ export function endMeeting(meetingId: number, userId: number): { error: string }
     WHERE meeting_id = ? AND user_id = ?
   `).run(minutes, fee, exempt ? 1 : 0, meetingId, userId);
   return { minutes, fee };
+}
+
+// เบี้ยประชุมลงสาขาไหน (owner 2026-09-29). Point a person's meeting fee for THIS
+// meeting at a specific branch (e.g. they attended as that branch's representative)
+// instead of their home branch. Pass branchId = null to clear the override (back to
+// home branch). The person must be an invitee, and the branch must exist. Returns an
+// error code or null. Takes effect at SVC payout time — no need to re-open the meeting.
+export function setMeetingFeeBranch(meetingId: number, userId: number, branchId: number | null): string | null {
+  const db = getDb();
+  if (!isInvited(meetingId, userId)) return "not_invited";
+  if (branchId == null) {
+    db.prepare("DELETE FROM exec_meeting_fee_branch WHERE meeting_id = ? AND user_id = ?").run(meetingId, userId);
+    return null;
+  }
+  const branch = db.prepare("SELECT id FROM branches WHERE id = ?").get(branchId) as { id: number } | undefined;
+  if (!branch) return "branch_not_found";
+  db.prepare(`
+    INSERT INTO exec_meeting_fee_branch (meeting_id, user_id, branch_id) VALUES (?, ?, ?)
+    ON CONFLICT (meeting_id, user_id) DO UPDATE SET branch_id = excluded.branch_id
+  `).run(meetingId, userId, branchId);
+  return null;
 }

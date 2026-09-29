@@ -8333,6 +8333,19 @@ function runMigrations(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (meeting_id, user_id)
     );
+
+    -- Per-meeting เบี้ยประชุม branch override (owner 2026-09-29): when a person
+    -- attends a meeting as another branch's representative, the admin can point
+    -- their meeting fee at that branch instead of their home branch. No row = book
+    -- to the home (primary) branch, i.e. the previous behaviour is the default.
+    CREATE TABLE IF NOT EXISTS exec_meeting_fee_branch (
+      meeting_id INTEGER NOT NULL REFERENCES exec_meetings(id) ON DELETE CASCADE,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      -- If the target branch is ever deleted, drop the override so the fee falls
+      -- back to the person's home branch rather than orphaning to a dead branch.
+      branch_id  INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      PRIMARY KEY (meeting_id, user_id)
+    );
   `);
 
   // วาระประชุมแบบหลายหัวข้อ (owner 2026-09-02): a meeting can carry an ordered

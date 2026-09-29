@@ -2142,6 +2142,54 @@ export function meetingFeeGrossByUser(yearMonth: string): Map<number, number> {
   return map;
 }
 
+/**
+ * Per-BRANCH, per-user meeting-fee gross for a month (owner 2026-09-29). Same
+ * totals as meetingFeeGrossByUser, but each fee is bucketed to the branch it books
+ * to: a computed attendance fee goes to its per-meeting override branch
+ * (exec_meeting_fee_branch) when set, else the person's home branch; a manual
+ * lump-sum fee always goes to the home branch. Returns branchId → (userId → gross).
+ */
+export function meetingFeeGrossByBranchUser(yearMonth: string): Map<number, Map<number, number>> {
+  const db = getDb();
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const out = new Map<number, Map<number, number>>();
+  const homeCache = new Map<number, number | null>();
+  const home = (uid: number): number | null => {
+    if (!homeCache.has(uid)) homeCache.set(uid, homeBranchId(uid));
+    return homeCache.get(uid) ?? null;
+  };
+  const add = (branchId: number | null, userId: number, gross: number) => {
+    if (branchId == null || gross <= 0) return;
+    const m = out.get(branchId) ?? new Map<number, number>();
+    m.set(userId, round2((m.get(userId) ?? 0) + gross));
+    out.set(branchId, m);
+  };
+  if (yearMonth >= MEETING_FEE_SVC_START_MONTH) {
+    try {
+      // Group by (user, override branch) so a person attending two meetings for two
+      // different branches is split across both. fee_branch_id NULL → home branch.
+      const rows = db.prepare(`
+        SELECT a.user_id AS user_id, fb.branch_id AS feeBranch, SUM(a.fee_amount) AS fee
+        FROM exec_meeting_attendance a
+        JOIN exec_meetings m ON m.id = a.meeting_id
+        LEFT JOIN exec_meeting_fee_branch fb ON fb.meeting_id = a.meeting_id AND fb.user_id = a.user_id
+        WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0
+          AND substr(m.meeting_date, 1, 7) = ?
+        GROUP BY a.user_id, fb.branch_id
+      `).all(yearMonth) as Array<{ user_id: number; feeBranch: number | null; fee: number }>;
+      for (const r of rows) add(r.feeBranch ?? home(r.user_id), r.user_id, round2(r.fee || 0));
+    } catch { /* exec-meeting tables may not exist yet */ }
+  }
+  try {
+    for (const r of db.prepare(
+      "SELECT user_id, amount FROM svc_manual_meeting_fees WHERE year_month = ? AND amount > 0"
+    ).all(yearMonth) as Array<{ user_id: number; amount: number }>) {
+      add(home(r.user_id), r.user_id, round2(r.amount || 0));
+    }
+  } catch { /* table may not exist yet */ }
+  return out;
+}
+
 export type ManualMeetingFee = { amount: number; note: string | null };
 
 /** Manual lump-sum meeting fees for a month, keyed user_id (owner 2026-09-20). */
@@ -2236,12 +2284,13 @@ export function computeBranchSvcPayout(branchId: number, yearMonth: string): Bra
   // accounta category. COMPUTED (attendance) fees only count on/after the cutover
   // (so pre-cutover fees already paid via payroll aren't re-paid), but a MANUAL
   // lump-sum fee applies to any month — meetingFeeGrossByUser combines both.
-  const meetingFees = meetingFeeGrossByUser(yearMonth);
+  // Fees already bucketed to the branch they book to (per-meeting override branch,
+  // else the person's home branch) — so no home-branch filter here (owner 2026-09-29).
+  const meetingFees = meetingFeeGrossByBranchUser(yearMonth).get(branchId) ?? new Map<number, number>();
   if (meetingFees.size > 0) {
     const whtRate = (db.prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")
       .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03;
     for (const [userId, gross] of meetingFees) {
-      if (homeBranchId(userId) !== branchId) continue;
       const u = db.prepare("SELECT display_name, title_prefix, salary_tax_mode, sso_start_month FROM users WHERE id = ?")
         .get(userId) as { display_name: string; title_prefix: string | null; salary_tax_mode: "sso" | "wht" | null; sso_start_month: string | null } | undefined;
       // Compose the same prefixed name the SVC path uses (owner 2026-09-29), so a
