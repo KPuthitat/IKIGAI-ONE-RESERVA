@@ -7421,6 +7421,22 @@ function runMigrations(db: Database.Database): void {
     if (!imcols.some((c) => c.name === "media_kind")) db.exec("ALTER TABLE inbox_messages ADD COLUMN media_kind TEXT");
     if (!imcols.some((c) => c.name === "media_ref")) db.exec("ALTER TABLE inbox_messages ADD COLUMN media_ref TEXT");
   }
+  // Facebook Messenger channel (owner 2026-09-29) — a connected Page so its
+  // Messenger chats land in the same น้องฮูก inbox as LINE (channel='facebook').
+  // Tokens stored encrypted (secret-vault). page_id is the webhook channel_code.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS facebook_channels (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      page_id      TEXT UNIQUE NOT NULL,
+      page_name    TEXT,
+      access_token TEXT,                         -- enc:v1: Page access token (Send API)
+      app_secret   TEXT,                         -- enc:v1: App secret (webhook signature)
+      verify_token TEXT,                         -- webhook verification token (GET handshake)
+      branch_id    INTEGER REFERENCES branches(id) ON DELETE SET NULL,
+      updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_by   INTEGER REFERENCES users(id)
+    );
+  `);
   db.exec(`
 
     -- CLINICA (owner 2026-09-26): AT HOME CLINIC HIS imports, stored at line-item

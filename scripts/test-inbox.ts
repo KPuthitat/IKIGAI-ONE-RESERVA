@@ -108,6 +108,39 @@ process.env.DATABASE_PATH = TMP;
   ok("media: sticker is not served as an image", inbox.inboxImageSource(stk.id, [A]) === null);
   ok("media: plain text is not served as an image", inbox.inboxImageSource(txt.id, [A]) === null);
 
+  // ── Facebook Messenger channel (owner 2026-09-29) ──────────────────────────
+  const fb = await import("../src/lib/facebook");
+  // A Facebook inbound lands as its own channel, separate from LINE even for the
+  // same external id (UNIQUE is per channel).
+  await inbox.recordInbound({ channel: "facebook", channel_code: "PAGE123", branch_id: A, line_user_id: "Ucust1", text: "ทักจากเฟซ", external_message_id: "FBM1" });
+  const fbConv = inbox.listConversations().find((c) => c.channel === "facebook");
+  ok("fb: facebook inbound creates a facebook conversation", !!fbConv && fbConv.channel_code === "PAGE123");
+  ok("fb: same external id on LINE + Facebook are separate conversations", (() => {
+    const all = inbox.listConversations({ status: "all" });
+    const forCust1 = all.filter((c) => c.external_user_id === "Ucust1");
+    return forCust1.length === 2 && new Set(forCust1.map((c) => c.channel)).size === 2;
+  })());
+  ok("fb: a Facebook webhook retry (same mid) dedups", (() => {
+    const before = inbox.getThread(fbConv!.id).messages.length;
+    void inbox.recordInbound({ channel: "facebook", channel_code: "PAGE123", branch_id: A, line_user_id: "Ucust1", text: "ทักจากเฟซ", external_message_id: "FBM1" });
+    return inbox.getThread(fbConv!.id).messages.length === before;
+  })());
+  // Signature verification (HMAC-SHA256 over the raw body with the app secret).
+  const crypto = await import("node:crypto");
+  const rawBody = JSON.stringify({ object: "page", entry: [] });
+  const goodSig = "sha256=" + crypto.createHmac("sha256", "s3cr3t").update(rawBody, "utf8").digest("hex");
+  ok("fb: verifyFbSignature accepts a correct signature", fb.verifyFbSignature("s3cr3t", rawBody, goodSig));
+  ok("fb: verifyFbSignature rejects a wrong signature", !fb.verifyFbSignature("s3cr3t", rawBody, "sha256=deadbeef"));
+  ok("fb: verifyFbSignature rejects a wrong secret", !fb.verifyFbSignature("other", rawBody, goodSig));
+  ok("fb: verifyFbSignature rejects a missing header", !fb.verifyFbSignature("s3cr3t", rawBody, null));
+  // Config round-trip: tokens stored encrypted, kept when re-saved without them.
+  fb.setFacebookChannel({ pageId: "PAGE123", pageName: "IKIGAI", verifyToken: "vtok", accessToken: "PAGE_TOKEN", appSecret: "APP_SECRET", branchId: A, updatedBy: staff });
+  ok("fb: getFacebookChannel returns decrypted tokens", (() => { const c = fb.getFacebookChannel("PAGE123"); return c?.access_token === "PAGE_TOKEN" && c?.app_secret === "APP_SECRET" && c?.verify_token === "vtok"; })());
+  ok("fb: findFacebookChannelByVerifyToken resolves the page", fb.findFacebookChannelByVerifyToken("vtok")?.page_id === "PAGE123");
+  fb.setFacebookChannel({ pageId: "PAGE123", pageName: "IKIGAI 2", verifyToken: "vtok2", branchId: B, updatedBy: staff });
+  ok("fb: re-save without secrets keeps the stored tokens, updates other fields", (() => { const c = fb.getFacebookChannel("PAGE123"); return c?.access_token === "PAGE_TOKEN" && c?.app_secret === "APP_SECRET" && c?.verify_token === "vtok2" && c?.branch_id === B; })());
+  ok("fb: raw tokens are stored encrypted at rest", (() => { const r = db.prepare("SELECT access_token, app_secret FROM facebook_channels WHERE page_id='PAGE123'").get() as { access_token: string; app_secret: string }; return r.access_token.startsWith("enc:") && r.app_secret.startsWith("enc:") && !r.access_token.includes("PAGE_TOKEN"); })());
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
