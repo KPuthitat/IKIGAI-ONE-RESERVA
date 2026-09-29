@@ -43,7 +43,7 @@ function SpecialDaysPreview({ outlook, color, operator, horizonDays }: { outlook
         <div className="text-[11px] opacity-90">{horizonDays} วันข้างหน้า · เตรียมวัตถุดิบ / คน / โปรโมชั่น</div>
       </div>
       <div className="px-4 py-3 space-y-2 bg-white">
-        <div className="text-[11px] text-slate-400">คาดการณ์จากประวัติวันเดียวกันปีก่อนๆ · สรุปโดย: {operator}</div>
+        <div className="text-[11px] text-slate-400">คาดการณ์จากประวัติวันหยุด 12 เดือนล่าสุด · สรุปโดย: {operator}</div>
         {days.map((d, i) => (
           <div key={d.date} className={i > 0 ? "pt-2 border-t border-slate-100" : ""}>
             <div className="font-semibold text-slate-800">{d.nameTh}</div>
@@ -56,6 +56,9 @@ function SpecialDaysPreview({ outlook, color, operator, horizonDays }: { outlook
                     ? <span className="text-slate-500">คาด <Pct pct={b.expectedUpliftPct} /></span>
                     : <span className="text-slate-400">ยังไม่มีประวัติ</span>}
                   {b.expectedNett != null && <span className="text-slate-400"> · คาดยอด {baht(b.expectedNett)}</span>}
+                  {b.basis !== "none" && b.sampleCount > 0 && (
+                    <span className="text-slate-300"> · {b.basis === "same-day" ? `จากวันนี้ปีก่อน ${b.sampleCount} ครั้ง` : `อ้างอิงวันหยุดทั่วไป ${b.sampleCount} ครั้ง`}</span>
+                  )}
                 </div>
                 <ul className="mt-0.5 space-y-0.5">
                   {b.suggestions.map((s, k) => (

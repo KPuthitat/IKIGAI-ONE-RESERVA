@@ -329,7 +329,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div>
                   <div className="text-sm font-bold text-slate-800">วันสำคัญที่กำลังจะมาถึง — เตรียมรับมือ</div>
-                  <div className="text-[11px] text-slate-400">คาดการณ์จากประวัติวันเดียวกันปีก่อนๆ · {SPECIAL_DAYS_HORIZON_DAYS} วันข้างหน้า</div>
+                  <div className="text-[11px] text-slate-400">คาดการณ์จากประวัติวันหยุด 12 เดือนล่าสุด · {SPECIAL_DAYS_HORIZON_DAYS} วันข้างหน้า</div>
                 </div>
                 <SpecialDaysSend outlook={upcoming} horizonDays={upcoming.horizonDays}
                   operator={user.display_name} color={getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR} />
@@ -353,6 +353,13 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                           {b.expectedNett != null && (
                             <div className="text-[11px] text-slate-500">คาดยอด ~฿{baht(b.expectedNett)} (ปกติ ฿{baht(b.baselineDaily ?? 0)}/วัน)</div>
                           )}
+                          {b.basis !== "none" && b.sampleCount > 0 && (
+                            <div className="text-[10px] text-slate-400">
+                              {b.basis === "same-day"
+                                ? `อ้างอิงวันนี้ปีก่อน ${b.sampleCount} ครั้ง`
+                                : `อ้างอิงวันหยุดทั่วไป ${b.sampleCount} ครั้ง (ยังไม่มีประวัติวันนี้)`}
+                            </div>
+                          )}
                           <ul className="mt-1 space-y-0.5">
                             {b.suggestions.map((s, i) => (
                               <li key={i} className="flex gap-1 text-[11px] text-slate-600 leading-snug"><span className="text-brand">•</span><span>{s}</span></li>
@@ -364,7 +371,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                   </div>
                 ))}
               </div>
-              <p className="text-[11px] text-slate-400">% คาด = ค่าเฉลี่ยอัพลิฟต์ของวันนี้ในอดีต เทียบกับค่าเฉลี่ยวันประเภทเดียวกัน (วันธรรมดา/เสาร์–อาทิตย์) · “generic” = ยังไม่มีประวัติวันนี้ ใช้ค่าเฉลี่ยวันหยุดทั่วไปแทน</p>
+              <p className="text-[11px] text-slate-400">% คาด = ค่าเฉลี่ยอัพลิฟต์ของวันหยุดใน 12 เดือนล่าสุด เทียบกับค่าเฉลี่ยวันประเภทเดียวกัน (วันธรรมดา/เสาร์–อาทิตย์) แล้วคูณกับยอดวันปกติล่าสุด · ถ้ายังไม่มีประวัติวันนี้ จะใช้ค่าเฉลี่ยวันหยุดทั่วไปแทน</p>
             </div>
           )}
 

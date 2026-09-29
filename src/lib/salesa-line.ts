@@ -571,7 +571,7 @@ export type SpecialDaysCardMeta = { color: string; operator: string; horizonDays
 export function salesaSpecialDaysFlex(outlook: SpecialDaysOutlook, meta: SpecialDaysCardMeta): FlexMsg {
   const days = outlook.days.slice(0, 3);   // nearest few — keep the card readable
   const body: unknown[] = [
-    { type: "text", text: `คาดการณ์จากประวัติวันเดียวกันปีก่อนๆ · สรุปโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true }
+    { type: "text", text: `คาดการณ์จากประวัติวันหยุด 12 เดือนล่าสุด · สรุปโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true }
   ];
   days.forEach((d, i) => {
     if (i > 0) body.push(sep);
@@ -585,7 +585,10 @@ export function salesaSpecialDaysFlex(outlook: SpecialDaysOutlook, meta: Special
         ...(b.expectedUpliftPct != null
           ? [{ type: "span", text: "คาด ", color: "#999999" }, pctSpan(b.expectedUpliftPct)]
           : [{ type: "span", text: "ยังไม่มีประวัติ", color: "#bbbbbb" }]),
-        ...(b.expectedNett != null ? [{ type: "span", text: `  · คาดยอด ${baht(b.expectedNett)}`, color: "#999999" }] : [])
+        ...(b.expectedNett != null ? [{ type: "span", text: `  · คาดยอด ${baht(b.expectedNett)}`, color: "#999999" }] : []),
+        ...(b.basis !== "none" && b.sampleCount > 0
+          ? [{ type: "span", text: b.basis === "same-day" ? `  · จากวันนี้ปีก่อน ${b.sampleCount} ครั้ง` : `  · อ้างอิงวันหยุดทั่วไป ${b.sampleCount} ครั้ง`, color: "#bbbbbb" }]
+          : [])
       ] });
       for (const s of b.suggestions) {
         rows.push({ type: "text", size: "xxs", color: "#666666", wrap: true, text: `• ${s}` });

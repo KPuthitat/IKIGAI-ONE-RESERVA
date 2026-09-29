@@ -2242,18 +2242,22 @@ export function computeBranchSvcPayout(branchId: number, yearMonth: string): Bra
       .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03;
     for (const [userId, gross] of meetingFees) {
       if (homeBranchId(userId) !== branchId) continue;
-      const u = db.prepare("SELECT display_name, salary_tax_mode, sso_start_month FROM users WHERE id = ?")
-        .get(userId) as { display_name: string; salary_tax_mode: "sso" | "wht" | null; sso_start_month: string | null } | undefined;
+      const u = db.prepare("SELECT display_name, title_prefix, salary_tax_mode, sso_start_month FROM users WHERE id = ?")
+        .get(userId) as { display_name: string; title_prefix: string | null; salary_tax_mode: "sso" | "wht" | null; sso_start_month: string | null } | undefined;
+      // Compose the same prefixed name the SVC path uses (owner 2026-09-29), so a
+      // meeting-fee-only attendee (no service charge that month) isn't booked without
+      // their คำนำหน้า while an SVC-earning attendee keeps theirs.
+      const mfName = nameWithPrefix(u?.title_prefix ?? null, u?.display_name ?? "");
       const taxMode = svcEffectiveTaxMode(u?.salary_tax_mode ?? "sso", u?.sso_start_month ?? null, yearMonth);
       const mWht = taxMode === "wht" ? round2(gross * whtRate) : 0;
       const mNet = round2(gross - mWht);
-      const row = rowsByUser.get(userId) ?? blank(userId, u?.display_name ?? "", taxMode);
+      const row = rowsByUser.get(userId) ?? blank(userId, mfName, taxMode);
       row.meetingFeeGross = round2(row.meetingFeeGross + gross);
       row.meetingFeeWht = round2(row.meetingFeeWht + mWht);
       row.meetingFeeNet = round2(row.meetingFeeNet + mNet);
       row.net = round2(row.net + mNet);
       row.wht = round2(row.wht + mWht);
-      if (!row.displayName) row.displayName = u?.display_name ?? "";
+      if (!row.displayName) row.displayName = mfName;
       rowsByUser.set(userId, row);
     }
   }
