@@ -3,12 +3,13 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { requirePermission, canModule, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu, upcomingSpecialDaysOutlook } from "@/lib/salesa-analytics";
+import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu, upcomingSpecialDaysOutlook, SPECIAL_DAYS_HORIZON_DAYS } from "@/lib/salesa-analytics";
 import { getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import { companyMonthLabor } from "@/lib/daily-col";
 import { fmtMoney } from "@/lib/format";
 import CompanyReportActions from "./CompanyReportActions";
 import LaborCostPanel from "./LaborCostPanel";
+import SpecialDaysSend from "./SpecialDaysSend";
 
 // ANALYTICA · ภาพรวมบริษัท (รวมทุกสาขา) — owner 2026-09-21. ยอดขายรวมบริษัท +
 // เทียบรายสาขา + เทียบเดือนนี้↔เดือนก่อน (ช่วงเวลาเดียวกัน) + เป้าเดือน/ทั้งปี.
@@ -70,7 +71,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
   const fest = festivalAnalysis(year, today, companyBranchIds);
   // Forward-looking special-days plan (owner 2026-09-27) — next 60 days of
   // holidays with predicted uplift + prep suggestions for the exec team.
-  const upcoming = upcomingSpecialDaysOutlook(companyBranchIds, today, 60);
+  const upcoming = upcomingSpecialDaysOutlook(companyBranchIds, today, SPECIAL_DAYS_HORIZON_DAYS);
   const thDate = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return `${d} ${TH_MONTHS[m]}`; };
   // Top menu / categories รวมทุกสาขา. Window = 1..today for the current month, the
   // FULL month for a past month (matches the per-branch monthly view, and doesn't
@@ -325,9 +326,13 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
               history, vs the same day-type baseline) + prep suggestions per branch. */}
           {upcoming.days.length > 0 && (
             <div className="card space-y-3">
-              <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                <div className="text-sm font-bold text-slate-800">วันสำคัญที่กำลังจะมาถึง — เตรียมรับมือ</div>
-                <div className="text-[11px] text-slate-400">คาดการณ์จากประวัติวันเดียวกันปีก่อนๆ · 60 วันข้างหน้า</div>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div className="text-sm font-bold text-slate-800">วันสำคัญที่กำลังจะมาถึง — เตรียมรับมือ</div>
+                  <div className="text-[11px] text-slate-400">คาดการณ์จากประวัติวันเดียวกันปีก่อนๆ · {SPECIAL_DAYS_HORIZON_DAYS} วันข้างหน้า</div>
+                </div>
+                <SpecialDaysSend outlook={upcoming} horizonDays={upcoming.horizonDays}
+                  operator={user.display_name} color={getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR} />
               </div>
               <div className="space-y-3">
                 {upcoming.days.map((d) => (

@@ -1529,6 +1529,10 @@ export type SpecialDayPrep = {
 };
 export type SpecialDaysOutlook = { fromDate: string; horizonDays: number; days: SpecialDayPrep[] };
 
+/** Default look-ahead window for the upcoming special-days outlook — one source
+ *  so the on-screen panel, the preview, and the LINE send all agree. */
+export const SPECIAL_DAYS_HORIZON_DAYS = 60;
+
 /** A branch's realised daily net over an inclusive range — POS for a restaurant,
  *  billed net for a clinic — as a date→nett map (positive days only). */
 function branchDailyNetMap(branchId: number, isClinic: boolean, startIso: string, endIso: string): Map<string, number> {

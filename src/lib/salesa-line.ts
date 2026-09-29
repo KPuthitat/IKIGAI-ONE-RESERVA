@@ -5,7 +5,7 @@
 
 import { sendLinePush } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
-import type { DailyAnalytics, WeeklyAnalytics, MonthlyAnalytics, CompanyOverview } from "./salesa-analytics";
+import type { DailyAnalytics, WeeklyAnalytics, MonthlyAnalytics, CompanyOverview, SpecialDaysOutlook } from "./salesa-analytics";
 import type { SalesPushPlan } from "./salesa-push";
 import type { ClinicaMonth, ClinicaWeek, ClinicaDailyReport } from "./clinica-analytics";
 import type { BranchForecast } from "./forecast";
@@ -559,6 +559,57 @@ export function salesaCompanyFlex(ov: CompanyOverview, meta: CompanyCardMeta): F
       },
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
       footer: footer("สรุปโดยระบบ IKIGAI OS · ภาพรวมบริษัทรวมทุกสาขา")
+    }
+  };
+}
+
+export type SpecialDaysCardMeta = { color: string; operator: string; horizonDays: number };
+
+/** Upcoming special-days outlook card for the HOD group (owner 2026-09-29) — the
+ *  nearest few holidays with each branch's predicted uplift + prep suggestions,
+ *  so the exec team can prepare วัตถุดิบ / คน / โปรฯ ahead of time. */
+export function salesaSpecialDaysFlex(outlook: SpecialDaysOutlook, meta: SpecialDaysCardMeta): FlexMsg {
+  const days = outlook.days.slice(0, 3);   // nearest few — keep the card readable
+  const body: unknown[] = [
+    { type: "text", text: `คาดการณ์จากประวัติวันเดียวกันปีก่อนๆ · สรุปโดย: ${meta.operator}`, size: "xxs", color: "#999999", wrap: true }
+  ];
+  days.forEach((d, i) => {
+    if (i > 0) body.push(sep);
+    const rows: unknown[] = [
+      { type: "text", size: "sm", weight: "bold", color: "#0e2724", wrap: true, text: d.nameTh },
+      { type: "text", size: "xxs", color: "#999999", wrap: true, text: `${d.dateLabel} · อีก ${d.daysAway} วัน${d.weekend ? " · เสาร์–อาทิตย์" : ""}` }
+    ];
+    for (const b of d.branches) {
+      rows.push({ type: "text", size: "xs", wrap: true, margin: "sm", contents: [
+        { type: "span", text: `${b.branchName}  `, color: "#333333", weight: "bold" },
+        ...(b.expectedUpliftPct != null
+          ? [{ type: "span", text: "คาด ", color: "#999999" }, pctSpan(b.expectedUpliftPct)]
+          : [{ type: "span", text: "ยังไม่มีประวัติ", color: "#bbbbbb" }]),
+        ...(b.expectedNett != null ? [{ type: "span", text: `  · คาดยอด ${baht(b.expectedNett)}`, color: "#999999" }] : [])
+      ] });
+      for (const s of b.suggestions) {
+        rows.push({ type: "text", size: "xxs", color: "#666666", wrap: true, text: `• ${s}` });
+      }
+    }
+    body.push({ type: "box", layout: "vertical", margin: "sm", spacing: "xs", contents: rows });
+  });
+
+  const first = days[0];
+  return {
+    type: "flex",
+    altText: first ? `วันสำคัญที่กำลังจะมาถึง: ${first.nameTh} (อีก ${first.daysAway} วัน)` : "วันสำคัญที่กำลังจะมาถึง",
+    contents: {
+      type: "bubble", size: "giga",
+      header: {
+        type: "box", layout: "vertical", backgroundColor: meta.color, paddingAll: "16px", spacing: "xs",
+        contents: [
+          { type: "text", text: "IKIGAI OS · เตรียมรับมือวันสำคัญ", size: "xxs", color: "#ffffff99" },
+          { type: "text", text: "วันสำคัญที่กำลังจะมาถึง", size: "lg", weight: "bold", color: "#ffffff", wrap: true },
+          { type: "text", text: `${meta.horizonDays} วันข้างหน้า · เตรียมวัตถุดิบ / คน / โปรโมชั่น`, size: "xs", color: "#ffffffcc", wrap: true }
+        ]
+      },
+      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
+      footer: footer("สรุปโดยระบบ IKIGAI OS · คาดการณ์วันสำคัญที่กำลังจะมาถึง")
     }
   };
 }
