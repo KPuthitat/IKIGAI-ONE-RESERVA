@@ -148,6 +148,24 @@ process.env.DATABASE_PATH = TMP;
   ).get(batchA) as { amount_total: number; category: string } | undefined;
   ok("accounta: โพสต์เบี้ยประชุมแยกหมวด (เบี้ยประชุม 300)", !!mfExpense && near(mfExpense.amount_total, 300));
 
+  // ── เบี้ยประชุมลงสาขาไหน — per-meeting branch override (owner 2026-09-29) ──
+  // mtgU's home branch is A (NAMA); mark this meeting's fee as representing B (HYPO).
+  const { setMeetingFeeBranch } = await import("../src/lib/exec-meetings");
+  db.prepare("INSERT OR IGNORE INTO exec_meeting_invitees (meeting_id, user_id) VALUES (?,?)").run(meet, mtgU);
+  ok("override: ตั้งสาขาเบี้ยประชุม = B สำเร็จ", setMeetingFeeBranch(meet, mtgU, B) === null);
+  ok("override: เบี้ยประชุมย้ายไป B (HYPO) และตัดออกจากสาขาบ้าน A", (() => {
+    const ra = sc.computeBranchSvcPayout(A, ym).find((x) => x.userId === mtgU);
+    const rb = sc.computeBranchSvcPayout(B, ym).find((x) => x.userId === mtgU);
+    return near(ra?.meetingFeeGross ?? 0, 0) && !!rb && near(rb.meetingFeeGross, 300) && near(rb.meetingFeeNet, 300) && near(rb.net, 300);
+  })());
+  ok("override: ตั้ง user ที่ไม่ใช่ผู้ได้รับเชิญ → not_invited", setMeetingFeeBranch(meet, uid + 99999, B) === "not_invited");
+  ok("override: เคลียร์ (null) แล้วกลับไปลงสาขาบ้าน A", (() => {
+    setMeetingFeeBranch(meet, mtgU, null);
+    const ra = sc.computeBranchSvcPayout(A, ym).find((x) => x.userId === mtgU);
+    const rb = sc.computeBranchSvcPayout(B, ym).find((x) => x.userId === mtgU);
+    return !!ra && near(ra.meetingFeeGross, 300) && near(rb?.meetingFeeGross ?? 0, 0);
+  })());
+
   // ── Resignation SVC: forfeit the FINAL month, keep earlier months (owner 2026-09-20) ──
   // ฐิติวรดา-style case: last working day 6 Sept, resignation approved with forfeit_svc,
   // decided back in AUGUST. She must still appear in Aug (paid, full month) and Sept

@@ -389,6 +389,7 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
         <MeetingDetailModal
           meetingId={detailId}
           staff={staff}
+          branches={branches}
           onClose={() => setDetailId(null)}
           onChanged={() => startTransition(() => router.refresh())}
         />
@@ -402,6 +403,8 @@ type Invitee = {
   user_id: number; display_name: string; title_prefix: string | null; fee_exempt: boolean;
   joined_at: string | null; ended_at: string | null; minutes: number | null; fee_amount: number | null;
   minutes_complete: boolean; items: MinuteItem[];
+  home_branch_id: number | null; home_branch_name: string | null;
+  fee_branch_id: number | null; fee_branch_name: string | null;
 };
 type Detail = {
   id: number; title: string; meeting_date: string; scheduled_at: string | null; status: string;
@@ -412,7 +415,7 @@ type Detail = {
   invitees: Invitee[];
 };
 
-function MeetingDetailModal({ meetingId, staff, onClose, onChanged }: { meetingId: number; staff: StaffLite[]; onClose: () => void; onChanged: () => void }) {
+function MeetingDetailModal({ meetingId, staff, branches, onClose, onChanged }: { meetingId: number; staff: StaffLite[]; branches: BranchLite[]; onClose: () => void; onChanged: () => void }) {
   const [d, setD] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -436,6 +439,24 @@ function MeetingDetailModal({ meetingId, staff, onClose, onChanged }: { meetingI
     if (!confirm("ส่งแจ้งเตือนซ้ำเข้า LINE ให้ผู้ได้รับเชิญทุกคน?")) return;
     setNotifyMsg(null);
     setNotifyMsg(await postRenotify(meetingId));
+  }
+
+  // เบี้ยประชุมลงสาขาไหน (owner 2026-09-29): null = สาขาบ้าน (ค่าเริ่มต้น).
+  const [savingFee, setSavingFee] = useState(false);
+  async function setFeeBranch(userId: number, branchId: number | null) {
+    setSavingFee(true);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/exec-meetings/${meetingId}/fee-branch`), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, branch_id: branchId })
+      });
+      if (res.ok) { setErr(null); await load(); onChanged(); }
+      else setErr("บันทึกสาขาเบี้ยประชุมไม่สำเร็จ");
+    } catch {
+      setErr("บันทึกสาขาเบี้ยประชุมไม่สำเร็จ (เครือข่าย)");
+    } finally {
+      setSavingFee(false);
+    }
   }
 
   async function fetchDetail(): Promise<Detail | null> {
@@ -664,7 +685,8 @@ function MeetingDetailModal({ meetingId, staff, onClose, onChanged }: { meetingI
                     <th className="py-1.5 px-2">เข้าร่วม</th>
                     <th className="py-1.5 px-2">รายงาน</th>
                     <th className="py-1.5 px-2 text-right">นาที</th>
-                    <th className="py-1.5 pl-2 text-right">เบี้ยประชุม</th>
+                    <th className="py-1.5 px-2 text-right">เบี้ยประชุม</th>
+                    <th className="py-1.5 pl-2">ลงเบี้ยที่สาขา</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -677,7 +699,23 @@ function MeetingDetailModal({ meetingId, staff, onClose, onChanged }: { meetingI
                       <td className="py-1.5 px-2">{i.ended_at ? "จบแล้ว" : i.joined_at ? "กำลังประชุม" : "—"}</td>
                       <td className="py-1.5 px-2">{i.minutes_complete ? "ครบ" : i.joined_at ? "ยังไม่ครบ" : "—"}</td>
                       <td className="py-1.5 px-2 text-right tabular-nums">{i.minutes ?? "—"}</td>
-                      <td className="py-1.5 pl-2 text-right tabular-nums">{i.fee_amount != null ? `฿${i.fee_amount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "—"}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums">{i.fee_amount != null ? `฿${i.fee_amount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : "—"}</td>
+                      <td className="py-1.5 pl-2">
+                        {i.fee_exempt ? (
+                          <span className="text-[11px] text-slate-300">—</span>
+                        ) : (
+                          <select
+                            value={i.fee_branch_id ?? ""}
+                            disabled={savingFee}
+                            onChange={(e) => setFeeBranch(i.user_id, e.target.value === "" ? null : Number(e.target.value))}
+                            className="text-[11px] border border-slate-200 rounded px-1.5 py-1 bg-white disabled:opacity-50 max-w-[11rem]"
+                            title="ค่าเริ่มต้นลงที่สาขาบ้าน — เลือกสาขาอื่นได้ถ้ามาประชุมแทนสาขานั้น"
+                          >
+                            <option value="">สาขาบ้าน{i.home_branch_name ? ` (${i.home_branch_name})` : ""}</option>
+                            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                          </select>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
