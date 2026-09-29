@@ -25,10 +25,12 @@ function addDaysIso(iso: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 function dateLabel(iso: string): string {
-  // Parse + format in UTC so the label matches the ISO calendar date regardless
-  // of the viewer's browser timezone (a bare `T00:00:00` would shift a day back
-  // for viewers behind UTC).
-  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  // Full Thai weekday + month — this system doesn't use abbreviations (owner
+  // 2026-09-29). Parsed in UTC so the label matches the ISO calendar date
+  // regardless of the viewer's browser timezone. TH_DOW/TH_MONTHS are defined
+  // below; safe to reference here since this runs after module init.
+  const d = new Date(`${iso}T00:00:00Z`);
+  return `วัน${TH_DOW[d.getUTCDay()]}ที่ ${d.getUTCDate()} ${TH_MONTHS[d.getUTCMonth() + 1]}`;
 }
 
 // Inline SVG icons — the owner asked for real icons, not emoji (owner 2026-09-27:

@@ -10,8 +10,9 @@ import type { CompanyMonthLabor } from "@/lib/daily-col";
 // the viewer opens it. `data` is null while collapsed. Payroll-gated upstream.
 
 const baht = (n: number) => n.toLocaleString("th-TH", { maximumFractionDigits: 0 });
-const TH_MONTHS_SHORT = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-const thDay = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return `${d} ${TH_MONTHS_SHORT[m]}`; };
+// Full Thai month names — this system doesn't use abbreviations (owner 2026-09-29).
+const TH_MONTHS = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+const thDay = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return `${d} ${TH_MONTHS[m]}`; };
 
 function Pct({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-slate-300">—</span>;
