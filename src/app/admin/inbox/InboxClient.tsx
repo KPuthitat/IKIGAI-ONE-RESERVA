@@ -1,13 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { apiUrl } from "@/lib/url";
 import { formatBkkDateTime } from "@/lib/time";
 import OwlMascot from "@/app/components/OwlMascot";
 
+const channelLabel = (ch: string) => ch === "facebook" ? "Facebook" : "LINE";
+
 // Shapes mirror src/lib/inbox.ts (kept in sync by hand — small + stable).
 type Conversation = {
   id: number;
+  channel: string;
   channel_code: string;
   branch_id: number | null;
   branch_name: string | null;
@@ -194,7 +198,8 @@ export default function InboxClient({
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-slate-800">กล่องข้อความลูกค้า</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            รวมแชทจาก LINE OA ทุกสาขาไว้ที่เดียว — น้องฮูกช่วยเก็บไว้ให้ พี่กดตอบได้เลยครับ
+            รวมแชทจาก LINE OA และ Facebook Messenger ไว้ที่เดียว — น้องฮูกช่วยเก็บไว้ให้ พี่กดตอบได้เลยครับ
+            {" "}<Link href="/admin/inbox/facebook" className="text-brand hover:underline">เชื่อม Facebook</Link>
           </p>
         </div>
         {totalUnread > 0 && (
@@ -229,8 +234,13 @@ export default function InboxClient({
                     <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${c.unread ? "bg-amber-500" : "bg-transparent"}`} />
                     <span className="flex-1 min-w-0">
                       <span className="flex items-center justify-between gap-2">
-                        <span className={`truncate text-sm ${c.unread ? "font-bold text-slate-800" : "font-medium text-slate-700"}`}>
-                          {convName(c)}
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          {c.channel === "facebook" && (
+                            <span className="shrink-0 text-[9px] font-bold px-1 py-0.5 rounded bg-blue-100 text-blue-700">FB</span>
+                          )}
+                          <span className={`truncate text-sm ${c.unread ? "font-bold text-slate-800" : "font-medium text-slate-700"}`}>
+                            {convName(c)}
+                          </span>
                         </span>
                         {c.branch_name && (
                           <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-slate-400">{c.branch_name}</span>
@@ -262,7 +272,7 @@ export default function InboxClient({
                 <div className="flex-1 min-w-0">
                   <div className="font-bold text-slate-800 text-sm truncate">{convName(selected)}</div>
                   <div className="text-[11px] text-slate-400">
-                    {selected.branch_name ? `${selected.branch_name} · ` : ""}LINE
+                    {selected.branch_name ? `${selected.branch_name} · ` : ""}{channelLabel(selected.channel)}
                   </div>
                 </div>
               </div>
@@ -319,7 +329,9 @@ export default function InboxClient({
                   </button>
                 </div>
                 <p className="text-[10px] text-slate-400 px-1">
-                  ตอบผ่าน LINE Push · ลูกค้าจะได้รับข้อความในแชท OA ทันที (กด Ctrl/⌘+Enter เพื่อส่ง)
+                  {selected.channel === "facebook"
+                    ? "ตอบผ่าน Facebook Messenger · ลูกค้าจะได้รับในแชทเพจ (ภายใน 24 ชม.หลังลูกค้าทัก)"
+                    : "ตอบผ่าน LINE Push · ลูกค้าจะได้รับข้อความในแชท OA ทันที"} (กด Ctrl/⌘+Enter เพื่อส่ง)
                 </p>
               </div>
             </>

@@ -12,7 +12,10 @@ import { getDb } from "./db";
 import { getChannelByCode } from "./messaging-channels";
 import { decryptSecret } from "./secret-vault";
 import { sendLinePush, getLineProfile } from "./line";
+import { getFacebookChannel, sendMessengerText, getFbProfileName } from "./facebook";
 import type { SessionUser } from "./auth";
+
+export type InboxChannel = "line" | "facebook";
 
 /** The branch scope for an inbox viewer (shared by the inbox + media routes):
  *  super_admin → all branches (null); a branch-admin → their admin branches; an
@@ -44,9 +47,10 @@ function inScope(branchIds: number[] | null | undefined, branchId: number | null
 }
 
 export type RecordInboundArgs = {
+  channel?: InboxChannel;       // defaults to 'line' (back-compat with the LINE webhook)
   channel_code: string;
   branch_id: number | null;
-  line_user_id: string;
+  line_user_id: string;         // external user id — LINE userId or Facebook PSID
   text: string;
   external_message_id?: string | null;
   media_kind?: "image" | "sticker" | null;
@@ -62,8 +66,19 @@ export type RecordInboundArgs = {
  *  + best-effort — never throws into the webhook. */
 export function recordInbound(args: RecordInboundArgs): void {
   const db = getDb();
+  const channel: InboxChannel = args.channel ?? "line";
   const preview = args.text.slice(0, 200);
   const extId = args.external_message_id ?? null;
+
+  // Lookup-first dedup, scoped by channel (CLAUDE.md: don't rely on the global
+  // UNIQUE index — a Facebook mid must not collide with a LINE message id, and a
+  // retry must stop before it re-bumps unread/status). Only when we have an id.
+  if (extId) {
+    const dup = db.prepare(
+      "SELECT 1 FROM inbox_messages m JOIN inbox_conversations c ON c.id = m.conversation_id WHERE c.channel = ? AND m.external_message_id = ? LIMIT 1"
+    ).get(channel, extId);
+    if (dup) return;
+  }
 
   const mediaKind = args.media_kind ?? null;
   const mediaRef = args.media_ref ?? null;
@@ -73,8 +88,8 @@ export function recordInbound(args: RecordInboundArgs): void {
     );
 
   const existing = db.prepare(
-    "SELECT id FROM inbox_conversations WHERE channel = 'line' AND channel_code = ? AND external_user_id = ?"
-  ).get(args.channel_code, args.line_user_id) as { id: number } | undefined;
+    "SELECT id FROM inbox_conversations WHERE channel = ? AND channel_code = ? AND external_user_id = ?"
+  ).get(channel, args.channel_code, args.line_user_id) as { id: number } | undefined;
 
   let convId: number;
   let isNew = false;
@@ -101,8 +116,8 @@ export function recordInbound(args: RecordInboundArgs): void {
     convId = Number(db.prepare(
       `INSERT INTO inbox_conversations
          (channel, channel_code, branch_id, external_user_id, last_message_at, last_inbound_at, last_message_preview, unread)
-       VALUES ('line', ?, ?, ?, datetime('now'), datetime('now'), ?, 1)`
-    ).run(args.channel_code, args.branch_id, args.line_user_id, preview).lastInsertRowid);
+       VALUES (?, ?, ?, ?, datetime('now'), datetime('now'), ?, 1)`
+    ).run(channel, args.channel_code, args.branch_id, args.line_user_id, preview).lastInsertRowid);
     isNew = true;
     try {
       insertMsg().run(convId, args.text, extId, mediaKind, mediaRef);
@@ -117,16 +132,21 @@ export function recordInbound(args: RecordInboundArgs): void {
   // Fetch the display name once, only for a genuinely new conversation, and
   // never await it here — a slow profile call must not delay the webhook ack.
   if (isNew) {
-    const token = channelToken(args.channel_code);
-    if (token) {
-      void getLineProfile(token, args.line_user_id)
-        .then((prof) => {
-          if (prof?.displayName) {
-            db.prepare("UPDATE inbox_conversations SET display_name = ? WHERE id = ?")
-              .run(prof.displayName, convId);
-          }
-        })
-        .catch(() => { /* best-effort — name stays null, staff still see the chat */ });
+    const setName = (name: string | null | undefined) => {
+      if (name) db.prepare("UPDATE inbox_conversations SET display_name = ? WHERE id = ?").run(name, convId);
+    };
+    if (channel === "facebook") {
+      const fb = getFacebookChannel(args.channel_code);
+      if (fb?.access_token) {
+        void getFbProfileName(fb.access_token, args.line_user_id).then(setName).catch(() => { /* best-effort */ });
+      }
+    } else {
+      const token = channelToken(args.channel_code);
+      if (token) {
+        void getLineProfile(token, args.line_user_id)
+          .then((prof) => setName(prof?.displayName))
+          .catch(() => { /* best-effort — name stays null, staff still see the chat */ });
+      }
     }
   }
 }
@@ -153,6 +173,7 @@ export function inboxImageSource(
 
 export type InboxConversation = {
   id: number;
+  channel: string;
   channel_code: string;
   branch_id: number | null;
   branch_name: string | null;
@@ -164,7 +185,7 @@ export type InboxConversation = {
   status: string;
 };
 
-const CONV_COLS = `c.id, c.channel_code, c.branch_id, b.name AS branch_name, c.external_user_id,
+const CONV_COLS = `c.id, c.channel, c.channel_code, c.branch_id, b.name AS branch_name, c.external_user_id,
   c.display_name, c.last_message_at, c.last_message_preview, c.unread, c.status`;
 
 /** Conversation list for the inbox, newest activity first. Scope to branchIds
@@ -267,14 +288,21 @@ export async function sendReply(
   if (!body) return "empty";
   const db = getDb();
   const conv = db.prepare(
-    "SELECT channel_code, external_user_id, branch_id FROM inbox_conversations WHERE id = ?"
-  ).get(conversationId) as { channel_code: string; external_user_id: string; branch_id: number | null } | undefined;
+    "SELECT channel, channel_code, external_user_id, branch_id FROM inbox_conversations WHERE id = ?"
+  ).get(conversationId) as { channel: string; channel_code: string; external_user_id: string; branch_id: number | null } | undefined;
   if (!conv || !inScope(branchIds, conv.branch_id)) return "no_conversation";
-  const token = channelToken(conv.channel_code);
-  if (!token) return "no_channel";
 
-  const res = await sendLinePush(token, { to: conv.external_user_id, messages: [{ type: "text", text: body }] });
-  if (!res.ok) return "push_failed";
+  if (conv.channel === "facebook") {
+    const fb = getFacebookChannel(conv.channel_code);
+    if (!fb?.access_token) return "no_channel";
+    const r = await sendMessengerText(fb.access_token, conv.external_user_id, body);
+    if (!r.ok) return "push_failed";
+  } else {
+    const token = channelToken(conv.channel_code);
+    if (!token) return "no_channel";
+    const res = await sendLinePush(token, { to: conv.external_user_id, messages: [{ type: "text", text: body }] });
+    if (!res.ok) return "push_failed";
+  }
 
   db.prepare(
     "INSERT INTO inbox_messages (conversation_id, direction, body, sent_by) VALUES (?, 'out', ?, ?)"
