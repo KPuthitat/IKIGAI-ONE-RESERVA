@@ -19,7 +19,7 @@ import PortalClient from "./PortalClient";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "เข้าระบบ · IKIGAI OS" };
+export const metadata = { title: "เข้าระบบ · NOKHOOK OS" };
 
 export default function PortalEntryPage() {
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID_PORTAL ?? "";

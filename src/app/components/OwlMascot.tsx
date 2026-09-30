@@ -1,4 +1,4 @@
-// น้องฮูก — IKIGAI OS mascot.
+// น้องฮูก — NOKHOOK OS mascot.
 //
 // Renders the actual owl PNG the owner provided (saved to
 // /public/owl-mascot.png). The `mood` prop is kept on the API

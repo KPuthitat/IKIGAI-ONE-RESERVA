@@ -1,7 +1,7 @@
 // RECRUITA-side LINE OA messaging helpers.
 //
-// Mirrors the IKIGAI OS (platform) push pattern but routes through
-// the dedicated "IKIGAI Recruit" channel so candidate-facing notifs
+// Mirrors the NOKHOOK OS (platform) push pattern but routes through
+// the dedicated "NOKHOOK Recruit" channel so candidate-facing notifs
 // don't bleed into the staff group + we can rate-limit / quota them
 // independently.
 //
@@ -30,12 +30,12 @@ type LineMessage =
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
 
-// IKIGAI OS Portal LIFF — taps from the exec group open this, which
+// NOKHOOK OS Portal LIFF — taps from the exec group open this, which
 // auto-logs-in the admin via LINE (see /persona/portal) then redirects
 // to `next`. So "ตรวจสอบใบสมัคร" lands them straight on the application.
 const PORTAL_LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID_PORTAL ?? "";
 
-/** URL for the exec "ตรวจสอบใบสมัคร" button. Routes through the IKIGAI OS
+/** URL for the exec "ตรวจสอบใบสมัคร" button. Routes through the NOKHOOK OS
  *  Portal LIFF (auto-login) when configured, then deep-links to the
  *  application detail page. Falls back to the plain admin URL (which
  *  bounces through /login if there's no session) when the portal LIFF
@@ -47,7 +47,7 @@ function reviewUrl(applicationId: number): string {
     : `${PUBLIC_BASE}${target}`;
 }
 
-// IKIGAI OS CI palette — keep in sync with tailwind.config.ts + line.ts
+// NOKHOOK OS CI palette — keep in sync with tailwind.config.ts + line.ts
 // so RECRUITA cards look like the rest of the system (PERSONA / RESERVA).
 const COLOR_INK = "#281a0e";
 const COLOR_BRAND = "#a06820";
@@ -57,7 +57,7 @@ const COLOR_LABEL = "#64748b";
 const COLOR_MUTED = "#94a3b8";
 const COLOR_DIVIDER = "#e2e8f0";
 
-/** Navy header with the "IKIGAI Recruit · RECRUITA" brand bar, matching
+/** Navy header with the "NOKHOOK Recruit · RECRUITA" brand bar, matching
  *  the PERSONA/RESERVA Flex cards. */
 function brandHeader(title: string, subtitle: string): Record<string, unknown> {
   return {
@@ -67,7 +67,7 @@ function brandHeader(title: string, subtitle: string): Record<string, unknown> {
       {
         type: "box", layout: "horizontal",
         contents: [
-          { type: "text", text: "IKIGAI RECRUIT", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+          { type: "text", text: "NOKHOOK RECRUIT", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
           { type: "text", text: "RECRUITA", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
         ]
       },
@@ -364,11 +364,11 @@ function newApplicationFlexForExec(args: {
 }
 
 /** Shared gate + send for any exec-group push. Routed through the
- *  IKIGAI OS platform OA into system_settings.recruita_exec_group_id —
+ *  NOKHOOK OS platform OA into system_settings.recruita_exec_group_id —
  *  the same bot that handles PERSONA staff notifications. Kept separate
- *  from the candidate-facing IKIGAI Recruit OA on purpose: exec pushes
- *  must NOT eat into IKIGAI Recruit's free message quota (reserved for
- *  candidate updates). Owners invite the IKIGAI OS bot to the exec
+ *  from the candidate-facing NOKHOOK Recruit OA on purpose: exec pushes
+ *  must NOT eat into NOKHOOK Recruit's free message quota (reserved for
+ *  candidate updates). Owners invite the NOKHOOK OS bot to the exec
  *  group. Logs each skip/failure path because a dropped group push is
  *  invisible from the candidate side. Silent no-op when unconfigured.
  *  Owner runs `pm2 logs reserva --lines 50 --nostream` to see which
@@ -386,7 +386,7 @@ async function pushToExecGroup(messages: LineMessage[]): Promise<void> {
   const platform = getPlatformChannel();
   if (!isChannelReady(platform) || !platform?.channel_token) {
     console.info(
-      "[recruita] exec group notify skipped: IKIGAI OS platform OA not " +
+      "[recruita] exec group notify skipped: NOKHOOK OS platform OA not " +
       "configured (set Channel Token + Secret in /admin/system-settings)"
     );
     return;
@@ -399,7 +399,7 @@ async function pushToExecGroup(messages: LineMessage[]): Promise<void> {
       console.warn(
         `[recruita] exec group notify rejected by LINE: status=${res.status} ` +
         `error=${res.error ?? "(unknown)"} groupId=${groupId} ` +
-        `(common causes: the IKIGAI OS bot is not a member of this group, ` +
+        `(common causes: the NOKHOOK OS bot is not a member of this group, ` +
         `or the group id is wrong — should start with C followed by 32 hex)`
       );
     }
@@ -615,7 +615,7 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
   if (!row.line_user_id) {
     console.info(
       `[recruita] candidate notify skipped: app #${applicationId} has no linked LINE userId ` +
-      `(applicant didn't open the form via the IKIGAI Recruit LIFF / not bound yet)`
+      `(applicant didn't open the form via the NOKHOOK Recruit LIFF / not bound yet)`
     );
     return;
   }
@@ -639,21 +639,21 @@ export async function notifyStageChange(applicationId: number): Promise<void> {
     console.info(`[recruita] candidate notify sent → app #${applicationId}`);
   } else if (res.skipped) {
     console.info(
-      "[recruita] candidate notify skipped: IKIGAI Recruit OA token not configured " +
+      "[recruita] candidate notify skipped: NOKHOOK Recruit OA token not configured " +
       "(set it at /admin/system-settings → RECRUITA · ตั้งค่า LINE OA)"
     );
   } else {
     console.warn(
       `[recruita] candidate notify rejected by LINE: status=${res.status} ` +
       `error=${res.error ?? "(unknown)"} ` +
-      `(the applicant may not have added the IKIGAI Recruit OA as a friend — ` +
+      `(the applicant may not have added the NOKHOOK Recruit OA as a friend — ` +
       `LINE blocks push messages to users who haven't added the OA)`
     );
   }
 }
 
 /** Welcome Flex card sent to a freshly-hired candidate (owner 2026-06-15,
- *  simplified 2026-06-16). The card's ONLY action is "เพิ่มเพื่อน IKIGAI OS
+ *  simplified 2026-06-16). The card's ONLY action is "เพิ่มเพื่อน NOKHOOK OS
  *  PORTAL" — adds the staff OA so PERSONA pushes (shift reminders, payroll,
  *  edit decisions) can reach them. Account setup (username/password) + LINE
  *  binding are then handled by the admin manually (owner chose the semi-manual
@@ -679,7 +679,7 @@ function hireWelcomeFlex(args: {
       type: "text",
       text: hasButton
         ? "ขั้นตอนถัดไป: กดปุ่มด้านล่างเพื่อเพิ่มเพื่อน LINE ระบบพนักงาน " +
-          "(IKIGAI OS PORTAL) แล้วลงทะเบียนด้วยเลขบัตรประชาชน + วันเกิด เพื่อตั้งบัญชีพนักงานของคุณเอง"
+          "(NOKHOOK OS PORTAL) แล้วลงทะเบียนด้วยเลขบัตรประชาชน + วันเกิด เพื่อตั้งบัญชีพนักงานของคุณเอง"
         : "ขั้นตอนถัดไป: แอดมินจะติดต่อตั้งค่าบัญชีพนักงาน (ระบบ PERSONA) ให้คุณต่อไป",
       size: "xs", color: "#475569", wrap: true, margin: "md"
     },
@@ -692,7 +692,7 @@ function hireWelcomeFlex(args: {
   if (hasButton) {
     footerContents.push({
       type: "button", style: "primary", color: COLOR_BRAND, height: "sm",
-      action: { type: "uri", label: "เพิ่มเพื่อน IKIGAI OS PORTAL", uri: args.portalOaLink! }
+      action: { type: "uri", label: "เพิ่มเพื่อน NOKHOOK OS PORTAL", uri: args.portalOaLink! }
     });
   }
 
@@ -722,7 +722,7 @@ function hireWelcomeFlex(args: {
 }
 
 /** Fire-and-forget welcome push to a freshly-hired candidate. Called from the
- *  hire bridge so the new employee gets the "เพิ่มเพื่อน IKIGAI OS PORTAL"
+ *  hire bridge so the new employee gets the "เพิ่มเพื่อน NOKHOOK OS PORTAL"
  *  button; account setup + LINE binding are handled by the admin afterward.
  *  Silent no-op without a linked LINE userId / configured OA. */
 export async function notifyHireWelcome(
@@ -764,7 +764,7 @@ export async function notifyHireWelcome(
     console.info(`[recruita] hire welcome sent → app #${applicationId}`);
   } else if (res.skipped) {
     console.info(
-      "[recruita] hire welcome skipped: IKIGAI Recruit OA token not configured"
+      "[recruita] hire welcome skipped: NOKHOOK Recruit OA token not configured"
     );
   } else {
     console.warn(

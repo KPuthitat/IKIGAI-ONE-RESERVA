@@ -20,7 +20,7 @@ export default function LegacyPayrollPage() {
           ← PERSONA
         </Link>
         <span className="text-white/30">|</span>
-        <span className="brand-wordmark text-white text-sm">IKIGAI OS</span>
+        <span className="brand-wordmark text-white text-sm">NOKHOOK OS</span>
         <span className="text-white/40">•</span>
         <span className="text-white/85 font-light tracking-[1px] text-sm">PERSONA</span>
         <span className="text-white/40">/</span>

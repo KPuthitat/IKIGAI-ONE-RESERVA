@@ -5,7 +5,7 @@ import { listHealthFacilities } from "@/lib/health-facility";
 import FacilitiesClient from "./FacilitiesClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "สถานพยาบาลที่ปรึกษาสุขภาพ · IKIGAI OS" };
+export const metadata: Metadata = { title: "สถานพยาบาลที่ปรึกษาสุขภาพ · NOKHOOK OS" };
 
 // /admin/health/facilities — super_admin maintains the company's
 // health-consulting clinic(s). The default facility's name/license/address

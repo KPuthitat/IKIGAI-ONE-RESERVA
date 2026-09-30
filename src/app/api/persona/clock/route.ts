@@ -538,7 +538,7 @@ export async function POST(req: Request) {
   }
 
   // ── Fire-and-forget: ส่ง LINE flex confirmation message on clock-in ──
-  // Channel: IKIGAI OS (platform-level OA, shared across all branches).
+  // Channel: NOKHOOK OS (platform-level OA, shared across all branches).
   // Branch context: ใช้แค่ดึงเวลาพักกลางวัน + ชื่อสาขามาแสดงในข้อความ.
   // ถ้าระบบยังไม่ได้ตั้ง platform OA หรือพนักงานยังไม่ได้ bind LINE userId
   // → เงียบ ไม่ error ไม่ block response ของ clock-in.

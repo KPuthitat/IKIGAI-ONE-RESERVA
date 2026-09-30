@@ -11,7 +11,7 @@ import { rateLimit } from "@/lib/rate-limit";
 // New-employee self-onboarding via the PORTAL LIFF (owner 2026-06-16).
 // Replaces the admin-sends-a-per-user-link flow: a freshly-hired employee
 // (status='pending_invite', created by the RECRUITA hire bridge) opens the
-// IKIGAI OS PORTAL OA, taps "ลงทะเบียนพนักงานใหม่", proves who they are with
+// NOKHOOK OS PORTAL OA, taps "ลงทะเบียนพนักงานใหม่", proves who they are with
 // national_id + date-of-birth (both already on their hire record), and sets
 // their own username/password. We bind the VERIFIED LINE userId and flip the
 // account to 'active'. The admin no longer has to send a link or paste a

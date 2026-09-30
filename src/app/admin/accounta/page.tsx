@@ -6,7 +6,7 @@ import { isRevshareBranch } from "@/lib/revshare-db";
 import { HubCard, type HubCardProps } from "@/components/HubCard";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "ACCOUNTA · IKIGAI OS" };
+export const metadata: Metadata = { title: "ACCOUNTA · NOKHOOK OS" };
 
 // ACCOUNTA landing (owner 2026-06-20): two top-level areas only —
 // บัญชีรายรับรายจ่าย (the income/expense ledger hub) + แฟ้มวิเคราะห์โครงการลงทุน

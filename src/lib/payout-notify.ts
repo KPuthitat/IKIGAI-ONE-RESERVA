@@ -1,6 +1,6 @@
 // Notify staff on LINE when their payroll or service-charge payout is marked
 // PAID (owner 2026-09-20). One personal message per person via the platform
-// (IKIGAI OS) OA, with NO amount — just "it's been paid, check your slip".
+// (NOKHOOK OS) OA, with NO amount — just "it's been paid, check your slip".
 //
 // Best-effort by design: every entry point swallows its own errors so a LINE
 // hiccup can never fail the payout action, and people without a bound LINE
@@ -16,7 +16,7 @@ import { roundLabel } from "./revshare";
 
 type Recipient = { userId: number; lineUserId: string };
 
-const APP_HINT = "ตรวจสอบรายละเอียดได้ในแอป IKIGAI OS";
+const APP_HINT = "ตรวจสอบรายละเอียดได้ในแอป NOKHOOK OS";
 
 // Yield to the event loop so the caller's `void notify…()` returns immediately
 // and the payout HTTP response flushes BEFORE the (synchronous, roster-heavy) SVC

@@ -28,7 +28,7 @@ const sep = { type: "separator", margin: "md", color: "#eeeeee" };
 
 // Per-branch header colour (owner 2026-09-17) — passed via meta.color; white
 // tints on the eyebrow/subtitle keep it legible on any dark brand colour.
-function header(title: string, subtitle: string, color: string, eyebrow = "IKIGAI OS · ยอดขายรายวัน"): unknown {
+function header(title: string, subtitle: string, color: string, eyebrow = "NOKHOOK OS · ยอดขายรายวัน"): unknown {
   return {
     type: "box", layout: "vertical", backgroundColor: color, paddingAll: "16px", spacing: "xs",
     contents: [
@@ -174,7 +174,7 @@ export function salesaDailyFlex(a: DailyAnalytics, meta: DailyCardMeta): FlexMsg
       type: "bubble", size: "giga",
       header: header("สรุปยอดขายประจำวัน", `${a.dateLabel} · ${meta.branchName}`, meta.color),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
-      footer: footer("สรุปโดยระบบ IKIGAI OS · ยอดสะสมสรุปอีกครั้งในรอบสัปดาห์")
+      footer: footer("สรุปโดยระบบ NOKHOOK OS · ยอดสะสมสรุปอีกครั้งในรอบสัปดาห์")
     }
   };
 }
@@ -236,7 +236,7 @@ export function salesaWeeklyFlex(w: WeeklyAnalytics, meta: DailyCardMeta): FlexM
       type: "bubble", size: "giga",
       header: header("สรุปยอดขายประจำสัปดาห์", `${w.label} · ${meta.branchName}`, meta.color),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
-      footer: footer("สรุปโดยระบบ IKIGAI OS · รอบจันทร์–อาทิตย์")
+      footer: footer("สรุปโดยระบบ NOKHOOK OS · รอบจันทร์–อาทิตย์")
     }
   };
 }
@@ -274,7 +274,7 @@ export function salesaMonthlyFlex(m: MonthlyAnalytics, meta: DailyCardMeta): Fle
       type: "bubble", size: "giga",
       header: header("สรุปยอดขายประจำเดือน", `${m.label} · ${meta.branchName}`, meta.color),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
-      footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายเดือน")
+      footer: footer("สรุปโดยระบบ NOKHOOK OS · รอบรายเดือน")
     }
   };
 }
@@ -326,9 +326,9 @@ export function clinicaMonthlyFlex(c: ClinicaMonth, meta: DailyCardMeta, monthLa
     altText: `สรุปคลินิกประจำเดือน ${monthLabel} · ${meta.branchName} · ${baht(c.billNet)}`,
     contents: {
       type: "bubble", size: "giga",
-      header: header("สรุปคลินิกประจำเดือน", `${monthLabel} · ${meta.branchName}`, meta.color, "IKIGAI OS · รายงานคลินิก"),
+      header: header("สรุปคลินิกประจำเดือน", `${monthLabel} · ${meta.branchName}`, meta.color, "NOKHOOK OS · รายงานคลินิก"),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
-      footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายเดือน (คลินิก)")
+      footer: footer("สรุปโดยระบบ NOKHOOK OS · รอบรายเดือน (คลินิก)")
     }
   };
 }
@@ -365,9 +365,9 @@ export function clinicaDailyFlex(c: ClinicaDailyReport, meta: DailyCardMeta): Fl
   return {
     type: "flex", altText: `สรุปคลินิกรายวัน ${c.dateLabel} · ${meta.branchName} · ${baht(c.billNet)}`,
     contents: { type: "bubble", size: "giga",
-      header: header("สรุปคลินิกรายวัน", `${c.dateLabel} · ${meta.branchName}`, meta.color, "IKIGAI OS · รายงานคลินิก"),
+      header: header("สรุปคลินิกรายวัน", `${c.dateLabel} · ${meta.branchName}`, meta.color, "NOKHOOK OS · รายงานคลินิก"),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
-      footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายวัน (คลินิก)") }
+      footer: footer("สรุปโดยระบบ NOKHOOK OS · รอบรายวัน (คลินิก)") }
   };
 }
 
@@ -395,9 +395,9 @@ export function clinicaWeeklyFlex(c: ClinicaWeek, meta: DailyCardMeta): FlexMsg 
   return {
     type: "flex", altText: `สรุปคลินิกรายสัปดาห์ ${c.label} · ${meta.branchName} · ${baht(c.totalNet)}`,
     contents: { type: "bubble", size: "giga",
-      header: header("สรุปคลินิกรายสัปดาห์", `${c.label} · ${meta.branchName}`, meta.color, "IKIGAI OS · รายงานคลินิก"),
+      header: header("สรุปคลินิกรายสัปดาห์", `${c.label} · ${meta.branchName}`, meta.color, "NOKHOOK OS · รายงานคลินิก"),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
-      footer: footer("สรุปโดยระบบ IKIGAI OS · รอบรายสัปดาห์ (คลินิก)") }
+      footer: footer("สรุปโดยระบบ NOKHOOK OS · รอบรายสัปดาห์ (คลินิก)") }
   };
 }
 
@@ -428,7 +428,7 @@ export function salesaForecastFlex(fc: BranchForecast, meta: DailyCardMeta): Fle
   return {
     type: "flex", altText: `แผนล่วงหน้า ${fc.days} วัน · ${meta.branchName}`,
     contents: { type: "bubble", size: "giga",
-      header: header("แผนล่วงหน้า", `${fc.days} วันข้างหน้า · ${meta.branchName}`, meta.color, "IKIGAI OS · ANALYTICA"),
+      header: header("แผนล่วงหน้า", `${fc.days} วันข้างหน้า · ${meta.branchName}`, meta.color, "NOKHOOK OS · ANALYTICA"),
       body: { type: "box", layout: "vertical", spacing: "none", paddingAll: "16px", contents: body },
       footer: footer("คาดจากค่าเฉลี่ยรายวัน + โมเมนตัม + วันหยุด/อากาศ · แนะนำโดยน้องฮูก") }
   };
@@ -474,7 +474,7 @@ export function salesaPushFlex(p: SalesPushPlan, meta: DailyCardMeta): FlexMsg {
       type: "bubble", size: "giga",
       header: header("แผนผลักดันยอดขาย · คำแนะนำจากน้องฮูก", `${p.days} วัน · ${meta.branchName}`, meta.color),
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
-      footer: footer("สรุปโดยระบบ IKIGAI OS · แผนดันยอดระยะสั้น")
+      footer: footer("สรุปโดยระบบ NOKHOOK OS · แผนดันยอดระยะสั้น")
     }
   };
 }
@@ -552,13 +552,13 @@ export function salesaCompanyFlex(ov: CompanyOverview, meta: CompanyCardMeta): F
       header: {
         type: "box", layout: "vertical", backgroundColor: meta.color, paddingAll: "16px", spacing: "xs",
         contents: [
-          { type: "text", text: "IKIGAI OS · ภาพรวมบริษัท", size: "xxs", color: "#ffffff99" },
+          { type: "text", text: "NOKHOOK OS · ภาพรวมบริษัท", size: "xxs", color: "#ffffff99" },
           { type: "text", text: meta.companyName, size: "lg", weight: "bold", color: "#ffffff", wrap: true },
           { type: "text", text: `รวมทุกสาขา · ${meta.monthLabel}`, size: "xs", color: "#ffffffcc", wrap: true }
         ]
       },
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
-      footer: footer("สรุปโดยระบบ IKIGAI OS · ภาพรวมบริษัทรวมทุกสาขา")
+      footer: footer("สรุปโดยระบบ NOKHOOK OS · ภาพรวมบริษัทรวมทุกสาขา")
     }
   };
 }
@@ -606,13 +606,13 @@ export function salesaSpecialDaysFlex(outlook: SpecialDaysOutlook, meta: Special
       header: {
         type: "box", layout: "vertical", backgroundColor: meta.color, paddingAll: "16px", spacing: "xs",
         contents: [
-          { type: "text", text: "IKIGAI OS · เตรียมรับมือวันสำคัญ", size: "xxs", color: "#ffffff99" },
+          { type: "text", text: "NOKHOOK OS · เตรียมรับมือวันสำคัญ", size: "xxs", color: "#ffffff99" },
           { type: "text", text: "วันสำคัญที่กำลังจะมาถึง", size: "lg", weight: "bold", color: "#ffffff", wrap: true },
           { type: "text", text: `${meta.horizonDays} วันข้างหน้า · เตรียมวัตถุดิบ / คน / โปรโมชั่น`, size: "xs", color: "#ffffffcc", wrap: true }
         ]
       },
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
-      footer: footer("สรุปโดยระบบ IKIGAI OS · คาดการณ์วันสำคัญที่กำลังจะมาถึง")
+      footer: footer("สรุปโดยระบบ NOKHOOK OS · คาดการณ์วันสำคัญที่กำลังจะมาถึง")
     }
   };
 }

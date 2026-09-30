@@ -119,7 +119,7 @@ Owner standard 2026-07-13 ("อย่าให้ต้องบอกทุก�
 finished and pushed (CI green), proactively send BOTH of these — don't wait
 for the owner to ask:
 
-1. **A ready-to-copy handoff** — the deploy command (`ikigaios-deploy`), a
+1. **A ready-to-copy handoff** — the deploy command (`nokhookos-deploy`), a
    one-line summary of what's in this batch, the commit hash, and whether it
    carries a migration (touches `src/lib/db.ts`). Format it so the owner can
    copy-paste and go.

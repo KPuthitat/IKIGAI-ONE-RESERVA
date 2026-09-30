@@ -71,7 +71,7 @@ echo "==> [3/3] DONE — paste the snippet below into your Nginx config"
 echo ""
 echo "─────────────────────────────────────────────────────────────"
 cat <<'NGINX'
-# ── IKIGAI OS maintenance page ─────────────────────────────────
+# ── NOKHOOK OS maintenance page ─────────────────────────────────
 # Paste these directives INSIDE the existing `server { ... }` block
 # that handles ikigaimedihealth.com. Specifically:
 #

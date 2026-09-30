@@ -135,7 +135,7 @@ export function syncUserFromPayroll(payrollUser: {
   // Preserve a locally-granted super_admin promotion: if the user is
   // already super_admin in our DB, don't downgrade them back to admin
   // when Payroll's record syncs through. Payroll only knows about
-  // admin/staff — super_admin is an IKIGAI OS-local concept.
+  // admin/staff — super_admin is an NOKHOOK OS-local concept.
   const existing = db.prepare("SELECT role FROM users WHERE id = ?")
     .get(payrollUser.id) as { role: string } | undefined;
   let role: "super_admin" | "admin" | "staff";

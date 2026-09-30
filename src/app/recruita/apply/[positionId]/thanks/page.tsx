@@ -3,7 +3,7 @@ import Link from "next/link";
 import OwlMascot from "@/app/components/OwlMascot";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "ส่งใบสมัครเรียบร้อย · IKIGAI Recruit" };
+export const metadata: Metadata = { title: "ส่งใบสมัครเรียบร้อย · NOKHOOK Recruit" };
 
 // /recruita/apply/[positionId]/thanks — success landing after the
 // applicant submits. Mirrors the LIFF "เข้าระบบสำเร็จ" pattern

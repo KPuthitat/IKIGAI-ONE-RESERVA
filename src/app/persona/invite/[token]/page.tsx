@@ -5,7 +5,7 @@ import RedeemForm from "./RedeemForm";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "เชิญเข้าใช้งาน · IKIGAI OS" };
+export const metadata: Metadata = { title: "เชิญเข้าใช้งาน · NOKHOOK OS" };
 
 // /persona/invite/[token] — public-facing landing page that the staff
 // opens from the LINE link the admin sent them. Lives under /persona/

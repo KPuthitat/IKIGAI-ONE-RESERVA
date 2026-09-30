@@ -5,7 +5,7 @@ import { apiUrl } from "@/lib/url";
 import { checkupStatus, statusLabel, overallLabel, type HealthOverall } from "@/lib/health-checkup";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "ผลตรวจสุขภาพของฉัน · IKIGAI OS PORTAL" };
+export const metadata: Metadata = { title: "ผลตรวจสุขภาพของฉัน · NOKHOOK OS PORTAL" };
 
 // /staff/health/exams — the employee's OWN occupational-health exam
 // results (food-handler cert / periodic / pre-placement / return-to-work),

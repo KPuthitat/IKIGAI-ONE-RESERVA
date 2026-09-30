@@ -17,7 +17,7 @@
 //   escalated     → all members of tier 2 (auto-escalation from
 //                   tier-1 timeout). Card has an extra-urgent banner.
 //
-// All cards go through the IKIGAI OS platform OA (same one staff
+// All cards go through the NOKHOOK OS platform OA (same one staff
 // added as a friend for clock-in confirmations). Recipients without
 // line_user_id are silently skipped — there's no fallback to email
 // or SMS in this iteration.

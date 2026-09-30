@@ -27,7 +27,7 @@ const ERROR_MESSAGES: Record<string, string> = {
 // Owner direction: keep the original LoginForm behaviour intact,
 // just change the surrounding chrome. Final form:
 //   • bg-amber-50/40 base (matches /persona/portal)
-//   • Centered white card: static owl 140 → IKIGAI OS wordmark →
+//   • Centered white card: static owl 140 → NOKHOOK OS wordmark →
 //     username/password form → submit
 //   • LangToggle outside the card (subtler)
 //   • Footer at page bottom
@@ -48,7 +48,7 @@ export default function LoginPage({
           <OwlMascot
             size={140}
             mood="smile"
-            ariaLabel="IKIGAI OS PORTAL"
+            ariaLabel="NOKHOOK OS PORTAL"
             className="mx-auto block"
           />
           {/* Program wordmark removed per owner 2026-06-06 — the owl

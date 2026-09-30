@@ -378,7 +378,7 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
         <div className="text-center space-y-1">
           <h1 className="text-2xl font-bold text-slate-800">ตรวจสอบสถานะใบสมัคร</h1>
           <p className="text-sm text-slate-500">
-            MY APPLICATION · IKIGAI RECRUIT
+            MY APPLICATION · NOKHOOK RECRUIT
           </p>
         </div>
 
@@ -399,7 +399,7 @@ export default function StatusClient({ liffId }: { liffId: string | null }) {
             <div className="text-center space-y-1">
               <p className="text-base font-semibold text-slate-700">ค้นหาสถานะใบสมัคร</p>
               <p className="text-xs text-slate-500">
-                เปิดผ่าน LINE OA &quot;IKIGAI Recruit&quot; เพื่อดูอัตโนมัติ
+                เปิดผ่าน LINE OA &quot;NOKHOOK Recruit&quot; เพื่อดูอัตโนมัติ
                 หรือค้นหาด้วยเบอร์โทรด้านล่าง
               </p>
             </div>

@@ -77,7 +77,7 @@ export default function BillForm({
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="bg-slate-800 text-white px-5 py-4">
-        <div className="text-[11px] text-white/70">IKIGAI OS · ACCOUNTA</div>
+        <div className="text-[11px] text-white/70">NOKHOOK OS · ACCOUNTA</div>
         <div className="text-lg font-bold">กรอกรายละเอียดบิล</div>
         {branchName && <div className="text-xs text-slate-300 mt-0.5">สาขา {branchName} · วันที่บิล {initial.bill_date}</div>}
       </div>

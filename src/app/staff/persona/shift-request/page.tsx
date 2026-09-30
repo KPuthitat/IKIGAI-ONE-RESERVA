@@ -5,7 +5,7 @@ import { listPositions, listShiftCodes } from "@/lib/roster";
 import ShiftRequestClient from "./ShiftRequestClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "คำขอเปลี่ยนเวลางาน · IKIGAI OS" };
+export const metadata: Metadata = { title: "คำขอเปลี่ยนเวลางาน · NOKHOOK OS" };
 
 // Staff self-service: request an extra shift (PT) or swap a day off (FT).
 // Extra shift now carries the staff-chosen ตำแหน่ง + เวลา so the admin just

@@ -119,7 +119,7 @@ export default function EditBookingPage({
           <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
             <Link href="/reserva" className="inline-block hover:opacity-80 transition-opacity">
               <div className="brand-wordmark text-white text-xl">
-                IKIGAI OS <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
+                NOKHOOK OS <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
               </div>
             </Link>
             <LangToggle variant="dark" />

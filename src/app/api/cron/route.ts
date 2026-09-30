@@ -154,7 +154,7 @@ async function runCron(): Promise<NextResponse> {
   }
 
   // Multi-time path: check which configured time slots are due for each branch.
-  // Routes to the HR group (recruita_exec_group_id = "IKIGAI RECRUIT x HR").
+  // Routes to the HR group (recruita_exec_group_id = "NOKHOOK RECRUIT x HR").
   for (const branch of branches) {
     const dueTimes = getAttendanceSummaryDueTimes(branch, nowHhmmBkk, todayBkk);
     if (dueTimes.length === 0) continue;

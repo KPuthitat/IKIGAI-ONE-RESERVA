@@ -12,7 +12,7 @@ import { drinkWelfareSummary } from "@/lib/partner-drink-orders";
 // Push a sales notification to the partner's LINE group. Three kinds (owner
 // 2026-06-23): daily (a day's sales heads-up), weekly (the amount transferred
 // back to the shop), settlement (monthly GP). Requires the partner's
-// line_group_id + the IKIGAI OS platform OA to be in that group.
+// line_group_id + the NOKHOOK OS platform OA to be in that group.
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const YM = /^\d{4}-\d{2}$/;
@@ -122,7 +122,7 @@ export async function POST(req: Request) {
 
   const res = await notifyRevsharePartner(partner.line_group_id, flex);
   if (!res.ok) {
-    const msg = res.error === "platform_oa_not_configured" ? "ยังไม่ได้ตั้งค่า IKIGAI OS platform OA"
+    const msg = res.error === "platform_oa_not_configured" ? "ยังไม่ได้ตั้งค่า NOKHOOK OS platform OA"
       : res.error === "monthly_quota_exceeded" ? "LINE เกินโควตาข้อความรายเดือนแล้ว"
       : "ส่ง LINE ไม่สำเร็จ";
     return NextResponse.json({ error: res.error ?? "send_failed", message: msg }, { status: 502 });

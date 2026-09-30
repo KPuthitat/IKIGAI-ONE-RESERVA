@@ -74,7 +74,7 @@ export async function POST(req: Request) {
   if (!isChannelReady(platform) || !platform?.channel_token) {
     return NextResponse.json({
       error: "platform_channel_not_ready",
-      message: "ตั้งค่า IKIGAI OS LINE OA token + secret ที่ /admin/persona/messaging ก่อน"
+      message: "ตั้งค่า NOKHOOK OS LINE OA token + secret ที่ /admin/persona/messaging ก่อน"
     }, { status: 412 });
   }
   const platformToken = platform.channel_token;

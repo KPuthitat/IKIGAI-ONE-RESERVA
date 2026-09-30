@@ -32,7 +32,7 @@ import { recordReferralOnHire } from "@/lib/referral";
 //      when configured (auto-binds LINE) or the direct token URL.
 //
 // What does NOT happen (yet):
-//   • LINE notification (Phase 1c — waiting on "IKIGAI RECRUIT"
+//   • LINE notification (Phase 1c — waiting on "NOKHOOK RECRUIT"
 //     channel setup).
 //   • Other applications by the same candidate get marked
 //     "withdrawn — hired elsewhere" (Phase 1b polish).
@@ -263,8 +263,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     ? `https://liff.line.me/${liffId}?token=${invite.token}`
     : null;
 
-  // Fire-and-forget: send the new hire the welcome card via the IKIGAI Recruit
-  // OA — its only action is "เพิ่มเพื่อน IKIGAI OS PORTAL" (so they add the
+  // Fire-and-forget: send the new hire the welcome card via the NOKHOOK Recruit
+  // OA — its only action is "เพิ่มเพื่อน NOKHOOK OS PORTAL" (so they add the
   // staff OA). Account setup + LINE binding are handled by the admin manually
   // afterward (owner 2026-06-16). The onboard invite still exists below for the
   // admin to send from the application detail page. No-op when the applicant

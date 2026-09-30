@@ -94,7 +94,7 @@ export default function PortalClient({ liffId }: { liffId: string }) {
         {
           type: "text",
           text:
-            `ขอลงทะเบียนเข้าระบบ IKIGAI OS ครับ\n\n` +
+            `ขอลงทะเบียนเข้าระบบ NOKHOOK OS ครับ\n\n` +
             `LINE ID: ${lineUserId}\n\n` +
             `(แอดมินกรุณานำไปวางในช่อง "LINE binding" ของบัญชีพนักงาน)`
         }

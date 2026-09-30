@@ -286,7 +286,7 @@ export type ClockInCardArgs = {
   headerColor?: string | null;
 };
 
-// IKIGAI OS CI palette — keep in sync with tailwind.config.ts
+// NOKHOOK OS CI palette — keep in sync with tailwind.config.ts
 const COLOR_INK_900 = "#4e351f";
 const COLOR_INK_700 = "#281a0e";
 const COLOR_BRAND = "#a06820";
@@ -333,7 +333,7 @@ function computeClockOut(clockInHHMM: string, args: ClockInCardArgs): string {
 
 /** Build a LINE Flex bubble confirming a successful clock-in.
  *
- * Visual: IKIGAI OS CI palette — ink navy header with brand red-pink accent.
+ * Visual: NOKHOOK OS CI palette — ink navy header with brand red-pink accent.
  * The LINE app renders text in LINE Seed Sans TH on Thai devices by default;
  * Flex Messages have no `font` property so we just rely on the system default.
  */
@@ -368,7 +368,7 @@ export function personaClockInFlex(args: ClockInCardArgs): LineFlexMessage {
     type: "bubble",
     size: "giga",
     // ── Header: branch CI colour (falls back to ink navy) with
-    // IKIGAI OS / PERSONA branding bar ──
+    // NOKHOOK OS / PERSONA branding bar ──
     header: {
       type: "box", layout: "vertical",
       backgroundColor: headerColor,
@@ -376,12 +376,12 @@ export function personaClockInFlex(args: ClockInCardArgs): LineFlexMessage {
       paddingTop: "18px",
       paddingBottom: "18px",
       contents: [
-        // Brand bar: "IKIGAI OS" left + "PERSONA" right
+        // Brand bar: "NOKHOOK OS" left + "PERSONA" right
         {
           type: "box", layout: "horizontal",
           contents: [
             {
-              type: "text", text: "IKIGAI OS",
+              type: "text", text: "NOKHOOK OS",
               color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1
             },
             {
@@ -495,7 +495,7 @@ export function accountaBillVerifyFlex(args: AccountaBillVerifyArgs): LineFlexMe
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
             { type: "text", text: "ACCOUNTA", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
           ]
         },
@@ -585,7 +585,7 @@ export function accountaDueBillsFlex(today: string, bills: DueBillItem[]): LineF
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
             { type: "text", text: "ACCOUNTA", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
           ]
         },
@@ -807,7 +807,7 @@ export function customerBookingFlex(args: CustomerBookingCardArgs): LineFlexMess
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
             { type: "text", text: "RESERVA", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
           ]
         },
@@ -1025,7 +1025,7 @@ export function cancelledBookingFlex(args: CancelledBookingCardArgs): LineFlexMe
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
             { type: "text", text: "RESERVA", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
           ]
         },
@@ -1180,7 +1180,7 @@ export function staffBookingFlex(args: StaffBookingCardArgs): LineFlexMessage {
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
             { type: "text", text: "RESERVA · STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
           ]
         },
@@ -1283,7 +1283,7 @@ export function branchLunchAppliesOn(branch: Branch, bkkDate: string): boolean {
 /** Push a clock-in confirmation card to a staff member, fire-and-forget.
  *
  * Channel split:
- *   - The LINE token comes from the PLATFORM OA (IKIGAI OS) — staff-facing
+ *   - The LINE token comes from the PLATFORM OA (NOKHOOK OS) — staff-facing
  *     notifications go through one shared OA across all restaurants.
  *   - The branch is only used to source today's lunch-break window + branch
  *     name shown on the card body. (You can still clock in at any branch.)
@@ -1296,7 +1296,7 @@ export async function pushClockInCard(args: {
   userId: number;
   displayName: string;
   branch: Branch;
-  platformChannelToken: string;   // from messaging_channels (IKIGAI OS)
+  platformChannelToken: string;   // from messaging_channels (NOKHOOK OS)
   personaUrl: string;             // CTA button target (e.g., '/staff/persona')
   clockInIsoTs: string;
 }): Promise<{ ok: boolean; status: number; error?: string; skipped?: "no_line_user_id" }> {
@@ -2086,7 +2086,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
             { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
           ]
         },
@@ -2153,7 +2153,7 @@ export function shiftOpenFlex(args: ShiftOpenCardArgs): LineFlexMessage {
 //
 // Mirror shiftOpenFlex's structure so admin sees consistent visuals
 // across the 4 report types. Each card uses the same header bar
-// (IKIGAI OS · PERSONA • STAFF), summarizes the type-specific data,
+// (NOKHOOK OS · PERSONA • STAFF), summarizes the type-specific data,
 // and lists the checklist with the same 3-state rendering (done /
 // skipped-with-note / not-done) plus an incomplete-counter.
 
@@ -2453,7 +2453,7 @@ export function shiftCloseFlex(args: ShiftCloseCardArgs): LineFlexMessage {
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
             { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
           ]
         },
@@ -2542,7 +2542,7 @@ export type ReadinessCardArgs = {
   /** Optional header background hex (e.g. '#e94560'). Falls back to
    *  the default IKIGAI ink colour when null/undefined. Used so each
    *  branch's CI colour shows on the LINE card even when the message
-   *  is routed through the shared IKIGAI OS OA. */
+   *  is routed through the shared NOKHOOK OS OA. */
   headerColor?: string | null;
 };
 
@@ -2703,7 +2703,7 @@ export function readinessFlex(args: ReadinessCardArgs): LineFlexMessage {
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
             { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
           ]
         },
@@ -2805,7 +2805,7 @@ export function shiftUnlockRequestFlex(args: ShiftUnlockRequestArgs): LineFlexMe
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
             { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
           ]
         },
@@ -2907,7 +2907,7 @@ export function shiftUnlockDecisionFlex(args: ShiftUnlockDecisionArgs): LineFlex
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
             { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
           ]
         },
@@ -3053,7 +3053,7 @@ export function attendanceSummaryFlex(args: AttendanceSummaryArgs): LineFlexMess
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
             { type: "text", text: "PERSONA • STAFF", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
           ]
         },
@@ -3424,7 +3424,7 @@ export function personaShiftReminderFlex(args: ShiftReminderArgs): LineFlexMessa
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
             { type: "text", text: "ทักทายจากน้องฮูก", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
           ]
         },
@@ -3681,7 +3681,7 @@ export function personaApprovalNotifyFlex(args: ApprovalNotifyArgs): LineFlexMes
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS · PERSONA", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
+            { type: "text", text: "NOKHOOK OS · PERSONA", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
             { type: "text", text: "ทักทายจากน้องฮูก", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
           ]
         },
@@ -3834,7 +3834,7 @@ export function dailyAttendanceSummaryFlex(
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 0 },
             { type: "text", text: "PERSONA • รายงานเข้างาน", color: "#cbd5e1", size: "xxs", align: "end", flex: 1, wrap: true }
           ]
         },
@@ -3935,7 +3935,7 @@ export function disciplinaryWarningFlex(args: DisciplinaryFlexArgs): LineFlexMes
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: "#fecdd3", size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "NOKHOOK OS", color: "#fecdd3", size: "xxs", weight: "bold", flex: 1 },
             { type: "text", text: "PERSONA • วินัย", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
           ]
         },
@@ -4039,7 +4039,7 @@ export function personaResignationUnlockedFlex(
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS · PERSONA", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
+            { type: "text", text: "NOKHOOK OS · PERSONA", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
             { type: "text", text: "ทักทายจากน้องฮูก", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
           ]
         },
@@ -4120,7 +4120,7 @@ export function personaResignationTakenFlex(
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS · PERSONA", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
+            { type: "text", text: "NOKHOOK OS · PERSONA", color: COLOR_BRAND_LIGHT, size: "xs", weight: "bold", flex: 1 },
             { type: "text", text: "ทักทายจากน้องฮูก", color: "#cbd5e1", size: "xs", align: "end", flex: 1 }
           ]
         },
@@ -4218,7 +4218,7 @@ export function rosterPublishedFlex(args: RosterPublishedFlexArgs): LineFlexMess
         {
           type: "box", layout: "horizontal",
           contents: [
-            { type: "text", text: "IKIGAI OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "NOKHOOK OS", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
             { type: "text", text: "PERSONA • ROSTER", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
           ]
         },
@@ -4289,7 +4289,7 @@ export async function notifyDailyReport(
 /** Route a staff-facing Flex notification using the cross-branch
  *  multi-OA strategy:
  *
- *    routing="global" — push via the IKIGAI OS LINE OA to the
+ *    routing="global" — push via the NOKHOOK OS LINE OA to the
  *      shared cross-branch staff group. Used for PERSONA
  *      notifications (daily reports, edit requests, decisions) so
  *      staff from every branch see them in one chat. The branch
@@ -4314,7 +4314,7 @@ export async function notifyToStaffGroup(
   routing: "global" | "branch" = "global"
 ): Promise<void> {
   if (routing === "global") {
-    // The IKIGAI OS LINE OA credentials live on messaging_channels
+    // The NOKHOOK OS LINE OA credentials live on messaging_channels
     // (code='ikigai-os') — that's where /admin/persona/messaging
     // writes them via setPlatformChannel(). The cross-branch group
     // id stays on system_settings because it's a routing decision
@@ -4386,8 +4386,8 @@ export async function notifyInventaGroup(
 
 /** Push a notification to the HR group (system_settings.recruita_exec_group_id).
  *  Used by PERSONA HR notifications: attendance summaries, leave/shift-change
- *  request alerts, and the pending-requests digest. Shares the same IKIGAI OS
- *  platform OA as RECRUITA exec pushes — both routes go to "IKIGAI RECRUIT x HR".
+ *  request alerts, and the pending-requests digest. Shares the same NOKHOOK OS
+ *  platform OA as RECRUITA exec pushes — both routes go to "NOKHOOK RECRUIT x HR".
  *  Best-effort: silently skips when the group or OA isn't configured. */
 export async function notifyToHrGroup(
   flex: LineFlexMessage
@@ -4401,7 +4401,7 @@ export async function notifyToHrGroup(
   const platform = getPlatformChannel();
   const token = platform?.channel_token?.trim() ?? null;
   if (!token) {
-    console.info("[hr-notify] skipped: IKIGAI OS platform OA not configured");
+    console.info("[hr-notify] skipped: NOKHOOK OS platform OA not configured");
     return;
   }
   try {

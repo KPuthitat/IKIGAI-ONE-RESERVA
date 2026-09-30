@@ -1,5 +1,5 @@
 // Doctor-Fee LINE cards (owner 2026-09-13) — DM a Flex card to ONE doctor's
-// personal LINE (users.line_user_id) via the IKIGAI OS platform OA, exactly like
+// personal LINE (users.line_user_id) via the NOKHOOK OS platform OA, exactly like
 // the จ้อจี้/revshare partner cards but per-doctor. Two cards: a daily DF
 // heads-up and a weekly payout summary. A guarantee (การันตี) doctor's weekly
 // card shows the guarantee payout (not plain DF).
@@ -25,7 +25,7 @@ function header(title: string, subtitle: string): unknown {
   return {
     type: "box", layout: "vertical", backgroundColor: "#0e2724", paddingAll: "16px", spacing: "xs",
     contents: [
-      { type: "text", text: "IKIGAI OS · ค่าตอบแทนแพทย์", size: "xxs", color: "#7fd1bd" },
+      { type: "text", text: "NOKHOOK OS · ค่าตอบแทนแพทย์", size: "xxs", color: "#7fd1bd" },
       { type: "text", text: title, size: "lg", weight: "bold", color: "#ffffff" },
       { type: "text", text: subtitle, size: "xs", color: "#a9cfc6" }
     ]

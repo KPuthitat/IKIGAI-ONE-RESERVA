@@ -5,7 +5,7 @@ import { getLang } from "@/lib/lang-server";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "นโยบายความเป็นส่วนตัว · IKIGAI OS RESERVA"
+  title: "นโยบายความเป็นส่วนตัว · NOKHOOK OS RESERVA"
 };
 
 // Public-facing PDPA notice. Linked from the LIFF claim consent
@@ -20,7 +20,7 @@ export default function PrivacyPage() {
       <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 space-y-6">
         <header className="border-b border-slate-200 pb-4">
           <div className="text-[11px] tracking-[1px] text-slate-400">
-            IKIGAI OS · RESERVA
+            NOKHOOK OS · RESERVA
           </div>
           <h1 className="text-2xl font-bold text-slate-800 mt-1">
             {lang === "en"

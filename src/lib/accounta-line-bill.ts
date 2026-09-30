@@ -1,6 +1,6 @@
 // ── ACCOUNTA — ingest a bill photo sent to the LINE OA (server-only) ──
 //
-// A staff member sends a bill/receipt photo to the IKIGAI OS OA (1:1 or in a
+// A staff member sends a bill/receipt photo to the NOKHOOK OS OA (1:1 or in a
 // group). If their LINE id is bound to an employee, we OCR the image and file
 // it as a *draft* expense — no branch yet. The admin reviews it in the
 // "ร่างรอตรวจ" inbox, assigns สาขา/บริษัท, fixes anything, and confirms; only

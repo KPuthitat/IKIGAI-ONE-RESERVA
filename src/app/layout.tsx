@@ -47,22 +47,21 @@ const lineSeed = localFont({
 
 export const metadata: Metadata = {
   title: {
-    default: "IKIGAI OS",
-    template: "%s · IKIGAI OS"
+    default: "NOKHOOK OS",
+    template: "%s · NOKHOOK OS"
   },
   description: "ระบบจัดการธุรกิจ",
-  // Web-app icon set — points at the owl mascot PNG we already ship
-  // for the in-page <OwlMascot> component. Re-using the same file
-  // keeps the brand consistent (no separate "favicon" art) and avoids
-  // an extra asset to maintain. The PNG is roughly 256×256 with
-  // transparent background which is fine for:
+  // Web-app icon set — an OPAQUE owl on a solid background (app-icon.png),
+  // separate from the transparent /owl-mascot.png used by the in-page
+  // <OwlMascot> component. A transparent icon looks poor as a Chrome app /
+  // home-screen shortcut, so the installable icon has its own filled art:
   //   - browser tab favicon (any modern browser accepts PNG)
   //   - apple-touch-icon (iOS "Add to Home Screen")
   //   - Android Chrome shortcut icon (via the manifest below)
   icons: {
-    icon: [{ url: "/owl-mascot.png", type: "image/png" }],
-    apple: [{ url: "/owl-mascot.png" }],
-    shortcut: ["/owl-mascot.png"]
+    icon: [{ url: "/app-icon.png", type: "image/png" }],
+    apple: [{ url: "/app-icon.png" }],
+    shortcut: ["/app-icon.png"]
   },
   manifest: "/manifest.webmanifest"
 };

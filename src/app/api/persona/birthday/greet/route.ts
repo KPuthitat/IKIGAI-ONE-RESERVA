@@ -9,7 +9,7 @@ import { sendLinePush } from "@/lib/line";
 //
 // Anyone logged into the staff/admin app can send a birthday wish
 // to a colleague whose dob matches today (or any picked day from
-// the calendar). The message routes through the IKIGAI OS platform
+// the calendar). The message routes through the NOKHOOK OS platform
 // OA push API directly to the recipient's LINE userId.
 //
 // We intentionally don't gate this on "is today their actual

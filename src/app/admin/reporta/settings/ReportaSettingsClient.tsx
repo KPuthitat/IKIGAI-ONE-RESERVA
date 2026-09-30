@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 // REPORTA settings — bind the HOD LINE group id the daily/weekly cards push to
-// (owner 2026-09-16). The IKIGAI OS platform OA must be a member of that group.
+// (owner 2026-09-16). The NOKHOOK OS platform OA must be a member of that group.
 
 const DEFAULT_COLOR = "#0e2724";
 const PRESETS = ["#0e2724", "#1e3a5f", "#5b21b6", "#9d174d", "#b45309", "#334155", "#166534", "#7c2d12"];
@@ -60,7 +60,7 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget, i
         <label className="label">LINE Group ID ของกลุ่มหัวหน้างาน (HOD)</label>
         <input value={groupId} onChange={(e) => setGroupId(e.target.value)} placeholder="เช่น Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" className="input" />
         <p className="text-xs text-slate-500 mt-1.5">
-          เพิ่มบัญชี IKIGAI OS (platform OA) เข้ากลุ่มก่อน แล้วนำ Group ID มาใส่ · เว้นว่างเพื่อปิดการส่ง
+          เพิ่มบัญชี NOKHOOK OS (platform OA) เข้ากลุ่มก่อน แล้วนำ Group ID มาใส่ · เว้นว่างเพื่อปิดการส่ง
         </p>
       </div>
       <div>
@@ -97,7 +97,7 @@ export default function ReportaSettingsClient({ initialGroupId, initialTarget, i
         {/* Live preview of the LINE card header */}
         <div className="mt-2 rounded-xl overflow-hidden max-w-xs shadow-sm">
           <div style={{ backgroundColor: color }} className="px-4 py-3">
-            <div className="text-[10px]" style={{ color: "#ffffff99" }}>IKIGAI OS · ยอดขายรายวัน</div>
+            <div className="text-[10px]" style={{ color: "#ffffff99" }}>NOKHOOK OS · ยอดขายรายวัน</div>
             <div className="text-white font-bold">สรุปยอดขายประจำวัน</div>
             <div className="text-xs" style={{ color: "#ffffffcc" }}>ตัวอย่างหัวการ์ดของสาขานี้</div>
           </div>

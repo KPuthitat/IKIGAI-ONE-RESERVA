@@ -11,7 +11,7 @@ import { HubCard } from "@/components/HubCard";
 import { Icon, type IconName } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "RECRUITA · IKIGAI OS" };
+export const metadata: Metadata = { title: "RECRUITA · NOKHOOK OS" };
 
 // /admin/recruita — landing dashboard for the recruitment module.
 // Mirrors the /admin/insigna pattern: top counters + quick links to

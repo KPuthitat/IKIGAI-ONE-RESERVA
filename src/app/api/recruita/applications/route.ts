@@ -67,7 +67,7 @@ const Payload = z.object({
   pdpa_consent: z.literal(true), // hard gate
   truth_declaration_accepted: z.literal(true),
   /** LINE userId — only set when the form is opened via LIFF (the
-   *  IKIGAI Recruit OA). Web-form applicants send null. Capturing
+   *  NOKHOOK Recruit OA). Web-form applicants send null. Capturing
    *  here lets the stage-change push reach the candidate directly. */
   line_user_id: z.string().max(80).nullable().optional(),
   /** ผู้แนะนำ (referral, owner 2026-09-03) — users.id of the employee who
@@ -230,7 +230,7 @@ export async function POST(req: Request) {
 
   // LINE userId binding (2026-06-05): ONLY from identity-correct sources.
   // The trustworthy source is the LIFF profile captured when the form is
-  // opened inside the IKIGAI Recruit OA (d.line_user_id). The old
+  // opened inside the NOKHOOK Recruit OA (d.line_user_id). The old
   // "claim the most-recent unclaimed follower" recency guess was REMOVED:
   // it cross-linked simultaneous applicants and could push one person's
   // application-status cards to a DIFFERENT person's LINE (a PDPA leak,

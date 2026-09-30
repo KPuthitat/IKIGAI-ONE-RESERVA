@@ -51,7 +51,7 @@ export async function POST(req: Request) {
 
   const res = await notifySalesaHod(groupId, flex);
   if (!res.ok) {
-    const msg = res.error === "platform_oa_not_configured" ? "ยังไม่ได้ตั้งค่า IKIGAI OS platform OA"
+    const msg = res.error === "platform_oa_not_configured" ? "ยังไม่ได้ตั้งค่า NOKHOOK OS platform OA"
       : res.error === "monthly_quota_exceeded" ? "LINE เกินโควตาข้อความรายเดือนแล้ว"
       : "ส่ง LINE ไม่สำเร็จ";
     return NextResponse.json({ error: res.error ?? "send_failed", message: msg }, { status: 502 });

@@ -50,7 +50,7 @@ export default function Footer() {
           </div>
           <div className="leading-tight">
             <div className="font-bold text-white">
-              IKIGAI OS{" "}
+              NOKHOOK OS{" "}
               <span className="font-normal text-white/60">
                 {t(lang, "footer.version", { v: APP_VERSION })}
               </span>

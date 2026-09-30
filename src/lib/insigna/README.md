@@ -1,6 +1,6 @@
 # INSIGNA — Privacy-first marketing intelligence
 
-**Mode A (in-process)** integration into IKIGAI ONE RESERVA.
+**Mode A (in-process)** integration into NOKHOOK OS RESERVA.
 
 ## What lives here
 

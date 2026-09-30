@@ -180,7 +180,7 @@ export default function SettingsClient({
         <h3 className="font-bold text-sky-900 text-sm">ขั้นตอนการตั้งค่า OA</h3>
         <ol className="list-decimal list-inside space-y-1 text-sky-900 leading-relaxed">
           <li>เข้า <a href="https://developers.line.biz/console/" target="_blank" rel="noopener noreferrer" className="underline">LINE Developers Console</a> เลือก provider ของคุณ</li>
-          <li>เลือก channel <b>IKIGAI Recruit</b> (หรือสร้างใหม่ถ้ายังไม่มี → Messaging API)</li>
+          <li>เลือก channel <b>NOKHOOK Recruit</b> (หรือสร้างใหม่ถ้ายังไม่มี → Messaging API)</li>
           <li>คัดลอก <b>Channel Secret</b> จาก Basic Settings tab</li>
           <li>คัดลอก <b>Channel Access Token (long-lived)</b> จาก Messaging API tab (อาจต้องกด Issue)</li>
           <li>วาง webhook URL ด้านบน → กด Verify → เปิด Use webhook</li>

@@ -7,7 +7,7 @@ import CompaniesClient from "./CompaniesClient";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "บริษัทในเครือ · IKIGAI OS" };
+export const metadata: Metadata = { title: "บริษัทในเครือ · NOKHOOK OS" };
 
 // /admin/companies — top-level company management. Used to onboard
 // new tenants in the future (the owner currently has one company but

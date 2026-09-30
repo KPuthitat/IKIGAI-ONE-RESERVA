@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { isSalesaBranch, getLineGroupId, setLineGroupId, getMonthlyTarget, setMonthlyTarget, getMerchantName, setMerchantName, getCardColor, setCardColor, branchOpensOn, setBranchOpensOn, getBranchHours, setBranchBreak } from "@/lib/salesa-db";
 
 // REPORTA settings — the HOD LINE group id the daily/weekly cards are pushed to
-// (per branch). The IKIGAI OS platform OA must be a member of that group.
+// (per branch). The NOKHOOK OS platform OA must be a member of that group.
 // Owner 2026-09-16.
 
 export const dynamic = "force-dynamic";

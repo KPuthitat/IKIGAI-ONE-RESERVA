@@ -429,7 +429,7 @@ export default function BranchSettingsForm({
           className="rounded-lg p-3 text-white text-xs"
           style={{ backgroundColor: color || DEFAULT_BRAND_COLOR }}
         >
-          <span className="opacity-70">IKIGAI OS · PREVIEW</span>
+          <span className="opacity-70">NOKHOOK OS · PREVIEW</span>
           <div className="font-bold mt-1">{branchName}</div>
         </div>
       </div>

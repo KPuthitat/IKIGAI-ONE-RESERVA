@@ -2161,7 +2161,7 @@ function runMigrations(db: Database.Database): void {
     db.prepare("INSERT OR IGNORE INTO salesa_migrations (key) VALUES (?)").run("clear_learned_merchant_20260917");
   }
 
-  // line_group_id (owner 2026-06-23): the partner's LINE group — the IKIGAI OS
+  // line_group_id (owner 2026-06-23): the partner's LINE group — the NOKHOOK OS
   // platform OA is added to it so weekly-transfer / monthly-GP cards can be
   // pushed there. NULL = no group set (the send button is disabled).
   // Partner billing identity for the tax invoice (owner 2026-06-23): the buyer
@@ -3307,7 +3307,7 @@ function runMigrations(db: Database.Database): void {
   }
 
   // system_settings — singleton table for global configuration that
-  // isn't branch-scoped. Today this holds the IKIGAI OS LINE OA push
+  // isn't branch-scoped. Today this holds the NOKHOOK OS LINE OA push
   // credentials + the cross-branch staff group ID, used to route
   // PERSONA notifications (daily reports, edit requests, decisions)
   // to a single shared group where staff from every branch can see
@@ -3476,7 +3476,7 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "recruita_health_check_message")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN recruita_health_check_message TEXT");
   }
-  // IKIGAI OS PORTAL OA "add friend" deep link (2026-06-15) — shown as a
+  // NOKHOOK OS PORTAL OA "add friend" deep link (2026-06-15) — shown as a
   // button on the welcome card sent to a freshly-hired employee so they add
   // the staff OA and start receiving PERSONA notifications. NULL = button
   // omitted.
@@ -3935,7 +3935,7 @@ function runMigrations(db: Database.Database): void {
   }
 
   // ── Phase C v8 — messaging_channels (multi-channel LINE OA) ─────────
-  // Platform channels (scope='platform') = OA ที่ใช้ทุก module ของ IKIGAI ONE
+  // Platform channels (scope='platform') = OA ที่ใช้ทุก module ของ NOKHOOK OS
   //   ตัวอย่าง: code='ikigai-os' ใช้กับ PERSONA (clock-in card) + ASCENDA
   // Per-branch channels (scope='reserva') = OA ของแต่ละร้าน — เก็บไว้สำหรับ
   //   อนาคต ตอนนี้ RESERVA ยังอ่านจาก branches.line_channel_token เป็นหลัก
@@ -3944,7 +3944,7 @@ function runMigrations(db: Database.Database): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       scope TEXT NOT NULL CHECK (scope IN ('platform','reserva')),
       code TEXT UNIQUE NOT NULL,                  -- slug used in webhook URL
-      label TEXT NOT NULL,                        -- 'IKIGAI OS', 'NAMA PASTA SRIRACHA'
+      label TEXT NOT NULL,                        -- 'NOKHOOK OS', 'NAMA PASTA SRIRACHA'
       branch_id INTEGER REFERENCES branches(id),  -- NULL when scope='platform'
       channel_secret TEXT,
       channel_token TEXT,
@@ -3952,7 +3952,7 @@ function runMigrations(db: Database.Database): void {
       updated_by INTEGER REFERENCES users(id)
     );
     INSERT OR IGNORE INTO messaging_channels (scope, code, label)
-      VALUES ('platform', 'ikigai-os', 'IKIGAI OS');
+      VALUES ('platform', 'ikigai-os', 'NOKHOOK OS');
   `);
   // Phase C v9 — LIFF ID per channel (RESERVA needs it on the booking page
   // to auto-capture the customer's LINE userId when they tap the Rich Menu).
@@ -3974,9 +3974,9 @@ function runMigrations(db: Database.Database): void {
   }
 
   // ── 2026-06-01 RECRUITA OA support ─────────────────────────────
-  // RECRUITA uses a separate LINE OA ("IKIGAI Recruit") for the
+  // RECRUITA uses a separate LINE OA ("NOKHOOK Recruit") for the
   // candidate-facing flow so the message blasts to applicants don't
-  // bleed into the main IKIGAI OS staff channel. Schema needs:
+  // bleed into the main NOKHOOK OS staff channel. Schema needs:
   //   1. CHECK constraint widened to accept scope='recruita'
   //   2. Seed row code='ikigai-recruit' so the admin UI always has
   //      a target to fill in.
@@ -4041,12 +4041,12 @@ function runMigrations(db: Database.Database): void {
 
   db.exec(`
     INSERT OR IGNORE INTO messaging_channels (scope, code, label)
-      VALUES ('recruita', 'ikigai-recruit', 'IKIGAI Recruit');
+      VALUES ('recruita', 'ikigai-recruit', 'NOKHOOK Recruit');
   `);
 
   // 2026-06-14 — configurable "add OA as friend" deep link for the RECRUITA
   // apply gate (RC-4). Shown to applicants who open the form OUTSIDE LINE so
-  // they can add the IKIGAI Recruit OA and re-enter via the Rich Menu (LIFF),
+  // they can add the NOKHOOK Recruit OA and re-enter via the Rich Menu (LIFF),
   // where their LINE userId is captured. Editable in the RECRUITA OA settings;
   // NULL/empty falls back to DEFAULT_RECRUITA_OA_LINK. Placed AFTER the scope
   // rebuild above so it survives on freshly-rebuilt tables too.
@@ -6235,7 +6235,7 @@ function runMigrations(db: Database.Database): void {
 
   // ── RECRUITA — recruitment module (2026-05-31, Phase 0) ──────
   // Standalone module: applicants come through a separate LINE OA
-  // ("IKIGAI RECRUIT") and don't touch the main users table until
+  // ("NOKHOOK RECRUIT") and don't touch the main users table until
   // hire. Once admin clicks "รับเข้าทำงาน" on an application, a
   // bridge transaction creates the PERSONA users row + carries
   // every field listed in EmployeeProfile (1:1 map → no re-entry).
@@ -6989,7 +6989,7 @@ function runMigrations(db: Database.Database): void {
       ["clinic", "managing", "บริหารคิว-นัด"], ["clinic", "managing", "คุมสต็อกยา-เวชภัณฑ์"], ["clinic", "managing", "มาตรฐานคุณภาพคลินิก + สอนงาน"],
       // admin
       ["admin", "professional", "บัญชี-ภาษีพื้นฐาน"], ["admin", "professional", "จัดซื้อ-คุมสต็อก"],
-      ["admin", "professional", "ใช้ระบบ IKIGAI OS + payroll/HR"], ["admin", "professional", "Excel/ทำรายงาน"],
+      ["admin", "professional", "ใช้ระบบ NOKHOOK OS + payroll/HR"], ["admin", "professional", "Excel/ทำรายงาน"],
       ["admin", "soft", "ประสานงาน/สื่อสาร + ความละเอียด"], ["admin", "soft", "รักษาความลับ"],
       ["admin", "managing", "วางแผน-คุมงบ"], ["admin", "managing", "บริหารทีม + วิเคราะห์ข้อมูล"]
     ];
@@ -8622,7 +8622,7 @@ export function updateSystemSettings(
     recruita_interview_map_url?: string | null;
     // RECRUITA health-check card body. Empty → NULL = card uses default.
     recruita_health_check_message?: string | null;
-    // IKIGAI OS PORTAL OA add-friend link. Empty → NULL = button omitted.
+    // NOKHOOK OS PORTAL OA add-friend link. Empty → NULL = button omitted.
     portal_oa_link?: string | null;
     // ACCOUNTA bill-OCR toggle (0/1) + chosen vision model.
     accounta_ocr_enabled?: 0 | 1 | boolean;
@@ -8874,7 +8874,7 @@ export type Branch = {
 };
 
 // Global (non-branch-scoped) configuration. Today it carries the
-// IKIGAI OS LINE OA credentials + the shared cross-branch staff
+// NOKHOOK OS LINE OA credentials + the shared cross-branch staff
 // group ID, used to route PERSONA notifications (daily reports,
 // edit requests, decisions) to a single group where staff from
 // every branch can read them. Booking notifications continue to
@@ -8929,7 +8929,7 @@ export type SystemSettings = {
    *  the app when set; consent surfaces hide the button on NULL. */
   privacy_policy_url?: string | null;
   /** LINE group id receiving the "new application submitted" Flex
-   *  card pushed via the IKIGAI OS platform OA. NULL/empty = no
+   *  card pushed via the NOKHOOK OS platform OA. NULL/empty = no
    *  push fired (silent fallback so the form still works on a fresh
    *  install). */
   recruita_exec_group_id?: string | null;
@@ -8953,8 +8953,8 @@ export type SystemSettings = {
   /** RECRUITA health-check card body (admin-editable). NULL/empty = the
    *  card falls back to DEFAULT_HEALTH_CHECK_MESSAGE in recruita-notify. */
   recruita_health_check_message?: string | null;
-  /** IKIGAI OS PORTAL OA add-friend deep link (e.g. https://lin.ee/xxxx).
-   *  NULL/empty = the "เพิ่มเพื่อน IKIGAI OS PORTAL" button is omitted from
+  /** NOKHOOK OS PORTAL OA add-friend deep link (e.g. https://lin.ee/xxxx).
+   *  NULL/empty = the "เพิ่มเพื่อน NOKHOOK OS PORTAL" button is omitted from
    *  the welcome card sent to a freshly-hired employee. */
   portal_oa_link?: string | null;
   /** ACCOUNTA bill-OCR master toggle. 0/1, default 0. When 0 the scan

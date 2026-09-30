@@ -6,7 +6,7 @@ import { RBAC_PERMISSIONS } from "@/lib/rbac";
 import RolesClient from "./RolesClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "บทบาทและสิทธิ์ · IKIGAI OS" };
+export const metadata: Metadata = { title: "บทบาทและสิทธิ์ · NOKHOOK OS" };
 
 // /admin/roles — RBAC role manager (super_admin only). Create roles,
 // tick which modules each can access, then assign roles to people in

@@ -5,7 +5,7 @@ import { getActiveConsent } from "@/lib/mounjaro-db";
 import ConsentEditorClient from "./ConsentEditorClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "PDPA ข้อมูลสุขภาพ · IKIGAI OS" };
+export const metadata: Metadata = { title: "PDPA ข้อมูลสุขภาพ · NOKHOOK OS" };
 
 // /admin/mounjaro-consent — super_admin edits the PDPA consent text shown
 // to employees before they disclose health data / join a health program.

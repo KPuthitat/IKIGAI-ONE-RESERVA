@@ -39,7 +39,7 @@ export default function ProgramInfo() {
   return (
     <div className="space-y-0.5 text-[10px] text-white/40 leading-snug">
       <div className="font-bold text-white/60">
-        IKIGAI OS{" "}
+        NOKHOOK OS{" "}
         <span className="font-normal">
           {t(lang, "footer.version", { v: APP_VERSION })}
         </span>

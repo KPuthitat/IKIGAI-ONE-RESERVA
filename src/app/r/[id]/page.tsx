@@ -21,7 +21,7 @@ import ClaimIceCreamPanel from "./ClaimIceCreamPanel";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "การจอง · IKIGAI OS RESERVA" };
+export const metadata: Metadata = { title: "การจอง · NOKHOOK OS RESERVA" };
 
 type BookingRow = Booking & {
   table_label: string | null;
@@ -79,7 +79,7 @@ export default function ShortLinkPage({ params }: { params: { id: string } }) {
         {/* Header bar matching the Flex card style */}
         <div className="rounded-t-2xl bg-ink-gradient text-white px-5 py-4">
           <div className="flex items-baseline justify-between text-[11px] tracking-wider">
-            <span className="text-brand-light font-bold">IKIGAI OS</span>
+            <span className="text-brand-light font-bold">NOKHOOK OS</span>
             <span className="text-slate-300">RESERVA</span>
           </div>
           <h1 className="text-lg font-bold mt-1">

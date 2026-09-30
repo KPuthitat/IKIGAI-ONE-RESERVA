@@ -58,7 +58,7 @@ export async function POST(req: Request) {
   });
 
   // Fire-and-forget — don't block the response on LINE delivery.
-  // Routes through the IKIGAI OS global group when configured (this is
+  // Routes through the NOKHOOK OS global group when configured (this is
   // a PERSONA-wide announcement, not a booking thing), falling back
   // to the branch's group when global isn't set up.
   notifyToStaffGroup(branch, flex, "global").catch((e) =>

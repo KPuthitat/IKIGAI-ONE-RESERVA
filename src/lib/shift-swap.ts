@@ -143,7 +143,7 @@ export function createSwapRequest(
 
   pushToUser(
     data.targetUserId,
-    `ขอสลับกะ [${ref_no}]\n${nameOf(actor.id)} ขอสลับกะวันที่ ${data.date}\n• ของคุณ: ${theirs.assignment.shiftLabel}\n• ของเขา: ${mine.assignment.shiftLabel}${data.note ? `\nหมายเหตุ: ${data.note}` : ""}\n\nเปิดแอป IKIGAI OS → สลับกะกับเพื่อน เพื่อกดรับหรือปฏิเสธ`
+    `ขอสลับกะ [${ref_no}]\n${nameOf(actor.id)} ขอสลับกะวันที่ ${data.date}\n• ของคุณ: ${theirs.assignment.shiftLabel}\n• ของเขา: ${mine.assignment.shiftLabel}${data.note ? `\nหมายเหตุ: ${data.note}` : ""}\n\nเปิดแอป NOKHOOK OS → สลับกะกับเพื่อน เพื่อกดรับหรือปฏิเสธ`
   );
   return { ok: true, id, ref_no };
 }

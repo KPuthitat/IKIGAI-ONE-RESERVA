@@ -36,7 +36,7 @@ export default function RecruitaOaSection() {
           </span>
         </div>
         <p className="text-sm text-slate-500 mt-1">
-          IKIGAI Recruit OA ใช้ร่วมกันทั้งกลุ่ม — ตั้งครั้งเดียวมีผลทุกสาขา
+          NOKHOOK Recruit OA ใช้ร่วมกันทั้งกลุ่ม — ตั้งครั้งเดียวมีผลทุกสาขา
           (เฉพาะ super admin เท่านั้น)
         </p>
         <p className="text-[11px] text-slate-400 mt-1">

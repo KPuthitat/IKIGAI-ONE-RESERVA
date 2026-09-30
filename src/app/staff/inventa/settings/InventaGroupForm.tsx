@@ -53,7 +53,7 @@ export default function InventaGroupForm({
         <p className="text-xs text-slate-500">
           แจ้งเตือนสต๊อก (ขออนุมัติสั่งซื้อ · ของใกล้หมดอายุ · ส่งผลนับสต๊อก) จะถูกส่งไป
           <b>กลุ่มเฉพาะของสาขานี้</b> — ถ้าเว้นว่าง จะใช้กลุ่มรวมเหมือนเดิม ·
-          <b>เชิญบอท IKIGAI OS เข้ากลุ่มก่อน</b> บอทจะพิมพ์ Group ID ออกมาให้
+          <b>เชิญบอท NOKHOOK OS เข้ากลุ่มก่อน</b> บอทจะพิมพ์ Group ID ออกมาให้
         </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
