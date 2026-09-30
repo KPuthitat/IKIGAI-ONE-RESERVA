@@ -8,7 +8,7 @@ import MessagingClient from "./MessagingClient";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "ตั้งค่าการแจ้งเตือน · IKIGAI ONE" };
+export const metadata: Metadata = { title: "ตั้งค่าการแจ้งเตือน · NOKHOOK OS" };
 
 export default function AdminMessagingPage() {
   const user = requireAdmin();
@@ -16,7 +16,7 @@ export default function AdminMessagingPage() {
 
   const platform = getPlatformChannel();
   const platformInitial = {
-    label: platform?.label ?? "IKIGAI OS",
+    label: platform?.label ?? "NOKHOOK OS",
     code: platform?.code ?? "ikigai-os",
     has_token: !!platform?.channel_token,
     has_secret: !!platform?.channel_secret,

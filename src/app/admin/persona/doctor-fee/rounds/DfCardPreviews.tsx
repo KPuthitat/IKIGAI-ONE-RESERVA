@@ -13,7 +13,7 @@ function Shell({ title, subtitle, children }: { title: string; subtitle: string;
   return (
     <div className="w-full rounded-[18px] overflow-hidden bg-white shadow-lg ring-1 ring-black/5">
       <div className="px-5 py-4" style={{ backgroundColor: "#0e2724" }}>
-        <div className="text-[10px]" style={{ color: "#7fd1bd" }}>IKIGAI OS · ค่าตอบแทนแพทย์</div>
+        <div className="text-[10px]" style={{ color: "#7fd1bd" }}>NOKHOOK OS · ค่าตอบแทนแพทย์</div>
         <div className="text-lg font-bold text-white leading-tight mt-0.5">{title}</div>
         <div className="text-[11px]" style={{ color: "#a9cfc6" }}>{subtitle}</div>
       </div>

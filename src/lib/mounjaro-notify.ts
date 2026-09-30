@@ -1,5 +1,5 @@
 // Mounjaro LINE notifications. Pushes to the employee's own LINE via the
-// IKIGAI OS platform OA (น้องฮูก). Best-effort: never throws into the
+// NOKHOOK OS platform OA (น้องฮูก). Best-effort: never throws into the
 // request path. Only the real-time doctor-reply notification is wired in
 // this phase; scheduled reminders (injection / next-visit / weekly log)
 // are a cron follow-up.
@@ -22,7 +22,7 @@ export async function notifyEmployeeInvited(employeeId: number): Promise<void> {
     if (!row?.line_user_id) return;
     await pushToEmployee(
       row.line_user_id,
-      "แพทย์ได้ส่งคำเชิญให้คุณเข้าร่วมโครงการควบคุมน้ำหนัก\n\nกรุณาเปิดพอร์ทัล IKIGAI OS → สุขภาพพนักงาน → โครงการควบคุมน้ำหนัก เพื่อยืนยันการเข้าร่วม"
+      "แพทย์ได้ส่งคำเชิญให้คุณเข้าร่วมโครงการควบคุมน้ำหนัก\n\nกรุณาเปิดพอร์ทัล NOKHOOK OS → สุขภาพพนักงาน → โครงการควบคุมน้ำหนัก เพื่อยืนยันการเข้าร่วม"
     );
   } catch { /* best-effort */ }
 }
@@ -44,7 +44,7 @@ export async function notifyDoctorEmployeeConfirmed(employeeId: number): Promise
     const who = `${row.employee_prefix ? row.employee_prefix + " " : ""}${row.employee_name}`;
     await pushToEmployee(
       row.doctor_line,
-      `${who} ยืนยันรับคำเชิญเข้าร่วมโครงการควบคุมน้ำหนักแล้ว\n\nกรุณาเปิด IKIGAI OS → โครงการควบคุมน้ำหนัก (แพทย์) เพื่อทำ Baseline`
+      `${who} ยืนยันรับคำเชิญเข้าร่วมโครงการควบคุมน้ำหนักแล้ว\n\nกรุณาเปิด NOKHOOK OS → โครงการควบคุมน้ำหนัก (แพทย์) เพื่อทำ Baseline`
     );
   } catch { /* best-effort */ }
 }
@@ -62,7 +62,7 @@ export async function notifySelfLogReply(selfLogId: number): Promise<void> {
     if (!row?.line_user_id) return;
     await pushToEmployee(
       row.line_user_id,
-      "แพทย์ได้ตอบบันทึกอาการของคุณในโครงการควบคุมน้ำหนักแล้ว — เปิดดูในพอร์ทัล IKIGAI OS"
+      "แพทย์ได้ตอบบันทึกอาการของคุณในโครงการควบคุมน้ำหนักแล้ว — เปิดดูในพอร์ทัล NOKHOOK OS"
     );
   } catch { /* best-effort */ }
 }
@@ -93,7 +93,7 @@ export async function notifyDoctorPendingAction(
     const who = `${row.employee_prefix ? row.employee_prefix + " " : ""}${row.employee_name}`;
     await pushToEmployee(
       row.doctor_line,
-      `มีคำขอรออนุมัติในโครงการควบคุมน้ำหนัก\nผู้ป่วย: ${who}\nคำขอ: ${ACTION_TH[action]}\n\nเปิดอนุมัติในพอร์ทัล IKIGAI OS → ดูแลผู้ป่วย (แพทย์)`
+      `มีคำขอรออนุมัติในโครงการควบคุมน้ำหนัก\nผู้ป่วย: ${who}\nคำขอ: ${ACTION_TH[action]}\n\nเปิดอนุมัติในพอร์ทัล NOKHOOK OS → ดูแลผู้ป่วย (แพทย์)`
     );
   } catch { /* best-effort */ }
 }

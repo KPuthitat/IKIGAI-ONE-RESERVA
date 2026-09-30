@@ -5,13 +5,13 @@
  *   https://your-domain.example.com/api/line/webhook/<code>
  *
  * <code> resolution order:
- *   1. messaging_channels.code  (preferred — used by IKIGAI OS platform OA
+ *   1. messaging_channels.code  (preferred — used by NOKHOOK OS platform OA
  *      and any future per-restaurant RESERVA OAs that have been migrated)
  *   2. branches.slug             (legacy — original RESERVA per-branch OA
  *      whose token/secret still live on the branches row)
  *
  * Behaviors per channel scope:
- *   - 'platform' (IKIGAI OS): only the staff-facing commands ("id", "help"),
+ *   - 'platform' (NOKHOOK OS): only the staff-facing commands ("id", "help"),
  *     no booking commands.
  *   - 'reserva' / branch-slug: full RESERVA flow ("ยกเลิก #xxx", "id", "help").
  */
@@ -133,14 +133,14 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       console.log(`[line:${channel.scope}] OA joined group ${groupId} for ${channel.label}`);
       // Reply in the group with the ID so admin (who's in the group) can
       // copy it. Push to group (1 msg) — counts toward LINE quota but
-      // happens once per group ever. Scope-aware: the IKIGAI OS platform
+      // happens once per group ever. Scope-aware: the NOKHOOK OS platform
       // OA serves BOTH the PERSONA staff group and the RECRUITA exec
       // group; RESERVA branch OAs serve booking staff groups. The
-      // candidate-facing IKIGAI Recruit OA isn't used for group pushes,
-      // so steer it back to IKIGAI OS.
+      // candidate-facing NOKHOOK Recruit OA isn't used for group pushes,
+      // so steer it back to NOKHOOK OS.
       let reply: string;
       if (channel.scope === "recruita") {
-        reply = `กลุ่มผู้บริหารรับสมัครงานใช้บอท IKIGAI OS (ไม่ใช่ IKIGAI Recruit)\nกรุณาเชิญบอท IKIGAI OS เข้ากลุ่มนี้แทน\n\nGroup ID:\n${groupId}`;
+        reply = `กลุ่มผู้บริหารรับสมัครงานใช้บอท NOKHOOK OS (ไม่ใช่ NOKHOOK Recruit)\nกรุณาเชิญบอท NOKHOOK OS เข้ากลุ่มนี้แทน\n\nGroup ID:\n${groupId}`;
       } else if (channel.scope === "platform") {
         reply = `เพิ่ม OA เข้ากลุ่มเรียบร้อย\n\nGroup ID:\n${groupId}\n\nคัดลอก Group ID ด้านบนไปใส่ที่ ตั้งค่าระบบ ตามประเภทกลุ่ม:\n• กลุ่มพนักงาน (PERSONA) → กลุ่ม LINE พนักงานรวม\n• กลุ่มผู้บริหารรับสมัครงาน → "RECRUITA · กลุ่ม LINE ผู้บริหาร"`;
       } else {
@@ -165,7 +165,7 @@ export async function POST(req: Request, { params }: { params: { branch: string 
 
     if (ev.type === "follow") {
       console.log(`[line:${channel.scope}] new follower for ${channel.label}: ${userId}`);
-      // RECRUITA: when a candidate follows the "IKIGAI Recruit" OA,
+      // RECRUITA: when a candidate follows the "NOKHOOK Recruit" OA,
       // greet them + try to link their LINE userId to the most
       // recent candidate row that doesn't yet have one. Phase 1e
       // matches by recency-only — the proper match (phone number
@@ -246,7 +246,7 @@ export async function POST(req: Request, { params }: { params: { branch: string 
     }
 
     // ACCOUNTA bill ingest (owner 2026-06-18). A bound staff member sends a
-    // bill to the IKIGAI OS OA → OCR → draft expense. Accepts a photo
+    // bill to the NOKHOOK OS OA → OCR → draft expense. Accepts a photo
     // (image message) OR a PDF e-tax invoice (file message ending .pdf;
     // owner 2026-06-19). Non-PDF file messages are ignored so random docs
     // don't reach OCR. Only the platform (staff-facing) OA; RESERVA /

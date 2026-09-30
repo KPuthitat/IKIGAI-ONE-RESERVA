@@ -148,7 +148,7 @@ export function generateReportaCompanyPdf(ov: CompanyOverview, meta: ReportaComp
       doc.font("th-b").fontSize(9).fillColor(MUTE).text(intTh(t.bills), cols[5].x, y, { width: cols[5].w, align: "right" });
 
       doc.font("th").fontSize(8).fillColor(MUTE)
-        .text(`ออกรายงานเมื่อ ${new Date().toLocaleString("th-TH")} · IKIGAI OS · ANALYTICA`, left, doc.page.height - 40, { width: W, align: "center" });
+        .text(`ออกรายงานเมื่อ ${new Date().toLocaleString("th-TH")} · NOKHOOK OS · ANALYTICA`, left, doc.page.height - 40, { width: W, align: "center" });
 
       doc.end();
     } catch (e) { reject(e); }

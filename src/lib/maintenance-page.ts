@@ -99,7 +99,7 @@ export function generateMaintenanceHtml(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="refresh" content="15">
-  <title>กำลังอัพเดทระบบ · IKIGAI OS</title>
+  <title>กำลังอัพเดทระบบ · NOKHOOK OS</title>
   <style>
     @font-face {
       font-family: 'LINESeedSansTH';
@@ -232,7 +232,7 @@ export function generateMaintenanceHtml(
     </div>
     <p class="footer">หน้านี้จะรีเฟรชอัตโนมัติทุก 15 วินาที</p>
   </main>
-  <div class="brand">IKIGAI OS</div>
+  <div class="brand">NOKHOOK OS</div>
 </body>
 </html>`;
 }

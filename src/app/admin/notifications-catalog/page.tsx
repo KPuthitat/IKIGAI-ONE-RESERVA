@@ -13,7 +13,7 @@ import { personaClockInFlex, disciplinaryWarningFlex, customerBookingFlex, staff
 import { stageChangeFlex } from "@/lib/recruita-notify";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "แคตตาล็อกการ์ดแจ้งเตือน · IKIGAI OS" };
+export const metadata: Metadata = { title: "แคตตาล็อกการ์ดแจ้งเตือน · NOKHOOK OS" };
 
 type CatalogCard = { module: string; name: string; trigger: "กดเอง" | "อัตโนมัติ"; bubble: Record<string, unknown> };
 

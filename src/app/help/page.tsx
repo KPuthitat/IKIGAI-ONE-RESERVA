@@ -7,7 +7,7 @@ import { getSessionUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "ห้องน้องฮูก · IKIGAI OS" };
+export const metadata: Metadata = { title: "ห้องน้องฮูก · NOKHOOK OS" };
 
 // /help — the full-page version of น้องฮูก's FAQ. Accessible to all
 // users (including logged-out) so anyone can browse the manual.

@@ -7,7 +7,7 @@ import { getFormTemplate } from "@/lib/recruita-form-template";
 import ApplyClient from "./ApplyClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "สมัครงาน · IKIGAI Recruit" };
+export const metadata: Metadata = { title: "สมัครงาน · NOKHOOK Recruit" };
 
 type Row = {
   id: number;

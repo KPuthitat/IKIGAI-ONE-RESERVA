@@ -5,7 +5,7 @@ import { getRecruitaChannel } from "@/lib/messaging-channels";
 import LiffCapture from "./LiffCapture";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "ตำแหน่งที่เปิดรับ · IKIGAI Recruit" };
+export const metadata: Metadata = { title: "ตำแหน่งที่เปิดรับ · NOKHOOK Recruit" };
 
 // /recruita/positions — public-facing list of every position with
 // status='open'. No auth required; applicants arrive here from the

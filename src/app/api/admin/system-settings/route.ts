@@ -7,7 +7,7 @@ import { writeMaintenancePage } from "@/lib/maintenance-page";
 // POST /api/admin/system-settings
 //
 // Admin updates the GLOBAL configuration that isn't branch-scoped —
-// today this is the IKIGAI OS LINE OA push token + the cross-branch
+// today this is the NOKHOOK OS LINE OA push token + the cross-branch
 // staff group ID used to route PERSONA notifications.
 //
 // Empty strings are normalised to NULL on the way to the DB (handled
@@ -46,7 +46,7 @@ const Body = z.object({
   privacy_policy_url: z.string().max(500).optional(),
   // LINE group id receiving new-application Flex pushes + PERSONA HR alerts.
   recruita_exec_group_id: z.string().max(100).optional(),
-  // Human-readable label for the HR group (display only, e.g. "IKIGAI RECRUIT x HR").
+  // Human-readable label for the HR group (display only, e.g. "NOKHOOK RECRUIT x HR").
   recruita_exec_group_name: z.string().max(100).optional(),
   // Inline PDPA consent text for the apply form. 5000-char cap is
   // generous for a full notice. Empty = clear (form uses default).
@@ -58,9 +58,9 @@ const Body = z.object({
   // interview. Empty = clear → card uses the built-in default. 2000-char
   // cap fits the multi-paragraph default + note comfortably.
   recruita_health_check_message: z.string().max(2000).optional(),
-  // IKIGAI OS PORTAL OA add-friend link (LINE deep link, e.g. https://lin.ee/…).
+  // NOKHOOK OS PORTAL OA add-friend link (LINE deep link, e.g. https://lin.ee/…).
   // Empty = clear → the welcome card sent to a freshly-hired employee omits the
-  // "เพิ่มเพื่อน IKIGAI OS PORTAL" button.
+  // "เพิ่มเพื่อน NOKHOOK OS PORTAL" button.
   portal_oa_link: z.string().max(500).optional(),
   // ACCOUNTA bill-OCR master toggle + chosen vision model id.
   accounta_ocr_enabled: z.union([z.boolean(), z.literal("true"), z.literal("false")]).optional(),

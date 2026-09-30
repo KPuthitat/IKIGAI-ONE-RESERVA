@@ -46,7 +46,7 @@ function CompanyCardPreview({ ov, companyName, monthLabel, operator, color }: { 
   return (
     <div className="text-sm">
       <div className="px-4 py-3 text-white" style={{ backgroundColor: color }}>
-        <div className="text-[10px] opacity-70">IKIGAI OS · ภาพรวมบริษัท</div>
+        <div className="text-[10px] opacity-70">NOKHOOK OS · ภาพรวมบริษัท</div>
         <div className="font-bold leading-tight">{companyName}</div>
         <div className="text-[11px] opacity-90">รวมทุกสาขา · {monthLabel}</div>
       </div>

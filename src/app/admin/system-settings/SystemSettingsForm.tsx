@@ -6,7 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
 import Switch from "@/app/components/Switch";
 
-// Client form for editing GLOBAL system settings — IKIGAI OS LINE OA
+// Client form for editing GLOBAL system settings — NOKHOOK OS LINE OA
 // credentials + the cross-branch staff group ID.
 //
 // UX considerations:
@@ -102,7 +102,7 @@ export default function SystemSettingsForm({
   const [interviewMapInput, setInterviewMapInput] = useState(recruitaInterviewMapUrl);
   const [healthMsgInput, setHealthMsgInput] = useState(recruitaHealthCheckMessage);
   const [recruitaExecNameInput, setRecruitaExecNameInput] = useState(recruitaExecGroupName);
-  // IKIGAI OS PORTAL OA add-friend link (2026-06-15) — the deep link a
+  // NOKHOOK OS PORTAL OA add-friend link (2026-06-15) — the deep link a
   // freshly-hired employee taps to add the staff OA. Surfaced as a button on
   // the welcome card from the hire flow. Empty = button omitted.
   const [portalOaInput, setPortalOaInput] = useState(portalOaLink);
@@ -190,7 +190,7 @@ export default function SystemSettingsForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      {/* IKIGAI OS LINE OA section */}
+      {/* NOKHOOK OS LINE OA section */}
       <div className="card space-y-3">
         <div>
           <h2 className="font-bold text-slate-800 text-sm">
@@ -537,7 +537,7 @@ export default function SystemSettingsForm({
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             กลุ่มที่รับแจ้งเตือน PERSONA (สรุปการเข้างาน · คำขอลา · คำขอเปลี่ยนกะ · คำขอล่วงเวลา (OT) · สรุปคำขอค้างประจำวัน)
-            และ RECRUITA (ใบสมัครใหม่ + สถานะเปลี่ยน) — ส่งผ่าน <b>IKIGAI OS OA</b>
+            และ RECRUITA (ใบสมัครใหม่ + สถานะเปลี่ยน) — ส่งผ่าน <b>NOKHOOK OS OA</b>
             <br />ชื่อกลุ่มที่ตั้งไว้จะแสดงในหน้าตั้งค่าการแจ้งเตือน เพื่อให้รู้ว่าส่งไปที่กลุ่มใด
           </p>
         </div>
@@ -549,7 +549,7 @@ export default function SystemSettingsForm({
               type="text"
               value={recruitaExecNameInput}
               onChange={(e) => setRecruitaExecNameInput(e.target.value)}
-              placeholder="เช่น IKIGAI RECRUIT x HR"
+              placeholder="เช่น NOKHOOK RECRUIT x HR"
               maxLength={100} />
             <p className="text-[10px] text-slate-400 mt-1">
               ชื่อที่แสดงในหน้าตั้งค่า — ไม่กระทบการทำงาน
@@ -566,7 +566,7 @@ export default function SystemSettingsForm({
               maxLength={100} />
             <p className="text-[10px] text-slate-400 mt-1">
               ขึ้นต้นด้วย C/R/U ตามด้วย 32 hex. ปล่อยว่าง = ไม่ส่ง.
-              <br /><b>เชิญบอท IKIGAI OS เข้ากลุ่มนี้ก่อน</b> — บอทจะพิมพ์ Group ID ออกมาให้
+              <br /><b>เชิญบอท NOKHOOK OS เข้ากลุ่มนี้ก่อน</b> — บอทจะพิมพ์ Group ID ออกมาให้
             </p>
           </div>
         </div>
@@ -602,11 +602,11 @@ export default function SystemSettingsForm({
             ปล่อยว่าง = ใช้ข้อความเริ่มต้นของระบบ (ตามที่แสดงเป็น placeholder).
           </p>
         </div>
-        {/* IKIGAI OS PORTAL OA add-friend link (2026-06-15) — the button a
+        {/* NOKHOOK OS PORTAL OA add-friend link (2026-06-15) — the button a
             freshly-hired employee taps to add the staff OA, on the welcome
             card from the hire flow. */}
         <div>
-          <label className="label">ลิงก์เพิ่มเพื่อน IKIGAI OS PORTAL (พนักงาน)</label>
+          <label className="label">ลิงก์เพิ่มเพื่อน NOKHOOK OS PORTAL (พนักงาน)</label>
           <input
             className="input text-sm"
             type="url"
@@ -616,8 +616,8 @@ export default function SystemSettingsForm({
             placeholder="เช่น https://lin.ee/xxxxxxx"
             maxLength={500} />
           <p className="text-[10px] text-slate-400 mt-1">
-            ลิงก์เพิ่มเพื่อน LINE OA ของระบบพนักงาน (IKIGAI OS PORTAL) — จะเป็นปุ่ม
-            &quot;เพิ่มเพื่อน IKIGAI OS PORTAL&quot; บนการ์ดต้อนรับที่ส่งให้พนักงานใหม่
+            ลิงก์เพิ่มเพื่อน LINE OA ของระบบพนักงาน (NOKHOOK OS PORTAL) — จะเป็นปุ่ม
+            &quot;เพิ่มเพื่อน NOKHOOK OS PORTAL&quot; บนการ์ดต้อนรับที่ส่งให้พนักงานใหม่
             หลังกดรับเข้าทำงาน. ปล่อยว่าง = ไม่แสดงปุ่ม.
           </p>
         </div>

@@ -10,7 +10,7 @@ import Combobox from "@/app/components/Combobox";
 // Visual language follows the app CI (owner #10 2026-06-06): espresso
 // brown headers (ink #3a2716) + caramel accents (brand #a06820) on a
 // cream/white surface — the navy/gold clinical chrome was dropped so the
-// health program matches the rest of IKIGAI OS.
+// health program matches the rest of NOKHOOK OS.
 // Privacy model unchanged: a doctor sees ONLY their own patients, must
 // unlock with their license each session, and every read is audited.
 

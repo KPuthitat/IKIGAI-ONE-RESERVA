@@ -627,7 +627,7 @@ export default function RosterCalendarView({
             </div>
 
             <p className="text-[10px] text-slate-400 leading-snug">
-              ข้อความจะถูกส่งผ่าน IKIGAI OS LINE OA ตรงไปยังพนักงานคนนี้
+              ข้อความจะถูกส่งผ่าน NOKHOOK OS LINE OA ตรงไปยังพนักงานคนนี้
               · จะไม่ส่งถ้าผู้รับยังไม่ได้เชื่อมต่อ LINE
             </p>
           </div>

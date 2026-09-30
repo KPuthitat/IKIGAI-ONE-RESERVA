@@ -9,7 +9,7 @@ import { getDefaultHealthFacility, facilityName, facilityLogo } from "@/lib/heal
 import MounjaroSelfClient from "./MounjaroSelfClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "โครงการควบคุมน้ำหนัก · IKIGAI OS PORTAL" };
+export const metadata: Metadata = { title: "โครงการควบคุมน้ำหนัก · NOKHOOK OS PORTAL" };
 
 // Employee self-service for the Mounjaro Wellness program. All data comes
 // through the gateway scoped to the logged-in employee (their own rows

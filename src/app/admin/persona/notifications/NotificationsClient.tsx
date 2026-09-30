@@ -237,7 +237,7 @@ function ShiftReminderEditor({
           </div>
           <FlexPreview
             header={{
-              leftLabel: "IKIGAI OS · PERSONA",
+              leftLabel: "NOKHOOK OS · PERSONA",
               rightLabel: "ทักทายจากน้องฮูก",
               title: "เวรประจำวันของพี่"
             }}
@@ -357,7 +357,7 @@ function ResignationUnlockEditor({ initial }: { initial: string }) {
           </div>
           <FlexPreview
             header={{
-              leftLabel: "IKIGAI OS · PERSONA",
+              leftLabel: "NOKHOOK OS · PERSONA",
               rightLabel: "ทักทายจากน้องฮูก",
               title: "เปิดสิทธิ์ยื่นลาออกแล้ว"
             }}

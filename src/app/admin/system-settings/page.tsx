@@ -1,9 +1,9 @@
 // /admin/system-settings — global (non-branch-scoped) configuration.
 //
-// Today this is just the IKIGAI OS LINE OA channel token + the
+// Today this is just the NOKHOOK OS LINE OA channel token + the
 // cross-branch staff group ID used to route PERSONA notifications.
 // When set, all PERSONA Flex cards (daily reports, edit requests,
-// decisions) are pushed via the IKIGAI OS OA into the shared group
+// decisions) are pushed via the NOKHOOK OS OA into the shared group
 // where staff from every branch can see them — much simpler than
 // trying to keep parallel per-branch chats in sync.
 //
@@ -26,7 +26,7 @@ import { OWL_AI_MODELS, DEFAULT_OWL_AI_MODEL } from "@/lib/owl-ai-models";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "System Settings · IKIGAI OS" };
+export const metadata: Metadata = { title: "System Settings · NOKHOOK OS" };
 
 export default function SystemSettingsPage() {
   requireSuperAdmin();
@@ -77,7 +77,7 @@ export default function SystemSettingsPage() {
           privacy notice; the apply form links candidates to it. */}
       <PdpaImageUploader hasImage={!!settings.recruita_pdpa_image_path} />
 
-      {/* RECRUITA LINE OA — global setting (IKIGAI Recruit, shared
+      {/* RECRUITA LINE OA — global setting (NOKHOOK Recruit, shared
           across all branches). Mounted as a section here so the
           owner has one canonical place for cross-branch settings
           instead of hunting under each module's sidebar. */}

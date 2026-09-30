@@ -1,4 +1,4 @@
--- IKIGAI OS RESERVA — schema
+-- NOKHOOK OS RESERVA — schema
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 

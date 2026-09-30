@@ -178,7 +178,7 @@ export const FAQ_ENTRIES: FaqEntry[] = [
       "3. ก่อนเริ่ม — ตรวจ 'รหัสกะ' (/admin/persona/roster/shifts) และ 'ตำแหน่ง' (/admin/persona/roster/positions) ให้พร้อม\n" +
       "4. คลิกช่องในตาราง → modal ขึ้นมา → เลือกพนักงาน + รหัสกะ\n" +
       "5. เมื่อกรอกครบ กดปุ่ม 'เผยแพร่ตารางเดือนนี้'\n" +
-      "6. ระบบจะส่ง Flex เข้ากลุ่ม IKIGAI OS แจ้งพนักงานทุกคน\n\n" +
+      "6. ระบบจะส่ง Flex เข้ากลุ่ม NOKHOOK OS แจ้งพนักงานทุกคน\n\n" +
       "แก้ไขหลังเผยแพร่: คลิกช่องเดิม → แก้ → กดปุ่ม 'แจ้งว่ามีการแก้ไข' ส่งแจ้งซ้ำได้",
     answer_en:
       "Go to /admin/persona/roster, pick the month, ensure shift codes and positions are set up, click cells to assign, then hit 'Publish'. LINE notifies all staff. Edit later → use 'Announce edit'.",
@@ -268,7 +268,7 @@ export const FAQ_ENTRIES: FaqEntry[] = [
     question_en: "How do I set up LINE OA notifications?",
     answer_th:
       "ระบบใช้ LINE OA 2 ระดับ:\n\n" +
-      "1. **IKIGAI OS (global)** — แจ้งเตือน PERSONA ทั้งหมด (ตารางงาน, หนังสือเตือน, สรุปการเข้างาน ฯลฯ)\n" +
+      "1. **NOKHOOK OS (global)** — แจ้งเตือน PERSONA ทั้งหมด (ตารางงาน, หนังสือเตือน, สรุปการเข้างาน ฯลฯ)\n" +
       "   ตั้งที่: /admin/system-settings\n" +
       "   ต้องการ: Channel Access Token + Group ID ของกลุ่มผู้บริหาร\n\n" +
       "2. **OA ของแต่ละสาขา** — แจ้งเตือนการจอง RESERVA เฉพาะสาขานั้นๆ\n" +
@@ -276,7 +276,7 @@ export const FAQ_ENTRIES: FaqEntry[] = [
       "   ต้องการ: Channel Access Token + Channel Secret\n\n" +
       "หา Token / Group ID ได้ที่ LINE Developers Console (developers.line.biz)",
     answer_en:
-      "Two LINE OA layers: (1) IKIGAI OS global for PERSONA — set at /admin/system-settings; (2) per-branch for RESERVA bookings — set at /admin/persona/messaging. Get tokens at developers.line.biz.",
+      "Two LINE OA layers: (1) NOKHOOK OS global for PERSONA — set at /admin/system-settings; (2) per-branch for RESERVA bookings — set at /admin/persona/messaging. Get tokens at developers.line.biz.",
     keywords: ["line", "oa", "messaging", "แจ้งเตือน", "token"],
     link: { href: "/admin/system-settings", label_th: "ตั้งค่าระบบ", label_en: "System settings" }
   },
@@ -339,7 +339,7 @@ export const FAQ_ENTRIES: FaqEntry[] = [
     question_en: "I'm not getting LINE notifications",
     answer_th:
       "ตรวจสอบเป็นขั้นๆ:\n\n" +
-      "1. คุณเป็นเพื่อนกับ IKIGAI OS OA แล้วหรือยัง? (สแกน QR ของ OA เพื่อเพิ่มเพื่อน)\n" +
+      "1. คุณเป็นเพื่อนกับ NOKHOOK OS OA แล้วหรือยัง? (สแกน QR ของ OA เพื่อเพิ่มเพื่อน)\n" +
       "2. line_user_id ของคุณ bind กับ account แล้วหรือยัง? → ดูที่หน้า /staff/persona — ถ้าไม่ได้ bind แจ้งหัวหน้าให้กรอกให้\n" +
       "3. กลุ่ม LINE ของบริษัทมี OA เป็นสมาชิกหรือยัง? (สำหรับ notification กลุ่ม)\n" +
       "4. Admin: ที่ /admin/system-settings ใส่ Channel Token + Group ID ครบหรือยัง?\n\n" +

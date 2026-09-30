@@ -38,7 +38,7 @@ function SpecialDaysPreview({ outlook, color, operator, horizonDays }: { outlook
   return (
     <div className="text-sm">
       <div className="px-4 py-3 text-white" style={{ backgroundColor: color }}>
-        <div className="text-[10px] opacity-70">IKIGAI OS · เตรียมรับมือวันสำคัญ</div>
+        <div className="text-[10px] opacity-70">NOKHOOK OS · เตรียมรับมือวันสำคัญ</div>
         <div className="font-bold leading-tight">วันสำคัญที่กำลังจะมาถึง</div>
         <div className="text-[11px] opacity-90">{horizonDays} วันข้างหน้า · เตรียมวัตถุดิบ / คน / โปรโมชั่น</div>
       </div>

@@ -14,12 +14,12 @@ import { useEffect } from "react";
 // still caught and re-formatted.
 //
 // Thai has no upper/lower case, so a plain toUpperCase() left the tab
-// half-cased ("เข้าระบบ · IKIGAI OS"). We unify separators to an
+// half-cased ("เข้าระบบ · NOKHOOK OS"). We unify separators to an
 // ASCII pipe, strip every non-ASCII char (Thai etc.), uppercase, then
 // rejoin the surviving Latin segments — falling back to the brand so
 // the tab is always a clean uppercase Latin string
-// (e.g. "เข้าระบบ · IKIGAI OS" -> "IKIGAI OS",
-//  "Admin · IKIGAI OS" -> "ADMIN - IKIGAI OS").
+// (e.g. "เข้าระบบ · NOKHOOK OS" -> "NOKHOOK OS",
+//  "Admin · NOKHOOK OS" -> "ADMIN - NOKHOOK OS").
 function formatTitle(raw: string): string {
   const cleaned = raw
     // Common separators (·, |, /, en/em dash, hyphen) -> ASCII pipe
@@ -29,7 +29,7 @@ function formatTitle(raw: string): string {
     .replace(/[^\x20-\x7E]+/g, "")
     // A Thai parenthetical like "(รวมสาขา)" loses its inner text in the
     // strip above and would otherwise survive as an empty "()" segment
-    // (e.g. "ACCOUNTA - () - IKIGAI OS"). Drop bracket characters so no
+    // (e.g. "ACCOUNTA - () - NOKHOOK OS"). Drop bracket characters so no
     // hollow "()" is left behind.
     .replace(/[()[\]{}]/g, " ")
     .toUpperCase()
@@ -37,7 +37,7 @@ function formatTitle(raw: string): string {
     .map((s) => s.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .join(" - ");
-  return cleaned || "IKIGAI OS";
+  return cleaned || "NOKHOOK OS";
 }
 
 export default function TitleUppercase() {

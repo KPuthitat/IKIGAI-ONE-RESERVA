@@ -1,5 +1,5 @@
 // Revenue-Share LINE notifications (owner 2026-06-23) — push a Flex card to the
-// partner's LINE group (the IKIGAI OS platform OA must be a member). Two cards:
+// partner's LINE group (the NOKHOOK OS platform OA must be a member). Two cards:
 // weekly transfer summary + monthly GP settlement. Mirrors notifyToHrGroup.
 
 import { sendLinePush } from "./line";
@@ -25,7 +25,7 @@ function header(title: string, subtitle: string): unknown {
   return {
     type: "box", layout: "vertical", backgroundColor: "#281a0e", paddingAll: "16px", spacing: "xs",
     contents: [
-      { type: "text", text: "IKIGAI OS · ส่วนแบ่งยอดขาย", size: "xxs", color: "#d6a14d" },
+      { type: "text", text: "NOKHOOK OS · ส่วนแบ่งยอดขาย", size: "xxs", color: "#d6a14d" },
       { type: "text", text: title, size: "lg", weight: "bold", color: "#ffffff" },
       { type: "text", text: subtitle, size: "xs", color: "#cbb89a" }
     ]

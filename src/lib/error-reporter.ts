@@ -1,5 +1,5 @@
 // Lightweight error reporter that pushes server-side exceptions into
-// the executive LINE group via the platform OA (IKIGAI OS). Replaces
+// the executive LINE group via the platform OA (NOKHOOK OS). Replaces
 // the "Sentry would be nice" idea for this scale of business — we
 // already have a LINE group admins watch all day; one more bubble
 // when something crashes is a free pager.
@@ -57,7 +57,7 @@ function format(
   context: Record<string, unknown>
 ): string {
   const lines: string[] = [];
-  lines.push("IKIGAI OS — server error");
+  lines.push("NOKHOOK OS — server error");
   lines.push(`at: ${where}`);
   if (err instanceof Error) {
     lines.push(`${err.name}: ${err.message}`);

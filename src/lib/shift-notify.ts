@@ -10,7 +10,7 @@
 //   • day_off — admin assigned a shift_codes row with kind='day_off'
 //   • on_leave — leave_requests covers today (approved)
 //
-// Token: the personal DM goes through the IKIGAI OS *platform* OA
+// Token: the personal DM goes through the NOKHOOK OS *platform* OA
 // (same as clock-in confirmation card). Branch RESERVA OAs are
 // customer-facing.
 //

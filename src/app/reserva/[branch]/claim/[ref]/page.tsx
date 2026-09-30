@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   // when admin pastes the claim URL. Customer should see this and know
   // exactly what tapping the link will do — "ยืนยันและรับคิวอาร์โค้ด"
   // is more action-oriented than "รับ QR Code" alone.
-  title: "ยืนยันและรับคิวอาร์โค้ด · IKIGAI OS RESERVA"
+  title: "ยืนยันและรับคิวอาร์โค้ด · NOKHOOK OS RESERVA"
 };
 
 export default function ClaimPage({
@@ -69,7 +69,7 @@ export default function ClaimPage({
       <div className="max-w-md w-full space-y-3">
         <div className="rounded-t-2xl bg-ink-gradient text-white px-5 py-4">
           <div className="flex items-baseline justify-between text-[11px] tracking-wider">
-            <span className="text-brand-light font-bold">IKIGAI OS</span>
+            <span className="text-brand-light font-bold">NOKHOOK OS</span>
             <span className="text-slate-300">RESERVA</span>
           </div>
           <h1 className="text-lg font-bold mt-1">

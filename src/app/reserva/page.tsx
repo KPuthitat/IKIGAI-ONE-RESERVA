@@ -139,7 +139,7 @@ export default function CustomerReservaPage({
       <main className="flex-1 flex flex-col items-center justify-center p-6">
       <div className="max-w-2xl w-full">
         <div className="text-center mb-8">
-          <div className="brand-wordmark text-white text-[42px]">IKIGAI OS</div>
+          <div className="brand-wordmark text-white text-[42px]">NOKHOOK OS</div>
           <div className="text-white/50 text-[13px] tracking-[1px] mt-1">
             {t(lang, "customer.reserva.title")}
           </div>

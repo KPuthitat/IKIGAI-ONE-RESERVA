@@ -2076,7 +2076,7 @@ function CardShell({ color, title, subtitle, children }: { color: string; title:
   return (
     <div className="bg-white text-[13px]">
       <div style={{ backgroundColor: color }} className="px-4 py-3">
-        <div className="text-[10px]" style={{ color: "#ffffff99" }}>IKIGAI OS · ยอดขายรายวัน</div>
+        <div className="text-[10px]" style={{ color: "#ffffff99" }}>NOKHOOK OS · ยอดขายรายวัน</div>
         <div className="text-white font-bold text-base leading-tight">{title}</div>
         <div className="text-xs" style={{ color: "#ffffffcc" }}>{subtitle}</div>
       </div>

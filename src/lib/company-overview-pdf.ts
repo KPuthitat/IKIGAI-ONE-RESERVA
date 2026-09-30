@@ -107,7 +107,7 @@ export function generateCompanyOverviewPdf(ov: CompanyOverviewMonth): Promise<Bu
       row(1, 2, "ประมาณการภาษีเงินได้นิติบุคคล", `${money(ov.ytd.incomeTaxEst.tax)} บาท`);
 
       doc.font("th").fontSize(8).fillColor(MUTE)
-        .text(`ออกรายงานเมื่อ ${new Date().toLocaleString("th-TH")} · IKIGAI OS`, left, doc.page.height - 40, { width: W, align: "center" });
+        .text(`ออกรายงานเมื่อ ${new Date().toLocaleString("th-TH")} · NOKHOOK OS`, left, doc.page.height - 40, { width: W, align: "center" });
 
       doc.end();
     } catch (e) { reject(e); }

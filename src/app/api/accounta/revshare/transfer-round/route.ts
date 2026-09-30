@@ -124,7 +124,7 @@ export async function POST(req: Request) {
     const res = await notifyRevsharePartner(partner.line_group_id, flex);
     lineSent = res.ok;
     if (!res.ok) {
-      lineError = res.error === "platform_oa_not_configured" ? "ยังไม่ได้ตั้งค่า IKIGAI OS platform OA"
+      lineError = res.error === "platform_oa_not_configured" ? "ยังไม่ได้ตั้งค่า NOKHOOK OS platform OA"
         : res.error === "monthly_quota_exceeded" ? "LINE เกินโควตาข้อความรายเดือนแล้ว"
         : "ส่ง LINE ไม่สำเร็จ (ยอดถูกบันทึกโอนแล้ว)";
     }

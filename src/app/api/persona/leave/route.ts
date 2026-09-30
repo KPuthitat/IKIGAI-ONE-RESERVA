@@ -236,7 +236,7 @@ export async function POST(req: Request) {
     requestId: Number(result.lastInsertRowid),
     event: "submitted"
   }).catch((e) => console.warn("leave notify (submitted) failed", e));
-  // Also notify the HR group (IKIGAI RECRUIT x HR) so HR sees every
+  // Also notify the HR group (NOKHOOK RECRUIT x HR) so HR sees every
   // leave request in one place (owner 2026-06-06).
   notifyHrLeaveRequest(Number(result.lastInsertRowid))
     .catch((e) => console.warn("leave notify HR failed", e));

@@ -4,7 +4,7 @@
 // once per clock-in and spammed the staff group) with a single
 // categorized summary that fires once per day per branch, at the
 // admin-configured `branches.attendance_summary_time` (recommended:
-// shift_start + 1 hour). The summary routes to the IKIGAI OS global
+// shift_start + 1 hour). The summary routes to the NOKHOOK OS global
 // executive group via notifyToStaffGroup() so all branches surface in
 // one chat.
 //

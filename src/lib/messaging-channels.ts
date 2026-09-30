@@ -1,7 +1,7 @@
 // Multi-channel LINE OA storage.
 //
-// IKIGAI ONE has more than one LINE OA in play:
-//   - "IKIGAI OS" (scope=platform): used by PERSONA + ASCENDA — staff-facing
+// NOKHOOK OS has more than one LINE OA in play:
+//   - "NOKHOOK OS" (scope=platform): used by PERSONA + ASCENDA — staff-facing
 //     notifications such as the clock-in confirmation card. Single OA shared
 //     across all restaurants.
 //   - Per-branch RESERVA OAs (scope=reserva): customer-facing booking
@@ -33,7 +33,7 @@ export type MessagingChannel = {
 const PLATFORM_CODE = "ikigai-os";
 const RECRUITA_CODE = "ikigai-recruit";
 
-/** Fallback "add IKIGAI Recruit OA" link (owner-provided 2026-06-14) used by
+/** Fallback "add NOKHOOK Recruit OA" link (owner-provided 2026-06-14) used by
  *  the apply gate when messaging_channels.oa_link is NULL/empty. */
 export const DEFAULT_RECRUITA_OA_LINK = "https://lin.ee/saEBWjQ";
 
@@ -48,7 +48,7 @@ function decryptRow<T extends MessagingChannel | undefined>(row: T): T {
   return row;
 }
 
-/** The IKIGAI OS platform channel (singleton). Returns null if not configured. */
+/** The NOKHOOK OS platform channel (singleton). Returns null if not configured. */
 export function getPlatformChannel(): MessagingChannel | null {
   const row = getDb().prepare(
     "SELECT * FROM messaging_channels WHERE code = ? LIMIT 1"
@@ -56,7 +56,7 @@ export function getPlatformChannel(): MessagingChannel | null {
   return decryptRow(row) ?? null;
 }
 
-/** The IKIGAI Recruit OA (singleton). Separate channel so the
+/** The NOKHOOK Recruit OA (singleton). Separate channel so the
  *  candidate-facing notification stream doesn't bleed into the staff
  *  channel. Returns the row even when credentials are empty so the
  *  admin UI always has something to render. */
@@ -159,7 +159,7 @@ export function isChannelReady(c: MessagingChannel | null): boolean {
   return !!(c && c.channel_secret && c.channel_token);
 }
 
-/** Partial-update credentials on the IKIGAI OS platform channel.
+/** Partial-update credentials on the NOKHOOK OS platform channel.
  *
  * Each field follows three-state semantics:
  *   - `undefined`   → leave the existing value alone
@@ -175,7 +175,7 @@ export function setPlatformChannel(args: {
   // Ensure the row exists (seed runs on first DB open, but safe-guard anyway)
   db.prepare(`
     INSERT OR IGNORE INTO messaging_channels (scope, code, label)
-    VALUES ('platform', ?, 'IKIGAI OS')
+    VALUES ('platform', ?, 'NOKHOOK OS')
   `).run(PLATFORM_CODE);
 
   const sets: string[] = [];

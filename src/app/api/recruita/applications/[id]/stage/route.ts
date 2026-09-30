@@ -9,7 +9,7 @@ import { notifyStageChange, notifyExecGroupStageChange } from "@/lib/recruita-no
 // Update the lifecycle stage on a single application. Phase 0d
 // just persisted the stage; Phase 1e adds a fire-and-forget LINE
 // push to the candidate when their stage advances, via the
-// "IKIGAI Recruit" OA. Push is a no-op when the candidate has no
+// "NOKHOOK Recruit" OA. Push is a no-op when the candidate has no
 // linked line_user_id (web-form applicants) or the OA isn't
 // configured yet — the API still returns ok so the admin UI
 // updates regardless.

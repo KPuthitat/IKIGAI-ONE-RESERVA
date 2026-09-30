@@ -511,7 +511,7 @@ export async function POST(req: Request) {
       headerColor: branch.brand_color
     });
   }
-  // PERSONA notifications route through the IKIGAI OS LINE OA into
+  // PERSONA notifications route through the NOKHOOK OS LINE OA into
   // the cross-branch shared staff group when configured. Falls back
   // to the per-branch group automatically if the global OA hasn't
   // been set up yet — see notifyToStaffGroup in line.ts.

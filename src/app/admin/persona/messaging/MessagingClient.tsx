@@ -186,7 +186,7 @@ export default function MessagingClient({
         <span className="text-brand">→</span>
       </Link>
 
-      {/* Platform channel: IKIGAI OS */}
+      {/* Platform channel: NOKHOOK OS */}
       <div className="card space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -340,7 +340,7 @@ export default function MessagingClient({
           />
           <ol className="text-[11px] text-slate-500 space-y-0.5 leading-snug list-decimal pl-4">
             <li>เปิด LINE OA Manager → Settings → Chat → เปิด "Allow group chats"</li>
-            <li>เชิญ OA "IKIGAI OS PORTAL" เข้ากลุ่มพนักงานรวม</li>
+            <li>เชิญ OA "NOKHOOK OS PORTAL" เข้ากลุ่มพนักงานรวม</li>
             <li>บอทจะโพสต์ Group ID (ขึ้นต้นด้วย C…) เข้ากลุ่มอัตโนมัติ — คัดลอกมาวางช่องด้านบน</li>
             <li>บันทึก → ทุกแจ้งเตือน PERSONA ของทุกสาขาจะมาเข้ากลุ่มเดียวกันนี้</li>
           </ol>

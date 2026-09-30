@@ -109,14 +109,14 @@ export default function ShiftCloseFlexPreview({
           <div className="w-6 h-6 rounded-full bg-rose-200 flex items-center justify-center text-[10px] font-bold text-rose-700">
             IO
           </div>
-          <span className="text-[10px] font-bold text-slate-600">IKIGAI OS</span>
+          <span className="text-[10px] font-bold text-slate-600">NOKHOOK OS</span>
         </div>
 
         <div className="bg-white rounded-2xl rounded-tl-md shadow-sm overflow-hidden max-w-[360px]">
           {/* Header — same dark navy as the real Flex bubble */}
           <div className="bg-[#1a1a2e] text-white px-4 py-3">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-rose-300 tracking-wide">IKIGAI OS</span>
+              <span className="text-[10px] font-bold text-rose-300 tracking-wide">NOKHOOK OS</span>
               <span className="text-[10px] text-slate-300">PERSONA • STAFF</span>
             </div>
             <div className="text-base font-bold mt-1">Check list หลังเลิกงาน</div>
@@ -233,10 +233,10 @@ export default function ShiftCloseFlexPreview({
           </div>
 
           {/* Footer brand strip — purely cosmetic, matches the real
-              card's "IKIGAI OS" attribution. */}
+              card's "NOKHOOK OS" attribution. */}
           <div className="bg-slate-50 text-center py-2 border-t border-slate-200">
             <span className="text-[9px] font-bold text-slate-400 tracking-widest">
-              IKIGAI OS
+              NOKHOOK OS
             </span>
           </div>
         </div>

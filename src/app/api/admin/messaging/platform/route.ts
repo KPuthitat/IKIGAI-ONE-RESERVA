@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { setPlatformChannel } from "@/lib/messaging-channels";
 
-// PATCH /api/admin/messaging/platform — set/clear IKIGAI OS LINE creds.
+// PATCH /api/admin/messaging/platform — set/clear NOKHOOK OS LINE creds.
 //
 // Both fields are optional in a single PATCH:
 //   { channel_token: "abc..." }            → set token only, keep secret

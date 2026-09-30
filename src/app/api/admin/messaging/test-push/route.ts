@@ -50,7 +50,7 @@ export async function POST() {
     return NextResponse.json({
       ok: false,
       error: "no_token",
-      message: "ยังไม่ได้ตั้ง Channel access token ของ IKIGAI OS — เพิ่มในช่อง Channel access token แล้วบันทึก",
+      message: "ยังไม่ได้ตั้ง Channel access token ของ NOKHOOK OS — เพิ่มในช่อง Channel access token แล้วบันทึก",
       status
     }, { status: 400 });
   }
@@ -79,7 +79,7 @@ export async function POST() {
     to: groupId,
     messages: [{
       type: "text",
-      text: `ทดสอบการส่งจาก IKIGAI OS PORTAL\nเวลา ${stamp} (UTC+7)\nผู้ทดสอบ: ${user.display_name}`
+      text: `ทดสอบการส่งจาก NOKHOOK OS PORTAL\nเวลา ${stamp} (UTC+7)\nผู้ทดสอบ: ${user.display_name}`
     }]
   });
 
@@ -108,7 +108,7 @@ function explainLineError(httpStatus: number, body: string | undefined): string 
     return "Channel access token ใช้งานไม่ได้ (401 Unauthorized) — ตรวจสอบว่าก็อปปี้ทั้งสตริงและไม่หมดอายุ";
   }
   if (httpStatus === 403) {
-    return "OA ยังไม่ได้เข้ากลุ่ม หรือไม่มีสิทธิ์ส่งข้อความเข้ากลุ่มนี้ (403) — เชิญ IKIGAI OS PORTAL เข้ากลุ่ม แล้วเปิด 'Allow group chats' ใน LINE OA Manager";
+    return "OA ยังไม่ได้เข้ากลุ่ม หรือไม่มีสิทธิ์ส่งข้อความเข้ากลุ่มนี้ (403) — เชิญ NOKHOOK OS PORTAL เข้ากลุ่ม แล้วเปิด 'Allow group chats' ใน LINE OA Manager";
   }
   if (httpStatus === 400) {
     if (text.toLowerCase().includes("invalid push target")) {

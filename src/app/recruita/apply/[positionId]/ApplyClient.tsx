@@ -237,7 +237,7 @@ function ApplyGate({
             </p>
             <a href={oaLink} target="_blank" rel="noopener noreferrer"
               className="btn-primary inline-block w-full py-3">
-              {tr("เพิ่มเพื่อน IKIGAI Recruit", "Add IKIGAI Recruit")}
+              {tr("เพิ่มเพื่อน NOKHOOK Recruit", "Add NOKHOOK Recruit")}
             </a>
             <p className="text-[11px] text-slate-400 leading-relaxed">
               {tr(
@@ -293,7 +293,7 @@ export default function ApplyClient({
   department: string | null;
   customQuestions: CustomQuestion[];
   liffId: string | null;
-  /** "Add IKIGAI Recruit OA as friend" deep link — shown on the apply gate
+  /** "Add NOKHOOK Recruit OA as friend" deep link — shown on the apply gate
    *  when the form is opened outside LINE (RC-4). */
   oaLink: string;
   /** Per-field config from the admin form template (hide/rename/require

@@ -167,12 +167,12 @@ export async function notifyMissingPunchOffence(args: {
   }
 }
 
-// Alert the HR / exec LINE group ("IKIGAI RECRUIT x HR") when a staff
+// Alert the HR / exec LINE group ("NOKHOOK RECRUIT x HR") when a staff
 // SUBMITS a time-certification request, so an admin actually goes and
 // approves it (owner 2026-06-10: certs were sitting unapproved because
 // nothing flagged them → the certified time never reached payroll).
 // Reuses system_settings.recruita_exec_group_id (the combined HR group)
-// + the IKIGAI OS platform OA. Fire-and-forget; silent no-op when the
+// + the NOKHOOK OS platform OA. Fire-and-forget; silent no-op when the
 // group / OA isn't configured.
 export async function notifyExecGroupTimeCertRequest(certId: number): Promise<void> {
   const groupId = getSystemSettings().recruita_exec_group_id?.trim();

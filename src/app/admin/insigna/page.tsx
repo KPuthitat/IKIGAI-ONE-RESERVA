@@ -23,7 +23,7 @@ import Sandbox from "./Sandbox";
 import { Icon, type IconName } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "INSIGNA · IKIGAI OS" };
+export const metadata: Metadata = { title: "INSIGNA · NOKHOOK OS" };
 
 function fmtNum(n: number): string {
   return n.toLocaleString("th-TH");

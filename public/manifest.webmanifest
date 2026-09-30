@@ -1,6 +1,6 @@
 {
-  "name": "IKIGAI OS",
-  "short_name": "IKIGAI",
+  "name": "NOKHOOK OS",
+  "short_name": "NOKHOOK",
   "description": "ระบบจัดการธุรกิจ",
   "start_url": "/",
   "display": "standalone",
@@ -8,13 +8,13 @@
   "theme_color": "#e94560",
   "icons": [
     {
-      "src": "/owl-mascot.png",
+      "src": "/app-icon.png",
       "sizes": "any",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/owl-mascot.png",
+      "src": "/app-icon.png",
       "sizes": "any",
       "type": "image/png",
       "purpose": "maskable"

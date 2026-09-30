@@ -43,18 +43,18 @@ export default function BookPage({ params }: { params: { branch: string } }) {
         <div className="bg-ink-gradient text-white py-6 px-6">
           <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
             {/* When the customer came via the branch's LINE OA we
-                strip the back-to-list link off the IKIGAI OS wordmark
+                strip the back-to-list link off the NOKHOOK OS wordmark
                 too — they should stay locked to the branch that owns
                 the LINE channel. Outside LINE the wordmark stays a
                 normal link back to /reserva. */}
             {lineLocked ? (
               <div className="brand-wordmark text-white text-xl">
-                IKIGAI OS <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
+                NOKHOOK OS <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
               </div>
             ) : (
               <Link href="/reserva" className="inline-block hover:opacity-80 transition-opacity">
                 <div className="brand-wordmark text-white text-xl">
-                  IKIGAI OS <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
+                  NOKHOOK OS <span className="text-white/60 font-normal text-sm tracking-normal">· RESERVA</span>
                 </div>
               </Link>
             )}

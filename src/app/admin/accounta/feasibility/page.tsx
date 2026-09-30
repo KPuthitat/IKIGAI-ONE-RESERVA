@@ -5,7 +5,7 @@ import { listProjects, listCompanies } from "@/lib/feasibility-db";
 import FeasibilityClient from "./FeasibilityClient";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "FEASIBILITY · IKIGAI OS" };
+export const metadata: Metadata = { title: "FEASIBILITY · NOKHOOK OS" };
 
 // FEASIBILITY — project investment feasibility, inside ACCOUNTA. Visible to
 // every admin granted accounta.manage; projects are SHARED (not per-creator)

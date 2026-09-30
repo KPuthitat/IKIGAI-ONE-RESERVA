@@ -342,7 +342,7 @@ function FlexCardPreview({
     <div className="w-full rounded-[18px] overflow-hidden bg-white shadow-lg ring-1 ring-black/5">
       {/* header */}
       <div className="px-5 py-4" style={{ backgroundColor: "#281a0e" }}>
-        <div className="text-[10px]" style={{ color: "#d6a14d" }}>IKIGAI OS · ส่วนแบ่งยอดขาย</div>
+        <div className="text-[10px]" style={{ color: "#d6a14d" }}>NOKHOOK OS · ส่วนแบ่งยอดขาย</div>
         <div className="text-lg font-bold text-white leading-tight mt-0.5">สรุปยอดขายประจำเดือน · {monthLabel}</div>
         <div className="text-[11px]" style={{ color: "#cbb89a" }}>{invoiceNo ? `ส่วนแบ่งยอดขาย · เลขที่ ${invoiceNo}` : "พร้อมส่วนแบ่งยอดขาย"}</div>
       </div>

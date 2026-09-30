@@ -9,7 +9,7 @@ import QuotaClient from "./QuotaClient";
 // /admin/persona/messaging/quota — live LINE OA quota dashboard.
 //
 // Owner ran into a silent-quota-exhaustion issue: the OA Manager
-// web UI lags reality by hours/days, so they thought IKIGAI OS had
+// web UI lags reality by hours/days, so they thought NOKHOOK OS had
 // 194/300 messages left when LINE's API actually reported 295 used.
 // Result: shift reports + discipline + roster pushes all started
 // failing without any visible warning. This dashboard makes the
@@ -22,7 +22,7 @@ import QuotaClient from "./QuotaClient";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "โควต้า LINE OA · IKIGAI ONE"
+  title: "โควต้า LINE OA · NOKHOOK OS"
 };
 
 type ChannelRow = {

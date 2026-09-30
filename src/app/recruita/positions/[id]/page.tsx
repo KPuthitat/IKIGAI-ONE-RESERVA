@@ -52,7 +52,7 @@ export async function generateMetadata(
   const row = db.prepare(
     "SELECT title FROM recruita_positions WHERE id = ? AND status = 'open'"
   ).get(Number(params.id)) as { title: string } | undefined;
-  return { title: row ? `${row.title} · IKIGAI Recruit` : "ตำแหน่ง · IKIGAI Recruit" };
+  return { title: row ? `${row.title} · NOKHOOK Recruit` : "ตำแหน่ง · NOKHOOK Recruit" };
 }
 
 export default function PublicPositionDetailPage(
