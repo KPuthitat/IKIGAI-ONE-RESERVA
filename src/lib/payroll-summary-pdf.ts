@@ -56,7 +56,7 @@ export function generatePayrollSummaryPdf(
       y = doc.y;
       if (note && note.trim()) { doc.font("th").fontSize(9).fillColor("#333").text(`หมายเหตุ: ${note.trim()}`, left, y + 1, { width: contentW }); y = doc.y; }
       doc.font("th").fontSize(7.5).fillColor("#999")
-        .text("คอลัมน์ที่มี (หัก) แสดงเป็นค่าติดลบสีแดง · เซอร์วิสชาร์จคำนวณระดับบริษัท · เอกสารภายในสำหรับสำนักงานบัญชี", left, y + 2);
+        .text("คอลัมน์ที่มี (หัก) แสดงเป็นค่าติดลบสีแดง · เซอร์วิสชาร์จคำนวณระดับบริษัท · เบี้ยประชุมจ่ายพร้อมรอบเซอร์วิสชาร์จ · เอกสารภายในสำหรับสำนักงานบัญชี", left, y + 2);
       y = doc.y + 8;
 
       // ── Round member table (ก่อนหัก → ประกันสังคม / ภาษี / อื่นๆ → สุทธิ) ──
@@ -106,12 +106,15 @@ export function generatePayrollSummaryPdf(
       };
 
       // ── Rollup table (final per-person) ─────────────────────────
-      const ruNum = 66;
-      const ruName = contentW - 9 * ruNum;
+      // 10 numeric columns (เบี้ยประชุม added 2026-10-01) — narrower cells so the
+      // name column keeps a readable width on the landscape page.
+      const ruNum = 60;
+      const ruName = contentW - 10 * ruNum;
       const ruCols = [
         { label: "ชื่อ", w: ruName, align: "left" as const },
         { label: "ค่าตอบแทน", w: ruNum, align: "right" as const },
         { label: "SVC", w: ruNum, align: "right" as const },
+        { label: "เบี้ยประชุม", w: ruNum, align: "right" as const },
         { label: "ก่อนหัก", w: ruNum, align: "right" as const },
         { label: "ปกส.(หัก)", w: ruNum, align: "right" as const },
         { label: "ภาษี(หัก)", w: ruNum, align: "right" as const },
@@ -126,13 +129,14 @@ export function generatePayrollSummaryPdf(
         cell(label, ruX(0), ruName, "left", { font: "th-b", color: INK, size: 8.5 });
         cell(baht(t.comp), ruX(1), ruNum, "right", { font: "th-b", size: 8.5 });
         cell(baht(t.svcGross), ruX(2), ruNum, "right", { font: "th-b", size: 8.5, color: VIOLET });
-        cell(baht(t.income), ruX(3), ruNum, "right", { font: "th-b", size: 8.5 });
-        cell(deduct(t.sso), ruX(4), ruNum, "right", { font: "th-b", size: 8.5, color: RED });
-        cell(deduct(t.tax), ruX(5), ruNum, "right", { font: "th-b", size: 8.5, color: RED });
-        cell(deduct(t.gi), ruX(6), ruNum, "right", { font: "th-b", size: 8.5, color: RED });
-        cell(deduct(t.other), ruX(7), ruNum, "right", { font: "th-b", size: 8.5, color: RED });
-        cell(deduct(t.deduction), ruX(8), ruNum, "right", { font: "th-b", size: 8.5, color: RED });
-        cell(baht(t.take), ruX(9), ruNum, "right", { font: "th-b", size: 8.5, color: GREEN });
+        cell(baht(t.mtgGross), ruX(3), ruNum, "right", { font: "th-b", size: 8.5, color: VIOLET });
+        cell(baht(t.income), ruX(4), ruNum, "right", { font: "th-b", size: 8.5 });
+        cell(deduct(t.sso), ruX(5), ruNum, "right", { font: "th-b", size: 8.5, color: RED });
+        cell(deduct(t.tax), ruX(6), ruNum, "right", { font: "th-b", size: 8.5, color: RED });
+        cell(deduct(t.gi), ruX(7), ruNum, "right", { font: "th-b", size: 8.5, color: RED });
+        cell(deduct(t.other), ruX(8), ruNum, "right", { font: "th-b", size: 8.5, color: RED });
+        cell(deduct(t.deduction), ruX(9), ruNum, "right", { font: "th-b", size: 8.5, color: RED });
+        cell(baht(t.take), ruX(10), ruNum, "right", { font: "th-b", size: 8.5, color: GREEN });
         y += 15;
       };
 
@@ -147,13 +151,14 @@ export function generatePayrollSummaryPdf(
         const top = y;
         cell(baht(r.comp), ruX(1), ruNum, "right", { size: 8.5 });
         cell(baht(r.svcGross), ruX(2), ruNum, "right", { size: 8.5, color: r.svcGross > 0 ? VIOLET : "#999" });
-        cell(baht(r.income), ruX(3), ruNum, "right", { size: 8.5, font: "th-b" });
-        cell(deduct(r.sso), ruX(4), ruNum, "right", { size: 8.5, color: r.sso > 0 ? RED : "#999" });
-        cell(deduct(r.tax), ruX(5), ruNum, "right", { size: 8.5, color: r.tax > 0 ? RED : "#999" });
-        cell(deduct(r.gi), ruX(6), ruNum, "right", { size: 8.5, color: r.gi > 0 ? RED : "#999" });
-        cell(deduct(r.other), ruX(7), ruNum, "right", { size: 8.5, color: r.other > 0 ? RED : "#999" });
-        cell(deduct(r.deduction), ruX(8), ruNum, "right", { size: 8.5, color: r.deduction > 0 ? RED : "#999" });
-        cell(baht(r.take), ruX(9), ruNum, "right", { size: 8.5, font: "th-b", color: r.take >= 0 ? GREEN : RED });
+        cell(baht(r.mtgGross), ruX(3), ruNum, "right", { size: 8.5, color: r.mtgGross > 0 ? VIOLET : "#999" });
+        cell(baht(r.income), ruX(4), ruNum, "right", { size: 8.5, font: "th-b" });
+        cell(deduct(r.sso), ruX(5), ruNum, "right", { size: 8.5, color: r.sso > 0 ? RED : "#999" });
+        cell(deduct(r.tax), ruX(6), ruNum, "right", { size: 8.5, color: r.tax > 0 ? RED : "#999" });
+        cell(deduct(r.gi), ruX(7), ruNum, "right", { size: 8.5, color: r.gi > 0 ? RED : "#999" });
+        cell(deduct(r.other), ruX(8), ruNum, "right", { size: 8.5, color: r.other > 0 ? RED : "#999" });
+        cell(deduct(r.deduction), ruX(9), ruNum, "right", { size: 8.5, color: r.deduction > 0 ? RED : "#999" });
+        cell(baht(r.take), ruX(10), ruNum, "right", { size: 8.5, font: "th-b", color: r.take >= 0 ? GREEN : RED });
         doc.font("th").fontSize(8.5).fillColor("#222").text(r.name, ruX(0) + 3, top, { width: ruName - 6 });
         doc.font("th").fontSize(7).fillColor("#999").text(sub, ruX(0) + 3, top + nameH + 1, { width: ruName - 6 });
         y = top + rowH;

@@ -20,7 +20,7 @@
 import type Database from "better-sqlite3";
 import { getDb } from "./db";
 import { nameWithPrefix } from "./name";
-import { computeMonthlySvcSummary, computeCompanySvcSummary } from "./service-charge";
+import { computeMonthlySvcSummary, computeCompanySvcSummary, meetingFeeByUserCompany } from "./service-charge";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -150,9 +150,10 @@ export type EmpDocRow = {
   homeBranch: string;
   comp: number;        // ค่าตอบแทน (payroll gross, all rounds this month)
   svcGross: number;    // เซอร์วิสชาร์จ (company-level gross to the person)
-  income: number;      // ยอดก่อนหัก = comp + svcGross
+  mtgGross: number;    // เบี้ยประชุม paid with the SVC round (owner 2026-10-01)
+  income: number;      // ยอดก่อนหัก = comp + svcGross + mtgGross
   sso: number;         // ประกันสังคม (หัก)
-  tax: number;         // ภาษี ณ ที่จ่าย incl. SVC WHT (หัก)
+  tax: number;         // ภาษี ณ ที่จ่าย incl. SVC + meeting-fee WHT (หัก)
   gi: number;          // ประกันกลุ่ม (หัก)
   other: number;       // หักอื่นๆ (เครื่องดื่ม/มื้ออาหาร ฯลฯ ในรอบจ่าย)
   deduction: number;   // รวมหัก
@@ -161,7 +162,7 @@ export type EmpDocRow = {
 };
 
 export type DocTotals = {
-  comp: number; svcGross: number; income: number;
+  comp: number; svcGross: number; mtgGross: number; income: number;
   sso: number; tax: number; gi: number; other: number; deduction: number; take: number;
 };
 
@@ -237,9 +238,10 @@ const cycleLabel = (cycle: string, target: string) =>
   cycle === "monthly" ? "รายเดือน (ประจำ)" : target === "pt" ? "รายวัน (พาร์ทไทม์)" : "รายสัปดาห์ (ประจำ)";
 
 const zeroTotals = (): DocTotals =>
-  ({ comp: 0, svcGross: 0, income: 0, sso: 0, tax: 0, gi: 0, other: 0, deduction: 0, take: 0 });
+  ({ comp: 0, svcGross: 0, mtgGross: 0, income: 0, sso: 0, tax: 0, gi: 0, other: 0, deduction: 0, take: 0 });
 function addRowToTotals(t: DocTotals, r: EmpDocRow) {
   t.comp = round2(t.comp + r.comp); t.svcGross = round2(t.svcGross + r.svcGross);
+  t.mtgGross = round2(t.mtgGross + r.mtgGross);
   t.income = round2(t.income + r.income); t.sso = round2(t.sso + r.sso);
   t.tax = round2(t.tax + r.tax); t.gi = round2(t.gi + r.gi);
   t.other = round2(t.other + r.other); t.deduction = round2(t.deduction + r.deduction);
@@ -252,7 +254,9 @@ type SvcRow = {
   taxMode: "sso" | "wht"; netAllocation: number; whtAmount: number;
   groupInsurance: number; netPayout: number;
 };
+// mtg* = เบี้ยประชุม paid with the same SVC round (merged in companySvcByUser).
 type SvcAgg = { gross: number; wht: number; gi: number; net: number;
+  mtgGross: number; mtgWht: number;
   displayName: string; employmentType: string | null; taxMode: "sso" | "wht" };
 
 function companyInfo(db: Database.Database, companyId: number | null) {
@@ -281,12 +285,23 @@ function companySvcByUser(
     }
   }
   const map = new Map<number, SvcAgg>();
+  const blank = (displayName: string, employmentType: string | null, taxMode: "sso" | "wht"): SvcAgg =>
+    ({ gross: 0, wht: 0, gi: 0, net: 0, mtgGross: 0, mtgWht: 0, displayName, employmentType, taxMode });
   for (const r of rows) {
     if (!r.netAllocation && !r.netPayout) continue;
-    const cur = map.get(r.userId)
-      ?? { gross: 0, wht: 0, gi: 0, net: 0, displayName: r.displayName, employmentType: r.employmentType, taxMode: r.taxMode };
+    const cur = map.get(r.userId) ?? blank(r.displayName, r.employmentType, r.taxMode);
     cur.gross += r.netAllocation; cur.wht += r.whtAmount; cur.gi += r.groupInsurance; cur.net += r.netPayout;
     map.set(r.userId, cur);
+  }
+  // เบี้ยประชุม rides the same SVC round (owner 2026-10-01) — the SAME shared
+  // helper the summary page reads, so the exported sheet ties out to the screen.
+  // Keyed by company (like the page): a meeting-fee-only person is added here so
+  // they still land on the ภ.ง.ด.1 / bank sheet with their 3%.
+  for (const m of meetingFeeByUserCompany(svcMonth).values()) {
+    if (m.companyId !== companyId) continue;
+    const cur = map.get(m.userId) ?? blank(m.displayName, m.employmentType, m.taxMode);
+    cur.mtgGross = round2(cur.mtgGross + m.mtgGross); cur.mtgWht = round2(cur.mtgWht + m.mtgWht);
+    map.set(m.userId, cur);
   }
   return map;
 }
@@ -327,9 +342,10 @@ function buildCompanyRows(
   ): EmpDocRow => {
     const svc = svcByUser.get(userId);
     const svcGross = round2(svc?.gross ?? 0);
-    const income = round2(comp + svcGross);
+    const mtgGross = round2(svc?.mtgGross ?? 0);
+    const income = round2(comp + svcGross + mtgGross);
     const sso = round2(ssoRaw);
-    const tax = round2(taxRaw + (svc?.wht ?? 0));
+    const tax = round2(taxRaw + (svc?.wht ?? 0) + (svc?.mtgWht ?? 0));
     const gi = round2(svc?.gi ?? 0);
     // payrollDed captures EVERYTHING withheld in the round (sso + tax + drink /
     // mealpass / other), from the stored net so it always reconciles. อื่นๆ =
@@ -341,7 +357,7 @@ function buildCompanyRows(
     return {
       userId, name, empTypeLabel: typeLabel(emp), taxModeLabel: taxLabel(taxMode),
       homeBranch: homeByUser.get(userId) ?? "—",
-      comp: round2(comp), svcGross, income, sso, tax, gi, other, deduction, take, periodCount
+      comp: round2(comp), svcGross, mtgGross, income, sso, tax, gi, other, deduction, take, periodCount
     };
   };
   for (const r of empRows) {
@@ -524,6 +540,7 @@ export const ROLLUP_COLUMNS: DocColumn[] = [
   { key: "empTypeLabel", header: "ประเภทจ้าง", kind: "text" },
   { key: "comp", header: "ค่าตอบแทน", kind: "money" },
   { key: "svcGross", header: "เซอร์วิสชาร์จ", kind: "money" },
+  { key: "mtgGross", header: "เบี้ยประชุม", kind: "money" },
   { key: "income", header: "ยอดก่อนหัก", kind: "money" },
   { key: "sso", header: "ประกันสังคม (หัก)", kind: "deduction" },
   { key: "tax", header: "ภาษี ณ ที่จ่าย (หัก)", kind: "deduction" },
@@ -590,11 +607,11 @@ export function renderPayrollSummaryCsv(
       if (bl.roundGroups.length === 0) { push("  (ไม่มีรอบจ่ายในเดือนนี้ — มีเฉพาะเซอร์วิสชาร์จ)"); lines.push(""); }
 
       // Final per-person rollup for this branch.
-      push("  สรุปรวมต่อคน (ทั้งเดือน · รวมเซอร์วิสชาร์จระดับบริษัท)");
+      push("  สรุปรวมต่อคน (ทั้งเดือน · รวมเซอร์วิสชาร์จระดับบริษัท + เบี้ยประชุม)");
       push(...ROLLUP_COLUMNS.map((col) => col.header));
       for (const r of bl.rollup) push(...ROLLUP_COLUMNS.map((col) => rollupCell(r, col)));
       const t = bl.totals;
-      push("รวมสาขา", "", t.comp.toFixed(2), t.svcGross.toFixed(2), t.income.toFixed(2),
+      push("รวมสาขา", "", t.comp.toFixed(2), t.svcGross.toFixed(2), t.mtgGross.toFixed(2), t.income.toFixed(2),
         t.sso > 0 ? (-t.sso).toFixed(2) : "0.00", t.tax > 0 ? (-t.tax).toFixed(2) : "0.00",
         t.gi > 0 ? (-t.gi).toFixed(2) : "0.00", t.other > 0 ? (-t.other).toFixed(2) : "0.00",
         t.deduction > 0 ? (-t.deduction).toFixed(2) : "0.00", t.take.toFixed(2), "");
@@ -602,7 +619,7 @@ export function renderPayrollSummaryCsv(
     }
 
     const ct = c.totals;
-    push(`รวมทั้งบริษัท ${c.name}`, "", ct.comp.toFixed(2), ct.svcGross.toFixed(2), ct.income.toFixed(2),
+    push(`รวมทั้งบริษัท ${c.name}`, "", ct.comp.toFixed(2), ct.svcGross.toFixed(2), ct.mtgGross.toFixed(2), ct.income.toFixed(2),
       ct.sso > 0 ? (-ct.sso).toFixed(2) : "0.00", ct.tax > 0 ? (-ct.tax).toFixed(2) : "0.00",
       ct.gi > 0 ? (-ct.gi).toFixed(2) : "0.00", ct.other > 0 ? (-ct.other).toFixed(2) : "0.00",
       ct.deduction > 0 ? (-ct.deduction).toFixed(2) : "0.00", ct.take.toFixed(2), "");
@@ -611,7 +628,7 @@ export function renderPayrollSummaryCsv(
 
   if (doc.companies.length > 1) {
     const g = doc.grand;
-    push("รวมทั้งหมด (ทุกบริษัท)", "", g.comp.toFixed(2), g.svcGross.toFixed(2), g.income.toFixed(2),
+    push("รวมทั้งหมด (ทุกบริษัท)", "", g.comp.toFixed(2), g.svcGross.toFixed(2), g.mtgGross.toFixed(2), g.income.toFixed(2),
       g.sso > 0 ? (-g.sso).toFixed(2) : "0.00", g.tax > 0 ? (-g.tax).toFixed(2) : "0.00",
       g.gi > 0 ? (-g.gi).toFixed(2) : "0.00", g.other > 0 ? (-g.other).toFixed(2) : "0.00",
       g.deduction > 0 ? (-g.deduction).toFixed(2) : "0.00", g.take.toFixed(2), "");

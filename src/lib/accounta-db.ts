@@ -12,6 +12,7 @@ import {
 import { owlAiCostBaht } from "./owl-ai-models";
 import { smeIncomeTax, type SmeIncomeTax } from "./income-tax";
 import { computeBranchSvcPayout, computePayoutDate } from "./service-charge";
+import { bkkDateIso } from "./time";
 import { allocateLaborCostByBranch } from "./payroll-branch-cost";
 
 export type VendorRow = {
@@ -633,8 +634,8 @@ export function removeSvcFromAccounta(batchId: number): void {
 export function postSvcToAccounta(batchId: number, userId: number): { staff: number; net: number; wht: number; groupInsurance: number } {
   const db = getDb();
   const batch = db.prepare(
-    "SELECT id, branch_id, year_month FROM svc_payout_batches WHERE id = ?"
-  ).get(batchId) as { id: number; branch_id: number; year_month: string } | undefined;
+    "SELECT id, branch_id, year_month, paid_at FROM svc_payout_batches WHERE id = ?"
+  ).get(batchId) as { id: number; branch_id: number; year_month: string; paid_at: string | null } | undefined;
   if (!batch) return { staff: 0, net: 0, wht: 0, groupInsurance: 0 };
   const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
     .get(batch.branch_id) as { company_id: number | null } | undefined)?.company_id ?? null;
@@ -649,7 +650,12 @@ export function postSvcToAccounta(batchId: number, userId: number): { staff: num
   ensureExpenseCategory("ภาษีหัก ณ ที่จ่าย", "WHT");
   ensureExpenseCategory("ประกันกลุ่มพนักงาน", "GINS");
 
-  const payDate = computePayoutDate(batch.year_month);
+  // Book on the day the money actually left (owner 2026-10-01: a round paid on
+  // 30 Sep must not be dated the 20th of October). paid_at is stamped on the
+  // "จ่ายแล้ว" step, which always precedes posting, and is UTC — convert to the
+  // Bangkok calendar day so a late-night payment doesn't land on the wrong date.
+  // The computed 20th is only the fallback for a batch posted before it is paid.
+  const payDate = bkkDateIso(batch.paid_at) || computePayoutDate(batch.year_month);
   const monthLabel = batch.year_month;
   // SVC payout (net + WHT) is a fixed labour cost for break-even
   // (owner 2026-07-21): is_fixed = 1 on every posted row.

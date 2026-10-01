@@ -7,7 +7,7 @@ import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
-import { computeMonthlySvcSummary, computeCompanySvcSummary } from "@/lib/service-charge";
+import { computeMonthlySvcSummary, computeCompanySvcSummary, meetingFeeByUserCompany } from "@/lib/service-charge";
 import { listExportScopes } from "@/lib/payroll-summary-doc";
 import ExportDialog from "./ExportDialog";
 
@@ -234,8 +234,12 @@ export default function PayrollMonthlySummaryPage({
   // manual gross overrides), so it ties out to the ใบหัก ณ ที่จ่าย exactly. We
   // keep name + type + tax mode alongside the money so a person who received ONLY
   // service charge (no payroll line) can still be listed.
+  // mtg* = เบี้ยประชุม paid with this SVC round (see the merge below).
   type SvcAgg = { gross: number; wht: number; gi: number; net: number;
+    mtgGross: number; mtgWht: number; mtgNet: number;
     displayName: string; employmentType: string | null; taxMode: "sso" | "wht" };
+  const blankSvc = (displayName: string, employmentType: string | null, taxMode: "sso" | "wht"): SvcAgg =>
+    ({ gross: 0, wht: 0, gi: 0, net: 0, mtgGross: 0, mtgWht: 0, mtgNet: 0, displayName, employmentType, taxMode });
   const svcByUserCompany = new Map<string, SvcAgg>();
   const addSvc = (companyKey: number | null, row: {
     userId: number; displayName: string; employmentType: string | null; taxMode: "sso" | "wht";
@@ -243,8 +247,7 @@ export default function PayrollMonthlySummaryPage({
   }) => {
     if (!row.netAllocation && !row.netPayout) return;
     const k = `${row.userId}|${String(companyKey)}`;
-    const cur = svcByUserCompany.get(k)
-      ?? { gross: 0, wht: 0, gi: 0, net: 0, displayName: row.displayName, employmentType: row.employmentType, taxMode: row.taxMode };
+    const cur = svcByUserCompany.get(k) ?? blankSvc(row.displayName, row.employmentType, row.taxMode);
     cur.gross += row.netAllocation;
     cur.wht += row.whtAmount;
     cur.gi += row.groupInsurance;
@@ -263,9 +266,20 @@ export default function PayrollMonthlySummaryPage({
     try { for (const row of computeMonthlySvcSummary(cb.branch_id, svcMonth).rows) addSvc(cb.company_id, row); }
     catch { /* no svc for this branch */ }
   }
+  // เบี้ยประชุม (owner 2026-10-01) — paid WITH the service-charge round, so it lands
+  // in the same pocket month as SVC. Sourced from the shared helper the export
+  // document also reads, so this page and the ภ.ง.ด.1 / bank sheet can never
+  // disagree. It covers every branch that has a fee (per-meeting override or home
+  // branch), even one with no SVC/payroll activity; a meeting-fee-only person gets
+  // a row via the synth loop below, filed under their real employment type.
+  for (const m of meetingFeeByUserCompany(svcMonth).values()) {
+    const k = `${m.userId}|${String(m.companyId)}`;
+    const cur = svcByUserCompany.get(k) ?? blankSvc(m.displayName, m.employmentType, m.taxMode);
+    cur.mtgGross += m.mtgGross; cur.mtgWht += m.mtgWht; cur.mtgNet += m.mtgNet;
+    svcByUserCompany.set(k, cur);
+  }
   const svcFor = (userId: number, companyKey: number | null): SvcAgg =>
-    svcByUserCompany.get(`${userId}|${String(companyKey)}`)
-    ?? { gross: 0, wht: 0, gi: 0, net: 0, displayName: "", employmentType: null, taxMode: "sso" };
+    svcByUserCompany.get(`${userId}|${String(companyKey)}`) ?? blankSvc("", null, "sso");
 
   // Person rows per company = payroll people ∪ SVC-only people. A person who got
   // ONLY service charge (no payroll round this month) is synthesised with zero
@@ -297,8 +311,9 @@ export default function PayrollMonthlySummaryPage({
     list.sort((a, b) => rank(a.employment_type) - rank(b.employment_type) || a.display_name.localeCompare(b.display_name, "th"));
   }
   const grandSvc = [...svcByUserCompany.values()].reduce(
-    (a, s) => ({ gross: a.gross + s.gross, wht: a.wht + s.wht, gi: a.gi + s.gi, net: a.net + s.net }),
-    { gross: 0, wht: 0, gi: 0, net: 0 }
+    (a, s) => ({ gross: a.gross + s.gross, wht: a.wht + s.wht, gi: a.gi + s.gi, net: a.net + s.net,
+                 mtgGross: a.mtgGross + s.mtgGross, mtgWht: a.mtgWht + s.mtgWht, mtgNet: a.mtgNet + s.mtgNet }),
+    { gross: 0, wht: 0, gi: 0, net: 0, mtgGross: 0, mtgWht: 0, mtgNet: 0 }
   );
 
   // Aggregate totals
@@ -323,17 +338,18 @@ export default function PayrollMonthlySummaryPage({
   const money = (v: number, cls = "") =>
     v ? <span className={cls}>{fmtMoney(v)}</span> : <span className="text-slate-300">—</span>;
   // Per-row figures in the owner's statement order (2026-08-02): ค่าตอบแทน (สะสม
-  // ทุกรอบจ่ายในเดือน) → SVC → รวมรายรับ → หัก (ปกส./ภาษี/ประกันกลุ่ม) → รวมรับจริง.
-  // SVC WHT folds into the tax column; take = income − all deductions.
+  // ทุกรอบจ่ายในเดือน) → SVC → เบี้ยประชุม → รวมรายรับ → หัก (ปกส./ภาษี/ประกันกลุ่ม) →
+  // รวมรับจริง. SVC + meeting-fee WHT fold into the tax column; take = income − all
+  // deductions.
   const figuresFor = (r: EmpCompanyRow, companyKey: number | null) => {
     const comp = r.total_gross ?? 0;
     const svc = svcFor(r.user_id, companyKey);
-    const income = comp + svc.gross;
+    const income = comp + svc.gross + svc.mtgGross;
     const sso = r.total_sso ?? 0;
-    const tax = (r.total_tax ?? 0) + svc.wht;
+    const tax = (r.total_tax ?? 0) + svc.wht + svc.mtgWht;
     const gi = svc.gi;
     const ded = sso + tax + gi;
-    return { comp, svcGross: svc.gross, income, sso, tax, gi, ded, take: income - ded };
+    return { comp, svcGross: svc.gross, mtgGross: svc.mtgGross, income, sso, tax, gi, ded, take: income - ded };
   };
   // One table per (employment type × tax mode). Read-only overview — every figure
   // is the month's accumulation across pay rounds, sourced from the per-branch
@@ -346,11 +362,11 @@ export default function PayrollMonthlySummaryPage({
       (a, r) => {
         const f = figuresFor(r, companyKey);
         return {
-          comp: a.comp + f.comp, svcGross: a.svcGross + f.svcGross, income: a.income + f.income,
+          comp: a.comp + f.comp, svcGross: a.svcGross + f.svcGross, mtgGross: a.mtgGross + f.mtgGross, income: a.income + f.income,
           sso: a.sso + f.sso, tax: a.tax + f.tax, gi: a.gi + f.gi, ded: a.ded + f.ded, take: a.take + f.take
         };
       },
-      { comp: 0, svcGross: 0, income: 0, sso: 0, tax: 0, gi: 0, ded: 0, take: 0 }
+      { comp: 0, svcGross: 0, mtgGross: 0, income: 0, sso: 0, tax: 0, gi: 0, ded: 0, take: 0 }
     );
     return (
       <div className="card overflow-x-auto">
@@ -365,6 +381,7 @@ export default function PayrollMonthlySummaryPage({
               <th className="py-2 pr-3">สังกัด</th>
               <th className="py-2 pr-3 text-right whitespace-nowrap">ค่าตอบแทน</th>
               <th className="py-2 pr-3 text-right whitespace-nowrap">เซอร์วิสชาร์จ</th>
+              <th className="py-2 pr-3 text-right whitespace-nowrap">เบี้ยประชุม</th>
               <th className="py-2 pr-3 text-right whitespace-nowrap">รวมรายรับ</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.sso")}</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.tax")}</th>
@@ -389,6 +406,7 @@ export default function PayrollMonthlySummaryPage({
                   <td className="py-2 pr-3 text-xs text-slate-500 whitespace-nowrap">{homeByUser.get(r.user_id) ?? "—"}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{money(f.comp)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-violet-700">{money(f.svcGross)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-fuchsia-700">{money(f.mtgGross)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums font-medium text-slate-800">{money(f.income)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-sky-700">{money(f.sso)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-amber-700">{money(f.tax)}</td>
@@ -405,6 +423,7 @@ export default function PayrollMonthlySummaryPage({
               </td>
               <td className="py-2 pr-3 text-right tabular-nums">{fmtMoney(sub.comp)}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-violet-700">{fmtMoney(sub.svcGross)}</td>
+              <td className="py-2 pr-3 text-right tabular-nums text-fuchsia-700">{fmtMoney(sub.mtgGross)}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-slate-800">{fmtMoney(sub.income)}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-sky-700">{fmtMoney(sub.sso)}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-amber-700">{fmtMoney(sub.tax)}</td>
@@ -472,11 +491,11 @@ export default function PayrollMonthlySummaryPage({
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="card">
               <div className="text-xs text-slate-500">
-                รวมรายรับ (ค่าตอบแทน + เซอร์วิสชาร์จ)
+                รวมรายรับ (ค่าตอบแทน + เซอร์วิสชาร์จ + เบี้ยประชุม)
               </div>
-              <div className="text-2xl font-bold mt-1 text-slate-800">{fmtMoney(totals.gross + grandSvc.gross)}</div>
+              <div className="text-2xl font-bold mt-1 text-slate-800">{fmtMoney(totals.gross + grandSvc.gross + grandSvc.mtgGross)}</div>
               <div className="text-xs text-slate-500 mt-1">
-                ค่าตอบแทน {fmtMoney(totals.gross)}{grandSvc.gross > 0 ? ` + SVC ${fmtMoney(grandSvc.gross)}` : ""}
+                ค่าตอบแทน {fmtMoney(totals.gross)}{grandSvc.gross > 0 ? ` + SVC ${fmtMoney(grandSvc.gross)}` : ""}{grandSvc.mtgGross > 0 ? ` + เบี้ยประชุม ${fmtMoney(grandSvc.mtgGross)}` : ""}
               </div>
             </div>
             <div className="card">
@@ -492,7 +511,7 @@ export default function PayrollMonthlySummaryPage({
               <div className="text-xs text-slate-500">
                 {t(lang, "admin.persona.payroll.col.tax")}
               </div>
-              <div className="text-2xl font-bold mt-1 text-amber-700">{fmtMoney(totals.tax + grandSvc.wht)}</div>
+              <div className="text-2xl font-bold mt-1 text-amber-700">{fmtMoney(totals.tax + grandSvc.wht + grandSvc.mtgWht)}</div>
               <div className="text-xs text-slate-500 mt-1">
                 {totals.whtEmployees} {t(lang, "admin.persona.payroll.summary.whtEmpLabel")}
                 {grandSvc.gi > 0 ? ` · ประกันกลุ่ม ${fmtMoney(grandSvc.gi)}` : ""}
@@ -502,9 +521,9 @@ export default function PayrollMonthlySummaryPage({
               <div className="text-xs text-slate-500">
                 รวมรับจริง (โอนเข้าบัญชี)
               </div>
-              <div className="text-2xl font-bold mt-1 text-emerald-700">{fmtMoney(totals.net + grandSvc.net)}</div>
+              <div className="text-2xl font-bold mt-1 text-emerald-700">{fmtMoney(totals.net + grandSvc.net + grandSvc.mtgNet)}</div>
               <div className="text-xs text-slate-500 mt-1">
-                เงินเดือนสุทธิ {fmtMoney(totals.net)}{grandSvc.net > 0 ? ` + SVC ${fmtMoney(grandSvc.net)}` : ""}
+                เงินเดือนสุทธิ {fmtMoney(totals.net)}{grandSvc.net > 0 ? ` + SVC ${fmtMoney(grandSvc.net)}` : ""}{grandSvc.mtgNet > 0 ? ` + เบี้ยประชุม ${fmtMoney(grandSvc.mtgNet)}` : ""}
               </div>
             </div>
           </div>
@@ -513,7 +532,7 @@ export default function PayrollMonthlySummaryPage({
               per ประเภทพนักงาน × โหมดภาษี (owner 2026-09-03). Every figure is the
               month's accumulation across pay rounds. */}
           <p className="text-xs text-slate-400">
-            แยกตามบริษัท (บัญชีแยกกัน) → แยกพนักงานประจำ/พาร์ทไทม์ → แยกประกันสังคม/หัก ณ ที่จ่าย · ทุกยอดคือ<b>ยอดสะสมทั้งเดือน</b>จากทุกรอบจ่าย (ดูอย่างเดียว แก้ที่หน้าค่าตอบแทนรายสาขา) · ค่าตอบแทน + เซอร์วิสชาร์จ = รวมรายรับ → หัก ปกส./ภาษี/ประกันกลุ่ม → รวมรับจริง · เซอร์วิสชาร์จเป็นของเดือน{monthLabel(svcMonth, lang)}
+            แยกตามบริษัท (บัญชีแยกกัน) → แยกพนักงานประจำ/พาร์ทไทม์ → แยกประกันสังคม/หัก ณ ที่จ่าย · ทุกยอดคือ<b>ยอดสะสมทั้งเดือน</b>จากทุกรอบจ่าย (ดูอย่างเดียว แก้ที่หน้าค่าตอบแทนรายสาขา) · ค่าตอบแทน + เซอร์วิสชาร์จ + เบี้ยประชุม = รวมรายรับ → หัก ปกส./ภาษี/ประกันกลุ่ม → รวมรับจริง · เซอร์วิสชาร์จและเบี้ยประชุมเป็นของเดือน{monthLabel(svcMonth, lang)} (จ่ายพร้อมกันในรอบเซอร์วิสชาร์จ)
           </p>
           {/* One section per company — the books are separate, so NAMA+HYPO and
               AT HOME never share a table (owner 2026-08-01). */}
@@ -537,8 +556,8 @@ export default function PayrollMonthlySummaryPage({
             const cAgg = crows.reduce((s, r) => {
               const sv = svcFor(r.user_id, g.key);
               return {
-                income: s.income + (r.total_gross ?? 0) + sv.gross,
-                wht: s.wht + (r.total_tax ?? 0) + sv.wht,
+                income: s.income + (r.total_gross ?? 0) + sv.gross + sv.mtgGross,
+                wht: s.wht + (r.total_tax ?? 0) + sv.wht + sv.mtgWht,
                 sso: s.sso + (r.total_sso ?? 0),
                 gi: s.gi + sv.gi
               };

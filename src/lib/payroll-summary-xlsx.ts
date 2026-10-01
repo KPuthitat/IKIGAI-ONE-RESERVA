@@ -18,7 +18,8 @@ function rollupVal(r: EmpDocRow, col: DocColumn): Cell {
   return n;
 }
 function totalsRow(label: string, t: DocTotals): Cell[] {
-  return [label, "", t.comp, t.svcGross, t.income,
+  // Column order MUST mirror ROLLUP_COLUMNS (name, type, comp, svc, mtg, income, …).
+  return [label, "", t.comp, t.svcGross, t.mtgGross, t.income,
     t.sso > 0 ? -t.sso : 0, t.tax > 0 ? -t.tax : 0, t.gi > 0 ? -t.gi : 0,
     t.other > 0 ? -t.other : 0, t.deduction > 0 ? -t.deduction : 0, t.take, ""];
 }
@@ -63,13 +64,13 @@ export function renderPayrollSummaryXlsx(
       if (bl.roundGroups.length === 0) { aoa.push(["(ไม่มีรอบจ่ายในเดือนนี้ — มีเฉพาะเซอร์วิสชาร์จ)"]); aoa.push([]); }
 
       // Final per-person rollup.
-      aoa.push(["สรุปรวมต่อคน (ทั้งเดือน · รวมเซอร์วิสชาร์จระดับบริษัท)"]);
+      aoa.push(["สรุปรวมต่อคน (ทั้งเดือน · รวมเซอร์วิสชาร์จระดับบริษัท + เบี้ยประชุม)"]);
       aoa.push(rollupHeader);
       for (const r of bl.rollup) aoa.push(ROLLUP_COLUMNS.map((col) => rollupVal(r, col)));
       aoa.push(totalsRow("รวมสาขา", bl.totals));
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws["!cols"] = [{ wch: 24 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+      ws["!cols"] = [{ wch: 24 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
         { wch: 13 }, { wch: 15 }, { wch: 13 }, { wch: 11 }, { wch: 11 }, { wch: 12 }, { wch: 6 }];
       XLSX.utils.book_append_sheet(wb, ws, sheetName(bl.branchName, used));
     }
@@ -81,7 +82,7 @@ export function renderPayrollSummaryXlsx(
   for (const c of doc.companies) sum.push([`บริษัท ${c.name}`, ...totalsRow("", c.totals).slice(2)]);
   if (doc.companies.length > 1) sum.push([`รวมทั้งหมด`, ...totalsRow("", doc.grand).slice(2)]);
   const ws = XLSX.utils.aoa_to_sheet(sum);
-  ws["!cols"] = [{ wch: 26 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 15 }, { wch: 13 }, { wch: 11 }, { wch: 11 }, { wch: 12 }, { wch: 6 }];
+  ws["!cols"] = [{ wch: 26 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 15 }, { wch: 13 }, { wch: 11 }, { wch: 11 }, { wch: 12 }, { wch: 6 }];
   XLSX.utils.book_append_sheet(wb, ws, sheetName("สรุปยอดรวม", used));
 
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
