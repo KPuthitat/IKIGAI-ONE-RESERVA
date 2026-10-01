@@ -926,6 +926,94 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     return z.headcount === 0 && z.laborCost === 0 && z.colPct === null;
   })());
 
+  // ── 23) Best / worst days + what to do (owner 2026-10-01) ──
+  // November 2026: weekdays ~1000, weekends ~2000, one weekday spike (Wed 11th =
+  // 3000, bills-driven) and one weekday slump (Thu 19th = 400, ticket-driven), a
+  // public holiday on Mon 23rd (2200 — must read against the WEEKEND baseline).
+  const bidX = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('xtr','EXTREMES')").run().lastInsertRowid);
+  const xput = (d: string, nett: number, bills: number, types: Array<{ name: string; qty: number; sales: number }> = []) =>
+    sdb.upsertDaily(bidX, uid, { date: d, dateEnd: d, merchant: "XTR", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: bills, pax: bills * 2, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / bills, avgPax: 2, avgSalesPax: nett / bills / 2, payments: [], types, sources: [] });
+  const dine = (sales: number) => [{ name: "DINE IN", qty: 10, sales: sales * 0.8 }, { name: "DELIVERY", qty: 5, sales: sales * 0.2 }];
+  // Weekdays 2–6, 9–10, 12–13, 16–18, 20 Nov = 1000 / 20 bills; weekends 7–8, 14–15, 21–22 = 2000 / 40 bills.
+  for (const d of ["02", "03", "04", "05", "06", "09", "10", "12", "13", "16", "17", "18", "20"]) xput(`2026-11-${d}`, 1000, 20, dine(1000));
+  for (const d of ["07", "08", "14", "15", "21", "22"]) xput(`2026-11-${d}`, 2000, 40, dine(2000));
+  xput("2026-11-11", 3000, 60, [{ name: "DINE IN", qty: 20, sales: 1200 }, { name: "DELIVERY", qty: 40, sales: 1800 }]);   // spike: bills ×3, delivery 60% (usual 20%)
+  xput("2026-11-19", 400, 20, dine(400));                                                                                   // slump: same bills, ticket ÷2.5
+  db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-11-23", "วันทดสอบจันทร์หยุด", "TestMonHoliday");
+  xput("2026-11-23", 2200, 44, dine(2200));
+  const xr = analytics.dayExtremes(bidX, 2026, 11);
+  ok("extremes: 3 per side from 22 sales days", xr.n === 3 && xr.days === 22 && xr.best.length === 3 && xr.worst.length === 3);
+  ok("extremes: best #1 = 11 Nov (3000), worst #1 = 19 Nov (400)", xr.best[0].date === "2026-11-11" && xr.worst[0].date === "2026-11-19");
+  // Weekday peers = 13 × 1000 + the 400 slump → 957.14; the spike is +213%.
+  ok("extremes: spike baseline = weekday peers avg ฿957.14 → +213.43%", xr.best[0].baselineNett === 957.14 && xr.best[0].vsBaselinePct === 213.43);
+  ok("extremes: spike drivers structured (bills + DELIVERY, no ticket)", xr.best[0].drivers.bills && !xr.best[0].drivers.ticket && xr.best[0].drivers.channel === "DELIVERY");
+  ok("extremes: spike explained by bills (+200%) and the DELIVERY channel share", xr.best[0].reasons.some((r) => r.startsWith("ลูกค้ามากกว่าปกติ +200%")) && xr.best[0].reasons.some((r) => r.includes("ช่องทาง DELIVERY มากกว่าปกติ")));
+  ok("extremes: slump explained by ticket (−60%), not bills", xr.worst[0].reasons.some((r) => r.startsWith("ยอดต่อบิลต่ำกว่าปกติ -60%")) && !xr.worst[0].reasons.some((r) => r.startsWith("ลูกค้าน้อยกว่าปกติ")));
+  const hol = xr.best.find((d) => d.date === "2026-11-23");
+  ok("extremes: holiday Monday is weekend-like and compares against the WEEKEND baseline ฿2000 (+10%)", !!hol && hol.weekendLike && hol.holiday === "วันทดสอบจันทร์หยุด" && hol.baselineNett === 2000 && hol.vsBaselinePct === 10);
+  ok("extremes: holiday reason line present", !!hol && hol.reasons.some((r) => r === "วันหยุด: วันทดสอบจันทร์หยุด"));
+  ok("extremes: actions on both sides, worst side points at the push plan", xr.bestActions.length >= 2 && xr.worstActions.length >= 2 && xr.worstActions.some((a) => a.includes("แผนผลักดันยอดขาย")));
+  ok("extremes: best actions mention the channel + bills drivers", xr.bestActions.some((a) => a.includes("ช่องทาง DELIVERY")) && xr.bestActions.some((a) => a.includes("จำนวนลูกค้า")));
+  ok("extremes: one sales day → no ranking (n=0)", (() => {
+    const b1 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('xtr1','EXTREMES1')").run().lastInsertRowid);
+    sdb.upsertDaily(b1, uid, { date: "2026-11-02", dateEnd: "2026-11-02", merchant: "X1", nett: 500, gross: 500, grossBeforeCharges: 500, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 5, pax: 5, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: 100, avgPax: 1, avgSalesPax: 100, payments: [], types: [], sources: [] });
+    const r1 = analytics.dayExtremes(b1, 2026, 11);
+    return r1.n === 0 && r1.best.length === 0 && r1.bestActions.length === 0;
+  })());
+  ok("extremes: 4 sales days → 2 per side", (() => {
+    const b4 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('xtr4','EXTREMES4')").run().lastInsertRowid);
+    for (const [d, n] of [["02", 100], ["03", 200], ["04", 300], ["05", 400]] as Array<[string, number]>) {
+      sdb.upsertDaily(b4, uid, { date: `2026-11-${d}`, dateEnd: `2026-11-${d}`, merchant: "X4", nett: n, gross: n, grossBeforeCharges: n, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: 5, pax: 5, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: n / 5, avgPax: 1, avgSalesPax: n / 5, payments: [], types: [], sources: [] });
+    }
+    const r4 = analytics.dayExtremes(b4, 2026, 11);
+    return r4.n === 2 && r4.best[0].date === "2026-11-05" && r4.worst[0].date === "2026-11-02" && r4.worst[1].date === "2026-11-03";
+  })());
+
+  // ── 24) Peak hours: weekday vs weekend, averaged per day (owner 2026-10-01) ──
+  // Receipts: Tue 3 Nov + Wed 4 Nov (weekdays) peak at 12:00; Sat 7 Nov peaks at
+  // 19:00; the holiday Mon 23 Nov (receipts at 19:00) must land on the weekend side.
+  const rcpt = (d: string, bills: Array<[string, string, string]>) => {
+    const pr = parse.parseSalesFile(receiptBuf(d, "XTR", bills.map(([time, no, nett]) => ({ time: `${d} ${time}`, no, table: "T1", gross: nett, discount: "0", nett, payment: "Cash", items: "1x A" }))));
+    if (pr.kind === "receipt") sdb.upsertReceipts(bidX, uid, pr.receipt);
+  };
+  rcpt("03/11/2026", [["12:10:00", "1", "500"], ["12:30:00", "2", "500"], ["19:00:00", "3", "200"]]);
+  rcpt("04/11/2026", [["12:05:00", "4", "500"], ["12:45:00", "5", "500"], ["13:00:00", "6", "100"], ["19:10:00", "7", "200"]]);
+  rcpt("07/11/2026", [["12:00:00", "8", "300"], ["19:00:00", "9", "900"], ["19:30:00", "10", "900"], ["20:00:00", "11", "300"]]);
+  rcpt("23/11/2026", [["19:00:00", "12", "1000"], ["19:20:00", "13", "1000"]]);
+  const ht = analytics.hourlyByDayType(bidX, 2026, 11);
+  ok("daytype: hasData, 2 weekday days + 2 weekend-like days (Sat + holiday Mon)", ht.hasData && ht.weekday.days === 2 && ht.weekend.days === 2 && ht.holidayDays === 1);
+  ok("daytype: weekday peak 12:00 with 2.0 bills/day avg (4 bills ÷ 2 days)", ht.weekday.peakHour === 12 && ht.weekday.hourly.find((h) => h.hour === 12)?.avgBills === 2 && ht.weekday.hourly.find((h) => h.hour === 12)?.avgNett === 1000);
+  ok("daytype: weekend peak 19:00 (avg nett 1900 = (1800+2000)/2)", ht.weekend.peakHour === 19 && ht.weekend.hourly.find((h) => h.hour === 19)?.avgNett === 1900);
+  ok("daytype: weekday avg bills/day 3.5, weekend 3", ht.weekday.avgBillsPerDay === 3.5 && ht.weekend.avgBillsPerDay === 3);
+  ok("daytype: insight names both peaks and says they differ", ht.insight.some((l) => l.startsWith("วันธรรมดาพีค 12:00")) && ht.insight.some((l) => l.startsWith("วันหยุดพีค 19:00")) && ht.insight.some((l) => l.includes("พีคคนละเวลา")));
+  // Weekday: 12:00 peak (1000), 13:00 = 50, 14–18 no receipts, 19:00 = 200 (< 25% of 1000) → quiet 13:00–20:00 and nothing busier follows → not a slot.
+  ok("daytype: weekday quiet tail after the peak is closing time, not a Happy Hour slot", !ht.insight.some((l) => l.startsWith("วันธรรมดาช่วง")));
+  ok("daytype: a quiet stretch that picks up again IS flagged (contiguous, missing hours count as quiet)", (() => {
+    const bq = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('hq','HAPPYQ')").run().lastInsertRowid);
+    const prq = parse.parseSalesFile(receiptBuf("03/11/2026", "HQ", [
+      { time: "03/11/2026 12:00:00", no: "1", table: "T", gross: "1000", discount: "0", nett: "1000", payment: "Cash", items: "1x A" },
+      { time: "03/11/2026 13:00:00", no: "2", table: "T", gross: "100", discount: "0", nett: "100", payment: "Cash", items: "1x A" },
+      { time: "03/11/2026 15:00:00", no: "3", table: "T", gross: "100", discount: "0", nett: "100", payment: "Cash", items: "1x A" },
+      { time: "03/11/2026 18:00:00", no: "4", table: "T", gross: "800", discount: "0", nett: "800", payment: "Cash", items: "1x A" },
+      { time: "03/11/2026 19:00:00", no: "5", table: "T", gross: "100", discount: "0", nett: "100", payment: "Cash", items: "1x A" }
+    ]));
+    if (prq.kind === "receipt") sdb.upsertReceipts(bq, uid, prq.receipt);
+    const hq = analytics.hourlyByDayType(bq, 2026, 11);
+    return hq.insight.some((l) => l === "วันธรรมดาช่วง 13:00–18:00 เงียบ → จัด Happy Hour หรือเมนูช่วงบ่ายกระตุ้น");
+  })());
+  ok("extremes: a lone same-direction secondary driver is kept when the bigger mover points the other way", (() => {
+    // Three weekdays at 1000/20 bills; the 4th has MORE bills (+50%) but a much
+    // lower ticket (−60%) → nett 600 = worst day, driven by ticket, not bills.
+    const bl = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('lead','LEAD')").run().lastInsertRowid);
+    const put = (d: string, nett: number, bills: number) => sdb.upsertDaily(bl, uid, { date: d, dateEnd: d, merchant: "L", nett, gross: nett, grossBeforeCharges: nett, discount: 0, serviceCharge: 0, vat: 0, rounding: 0, deliveryFee: 0, otherCharge: 0, billCount: bills, pax: bills, voidAmount: 0, voidBillCount: 0, refund: 0, avgSales: nett / bills, avgPax: 1, avgSalesPax: nett / bills, payments: [], types: [], sources: [] });
+    put("2026-11-02", 1000, 20); put("2026-11-03", 1000, 20); put("2026-11-04", 1000, 20); put("2026-11-05", 600, 30);
+    const r = analytics.dayExtremes(bl, 2026, 11);
+    return r.worst[0].date === "2026-11-05" && r.worst[0].drivers.ticket && !r.worst[0].drivers.bills && r.worst[0].reasons.some((x) => x.startsWith("ยอดต่อบิลต่ำกว่าปกติ")) && r.worst[0].reasons.some((x) => x.startsWith("จำนวนบิลก็เพิ่ม"));
+  })());
+  ok("daytype: branch without receipts → hasData false", !analytics.hourlyByDayType(bid, 2026, 11).hasData);
+  const xb = analytics.insightBundle(bidX, analytics.insightRangeFor("month", 2026, 11, "2026-11-30"));
+  ok("insightBundle carries extremes + hourlyDayType", xb.extremes.n === 3 && xb.hourlyDayType.hasData);
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

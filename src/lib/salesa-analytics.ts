@@ -4,7 +4,7 @@
 
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
 import type { MenuEntry } from "./salesa-parse";
-import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTarget, branchIdsWithTarget, branchOpensOn, type DailyRow } from "./salesa-db";
+import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, hourlyReceiptsByDay, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTarget, branchIdsWithTarget, branchOpensOn, type DailyRow } from "./salesa-db";
 import { clinicaRangeAgg, clinicaMaxBillDayInMonth, clinicaBranchesWithBillsInYear, clinicaMonthlyNet, clinicaDailyNet, clinicaYtdProjection, isClinicaBranch, clinicaDailyNetRange } from "./clinica-db";
 import { getDb } from "./db";
 import { eventNotesForDay, eventNotesForRange, type EventNoteDay } from "./event-notes";
@@ -1352,6 +1352,316 @@ export function receiptInsights(branchId: number, year: number, month: number, t
   return rangeReceiptInsights(branchId, s, e, topN);
 }
 
+
+// ── Best / worst days (owner 2026-10-01: "เราทำอะไรกับวันที่ขายดีที่สุด กับขายแย่สุด
+// ได้บ้าง") ─────────────────────────────────────────────────────────────────────
+// Rank the range's sales days, explain WHY each extreme day landed where it did
+// (same-day-type baseline, bills vs ticket, channel, menu, discount, peak hour,
+// holiday, team notes), then turn the pattern into actions: repeat the good days,
+// fix the bad ones. Public holidays count as weekend days for the baseline
+// (owner 2026-10-01) — customers behave like a weekend on them.
+
+export type ExtremeDay = {
+  date: string; dateLabel: string; weekdayTh: string;
+  weekendLike: boolean;             // Sat/Sun or public holiday
+  holiday: string | null;
+  payday: boolean;                  // 15th/16th or 25th→end
+  nett: number; bills: number; avgTicket: number | null;
+  baselineNett: number | null;      // avg nett of same-type peers in the range (excl. this day)
+  vsBaselinePct: number | null;
+  billsVsBasePct: number | null;
+  ticketVsBasePct: number | null;
+  discountPct: number | null;
+  peakHour: number | null;
+  reasons: string[];                // the "why" lines, most telling first
+  notes: string[];                  // team event notes that day
+  drivers: ExtremeDrivers;          // the same findings, structured (feeds the actions)
+};
+export type ExtremeDrivers = {
+  bills: boolean;                   // traffic moved the day
+  ticket: boolean;                  // spend per bill moved the day
+  channel: string | null;           // order type that over-indexed (best) / collapsed (worst)
+  menu: string | null;              // dish that over-indexed (best) / core dish that under-sold (worst)
+  discount: boolean;                // discount well above the range's usual level
+};
+export type DayExtremes = {
+  days: number;                     // sales days in the range
+  n: number;                        // how many per side
+  best: ExtremeDay[];
+  worst: ExtremeDay[];
+  bestActions: string[];            // ทำซ้ำวันดี
+  worstActions: string[];           // แก้วันแย่
+};
+
+const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
+const isPaydayIso = (iso: string) => { const dd = Number(iso.slice(8, 10)); return dd === 15 || dd === 16 || dd >= 25; };
+
+/** Public holidays (date → Thai name) within [start, end]. */
+function holidaysIn(start: string, end: string): Map<string, string> {
+  const rows = getDb().prepare("SELECT date, name_th FROM public_holidays WHERE date BETWEEN ? AND ?")
+    .all(start, end) as Array<{ date: string; name_th: string }>;
+  return new Map(rows.map((r) => [r.date, r.name_th]));
+}
+
+function rangeDayExtremes(branchId: number, start: string, end: string, n = 3): DayExtremes {
+  const rows = salesRows(branchId, start, end).filter((d) => d.nett > 0);
+  const empty: DayExtremes = { days: rows.length, n: 0, best: [], worst: [], bestActions: [], worstActions: [] };
+  if (rows.length < 2) return empty;
+  const holidays = holidaysIn(start, end);
+  const weekendLike = (iso: string) => isWeekendIso(iso) || holidays.has(iso);
+  const take = Math.min(n, Math.floor(rows.length / 2));
+
+  // Range-wide references the "why" lines compare against.
+  const rangeNett = rows.reduce((s, d) => s + d.nett, 0);
+  const typeShare = new Map<string, number>();       // order type → share of range sales
+  for (const d of rows) for (const t of d.types) typeShare.set(t.name, (typeShare.get(t.name) ?? 0) + t.sales);
+  const typeTotal = [...typeShare.values()].reduce((s, v) => s + v, 0);
+  const rangeItems = menuRange(branchId, start, end, "item");
+  const itemShare = new Map(rangeItems.map((m) => [m.name, rangeNett > 0 ? m.nett / rangeNett : 0]));
+  const topItems = rangeItems.slice(0, 3).map((m) => m.name);
+  const grossTotal = rows.reduce((s, d) => s + d.gross, 0);
+  const rangeDiscPct = grossTotal > 0 ? (rows.reduce((s, d) => s + Math.abs(d.discount), 0) / grossTotal) * 100 : null;
+  const rangePeak = hasReceiptData(branchId, start, end)
+    ? hourlyReceipts(branchId, start, end).reduce<HourStat | null>((p, h) => (p == null || h.nett > p.nett ? h : p), null)?.hour ?? null
+    : null;
+  const notesByDate = eventNotesForRange(branchId, start, end, (iso) => iso);
+
+  const describe = (d: DailyRow, side: "best" | "worst"): ExtremeDay => {
+    const wk = weekendLike(d.sale_date);
+    // Same-type peers (excl. this day); fall back to every other day when thin.
+    let peers = rows.filter((x) => x.sale_date !== d.sale_date && weekendLike(x.sale_date) === wk);
+    if (peers.length < 2) peers = rows.filter((x) => x.sale_date !== d.sale_date);
+    const avg = (get: (x: DailyRow) => number) => (peers.length ? peers.reduce((s, x) => s + get(x), 0) / peers.length : null);
+    const baseNett = avg((x) => x.nett);
+    const baseBills = avg((x) => x.bill_count);
+    const baseTicket = (() => { const b = peers.reduce((s, x) => s + x.bill_count, 0); return b > 0 ? peers.reduce((s, x) => s + x.nett, 0) / b : null; })();
+    const ticket = d.bill_count > 0 ? d.nett / d.bill_count : null;
+    const vsBase = relPct(d.nett, baseNett);
+    const billsVs = relPct(d.bill_count, baseBills);
+    const ticketVs = ticket != null ? relPct(ticket, baseTicket) : null;
+    const discPct = pct(Math.abs(d.discount), d.gross);
+    const peakHour = dayPeakHour(branchId, d.sale_date);
+    const reasons: string[] = [];
+    const up = side === "best";
+    const drivers: ExtremeDrivers = { bills: false, ticket: false, channel: null, menu: null, discount: false };
+
+    // 1) Traffic vs ticket — which one moved the day in the day's own direction.
+    //    Only movers pointing the same way as the extreme qualify; of those, the
+    //    larger one leads and the other is mentioned as a secondary effect.
+    if (billsVs != null && ticketVs != null) {
+      const billsOk = Math.abs(billsVs) >= 5 && (billsVs > 0) === up;
+      const ticketOk = Math.abs(ticketVs) >= 5 && (ticketVs > 0) === up;
+      const lead = billsOk && ticketOk ? (Math.abs(billsVs) >= Math.abs(ticketVs) ? "bills" : "ticket") : billsOk ? "bills" : ticketOk ? "ticket" : null;
+      if (lead === "bills") {
+        drivers.bills = true;
+        reasons.push(`${up ? "ลูกค้ามากกว่าปกติ" : "ลูกค้าน้อยกว่าปกติ"} ${intPct(billsVs)} (${d.bill_count} บิล เทียบเฉลี่ย ${Math.round(baseBills ?? 0)})`);
+        if (Math.abs(ticketVs) >= 10) reasons.push(`${ticketVs > 0 ? "ยอดต่อบิลก็สูงขึ้น" : "แต่ยอดต่อบิลต่ำลง"} ${intPct(ticketVs)}`);
+      } else if (lead === "ticket") {
+        drivers.ticket = true;
+        reasons.push(`${up ? "ยอดต่อบิลสูงกว่าปกติ" : "ยอดต่อบิลต่ำกว่าปกติ"} ${intPct(ticketVs)} (฿${Math.round(ticket ?? 0).toLocaleString("th-TH")} เทียบ ฿${Math.round(baseTicket ?? 0).toLocaleString("th-TH")})`);
+        if (Math.abs(billsVs) >= 10) reasons.push(`${billsVs > 0 ? "จำนวนบิลก็เพิ่ม" : "แต่จำนวนบิลลดลง"} ${intPct(billsVs)}`);
+      }
+    }
+    // 2) Channel: on a best day the order type that over-indexed the most, on a
+    //    worst day the one that collapsed the most (≥ 8 share points either way).
+    //    Types the day didn't record at all count as 0% that day.
+    if (typeTotal > 0 && d.types.length) {
+      const dayTotal = d.types.reduce((s, t) => s + t.sales, 0);
+      let pick: { name: string; day: number; usual: number } | null = null;
+      for (const name of typeShare.keys()) {
+        const t = d.types.find((x) => x.name === name);
+        const dayPct = dayTotal > 0 && t ? (t.sales / dayTotal) * 100 : 0;
+        const usual = ((typeShare.get(name) ?? 0) / typeTotal) * 100;
+        const dev = dayPct - usual;
+        if ((up ? dev : -dev) >= 8 && (!pick || Math.abs(dev) > Math.abs(pick.day - pick.usual))) pick = { name, day: dayPct, usual };
+      }
+      if (pick) {
+        drivers.channel = pick.name;
+        reasons.push(`ช่องทาง ${pick.name} ${up ? "มากกว่าปกติ" : "น้อยกว่าปกติ"}: ${Math.round(pick.day)}% ของยอด (ปกติ ${Math.round(pick.usual)}%)`);
+      }
+    }
+    // 3) Menu: a dish that over-indexed (best) or a core dish that under-sold (worst).
+    const menu = getMenu(branchId, d.sale_date).items;
+    if (menu.length && d.nett > 0) {
+      if (up) {
+        const hit = menu.map((m) => ({ name: m.name, ratio: (itemShare.get(m.name) ?? 0) > 0 ? (m.nett / d.nett) / (itemShare.get(m.name) ?? 1) : 0, nett: m.nett }))
+          .filter((m) => m.ratio >= 1.5 && m.nett >= d.nett * 0.08).sort((a, b) => b.ratio - a.ratio)[0];
+        if (hit) { drivers.menu = hit.name; reasons.push(`เมนู "${hit.name}" ขายได้ ${hit.ratio.toFixed(1)} เท่าของสัดส่วนปกติ`); }
+      } else {
+        const dayByName = new Map(menu.map((m) => [m.name, m.nett]));
+        const miss = topItems.map((name) => ({ name, ratio: (itemShare.get(name) ?? 0) > 0 ? ((dayByName.get(name) ?? 0) / d.nett) / (itemShare.get(name) ?? 1) : 1 }))
+          .filter((m) => m.ratio <= 0.6).sort((a, b) => a.ratio - b.ratio)[0];
+        if (miss) { drivers.menu = miss.name; reasons.push(`เมนูหลัก "${miss.name}" ขายได้แค่ ${Math.round(miss.ratio * 100)}% ของสัดส่วนปกติ`); }
+      }
+    }
+    // 4) Discount vs the range's usual level.
+    if (discPct != null && rangeDiscPct != null && discPct - rangeDiscPct >= 5) {
+      drivers.discount = true;
+      reasons.push(`ส่วนลดสูง ${discPct.toFixed(0)}% ของยอดก่อนลด (ปกติ ${rangeDiscPct.toFixed(0)}%)${up ? " — ยอดมาพร้อมส่วนลด" : " — ลดแล้วยอดก็ไม่ขึ้น"}`);
+    }
+    // 5) Peak hour that day vs the range's usual peak.
+    if (peakHour != null) {
+      reasons.push(rangePeak != null && rangePeak !== peakHour ? `พีค ${hh(peakHour)} (ปกติ ${hh(rangePeak)})` : `พีค ${hh(peakHour)}`);
+    }
+    // 6) Calendar context.
+    const holiday = holidays.get(d.sale_date) ?? null;
+    if (holiday) reasons.push(`วันหยุด: ${holiday}`);
+    else if (wk) reasons.push("วันหยุดสุดสัปดาห์");
+    if (isPaydayIso(d.sale_date)) reasons.push("ช่วงเงินเดือนออก");
+    const notes = notesByDate.find((x) => x.date === d.sale_date)?.notes ?? [];
+
+    return {
+      date: d.sale_date, dateLabel: thaiDate(d.sale_date), weekdayTh: thaiWeekday(d.sale_date),
+      weekendLike: wk, holiday, payday: isPaydayIso(d.sale_date),
+      nett: round2(d.nett), bills: d.bill_count, avgTicket: ticket != null ? round2(ticket) : null,
+      baselineNett: baseNett != null ? round2(baseNett) : null, vsBaselinePct: vsBase,
+      billsVsBasePct: billsVs, ticketVsBasePct: ticketVs, discountPct: discPct, peakHour,
+      reasons: reasons.slice(0, 5), notes, drivers
+    };
+  };
+
+  const sorted = [...rows].sort((a, b) => b.nett - a.nett);
+  const best = sorted.slice(0, take).map((d) => describe(d, "best"));
+  const worst = sorted.slice(-take).reverse().map((d) => describe(d, "worst"));
+  return { days: rows.length, n: take, best, worst, bestActions: extremeActions(best, "best"), worstActions: extremeActions(worst, "worst") };
+}
+
+const intPct = (p: number) => `${p > 0 ? "+" : ""}${Math.round(p)}%`;
+
+/** Turn the extreme days' drivers into a short, concrete to-do list. Pure. */
+function extremeActions(list: ExtremeDay[], side: "best" | "worst"): string[] {
+  if (!list.length) return [];
+  const out: string[] = [];
+  const count = (pred: (d: ExtremeDay) => boolean) => list.filter(pred).length;
+  // Shared weekday / day-type pattern across the extreme days.
+  const byWeekday = new Map<string, number>();
+  for (const d of list) byWeekday.set(d.weekdayTh, (byWeekday.get(d.weekdayTh) ?? 0) + 1);
+  const repeatDay = [...byWeekday.entries()].find(([, c]) => c >= 2)?.[0] ?? null;
+  const weekendDays = list.filter((d) => d.weekendLike);
+  const bills = list.some((d) => d.drivers.bills);
+  const ticket = list.some((d) => d.drivers.ticket);
+  const channel = list.map((d) => d.drivers.channel).find((c) => c != null) ?? null;
+  const menu = list.map((d) => d.drivers.menu).find((m) => m != null) ?? null;
+  const discount = list.some((d) => d.drivers.discount);
+  const holiday = count((d) => d.holiday != null) > 0;
+  const noNotes = list.every((d) => d.notes.length === 0);
+
+  if (side === "best") {
+    if (repeatDay) out.push(`วัน${repeatDay}ขายดีซ้ำ → จัดกำลังคนและสต๊อกวัน${repeatDay}ให้เท่ากับวันที่ดีที่สุด (${list[0].bills} บิล)`);
+    else if (weekendDays.length >= 2) {
+      const lifts = weekendDays.map((d) => d.vsBaselinePct).filter((p): p is number => p != null);
+      const avgLift = lifts.length ? Math.round(lifts.reduce((s, p) => s + p, 0) / lifts.length) : null;
+      out.push(`วันหยุดคือวันทำเงิน → ล็อกกะเต็มและเตรียมของเผื่อ${avgLift != null && avgLift > 0 ? ` +${avgLift}%` : ""} ในวันหยุดทุกสัปดาห์`);
+    }
+    if (bills) out.push("ยอดมาจากจำนวนลูกค้า → ทำซ้ำสิ่งที่ดึงคนวันนั้น (โปร/อีเวนต์/โพสต์) และเปิดโต๊ะ/คิวให้รับได้เต็มที่");
+    if (ticket) out.push("ยอดมาจากยอดต่อบิล → ทำเซ็ต/อัปเซลแบบวันนั้นให้เป็นมาตรฐานทุกวัน");
+    if (channel) out.push(`ช่องทาง ${channel} ดันยอด → ลงโปรหรือยิงแอดช่องทางนี้เพิ่ม`);
+    if (menu) out.push(`เมนู "${menu}" คือตัวดึง → ตั้งเป็นเมนูแนะนำ ถ่ายรูปใหม่ ใส่หน้าแรกของเมนู`);
+    if (discount) out.push("ยอดดีมาพร้อมส่วนลดสูง → เช็คกำไรจริงก่อนทำโปรซ้ำ ลองลดส่วนลดลงครึ่งหนึ่งแล้วดูว่ายอดยังอยู่ไหม");
+    if (holiday) out.push("วันหยุดทำยอด → ดูการ์ด \"วันสำคัญที่กำลังมาถึง\" แล้วเตรียมของและคนล่วงหน้า");
+    if (noNotes) out.push("ยังไม่มีโน้ตทีมในวันที่ขายดี → บันทึกว่าวันนั้นทำอะไรไว้ ระบบจะใช้ทำนายวันแบบเดียวกัน");
+  } else {
+    if (repeatDay) out.push(`วัน${repeatDay}ยอดต่ำซ้ำ → ลดกะ/สลับวันหยุดพนักงานมาลงวัน${repeatDay} หรือจัดโปรเฉพาะวัน${repeatDay}`);
+    if (bills) out.push("ลูกค้าน้อย → จัด Happy Hour ช่วงที่ร้าง ยิงแอดเจาะวันนั้น หรือแจ้งเตือนลูกค้าเก่าทาง LINE");
+    if (ticket) out.push("ยอดต่อบิลต่ำ → ฝึกอัปเซลเครื่องดื่ม/ของหวาน และทำเซ็ตคู่หูจากเมนูที่มักสั่งคู่กัน");
+    if (channel) out.push(`ช่องทาง ${channel} หายไป → เช็คว่าร้านเปิดในแอป ค่าส่ง และเวลารับออเดอร์ตรงหรือไม่`);
+    if (menu) out.push(`เมนูหลัก "${menu}" ขายไม่ออก → เช็ควัตถุดิบหมด/ปิดเมนูในวันนั้น`);
+    if (discount) out.push("ส่วนลดสูงแต่ยอดไม่ขึ้น → ทบทวนโปรนั้น เปลี่ยนเป็นของแถมหรือเซ็ตแทนการลดราคา");
+    if (noNotes) out.push("ยังไม่มีโน้ตทีมในวันแย่ → บันทึกสาเหตุ (ฝนตก/ปิดถนน/ไฟดับ/พนักงานขาด) เพื่อแยกเหตุสุดวิสัยออกจากปัญหาร้าน");
+    out.push("ใช้ \"แผนผลักดันยอดขาย\" ด้านล่างตั้งเป้าชดเชยในวันที่เหลือ");
+  }
+  return out.slice(0, 5);
+}
+export function dayExtremes(branchId: number, year: number, month: number, n = 3): DayExtremes {
+  const [s, e] = monthRange(year, month);
+  return rangeDayExtremes(branchId, s, e, n);
+}
+
+// ── Peak hours by day type (owner 2026-10-01: พีคไทม์ แยก weekday vs weekend) ──
+// Hourly bills/nett from receipt data, split into weekdays and weekend-like days
+// (Sat/Sun + public holidays), each AVERAGED PER DAY so five weekdays compare
+// fairly with two weekend days. Peak = highest average nett.
+
+export type DayTypeHour = { hour: number; bills: number; nett: number; avgBills: number; avgNett: number };
+export type DayTypeHours = {
+  days: number;                     // receipt days of this type in the range
+  hourly: DayTypeHour[];            // hours present, ascending
+  peakHour: number | null;
+  avgBillsPerDay: number | null;
+  avgNettPerDay: number | null;
+};
+export type HourlyDayType = {
+  hasData: boolean;
+  weekday: DayTypeHours;
+  weekend: DayTypeHours;
+  holidayDays: number;              // public holidays folded into the weekend side
+  insight: string[];
+};
+
+function rangeHourlyByDayType(branchId: number, start: string, end: string): HourlyDayType {
+  const blank = (): DayTypeHours => ({ days: 0, hourly: [], peakHour: null, avgBillsPerDay: null, avgNettPerDay: null });
+  if (!hasReceiptData(branchId, start, end)) return { hasData: false, weekday: blank(), weekend: blank(), holidayDays: 0, insight: [] };
+  const holidays = holidaysIn(start, end);
+  const rows = hourlyReceiptsByDay(branchId, start, end);
+  const build = (pick: (date: string) => boolean): DayTypeHours => {
+    const mine = rows.filter((r) => pick(r.date));
+    const days = new Set(mine.map((r) => r.date)).size;
+    if (!days) return blank();
+    const byHour = new Map<number, { bills: number; nett: number }>();
+    for (const r of mine) { const c = byHour.get(r.hour) ?? { bills: 0, nett: 0 }; c.bills += r.bills; c.nett += r.nett; byHour.set(r.hour, c); }
+    const hourly = [...byHour.entries()].sort((a, b) => a[0] - b[0])
+      .map(([hour, c]) => ({ hour, bills: c.bills, nett: round2(c.nett), avgBills: round2(c.bills / days), avgNett: round2(c.nett / days) }));
+    const peak = hourly.reduce<DayTypeHour | null>((p, h) => (p == null || h.avgNett > p.avgNett ? h : p), null);
+    const totBills = hourly.reduce((s, h) => s + h.bills, 0);
+    const totNett = hourly.reduce((s, h) => s + h.nett, 0);
+    return { days, hourly, peakHour: peak?.hour ?? null, avgBillsPerDay: round2(totBills / days), avgNettPerDay: round2(totNett / days) };
+  };
+  const weekendLike = (iso: string) => isWeekendIso(iso) || holidays.has(iso);
+  const weekday = build((d) => !weekendLike(d));
+  const weekend = build(weekendLike);
+  const holidayDays = new Set(rows.filter((r) => holidays.has(r.date)).map((r) => r.date)).size;
+
+  const insight: string[] = [];
+  const peakLine = (label: string, t: DayTypeHours) => {
+    if (t.peakHour == null) return null;
+    const h = t.hourly.find((x) => x.hour === t.peakHour)!;
+    return `${label}พีค ${hh(t.peakHour)} (เฉลี่ย ${h.avgBills.toFixed(1)} บิล/ชม. · ${t.days} วัน)`;
+  };
+  const a = peakLine("วันธรรมดา", weekday), b = peakLine("วันหยุด", weekend);
+  if (a) insight.push(a);
+  if (b) insight.push(b);
+  if (weekday.peakHour != null && weekend.peakHour != null) {
+    insight.push(weekday.peakHour === weekend.peakHour
+      ? "พีคเวลาเดียวกันทั้งสองแบบ → จัดกะหลักเหมือนกัน ต่างกันแค่จำนวนคน"
+      : `พีคคนละเวลา → วันธรรมดาเน้นช่วง ${hh(weekday.peakHour)} วันหยุดเน้นช่วง ${hh(weekend.peakHour)} จัดกะให้ต่างกัน`);
+  }
+  if (weekday.avgBillsPerDay != null && weekend.avgBillsPerDay != null && weekday.avgBillsPerDay > 0) {
+    const lift = relPct(weekend.avgBillsPerDay, weekday.avgBillsPerDay);
+    if (lift != null && Math.abs(lift) >= 10) insight.push(`วันหยุดมีบิล/วัน ${lift > 0 ? "มากกว่า" : "น้อยกว่า"}วันธรรมดา ${intPct(lift)}`);
+  }
+  // The CONTIGUOUS quiet stretch (< 25% of that type's peak; an hour with no
+  // receipts counts as quiet) right after the peak, ending where business picks
+  // up again = the Happy Hour slot. A quiet tail that never picks up is closing
+  // time, not a slot, so it is not reported.
+  const quiet = (label: string, t: DayTypeHours) => {
+    if (t.peakHour == null || !t.hourly.length) return;
+    const byHour = new Map(t.hourly.map((x) => [x.hour, x.avgNett]));
+    const peakNett = byHour.get(t.peakHour) ?? 0;
+    const lastHour = t.hourly[t.hourly.length - 1].hour;
+    let endExcl = t.peakHour + 1;
+    while (endExcl <= lastHour && (byHour.get(endExcl) ?? 0) < peakNett * 0.25) endExcl++;
+    const len = endExcl - (t.peakHour + 1);
+    if (len >= 1 && endExcl <= lastHour) insight.push(`${label}ช่วง ${hh(t.peakHour + 1)}–${hh(endExcl)} เงียบ → จัด Happy Hour หรือเมนูช่วงบ่ายกระตุ้น`);
+  };
+  quiet("วันธรรมดา", weekday);
+  if (weekend.peakHour !== weekday.peakHour) quiet("วันหยุด", weekend);
+  return { hasData: true, weekday, weekend, holidayDays, insight: insight.slice(0, 5) };
+}
+export function hourlyByDayType(branchId: number, year: number, month: number): HourlyDayType {
+  const [s, e] = monthRange(year, month);
+  return rangeHourlyByDayType(branchId, s, e);
+}
+
 // ── Period bundle (owner 2026-09-18): all range-based insight panels for one
 // period (this month or the current ISO week), so the dashboard can toggle. ──
 export type InsightPeriod = "month" | "week";
@@ -1374,6 +1684,8 @@ export type InsightBundle = {
   rhythm: RhythmInsight;
   quality: QualitySignal;
   receipt: ReceiptInsights;
+  extremes: DayExtremes;            // best / worst days + actions (owner 2026-10-01)
+  hourlyDayType: HourlyDayType;     // peak hours, weekday vs weekend (owner 2026-10-01)
 };
 
 /** Resolve the date range for a period. `todayIso` anchors the current ISO week;
@@ -1418,7 +1730,9 @@ export function insightBundle(branchId: number, r: InsightRange): InsightBundle 
     guests: rangeGuestMetrics(branchId, r.start, r.end, r.prevStart, r.prevEnd),
     rhythm: rangeRhythm(branchId, r.start, r.end),
     quality: rangeQualitySignal(branchId, r.start, r.end, r.prevStart, r.prevEnd),
-    receipt: rangeReceiptInsights(branchId, r.start, r.end)
+    receipt: rangeReceiptInsights(branchId, r.start, r.end),
+    extremes: rangeDayExtremes(branchId, r.start, r.end),
+    hourlyDayType: rangeHourlyByDayType(branchId, r.start, r.end)
   };
 }
 

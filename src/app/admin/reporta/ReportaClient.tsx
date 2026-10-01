@@ -92,7 +92,19 @@ type Insights = {
     bottomUnits: Array<{ name: string; units: number; bills: number }>;
     basket: Array<{ a: string; b: string; count: number }>;
   };
+  extremes: DayExtremes;
+  hourlyDayType: HourlyDayType;
 };
+type ExtremeDay = {
+  date: string; dateLabel: string; weekdayTh: string; weekendLike: boolean; holiday: string | null; payday: boolean;
+  nett: number; bills: number; avgTicket: number | null;
+  baselineNett: number | null; vsBaselinePct: number | null; billsVsBasePct: number | null; ticketVsBasePct: number | null;
+  discountPct: number | null; peakHour: number | null; reasons: string[]; notes: string[];
+};
+type DayExtremes = { days: number; n: number; best: ExtremeDay[]; worst: ExtremeDay[]; bestActions: string[]; worstActions: string[] };
+type DayTypeHour = { hour: number; bills: number; nett: number; avgBills: number; avgNett: number };
+type DayTypeHours = { days: number; hourly: DayTypeHour[]; peakHour: number | null; avgBillsPerDay: number | null; avgNettPerDay: number | null };
+type HourlyDayType = { hasData: boolean; weekday: DayTypeHours; weekend: DayTypeHours; holidayDays: number; insight: string[] };
 type InsightRange = { period: "month" | "week"; start: string; end: string; rangeLabel: string; prevLabel: string; nowLabel: string };
 type PushMenu = { name: string; nett: number };
 type PushDay = { date: string; label: string; weekdayTh: string; expectedNett: number | null };
@@ -1708,6 +1720,11 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
       {/* Deeper marketing insights (owner 2026-09-18) */}
       {insights && days.length > 0 && (
         <div className="space-y-4">
+          {/* #0 Best / worst days + what to do about them (owner 2026-10-01) */}
+          {insights.extremes && insights.extremes.n > 0 && (
+            <ExtremesCard x={insights.extremes} nowLabel={nowLabel} />
+          )}
+
           {/* #1 Menu engineering */}
           <div className="card space-y-3">
             <div>
@@ -1824,6 +1841,36 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                   <p className="text-xs text-slate-500 mt-0.5">ยอดขาย/จำนวนบิลตามชั่วโมง จากไฟล์ใบเสร็จ (ไม่รวมบิลพนักงาน)</p>
                 </div>
                 <HourBars hours={insights.receipt.hourly} peak={insights.receipt.peakHour} hoursWindow={branchHours} />
+                {/* Weekday vs weekend, averaged per day (owner 2026-10-01) */}
+                {insights.hourlyDayType?.hasData && (insights.hourlyDayType.weekday.days > 0 || insights.hourlyDayType.weekend.days > 0) && (
+                  <div className="pt-3 mt-2 border-t border-slate-100 space-y-3">
+                    <div>
+                      <div className="text-sm font-bold text-slate-700">แยกวันธรรมดา vs วันหยุด</div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        ค่าเฉลี่ยต่อวัน (ยอด · บิล/ชม.) เพื่อให้ 5 วันธรรมดาเทียบกับวันหยุดได้ยุติธรรม · วันหยุดนักขัตฤกษ์นับเป็นวันหยุด
+                        {insights.hourlyDayType.holidayDays > 0 ? ` (${insights.hourlyDayType.holidayDays} วันในช่วงนี้)` : ""}
+                      </p>
+                    </div>
+                    <div className="grid lg:grid-cols-2 gap-4">
+                      {([["วันธรรมดา (จ–ศ)", insights.hourlyDayType.weekday], ["วันหยุด (ส–อา + นักขัตฤกษ์)", insights.hourlyDayType.weekend]] as const).map(([label, t]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 p-3 space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <div className="text-xs font-bold text-slate-600">{label}</div>
+                            <div className="text-[11px] text-slate-400">{t.days} วัน{t.avgBillsPerDay != null ? ` · เฉลี่ย ${intTh(Math.round(t.avgBillsPerDay))} บิล/วัน` : ""}</div>
+                          </div>
+                          {t.days === 0
+                            ? <div className="text-xs text-slate-400">ยังไม่มีใบเสร็จของวันประเภทนี้ในช่วงนี้</div>
+                            : <HourBars hours={t.hourly.map((h) => ({ hour: h.hour, bills: h.avgBills, nett: h.avgNett }))} peak={t.peakHour} hoursWindow={branchHours} perDay quiet />}
+                        </div>
+                      ))}
+                    </div>
+                    {insights.hourlyDayType.insight.length > 0 && (
+                      <ul className="text-xs text-slate-600 rounded-lg bg-slate-50 p-2.5 space-y-0.5">
+                        {insights.hourlyDayType.insight.map((line) => <li key={line}>→ {line}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="grid lg:grid-cols-2 gap-4">
@@ -1967,7 +2014,11 @@ function FileChip({ label, present }: { label: string; present?: boolean }) {
     : <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 border border-amber-300 px-2 py-0.5 text-[10px] font-medium">ขาด{label}</span>;
 }
 
-function HourBars({ hours, peak, hoursWindow }: { hours: Array<{ hour: number; bills: number; nett: number }>; peak: number | null; hoursWindow?: HoursWindow | null }) {
+function HourBars({ hours, peak, hoursWindow, perDay = false, quiet = false }: {
+  hours: Array<{ hour: number; bills: number; nett: number }>; peak: number | null; hoursWindow?: HoursWindow | null;
+  perDay?: boolean;   // values are per-day averages → "บิล/วัน" with one decimal
+  quiet?: boolean;    // no footer advice / hours label (caller prints its own)
+}) {
   if (!hours.length) return <div className="text-xs text-slate-400">ยังไม่มีข้อมูลใบเสร็จ</div>;
   // Pin the axis to the branch's operating hours when set (owner 2026-09-27),
   // extended to cover any hour with data so no bill is hidden.
@@ -1986,11 +2037,75 @@ function HourBars({ hours, peak, hoursWindow }: { hours: Array<{ hour: number; b
           <div className="flex-1 h-4 rounded bg-slate-100 overflow-hidden">
             <div className={`h-full ${h.hour === peak ? "bg-emerald-500" : "bg-emerald-300"}`} style={{ width: `${Math.max(3, (h.nett / max) * 100)}%` }} />
           </div>
-          <span className="w-36 text-right text-xs text-slate-700 shrink-0">{h.brk && h.nett === 0 ? <span className="text-slate-400">พักเที่ยง</span> : <>{baht(h.nett)} · {intTh(h.bills)} บิล</>}</span>
+          <span className="w-36 text-right text-xs text-slate-700 shrink-0">{h.brk && h.nett === 0 ? <span className="text-slate-400">พักเที่ยง</span> : <>{baht(h.nett)} · {perDay ? `${h.bills.toFixed(1)} บิล/วัน` : `${intTh(h.bills)} บิล`}</>}</span>
         </div>
       ))}
-      {peak != null && <div className="text-xs text-slate-500 pt-1">ช่วงพีค <b className="text-emerald-600">{String(peak).padStart(2, "0")}:00</b> — จัดกำลังคน/เตรียมของให้พร้อม · ช่วงร้างจัด Happy Hour กระตุ้น</div>}
-      {hoursLabel(hoursWindow) && <div className="text-[11px] text-slate-400">เวลาทำการ {hoursLabel(hoursWindow)}</div>}
+      {!quiet && peak != null && <div className="text-xs text-slate-500 pt-1">ช่วงพีค <b className="text-emerald-600">{String(peak).padStart(2, "0")}:00</b> — จัดกำลังคน/เตรียมของให้พร้อม · ช่วงร้างจัด Happy Hour กระตุ้น</div>}
+      {!quiet && hoursLabel(hoursWindow) && <div className="text-[11px] text-slate-400">เวลาทำการ {hoursLabel(hoursWindow)}</div>}
+    </div>
+  );
+}
+
+/** Best / worst days of the period + what to do about them (owner 2026-10-01). */
+function ExtremesCard({ x, nowLabel }: { x: DayExtremes; nowLabel: string }) {
+  const Side = ({ title, tone, list, actions, actionsTitle }: { title: string; tone: "emerald" | "rose"; list: ExtremeDay[]; actions: string[]; actionsTitle: string }) => {
+    const head = tone === "emerald" ? "text-emerald-700" : "text-rose-700";
+    const edge = tone === "emerald" ? "border-emerald-400 bg-emerald-50/40" : "border-rose-400 bg-rose-50/40";
+    const chip = tone === "emerald" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700";
+    return (
+      <div className={`rounded-xl border-l-4 ${edge} p-3 space-y-2`}>
+        <div className={`text-sm font-bold ${head}`}>{title}</div>
+        <ol className="space-y-2">
+          {list.map((d, i) => (
+            <li key={d.date} className="rounded-lg bg-white/80 border border-slate-100 p-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <div className="text-sm text-slate-800">
+                  <span className={`inline-block w-5 text-center text-[10px] font-bold rounded ${chip} mr-1.5`}>{i + 1}</span>
+                  <b>{d.dateLabel}</b> <span className="text-slate-500">· วัน{d.weekdayTh}</span>
+                  {d.holiday && <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700">{d.holiday}</span>}
+                </div>
+                <div className="text-right whitespace-nowrap">
+                  <div className="text-sm font-bold text-slate-800">{baht(d.nett)}</div>
+                  <div className="text-[10px] text-slate-500">{intTh(d.bills)} บิล{d.avgTicket != null ? ` · ฿${intTh(Math.round(d.avgTicket))}/บิล` : ""}</div>
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                เทียบค่าเฉลี่ย{d.weekendLike ? "วันหยุด" : "วันธรรมดา"}ในช่วงนี้{d.baselineNett != null ? ` (${baht(d.baselineNett)})` : ""} <PctChip pct={d.vsBaselinePct} />
+              </div>
+              {d.reasons.length > 0 && (
+                <ul className="mt-1 text-xs text-slate-700 space-y-0.5">
+                  {d.reasons.map((r) => <li key={r}>• {r}</li>)}
+                </ul>
+              )}
+              {d.notes.length > 0 && (
+                <div className="mt-1 text-[11px] text-sky-700">โน้ตทีม: {d.notes.join(" · ")}</div>
+              )}
+            </li>
+          ))}
+        </ol>
+        {actions.length > 0 && (
+          <div className="rounded-lg bg-white/80 border border-slate-100 p-2.5">
+            <div className={`text-xs font-bold ${head} mb-1`}>{actionsTitle}</div>
+            <ul className="text-xs text-slate-700 space-y-1">
+              {actions.map((a) => <li key={a}>→ {a}</li>)}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  };
+  return (
+    <div className="card space-y-3">
+      <div>
+        <h2 className="font-bold text-slate-800">วันขายดีสุด / วันขายแย่สุด — แล้วทำอะไรได้บ้าง</h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          {x.n} อันดับจาก {intTh(x.days)} วันที่มียอดขาย{nowLabel ? `ใน${nowLabel}` : ""} · แต่ละวันเทียบกับค่าเฉลี่ยของวันประเภทเดียวกัน (วันธรรมดา / วันหยุดรวมนักขัตฤกษ์) แล้วอธิบายว่าอะไรทำให้ต่าง
+        </p>
+      </div>
+      <div className="grid lg:grid-cols-2 gap-3">
+        <Side title="วันขายดีสุด" tone="emerald" list={x.best} actions={x.bestActions} actionsTitle="ทำซ้ำวันดี" />
+        <Side title="วันขายแย่สุด" tone="rose" list={x.worst} actions={x.worstActions} actionsTitle="แก้วันแย่" />
+      </div>
     </div>
   );
 }

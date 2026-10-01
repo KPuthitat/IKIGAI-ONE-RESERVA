@@ -467,6 +467,17 @@ export function hourlyReceipts(branchId: number, start: string, end: string): Ar
     .map((r) => ({ hour: r.hour, bills: r.bills, nett: Math.round((r.nett + Number.EPSILON) * 100) / 100 }));
 }
 
+/** Bills + nett per (day, hour) over [start, end], excluding staff bills — the
+ *  per-day grain lets analytics split weekday vs weekend and average per day. */
+export function hourlyReceiptsByDay(branchId: number, start: string, end: string): Array<{ date: string; hour: number; bills: number; nett: number }> {
+  return (getDb().prepare(
+    `SELECT sale_date AS date, hour, COUNT(*) AS bills, SUM(nett) AS nett FROM salesa_receipts
+     WHERE branch_id = ? AND sale_date BETWEEN ? AND ? AND is_staff = 0
+     GROUP BY sale_date, hour ORDER BY sale_date, hour`
+  ).all(branchId, start, end) as Array<{ date: string; hour: number; bills: number; nett: number }>)
+    .map((r) => ({ date: r.date, hour: r.hour, bills: r.bills, nett: Math.round((r.nett + Number.EPSILON) * 100) / 100 }));
+}
+
 /** Units sold per item over [start, end], excluding staff bills, with merged
  *  spellings folded under their shared display label. Folds at the bill level so
  *  a single bill listing two spellings of one dish counts as one bill, not two
