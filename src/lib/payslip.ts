@@ -35,6 +35,7 @@ export type PayslipLine = {
   days_worked: number;
   leave_days: number;
   unpaid_leave_days: number;
+  unpaid_leave_deduction: number;  // the engine's persisted salary cut for those days (FT only)
   unpaired_clockins: number;
   base_pay: number;
   ot_pay: number;
@@ -78,7 +79,7 @@ const LINE_COLS = `
   salary_tax_mode_snapshot,
   shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
   holiday_minutes,
-  days_worked, leave_days, unpaid_leave_days, unpaired_clockins,
+  days_worked, leave_days, unpaid_leave_days, unpaid_leave_deduction, unpaired_clockins,
   base_pay, ot_pay, service_charge, other_additions, meeting_fee, gross_pay,
   sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay
 `;

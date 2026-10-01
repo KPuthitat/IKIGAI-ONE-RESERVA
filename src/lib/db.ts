@@ -4246,6 +4246,21 @@ function runMigrations(db: Database.Database): void {
   if (!plColsUnpaid.some((c) => c.name === "unpaid_leave_days")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN unpaid_leave_days REAL NOT NULL DEFAULT 0");
   }
+  // The baht actually cut from the FT base for those days (owner 2026-10-01):
+  // persisted so every surface (summary, export, payslip) shows the engine's
+  // exact figure instead of re-deriving salary/30 × days — which is wrong when
+  // the base was clamped to 0. 0 for PT (their unpaid day is simply no pay).
+  if (!plColsUnpaid.some((c) => c.name === "unpaid_leave_deduction")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN unpaid_leave_deduction REAL NOT NULL DEFAULT 0");
+    // Backfill historical lines (reviewed/finalized ones are never recomputed):
+    // salary/30 per day, capped at the salary — the engine's figure in every
+    // non-clamped case. Runs once, inside the same guard as the ALTER.
+    db.exec(`
+      UPDATE payroll_lines
+      SET unpaid_leave_deduction = MIN(ROUND(monthly_salary_snapshot / 30.0 * unpaid_leave_days, 2), monthly_salary_snapshot)
+      WHERE employment_type = 'ft' AND unpaid_leave_days > 0 AND COALESCE(monthly_salary_snapshot, 0) > 0
+    `);
+  }
 
   // payroll_line_audit — accountability trail for manual edits to a
   // payroll line (owner 2026-06-02: "แอดมินแก้ได้ แต่ต้องกด PIN แล้ว

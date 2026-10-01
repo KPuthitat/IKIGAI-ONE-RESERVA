@@ -2198,11 +2198,11 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         salary_tax_mode_snapshot,
         shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
         holiday_minutes,
-        days_worked, leave_days, unpaired_clockins,
+        days_worked, leave_days, unpaid_leave_days, unpaid_leave_deduction, unpaired_clockins,
         base_pay, ot_pay, service_charge, other_additions, meeting_fee, gross_pay,
         sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay,
         is_helper
-      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?)
+      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?)
     `);
 
     // Doctor Fee (DF) — owner 2026-08. For a clinic period, pre-compute each
@@ -2269,7 +2269,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
           hLine.salary_tax_mode_snapshot,
           hLine.shift_minutes, hLine.break_deducted_minutes, hLine.regular_minutes, hLine.ot_minutes,
           hLine.holiday_minutes,
-          hLine.days_worked, hLine.leave_days, hLine.unpaired_clockins,
+          hLine.days_worked, hLine.leave_days, hLine.unpaid_leave_days, hLine.unpaid_leave_deduction, hLine.unpaired_clockins,
           hLine.base_pay, hLine.ot_pay, hLine.service_charge, hLine.other_additions, hLine.meeting_fee, hLine.gross_pay,
           hLine.sso_amount, hLine.tax_amount, hLine.other_deductions, round2(hDrink),
           round2(hMeal),
@@ -2370,7 +2370,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         line.salary_tax_mode_snapshot,
         line.shift_minutes, line.break_deducted_minutes, line.regular_minutes, line.ot_minutes,
         line.holiday_minutes,
-        line.days_worked, line.leave_days, line.unpaired_clockins,
+        line.days_worked, line.leave_days, line.unpaid_leave_days, round2(line.unpaid_leave_deduction),
+        line.unpaired_clockins,
         line.base_pay, line.ot_pay, line.service_charge, line.other_additions, line.meeting_fee, line.gross_pay,
         line.sso_amount, line.tax_amount, line.other_deductions, round2(drinkDed),
         round2(mealpassDed),
@@ -2722,6 +2723,7 @@ export function recomputeLine(
         SET shift_minutes = 0, break_deducted_minutes = 0,
             regular_minutes = 0, ot_minutes = 0, holiday_minutes = 0,
             days_worked = ?, unpaired_clockins = 0,
+            unpaid_leave_days = 0, unpaid_leave_deduction = 0,
             base_pay = ?, ot_pay = 0, gross_pay = ?,
             sso_amount = 0, tax_amount = ?, drink_deductions = ?, mealpass_deductions = ?, net_pay = ?,
             hourly_rate_snapshot = NULL, monthly_salary_snapshot = NULL,
@@ -2742,17 +2744,17 @@ export function recomputeLine(
           pay_cycle_snapshot, hourly_rate_snapshot, monthly_salary_snapshot,
           salary_tax_mode_snapshot,
           shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
-          holiday_minutes, days_worked, leave_days, unpaired_clockins,
+          holiday_minutes, days_worked, leave_days, unpaid_leave_days, unpaid_leave_deduction, unpaired_clockins,
           base_pay, ot_pay, service_charge, other_additions, gross_pay,
           sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay,
           is_helper
-        ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?)
+        ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?)
       `).run(
         periodId, userId, existing.employee_code, existing.display_name, hLine.employment_type,
         'weekly', null, null,
         'wht',
         0, 0, 0, 0,
-        0, hLine.days_worked, 0, 0,
+        0, hLine.days_worked, 0, 0, 0, 0,
         round2(hLine.base_pay), 0, 0, 0, round2(hLine.gross_pay),
         0, round2(hLine.tax_amount), 0, round2(hDrink), round2(hMeal), round2(hNet),
         1
@@ -2851,6 +2853,7 @@ export function recomputeLine(
       SET shift_minutes = ?, break_deducted_minutes = ?,
           regular_minutes = ?, ot_minutes = ?, holiday_minutes = ?,
           days_worked = ?, unpaired_clockins = ?,
+          unpaid_leave_days = ?, unpaid_leave_deduction = ?,
           base_pay = ?, ot_pay = ?, service_charge = ?, other_additions = ?, meeting_fee = ?, gross_pay = ?,
           sso_amount = ?, tax_amount = ?, drink_deductions = ?, mealpass_deductions = ?, net_pay = ?,
           hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
@@ -2863,6 +2866,7 @@ export function recomputeLine(
       computed.shift_minutes, computed.break_deducted_minutes,
       computed.regular_minutes, computed.ot_minutes, computed.holiday_minutes,
       computed.days_worked, computed.unpaired_clockins,
+      computed.unpaid_leave_days, round2(computed.unpaid_leave_deduction),
       round2(computed.base_pay), round2(computed.ot_pay), round2(svc), round2(add), round2(meetingFeeRL), round2(gross),
       round2(sso), round2(tax), round2(drinkDed), round2(mealpassDed), round2(net),
       rlEmp.hourly_rate, rlEmp.monthly_salary,
@@ -2882,17 +2886,18 @@ export function recomputeLine(
         pay_cycle_snapshot, hourly_rate_snapshot, monthly_salary_snapshot,
         salary_tax_mode_snapshot,
         shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
-        holiday_minutes, days_worked, leave_days, unpaired_clockins,
+        holiday_minutes, days_worked, leave_days, unpaid_leave_days, unpaid_leave_deduction, unpaired_clockins,
         base_pay, ot_pay, service_charge, other_additions, meeting_fee, gross_pay,
         sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay,
         is_helper
-      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?)
+      ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?)
     `).run(
       periodId, userId, existing.employee_code, existing.display_name, employee.employment_type,
       rlEmp.pay_cycle, rlEmp.hourly_rate, rlEmp.monthly_salary,
       taxMode,
       computed.shift_minutes, computed.break_deducted_minutes, computed.regular_minutes, computed.ot_minutes,
-      computed.holiday_minutes, computed.days_worked, existing.leave_days, computed.unpaired_clockins,
+      computed.holiday_minutes, computed.days_worked, existing.leave_days,
+      computed.unpaid_leave_days, round2(computed.unpaid_leave_deduction), computed.unpaired_clockins,
       round2(computed.base_pay), round2(computed.ot_pay), round2(svc), round2(add), round2(meetingFeeRL), round2(gross),
       round2(sso), round2(tax), round2(ded), round2(drinkDed), round2(mealpassDed), round2(net),
       rlHelperFlag

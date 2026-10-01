@@ -98,10 +98,13 @@ export default function PayslipDocument({
           <KV label={t(lang, "admin.persona.payroll.payslip.leaveDays")} value={String(line.leave_days)} />
         )}
         {line.unpaid_leave_days > 0 && (
-          <KV label="วันลาโดยไม่รับค่าจ้าง"
+          // The persisted engine figure, not a re-derivation (owner 2026-10-01) —
+          // and the rule spelled out so the employee can check it: salary ÷ 30/day.
+          <KV label="วันลาโดยไม่รับค่าจ้าง/ขาดงาน"
             value={`${line.unpaid_leave_days} วัน${
-              line.monthly_salary_snapshot != null
-                ? ` (หักจากเงินเดือนแล้ว ฿${fmtMoney((line.monthly_salary_snapshot / 30) * line.unpaid_leave_days)})`
+              line.unpaid_leave_deduction > 0
+                ? ` (หักจากเงินเดือนแล้ว ฿${fmtMoney(line.unpaid_leave_deduction)}${
+                    line.monthly_salary_snapshot != null ? ` = เงินเดือน ${fmtMoney(line.monthly_salary_snapshot)} ÷ 30 × ${line.unpaid_leave_days}` : ""})`
                 : ""}`} />
         )}
         {line.employment_type === "pt" && line.hourly_rate_snapshot != null && (
