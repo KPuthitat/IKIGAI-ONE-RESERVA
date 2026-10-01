@@ -69,6 +69,11 @@ type EmpRow = {
   total_tax: number;
   total_net: number;
   period_count: number;
+  // In-round deductions (owner 2026-10-01: "ระหว่างเดือนมีใครถูกหักอะไร ลงให้ครบ").
+  total_drink: number;        // ค่าเครื่องดื่ม (จ้อจี้)
+  total_mealpass: number;     // ค่าอาหารข้ามบริษัท (ศาลาชิลล์)
+  total_unpaid_days: number;  // FT only: ลาไม่รับค่าจ้าง + ขาดงาน (วัน) — PT days never cut pay
+  total_base_cut: number;     // FT only: salary cut for those days (mirrors unpaidLeaveDeduction) — ฐานประกันสังคมจึงต่ำกว่าเงินเดือน
 };
 
 // Per-period aggregate (header summary of each period)
@@ -125,7 +130,16 @@ export default function PayrollMonthlySummaryPage({
            SUM(pl.sso_amount) AS total_sso,
            SUM(pl.tax_amount) AS total_tax,
            SUM(pl.net_pay)    AS total_net,
-           COUNT(*)            AS period_count
+           COUNT(*)            AS period_count,
+           SUM(pl.drink_deductions)    AS total_drink,
+           SUM(pl.mealpass_deductions) AS total_mealpass,
+           -- FT only (a PT's unpaid day is simply no shift = no pay). The cut mirrors
+           -- unpaidLeaveDeduction(): salary/30 per day, rounded — exact in every
+           -- non-clamped case (prorated bases included); capped at the salary.
+           SUM(CASE WHEN pl.employment_type = 'ft' THEN pl.unpaid_leave_days ELSE 0 END) AS total_unpaid_days,
+           SUM(CASE WHEN pl.employment_type = 'ft' AND pl.unpaid_leave_days > 0 AND pl.monthly_salary_snapshot > 0
+                    THEN MIN(ROUND(pl.monthly_salary_snapshot / 30.0 * pl.unpaid_leave_days, 2), pl.monthly_salary_snapshot)
+                    ELSE 0 END) AS total_base_cut
     FROM payroll_lines pl
     JOIN payroll_periods pp ON pl.period_id = pp.id
     LEFT JOIN users u ON u.id = pl.user_id
@@ -218,7 +232,16 @@ export default function PayrollMonthlySummaryPage({
            SUM(pl.sso_amount) AS total_sso,
            SUM(pl.tax_amount) AS total_tax,
            SUM(pl.net_pay)    AS total_net,
-           COUNT(*)            AS period_count
+           COUNT(*)            AS period_count,
+           SUM(pl.drink_deductions)    AS total_drink,
+           SUM(pl.mealpass_deductions) AS total_mealpass,
+           -- FT only (a PT's unpaid day is simply no shift = no pay). The cut mirrors
+           -- unpaidLeaveDeduction(): salary/30 per day, rounded — exact in every
+           -- non-clamped case (prorated bases included); capped at the salary.
+           SUM(CASE WHEN pl.employment_type = 'ft' THEN pl.unpaid_leave_days ELSE 0 END) AS total_unpaid_days,
+           SUM(CASE WHEN pl.employment_type = 'ft' AND pl.unpaid_leave_days > 0 AND pl.monthly_salary_snapshot > 0
+                    THEN MIN(ROUND(pl.monthly_salary_snapshot / 30.0 * pl.unpaid_leave_days, 2), pl.monthly_salary_snapshot)
+                    ELSE 0 END) AS total_base_cut
     FROM payroll_lines pl
     JOIN payroll_periods pp ON pl.period_id = pp.id
     JOIN branches b ON b.id = pp.branch_id
@@ -300,7 +323,8 @@ export default function PayrollMonthlySummaryPage({
       user_id: userId, display_name: s.displayName, title_prefix: null, company_id: companyId,
       employment_type: (s.employmentType === "ft" || s.employmentType === "pt") ? s.employmentType : null,
       salary_tax_mode_snapshot: s.taxMode,
-      total_gross: 0, total_sso: 0, total_tax: 0, total_net: 0, period_count: 0
+      total_gross: 0, total_sso: 0, total_tax: 0, total_net: 0, period_count: 0,
+      total_drink: 0, total_mealpass: 0, total_unpaid_days: 0, total_base_cut: 0
     };
     if (!rowsByCompany.has(companyId)) rowsByCompany.set(companyId, []);
     rowsByCompany.get(companyId)!.push(synth);
@@ -335,6 +359,7 @@ export default function PayrollMonthlySummaryPage({
   // One merged table per employment type (owner 2026-07-27: แยกตาราง FT/PT +
   // รวม NAMA+HYPO เป็นแถวเดียว/คน). สังกัด = home branch; the per-branch net
   // columns are the where-they-worked split (บัญชีลงแยกสาขาตามนี้).
+  const round2 = (n: number) => Math.round(n * 100) / 100;
   const money = (v: number, cls = "") =>
     v ? <span className={cls}>{fmtMoney(v)}</span> : <span className="text-slate-300">—</span>;
   // Per-row figures in the owner's statement order (2026-08-02): ค่าตอบแทน (สะสม
@@ -348,8 +373,24 @@ export default function PayrollMonthlySummaryPage({
     const sso = r.total_sso ?? 0;
     const tax = (r.total_tax ?? 0) + svc.wht + svc.mtgWht;
     const gi = svc.gi;
-    const ded = sso + tax + gi;
-    return { comp, svcGross: svc.gross, mtgGross: svc.mtgGross, income, sso, tax, gi, ded, take: income - ded };
+    // หักระหว่างเดือน (owner 2026-10-01): everything withheld inside the pay
+    // rounds besides ปกส./ภาษี — derived from the STORED net so รวมรับจริง always
+    // equals what was transferred (same rule as the export document, incl. the
+    // round2 at every step so SUM(REAL) dust never renders as "0.00"). The
+    // itemised parts come from the line columns but are capped at the total:
+    // when the welfare floor clamped a net to 0 the ledger columns exceed what
+    // was really withheld. Any remainder is shown as อื่นๆ.
+    const inRound = round2(Math.max(0, comp - (r.total_net ?? 0) - (r.total_sso ?? 0) - (r.total_tax ?? 0)));
+    const drink = round2(Math.min(r.total_drink ?? 0, inRound));
+    const mealpass = round2(Math.min(r.total_mealpass ?? 0, inRound - drink));
+    const otherDed = round2(Math.max(0, inRound - drink - mealpass));
+    const ded = round2(sso + tax + gi + inRound);
+    return {
+      comp, svcGross: svc.gross, mtgGross: svc.mtgGross, income, sso, tax, gi,
+      inRound, drink, mealpass, otherDed,
+      unpaidDays: r.total_unpaid_days ?? 0, baseCut: round2(r.total_base_cut ?? 0),
+      ded, take: round2(income - ded)
+    };
   };
   // One table per (employment type × tax mode). Read-only overview — every figure
   // is the month's accumulation across pay rounds, sourced from the per-branch
@@ -358,15 +399,16 @@ export default function PayrollMonthlySummaryPage({
   // SVC · รวมรายรับ · หัก · สุทธิ.
   const empTable = (title: string, subtitle: string, accent: string, rows: EmpCompanyRow[], companyKey: number | null) => {
     if (rows.length === 0) return null;
-    const sub = rows.reduce(
-      (a, r) => {
-        const f = figuresFor(r, companyKey);
+    // Figures once per row — the subtotal and the row cells read the same objects.
+    const figs = rows.map((r) => ({ r, f: figuresFor(r, companyKey) }));
+    const sub = figs.reduce(
+      (a, { f }) => {
         return {
           comp: a.comp + f.comp, svcGross: a.svcGross + f.svcGross, mtgGross: a.mtgGross + f.mtgGross, income: a.income + f.income,
-          sso: a.sso + f.sso, tax: a.tax + f.tax, gi: a.gi + f.gi, ded: a.ded + f.ded, take: a.take + f.take
+          sso: a.sso + f.sso, tax: a.tax + f.tax, gi: a.gi + f.gi, inRound: a.inRound + f.inRound, ded: a.ded + f.ded, take: a.take + f.take
         };
       },
-      { comp: 0, svcGross: 0, mtgGross: 0, income: 0, sso: 0, tax: 0, gi: 0, ded: 0, take: 0 }
+      { comp: 0, svcGross: 0, mtgGross: 0, income: 0, sso: 0, tax: 0, gi: 0, inRound: 0, ded: 0, take: 0 }
     );
     return (
       <div className="card overflow-x-auto">
@@ -386,12 +428,12 @@ export default function PayrollMonthlySummaryPage({
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.sso")}</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.tax")}</th>
               <th className="py-2 pr-3 text-right whitespace-nowrap">ประกันกลุ่ม</th>
+              <th className="py-2 pr-3 text-right whitespace-nowrap">หักระหว่างเดือน</th>
               <th className="py-2 pr-3 text-right whitespace-nowrap">รวมรับจริง</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
-              const f = figuresFor(r, companyKey);
+            {figs.map(({ r, f }) => {
               return (
                 <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
                   <td className="py-2 pr-3">
@@ -404,13 +446,32 @@ export default function PayrollMonthlySummaryPage({
                     </Link>
                   </td>
                   <td className="py-2 pr-3 text-xs text-slate-500 whitespace-nowrap">{homeByUser.get(r.user_id) ?? "—"}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{money(f.comp)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {money(f.comp)}
+                    {f.unpaidDays > 0 && (
+                      <div className="text-[10px] text-rose-600 whitespace-nowrap">
+                        ลาไม่รับค่าจ้าง/ขาดงาน {f.unpaidDays} วัน{f.baseCut > 0 ? ` −${fmtMoney(f.baseCut)}` : ""}
+                      </div>
+                    )}
+                  </td>
                   <td className="py-2 pr-3 text-right tabular-nums text-violet-700">{money(f.svcGross)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-fuchsia-700">{money(f.mtgGross)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums font-medium text-slate-800">{money(f.income)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-sky-700">{money(f.sso)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-amber-700">{money(f.tax)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-rose-600">{money(f.gi)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-rose-600">
+                    {money(f.inRound)}
+                    {f.inRound > 0 && (
+                      <div className="text-[10px] text-slate-400 whitespace-nowrap">
+                        {[
+                          f.drink > 0 ? `เครื่องดื่ม ${fmtMoney(f.drink)}` : null,
+                          f.mealpass > 0 ? `อาหารข้ามบริษัท ${fmtMoney(f.mealpass)}` : null,
+                          f.otherDed > 0 ? `อื่นๆ ${fmtMoney(f.otherDed)}` : null
+                        ].filter(Boolean).join(" · ")}
+                      </div>
+                    )}
+                  </td>
                   <td className="py-2 pr-3 text-right tabular-nums font-bold text-emerald-700">{fmtMoney(f.take)}</td>
                 </tr>
               );
@@ -428,6 +489,7 @@ export default function PayrollMonthlySummaryPage({
               <td className="py-2 pr-3 text-right tabular-nums text-sky-700">{fmtMoney(sub.sso)}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-amber-700">{fmtMoney(sub.tax)}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-rose-600">{fmtMoney(sub.gi)}</td>
+              <td className="py-2 pr-3 text-right tabular-nums text-rose-600">{fmtMoney(sub.inRound)}</td>
               <td className="py-2 pr-3 text-right tabular-nums font-bold text-emerald-700">{fmtMoney(sub.take)}</td>
             </tr>
           </tfoot>
@@ -532,7 +594,7 @@ export default function PayrollMonthlySummaryPage({
               per ประเภทพนักงาน × โหมดภาษี (owner 2026-09-03). Every figure is the
               month's accumulation across pay rounds. */}
           <p className="text-xs text-slate-400">
-            แยกตามบริษัท (บัญชีแยกกัน) → แยกพนักงานประจำ/พาร์ทไทม์ → แยกประกันสังคม/หัก ณ ที่จ่าย · ทุกยอดคือ<b>ยอดสะสมทั้งเดือน</b>จากทุกรอบจ่าย (ดูอย่างเดียว แก้ที่หน้าค่าตอบแทนรายสาขา) · ค่าตอบแทน + เซอร์วิสชาร์จ + เบี้ยประชุม = รวมรายรับ → หัก ปกส./ภาษี/ประกันกลุ่ม → รวมรับจริง · เซอร์วิสชาร์จและเบี้ยประชุมเป็นของเดือน{monthLabel(svcMonth, lang)} (จ่ายพร้อมกันในรอบเซอร์วิสชาร์จ)
+            แยกตามบริษัท (บัญชีแยกกัน) → แยกพนักงานประจำ/พาร์ทไทม์ → แยกประกันสังคม/หัก ณ ที่จ่าย · ทุกยอดคือ<b>ยอดสะสมทั้งเดือน</b>จากทุกรอบจ่าย (ดูอย่างเดียว แก้ที่หน้าค่าตอบแทนรายสาขา) · ค่าตอบแทน + เซอร์วิสชาร์จ + เบี้ยประชุม = รวมรายรับ → หัก ปกส./ภาษี/ประกันกลุ่ม/หักระหว่างเดือน (เครื่องดื่ม · อาหารข้ามบริษัท · อื่นๆ) → รวมรับจริง (= ยอดโอนจริง) · ค่าตอบแทนที่มีบรรทัดแดงใต้ยอด = ฐานเงินเดือนถูกตัดจากลาไม่รับค่าจ้าง/ขาดงาน (ประกันสังคมจึงคิดจากฐานที่ลดแล้ว) · เซอร์วิสชาร์จและเบี้ยประชุมเป็นของเดือน{monthLabel(svcMonth, lang)} (จ่ายพร้อมกันในรอบเซอร์วิสชาร์จ)
           </p>
           {/* One section per company — the books are separate, so NAMA+HYPO and
               AT HOME never share a table (owner 2026-08-01). */}
@@ -554,15 +616,16 @@ export default function PayrollMonthlySummaryPage({
             // รายการหัก (ปกส. + ภาษี + SVC WHT + ประกันกลุ่ม) = รวมรับจริง. WHT + SSO
             // shown split so the accounting proportion is visible at a glance.
             const cAgg = crows.reduce((s, r) => {
-              const sv = svcFor(r.user_id, g.key);
+              const f = figuresFor(r, g.key);
               return {
-                income: s.income + (r.total_gross ?? 0) + sv.gross + sv.mtgGross,
-                wht: s.wht + (r.total_tax ?? 0) + sv.wht + sv.mtgWht,
-                sso: s.sso + (r.total_sso ?? 0),
-                gi: s.gi + sv.gi
+                income: s.income + f.income,
+                wht: s.wht + f.tax,
+                sso: s.sso + f.sso,
+                gi: s.gi + f.gi,
+                inRound: s.inRound + f.inRound
               };
-            }, { income: 0, wht: 0, sso: 0, gi: 0 });
-            const cDed = cAgg.wht + cAgg.sso + cAgg.gi;
+            }, { income: 0, wht: 0, sso: 0, gi: 0, inRound: 0 });
+            const cDed = cAgg.wht + cAgg.sso + cAgg.gi + cAgg.inRound;
             return (
               <div key={String(g.key)} className="space-y-3">
                 <div className="border-l-4 border-brand pl-3 pt-2">
@@ -572,6 +635,7 @@ export default function PayrollMonthlySummaryPage({
                     <span>หัก ณ ที่จ่าย <b className="text-amber-700">{fmtMoney(cAgg.wht)}</b></span>
                     <span>ประกันสังคม <b className="text-sky-700">{fmtMoney(cAgg.sso)}</b></span>
                     {cAgg.gi > 0 && <span>ประกันกลุ่ม <b className="text-rose-600">{fmtMoney(cAgg.gi)}</b></span>}
+                    {cAgg.inRound > 0 && <span>หักระหว่างเดือน <b className="text-rose-600">{fmtMoney(cAgg.inRound)}</b></span>}
                     <span>รวมรับจริง <b className="text-emerald-700">{fmtMoney(cAgg.income - cDed)}</b></span>
                   </div>
                 </div>
