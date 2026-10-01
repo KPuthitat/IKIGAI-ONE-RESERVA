@@ -3026,6 +3026,12 @@ function runMigrations(db: Database.Database): void {
     );
     if (!svcCols.has("finalized_at")) db.exec("ALTER TABLE svc_payout_batches ADD COLUMN finalized_at TEXT");
     if (!svcCols.has("finalized_by_user_id")) db.exec("ALTER TABLE svc_payout_batches ADD COLUMN finalized_by_user_id INTEGER REFERENCES users(id)");
+    // Actual transfer dates (owner 2026-10-01): ACCOUNTA books on the day the
+    // money really left, not on the computed 20th nor on the "ทำจ่าย" click time.
+    // NULL = default (svc: 20th of next month; meeting fee: same day as svc).
+    // The meeting fee gets its own date because it is often transferred later.
+    if (!svcCols.has("svc_pay_date")) db.exec("ALTER TABLE svc_payout_batches ADD COLUMN svc_pay_date TEXT");         // YYYY-MM-DD
+    if (!svcCols.has("meeting_pay_date")) db.exec("ALTER TABLE svc_payout_batches ADD COLUMN meeting_pay_date TEXT"); // YYYY-MM-DD
   }
 
   // Manual SVC allocations (owner 2026-07-21): for months BEFORE the system went

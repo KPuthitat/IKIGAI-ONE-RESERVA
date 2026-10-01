@@ -4,7 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postSvcToAccounta, removeSvcFromAccounta } from "@/lib/accounta-db";
-import { companySvcPayoutState } from "@/lib/service-charge";
+import { companySvcPayoutState, setSvcBatchPayDates } from "@/lib/service-charge";
 import { notifySvcCompanyPaid } from "@/lib/payout-notify";
 
 // PATCH /api/admin/persona/service-charge/company/payout — company-wide payout,
@@ -18,9 +18,12 @@ import { notifySvcCompanyPaid } from "@/lib/payout-notify";
 // Guarded by userCanViewPayroll; PIN required for finalize / post / unpost.
 
 const Body = z.object({
-  action: z.enum(["finalize", "unfinalize", "mark_paid", "unpay", "post", "unpost"]),
+  action: z.enum(["finalize", "unfinalize", "mark_paid", "unpay", "post", "unpost", "set_pay_dates"]),
   yearMonth: z.string().regex(/^\d{4}-\d{2}$/),
-  pin: z.string().optional()
+  pin: z.string().optional(),
+  // set_pay_dates (owner 2026-10-01): actual transfer dates; null = back to default.
+  svcPayDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  meetingPayDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
 });
 
 function requirePin(userId: number, pin: string | undefined): NextResponse | null {
@@ -158,6 +161,41 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "unpost_failed", detail: (e as Error).message }, { status: 500 });
     }
     return NextResponse.json({ ok: true });
+  }
+
+  // ── set_pay_dates — actual transfer dates, PIN-gated (owner 2026-10-01) ─────
+  // Default is the 20th for SVC and the same day for the meeting fee; the owner
+  // overrides when the real transfer happened on another day (e.g. SVC 20 Sep,
+  // meeting fee 30 Sep). If the month is already posted, ACCOUNTA is re-posted
+  // right away so the books move to the corrected dates.
+  if (d.action === "set_pay_dates") {
+    if (state.status === "draft") return NextResponse.json({ error: "must_be_finalized", message: "ต้องปิดยอดก่อนจึงตั้งวันโอนได้" }, { status: 400 });
+    const pinErr = requirePin(user.id, d.pin);
+    if (pinErr) return pinErr;
+    // Field semantics: omitted = keep the stored value, null = clear back to the
+    // default, string = set. So a partial update never wipes the other date.
+    try {
+      let net = 0, wht = 0, reposted = 0;
+      db.transaction(() => {
+        for (const b of state.branches) {
+          const cur = db.prepare("SELECT id, svc_pay_date, meeting_pay_date FROM svc_payout_batches WHERE branch_id = ? AND year_month = ?")
+            .get(b.id, d.yearMonth) as { id: number; svc_pay_date: string | null; meeting_pay_date: string | null } | undefined;
+          if (!cur) continue;
+          const svcPayDate = d.svcPayDate === undefined ? cur.svc_pay_date : d.svcPayDate;
+          const meetingPayDate = d.meetingPayDate === undefined ? cur.meeting_pay_date : d.meetingPayDate;
+          setSvcBatchPayDates(b.id, d.yearMonth, svcPayDate, meetingPayDate);
+          if (b.status === "posted") {
+            const r = postSvcToAccounta(cur.id, user.id);
+            net += r.net; wht += r.wht; reposted += 1;
+            db.prepare(`UPDATE svc_payout_batches SET total_net = ?, total_wht = ? WHERE id = ?`).run(r.net, r.wht, cur.id);
+          }
+        }
+      })();
+      return NextResponse.json({ ok: true, reposted: reposted > 0, repostedBranches: reposted, accounta: { net, wht } });
+    } catch (e) {
+      const msg = (e as Error).message;
+      return NextResponse.json({ error: msg === "bad_date" ? "bad_date" : "set_pay_dates_failed", detail: msg }, { status: msg === "bad_date" ? 400 : 500 });
+    }
   }
 
   return NextResponse.json({ error: "invalid_action" }, { status: 400 });

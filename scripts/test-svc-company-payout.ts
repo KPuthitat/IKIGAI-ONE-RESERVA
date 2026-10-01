@@ -166,21 +166,39 @@ process.env.DATABASE_PATH = TMP;
     return !!ra && near(ra.meetingFeeGross, 300) && near(rb?.meetingFeeGross ?? 0, 0);
   })());
 
-  // ── ACCOUNTA books on the ACTUAL pay day, not the computed 20th (owner 2026-10-01) ──
-  // paid_at is a UTC ISO stamp; the booked date must be the Bangkok calendar day.
-  const bookedDate = () => (db.prepare(
-    "SELECT bill_date, paid_date FROM accounta_expenses WHERE svc_payout_batch_id=? AND category='เบี้ยประชุม'"
-  ).get(batchA) as { bill_date: string; paid_date: string } | undefined);
-  db.prepare("UPDATE svc_payout_batches SET paid_at = ? WHERE id = ?").run("2026-09-30T10:00:00.000Z", batchA); // 17:00 BKK, 30 Sep
+  // ── ACCOUNTA books on the batch's explicit transfer dates (owner 2026-10-01) ──
+  // SVC rows (+ SVC WHT) on svc_pay_date, เบี้ยประชุม rows (+ its WHT) on
+  // meeting_pay_date. Defaults: SVC = the 20th, meeting fee = same day as SVC.
+  // The "ทำจ่าย" click time (paid_at) must play NO part.
+  const booked = (category: string, noteLike: string) => (db.prepare(
+    "SELECT bill_date, paid_date FROM accounta_expenses WHERE svc_payout_batch_id=? AND category=? AND note LIKE ? LIMIT 1"
+  ).get(batchA, category, noteLike) as { bill_date: string; paid_date: string | null } | undefined);
+  db.prepare("UPDATE svc_payout_batches SET paid_at = ? WHERE id = ?").run("2026-10-01T12:44:00.000Z", batchA); // clicked 1 Oct — must be ignored
+  // In this fixture batch A holds only mtgU's meeting fee (no SVC rows), so the
+  // meeting-fee rows are what prove the dates. Put mtgU on หัก ณ ที่จ่าย for this
+  // block so the fee also produces a WHT row (its date must follow the fee's).
+  db.prepare("UPDATE users SET salary_tax_mode = 'wht' WHERE id = ?").run(mtgU);
   postSvcToAccounta(batchA, uid);
-  ok("accounta: ลงวันที่จ่ายจริง 30 ก.ย. (ไม่ใช่ 20 ต.ค. ที่คำนวณ)",
-    bookedDate()?.bill_date === "2026-09-30" && bookedDate()?.paid_date === "2026-09-30");
-  db.prepare("UPDATE svc_payout_batches SET paid_at = ? WHERE id = ?").run("2026-09-30T18:30:00.000Z", batchA); // 01:30 BKK, 1 Oct
+  ok("accounta: ไม่ตั้งวัน → เบี้ยประชุม (+ภาษี) ลงวันที่ 20 เดือนถัดไป ไม่ใช่วันกดปุ่ม 1 ต.ค.",
+    booked("เบี้ยประชุม", "%")?.bill_date === "2026-10-20" && booked("ภาษีหัก ณ ที่จ่าย", "%เบี้ยประชุม%")?.bill_date === "2026-10-20");
+  const dflt = sc.svcBatchPayDates(batchA);
+  ok("payDates: default = 20 เดือนถัดไป ทั้งคู่ และยังไม่ถูกตั้ง", dflt.svcPayDate === "2026-10-20" && dflt.meetingPayDate === "2026-10-20" && !dflt.svcPayDateSet && !dflt.meetingPayDateSet);
+  // Owner's real case: SVC transferred 20 Sep, meeting fee transferred 30 Sep.
+  ok("payDates: ตั้งวันโอน SVC 20 ก.ย. / เบี้ยประชุม 30 ก.ย. สำเร็จ", sc.setSvcBatchPayDates(A, ym, "2026-09-20", "2026-09-30") === true);
   postSvcToAccounta(batchA, uid);
-  ok("accounta: paid_at หลังเที่ยงคืนไทย → ลง 1 ต.ค. (แปลงโซนเวลาถูก)", bookedDate()?.bill_date === "2026-10-01");
+  ok("accounta: เบี้ยประชุม ลง 30 ก.ย. ตามวันโอนเบี้ย (ไม่ใช่วัน SVC 20 ก.ย.)",
+    booked("เบี้ยประชุม", "%")?.bill_date === "2026-09-30" && booked("เบี้ยประชุม", "%")?.paid_date === "2026-09-30");
+  ok("accounta: ภาษีหัก ณ ที่จ่าย ของเบี้ยประชุม ตามวันเบี้ย (30 ก.ย.)",
+    booked("ภาษีหัก ณ ที่จ่าย", "%เบี้ยประชุม%")?.bill_date === "2026-09-30");
+  // Meeting date left null → follows the SVC date.
+  sc.setSvcBatchPayDates(A, ym, "2026-09-22", null);
+  ok("payDates: เบี้ยประชุมไม่ตั้ง → ตามวัน SVC (22 ก.ย.)", sc.svcBatchPayDates(batchA).meetingPayDate === "2026-09-22");
+  ok("payDates: วันผิดรูปแบบ → bad_date", (() => { try { sc.setSvcBatchPayDates(A, ym, "30/09/2569", null); return false; } catch (e) { return (e as Error).message === "bad_date"; } })());
+  sc.setSvcBatchPayDates(A, ym, null, null);
   db.prepare("UPDATE svc_payout_batches SET paid_at = NULL WHERE id = ?").run(batchA);
   postSvcToAccounta(batchA, uid);
-  ok("accounta: ยังไม่กดจ่าย → fallback วันที่ 20 เดือนถัดไป", bookedDate()?.bill_date === "2026-10-20");
+  ok("payDates: เคลียร์ทั้งคู่ → กลับไป 20 เดือนถัดไป", booked("เบี้ยประชุม", "%")?.bill_date === "2026-10-20");
+  db.prepare("UPDATE users SET salary_tax_mode = 'sso' WHERE id = ?").run(mtgU); // back to sso (fixture default) for the blocks below
 
   // ── meetingFeeByUserCompany: the ONE map the payroll summary page + export read (owner 2026-10-01) ──
   db.prepare("UPDATE users SET employment_type = 'ft' WHERE id = ?").run(mtgU);

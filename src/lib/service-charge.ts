@@ -2668,6 +2668,53 @@ export function getSvcBatch(branchId: number, yearMonth: string): { id: number; 
   ).get(branchId, yearMonth) as { id: number; status: SvcBatchStatus; posted_at: string | null } | undefined;
 }
 
+// ── Actual transfer dates per batch (owner 2026-10-01) ───────────────────────
+// ACCOUNTA must book on the day the money really left the bank. The computed
+// 20th is only the DEFAULT; the "ทำจ่าย" click time is never used (it is when a
+// button was pressed, not when the transfer happened). The meeting fee carries
+// its own date because it is often transferred on a later day than the SVC.
+
+export type SvcPayDates = {
+  svcPayDate: string;        // YYYY-MM-DD — effective (explicit or default 20th)
+  meetingPayDate: string;    // YYYY-MM-DD — effective (explicit, else = svcPayDate)
+  svcPayDateSet: boolean;    // true when the owner set it explicitly
+  meetingPayDateSet: boolean;
+};
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** True only for a real calendar day ("2026-02-31" / "2026-13-05" are rejected,
+ *  not just the shape) — the value goes straight into accounta_expenses dates. */
+export function isValidIsoDay(s: string): boolean {
+  if (!ISO_DAY.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+/** Effective transfer dates for a batch, with defaults applied. */
+export function svcBatchPayDates(batchId: number): SvcPayDates {
+  const r = getDb().prepare(
+    "SELECT year_month, svc_pay_date, meeting_pay_date FROM svc_payout_batches WHERE id = ?"
+  ).get(batchId) as { year_month: string; svc_pay_date: string | null; meeting_pay_date: string | null } | undefined;
+  const fallback = computePayoutDate(r?.year_month ?? "1970-01");
+  const svcPayDate = r?.svc_pay_date && ISO_DAY.test(r.svc_pay_date) ? r.svc_pay_date : fallback;
+  const meetingPayDate = r?.meeting_pay_date && ISO_DAY.test(r.meeting_pay_date) ? r.meeting_pay_date : svcPayDate;
+  return { svcPayDate, meetingPayDate, svcPayDateSet: !!r?.svc_pay_date, meetingPayDateSet: !!r?.meeting_pay_date };
+}
+
+/** Set (or clear with null → back to default) a batch's transfer dates. Throws
+ *  "bad_date" on a malformed value. The batch must already exist (finalized+). */
+export function setSvcBatchPayDates(
+  branchId: number, yearMonth: string, svcPayDate: string | null, meetingPayDate: string | null
+): boolean {
+  if (svcPayDate != null && !isValidIsoDay(svcPayDate)) throw new Error("bad_date");
+  if (meetingPayDate != null && !isValidIsoDay(meetingPayDate)) throw new Error("bad_date");
+  return getDb().prepare(
+    "UPDATE svc_payout_batches SET svc_pay_date = ?, meeting_pay_date = ? WHERE branch_id = ? AND year_month = ?"
+  ).run(svcPayDate, meetingPayDate, branchId, yearMonth).changes > 0;
+}
+
 const SVC_STAGE: Record<SvcBatchStatus, number> = { draft: 0, finalized: 1, paid: 2, posted: 3 };
 
 export type CompanySvcPayoutState = {
@@ -2675,22 +2722,32 @@ export type CompanySvcPayoutState = {
   status: SvcBatchStatus;                 // aggregate = least-advanced branch
   allComplete: boolean;                   // every participating branch's month is filled
   incomplete: Array<{ id: number; name: string; filled: number; days: number }>;
+  payDates: SvcPayDates | null;           // effective transfer dates (null until a batch exists)
+  hasMeetingFee: boolean;                 // any เบี้ยประชุม rides this month's round
 };
 
 /** Aggregate payout state for a company-wide month: each participating branch's
  *  batch status + completeness, the least-advanced status (so the page enables
  *  the right next step), and which branches aren't complete. */
 export function companySvcPayoutState(companyId: number, yearMonth: string): CompanySvcPayoutState {
-  const branches = svcParticipatingBranches(companyId, yearMonth).map((b) => ({
+  // One batch lookup per branch — reused below for the transfer dates.
+  const batchRows = svcParticipatingBranches(companyId, yearMonth).map((b) => ({ b, batch: getSvcBatch(b.id, yearMonth) }));
+  const branches = batchRows.map(({ b, batch }) => ({
     id: b.id, name: b.name,
-    status: (getSvcBatch(b.id, yearMonth)?.status ?? "draft") as SvcBatchStatus,
+    status: (batch?.status ?? "draft") as SvcBatchStatus,
     fill: svcMonthFill(b.id, yearMonth)
   }));
   const status: SvcBatchStatus = branches.length === 0
     ? "draft"
     : branches.reduce<SvcBatchStatus>((min, b) => (SVC_STAGE[b.status] < SVC_STAGE[min] ? b.status : min), "posted");
   const incomplete = branches.filter((b) => !b.fill.complete).map((b) => ({ id: b.id, name: b.name, filled: b.fill.filled, days: b.fill.days }));
-  return { branches, status, allComplete: incomplete.length === 0, incomplete };
+  // Transfer dates are set on every participating branch together, so read them
+  // from the first branch that already has a batch row.
+  const firstBatch = batchRows.map((r) => r.batch).find((b) => !!b);
+  const payDates = firstBatch ? svcBatchPayDates(firstBatch.id) : null;
+  const feeBranches = meetingFeeGrossByBranchUser(yearMonth);
+  const hasMeetingFee = branches.some((b) => (feeBranches.get(b.id)?.size ?? 0) > 0);
+  return { branches, status, allComplete: incomplete.length === 0, incomplete, payDates, hasMeetingFee };
 }
 
 // ── Manual GROSS override per person (owner 2026-09-03) ──────────────────────

@@ -10,10 +10,11 @@ import { formatBkkDateTime } from "@/lib/time";
 // draft → ปิดยอด(finalize) → ทำจ่าย(paid) → ลงบัญชี(posted). Posting to ACCOUNTA
 // happens only at step 3. PIN on finalize / post / unpost.
 type Status = "draft" | "finalized" | "paid" | "posted";
-type Action = "finalize" | "unfinalize" | "mark_paid" | "unpay" | "post" | "unpost";
+type Action = "finalize" | "unfinalize" | "mark_paid" | "unpay" | "post" | "unpost" | "set_pay_dates";
+type PayDates = { svcPayDate: string; meetingPayDate: string; svcPayDateSet: boolean; meetingPayDateSet: boolean };
 
 export default function SvcPayoutActions({
-  yearMonth, status, totalNet, totalWht, postedAt, netPayoutPreview
+  yearMonth, status, totalNet, totalWht, postedAt, netPayoutPreview, payDates = null, hasMeetingFee = false
 }: {
   yearMonth: string;
   status: Status;
@@ -21,20 +22,29 @@ export default function SvcPayoutActions({
   totalWht: number;
   postedAt: string | null;
   netPayoutPreview: number;
+  payDates?: PayDates | null;     // actual transfer dates (owner 2026-10-01); null until finalized
+  hasMeetingFee?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [pinFor, setPinFor] = useState<null | Action>(null); // which PIN-gated action is confirming
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Transfer-date editor — pre-filled only with explicitly set dates; empty =
+  // default (SVC: the 20th · meeting fee: same day as SVC) and is sent as null.
+  const [dSvc, setDSvc] = useState(payDates?.svcPayDateSet ? payDates.svcPayDate : "");
+  const [dMtg, setDMtg] = useState(payDates?.meetingPayDateSet ? payDates.meetingPayDate : "");
 
   async function call(action: Action, withPin?: string) {
     setBusy(true); setError(null);
     try {
+      const dates = action === "set_pay_dates"
+        ? { svcPayDate: dSvc || null, meetingPayDate: hasMeetingFee ? (dMtg || null) : null }
+        : {};
       const res = await fetch(apiUrl("/api/admin/persona/service-charge/payout"), {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action, yearMonth, pin: withPin })
+        body: JSON.stringify({ action, yearMonth, pin: withPin, ...dates })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setError(data.message || data.error || "ไม่สำเร็จ"); return; }
@@ -83,6 +93,20 @@ export default function SvcPayoutActions({
               );
             })}
           </div>
+          {/* Actual transfer dates — what ACCOUNTA books on (owner 2026-10-01). */}
+          {payDates && status !== "draft" && (
+            <p className="text-[11px] text-slate-600 mt-1.5 flex items-center gap-2 flex-wrap">
+              <span>วันโอนเซอร์วิสชาร์จ <b className="text-slate-800">{payDates.svcPayDate}</b>{!payDates.svcPayDateSet && <span className="text-slate-400"> (ค่าเริ่มต้น วันที่ 20)</span>}</span>
+              {hasMeetingFee && (
+                <span>· วันโอนเบี้ยประชุม <b className="text-slate-800">{payDates.meetingPayDate}</b>{!payDates.meetingPayDateSet && <span className="text-slate-400"> (ตามวันเซอร์วิสชาร์จ)</span>}</span>
+              )}
+              <button type="button" disabled={busy}
+                onClick={() => { setDSvc(payDates.svcPayDateSet ? payDates.svcPayDate : ""); setDMtg(payDates.meetingPayDateSet ? payDates.meetingPayDate : ""); setPinFor("set_pay_dates"); setError(null); }}
+                className="text-[11px] px-2 py-0.5 rounded border border-slate-300 text-brand hover:bg-slate-50 disabled:opacity-50">
+                แก้ไขวันโอน
+              </button>
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -137,14 +161,31 @@ export default function SvcPayoutActions({
               {pinFor === "finalize" && "ยืนยันปิดยอด"}
               {pinFor === "post" && "ยืนยันลงบัญชี ACCOUNTA"}
               {pinFor === "unpost" && "ยกเลิกลงบัญชี (ลบรายการบัญชี)"}
+              {pinFor === "set_pay_dates" && "แก้ไขวันโอนจริง (ใช้ลงบัญชี ACCOUNTA)"}
             </h3>
             <p className="text-[11px] text-slate-500 mb-2">
               {pinFor === "finalize" && `ล็อกยอด เซอร์วิสชาร์จ เดือน ${yearMonth}. ใส่ PIN เพื่อยืนยัน.`}
               {pinFor === "post" && `บันทึกยอด เซอร์วิสชาร์จ เดือน ${yearMonth} ลง ACCOUNTA (ค่าแรง + ภาษีหัก ณ ที่จ่าย). ใส่ PIN.`}
               {pinFor === "unpost" && `ลบรายการบัญชีของเดือน ${yearMonth} แล้วกลับเป็นยังไม่ลงบัญชี. ใส่ PIN.`}
+              {pinFor === "set_pay_dates" && `วันที่เงินออกจากบัญชีจริงของรอบ ${yearMonth} — เว้นว่าง = ใช้ค่าเริ่มต้น · ถ้าลงบัญชีไปแล้ว ระบบจะย้ายรายการใน ACCOUNTA ไปวันใหม่ให้ทันที. ใส่ PIN.`}
             </p>
-            <input type="password" inputMode="numeric" autoFocus value={pin}
+            {pinFor === "set_pay_dates" && (
+              <div className="space-y-2 mb-2">
+                <label className="block text-[11px] text-slate-600">
+                  วันโอนเซอร์วิสชาร์จ <span className="text-slate-400">(ว่าง = วันที่ 20)</span>
+                  <input type="date" value={dSvc} onChange={(e) => setDSvc(e.target.value)} className="input w-full mt-0.5" />
+                </label>
+                {hasMeetingFee && (
+                  <label className="block text-[11px] text-slate-600">
+                    วันโอนเบี้ยประชุม <span className="text-slate-400">(ว่าง = วันเดียวกับเซอร์วิสชาร์จ)</span>
+                    <input type="date" value={dMtg} onChange={(e) => setDMtg(e.target.value)} className="input w-full mt-0.5" />
+                  </label>
+                )}
+              </div>
+            )}
+            <input type="password" inputMode="numeric" autoFocus={pinFor !== "set_pay_dates"} value={pin}
               onChange={(e) => setPin(e.target.value)} placeholder="PIN"
+              onKeyDown={(e) => { if (e.key === "Enter" && !busy && pin.trim() && pinFor) { e.preventDefault(); void call(pinFor, pin); } }}
               className="input w-full text-center tracking-widest mb-2" />
             {error && <p className="text-xs text-rose-600 mb-2">{error}</p>}
             <div className="flex gap-2">
