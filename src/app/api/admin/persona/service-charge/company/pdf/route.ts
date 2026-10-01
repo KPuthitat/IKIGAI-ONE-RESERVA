@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { computeCompanySvcSummary, isSharedSvcMonth } from "@/lib/service-charge";
+import { computeCompanySvcSummary, isSharedSvcMonth, companySvcPayoutState } from "@/lib/service-charge";
 import { generateSvcSummaryPdf, type SvcPdfData } from "@/lib/svc-summary-pdf";
 import { TH_MONTHS_FULL } from "@/lib/revshare";
 
@@ -80,7 +80,14 @@ export async function GET(req: Request) {
     company: { name: company?.name_th ?? "", taxId: company?.tax_id ?? null, address: company?.address ?? null },
     monthLabel: `${TH_MONTHS_FULL[mm]} ${yyyy + 543}`,
     shared: isSharedSvcMonth(companyId, month),
-    payoutDate: summary.payoutDate,
+    // The accountant must see the ACTUAL transfer date ACCOUNTA books on, not
+    // the computed 20th (owner 2026-10-01). Falls back to the 20th before a
+    // batch exists; a separate meeting-fee date is appended when it differs.
+    payoutDate: (() => {
+      const pd = companySvcPayoutState(companyId, month).payDates;
+      if (!pd) return summary.payoutDate;
+      return pd.meetingPayDate !== pd.svcPayDate ? `${pd.svcPayDate} (เบี้ยประชุม ${pd.meetingPayDate})` : pd.svcPayDate;
+    })(),
     generatedLabel,
     totals: {
       collected: round2(summary.totalCollected),

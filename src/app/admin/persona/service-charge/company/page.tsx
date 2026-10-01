@@ -186,6 +186,8 @@ export default function CompanyServiceChargePage({
           totalWht={postedTotals?.wht ?? summary.totalWht}
           postedAt={postedTotals?.posted_at ?? null}
           incomplete={payoutState.incomplete}
+          payDates={payoutState.payDates}
+          hasMeetingFee={payoutState.hasMeetingFee}
         />
       )}
 
@@ -212,10 +214,12 @@ export default function CompanyServiceChargePage({
           sub={summary.totalWht > 0 ? `หัก ณ ที่จ่ายรวม ${fmtMoney(summary.totalWht)}` : undefined}
         />
         <SummaryCard
-          label="วันจ่าย"
-          value={summary.payoutDate}
+          label="วันโอนจริง"
+          value={payoutState?.payDates?.svcPayDate ?? summary.payoutDate}
           accent="brand"
-          sub="จ่ายพร้อมกันทุกสาขา"
+          sub={payoutState?.hasMeetingFee && payoutState.payDates && payoutState.payDates.meetingPayDate !== payoutState.payDates.svcPayDate
+            ? `เบี้ยประชุม ${payoutState.payDates.meetingPayDate}`
+            : "จ่ายพร้อมกันทุกสาขา"}
         />
       </div>
 

@@ -4,7 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postSvcToAccounta, removeSvcFromAccounta } from "@/lib/accounta-db";
-import { isManualSvcMonth, isSharedSvcMonth } from "@/lib/service-charge";
+import { isManualSvcMonth, isSharedSvcMonth, setSvcBatchPayDates } from "@/lib/service-charge";
 import { notifySvcBranchPaid } from "@/lib/payout-notify";
 
 // PATCH /api/admin/persona/service-charge/payout — 3-step flow mirroring payroll
@@ -20,9 +20,13 @@ import { notifySvcBranchPaid } from "@/lib/payout-notify";
 // branch is the caller's active branch — never trusted from the client.
 
 const Body = z.object({
-  action: z.enum(["finalize", "unfinalize", "mark_paid", "unpay", "post", "unpost"]),
+  action: z.enum(["finalize", "unfinalize", "mark_paid", "unpay", "post", "unpost", "set_pay_dates"]),
   yearMonth: z.string().regex(/^\d{4}-\d{2}$/),
-  pin: z.string().optional()
+  pin: z.string().optional(),
+  // set_pay_dates (owner 2026-10-01): actual transfer dates. omitted = keep,
+  // null = back to default, string = set.
+  svcPayDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  meetingPayDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
 });
 
 function getBatch(branchId: number, yearMonth: string) {
@@ -166,6 +170,35 @@ export async function PATCH(req: Request) {
       WHERE id = ?
     `).run(batch.id);
     return NextResponse.json({ ok: true });
+  }
+
+  // ── set_pay_dates — actual transfer dates for THIS branch, PIN-gated (owner
+  // 2026-10-01). Same semantics as the company route: default is the 20th for
+  // SVC and the same day for the meeting fee; if already posted, ACCOUNTA is
+  // re-posted at once so the books move to the corrected dates.
+  if (d.action === "set_pay_dates") {
+    if (batch.status === "draft") return NextResponse.json({ error: "must_be_finalized", message: "ต้องปิดยอดก่อนจึงตั้งวันโอนได้" }, { status: 400 });
+    const pinErr = requirePin(user.id, d.pin);
+    if (pinErr) return pinErr;
+    const cur = db.prepare("SELECT svc_pay_date, meeting_pay_date FROM svc_payout_batches WHERE id = ?")
+      .get(batch.id) as { svc_pay_date: string | null; meeting_pay_date: string | null };
+    const svcPayDate = d.svcPayDate === undefined ? cur.svc_pay_date : d.svcPayDate;
+    const meetingPayDate = d.meetingPayDate === undefined ? cur.meeting_pay_date : d.meetingPayDate;
+    try {
+      let accounta: { net: number; wht: number } | null = null;
+      db.transaction(() => {
+        setSvcBatchPayDates(branchId, d.yearMonth, svcPayDate, meetingPayDate);
+        if (batch.status === "posted") {
+          const r = postSvcToAccounta(batch.id, user.id);
+          accounta = { net: r.net, wht: r.wht };
+          db.prepare(`UPDATE svc_payout_batches SET total_net = ?, total_wht = ? WHERE id = ?`).run(r.net, r.wht, batch.id);
+        }
+      })();
+      return NextResponse.json({ ok: true, reposted: accounta != null, accounta });
+    } catch (e) {
+      const msg = (e as Error).message;
+      return NextResponse.json({ error: msg === "bad_date" ? "bad_date" : "set_pay_dates_failed", detail: msg }, { status: msg === "bad_date" ? 400 : 500 });
+    }
   }
 
   return NextResponse.json({ error: "invalid_action" }, { status: 400 });

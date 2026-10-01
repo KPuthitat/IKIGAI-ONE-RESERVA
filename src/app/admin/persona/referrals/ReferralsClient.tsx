@@ -55,6 +55,7 @@ export default function ReferralPayButton({
       <div className="flex items-center gap-1.5">
         <input type="password" inputMode="numeric" autoFocus value={pin}
           onChange={(e) => setPin(e.target.value)} placeholder="PIN"
+          onKeyDown={(e) => { if (e.key === "Enter" && !busy && pin.trim()) { e.preventDefault(); void pay(); } }}
           className="border border-slate-300 rounded px-2 py-1 text-sm w-24" />
         <button type="button" disabled={busy || pin.trim() === ""} onClick={pay}
           className="text-sm px-3 py-1 rounded-lg bg-emerald-600 text-white font-medium disabled:opacity-40">

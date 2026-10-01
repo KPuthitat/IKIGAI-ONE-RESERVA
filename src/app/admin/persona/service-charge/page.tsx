@@ -34,6 +34,9 @@ import {
   isSharedSvcMonth,
   listDailyForMonth,
   isManualSvcMonth,
+  getSvcBatch,
+  svcBatchPayDates,
+  meetingFeeGrossByBranchUser,
   SVC_STAFF_SHARE_RATIO,
   SVC_COMPANY_SHARE_RATIO
 } from "@/lib/service-charge";
@@ -95,6 +98,11 @@ export default function AdminServiceChargePage({
     (["draft", "finalized", "paid", "posted"].includes(payoutBatch?.status ?? "")
       ? payoutBatch!.status
       : "draft") as "draft" | "finalized" | "paid" | "posted";
+  // Actual transfer dates (owner 2026-10-01) — what ACCOUNTA books on; shown on
+  // the tile and editable (PIN) in the payout widget. null until a batch exists.
+  const branchBatch = getSvcBatch(branch.id, month);
+  const branchPayDates = branchBatch ? svcBatchPayDates(branchBatch.id) : null;
+  const branchHasMeetingFee = (meetingFeeGrossByBranchUser(month).get(branch.id)?.size ?? 0) > 0;
 
   // Manual-entry month (owner 2026-07-21): pre-system months are typed by hand.
   // The entry table is editable only while the batch is still draft.
@@ -233,7 +241,7 @@ export default function AdminServiceChargePage({
             />
             <SummaryCard
               label={t(lang, "admin.persona.svc.tile.payoutDate")}
-              value={summary.payoutDate}
+              value={branchPayDates?.svcPayDate ?? summary.payoutDate}
               sub={t(lang, "admin.persona.svc.tile.payoutDateHint")}
               accent="brand"
             />
@@ -287,6 +295,8 @@ export default function AdminServiceChargePage({
             totalWht={payoutBatch?.total_wht ?? 0}
             postedAt={payoutBatch?.posted_at ?? null}
             netPayoutPreview={payoutPreviewNet}
+            payDates={branchPayDates}
+            hasMeetingFee={branchHasMeetingFee}
           />
         )
       )}
