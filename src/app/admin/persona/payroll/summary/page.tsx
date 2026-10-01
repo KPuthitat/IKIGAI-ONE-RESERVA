@@ -73,7 +73,7 @@ type EmpRow = {
   total_drink: number;        // ค่าเครื่องดื่ม (จ้อจี้)
   total_mealpass: number;     // ค่าอาหารข้ามบริษัท (ศาลาชิลล์)
   total_unpaid_days: number;  // FT only: ลาไม่รับค่าจ้าง + ขาดงาน (วัน) — PT days never cut pay
-  total_base_cut: number;     // FT only: salary cut for those days (mirrors unpaidLeaveDeduction) — ฐานประกันสังคมจึงต่ำกว่าเงินเดือน
+  total_base_cut: number;     // FT only: the engine's persisted unpaid_leave_deduction — ฐานประกันสังคมจึงต่ำกว่าเงินเดือน
 };
 
 // Per-period aggregate (header summary of each period)
@@ -133,13 +133,11 @@ export default function PayrollMonthlySummaryPage({
            COUNT(*)            AS period_count,
            SUM(pl.drink_deductions)    AS total_drink,
            SUM(pl.mealpass_deductions) AS total_mealpass,
-           -- FT only (a PT's unpaid day is simply no shift = no pay). The cut mirrors
-           -- unpaidLeaveDeduction(): salary/30 per day, rounded — exact in every
-           -- non-clamped case (prorated bases included); capped at the salary.
+           -- FT only (a PT's unpaid day is simply no shift = no pay). The cut is the
+           -- engine's own persisted figure (unpaid_leave_deduction) — exact in every
+           -- case, including a base clamped to 0; it is 0 for PT by construction.
            SUM(CASE WHEN pl.employment_type = 'ft' THEN pl.unpaid_leave_days ELSE 0 END) AS total_unpaid_days,
-           SUM(CASE WHEN pl.employment_type = 'ft' AND pl.unpaid_leave_days > 0 AND pl.monthly_salary_snapshot > 0
-                    THEN MIN(ROUND(pl.monthly_salary_snapshot / 30.0 * pl.unpaid_leave_days, 2), pl.monthly_salary_snapshot)
-                    ELSE 0 END) AS total_base_cut
+           SUM(pl.unpaid_leave_deduction) AS total_base_cut
     FROM payroll_lines pl
     JOIN payroll_periods pp ON pl.period_id = pp.id
     LEFT JOIN users u ON u.id = pl.user_id
@@ -235,13 +233,11 @@ export default function PayrollMonthlySummaryPage({
            COUNT(*)            AS period_count,
            SUM(pl.drink_deductions)    AS total_drink,
            SUM(pl.mealpass_deductions) AS total_mealpass,
-           -- FT only (a PT's unpaid day is simply no shift = no pay). The cut mirrors
-           -- unpaidLeaveDeduction(): salary/30 per day, rounded — exact in every
-           -- non-clamped case (prorated bases included); capped at the salary.
+           -- FT only (a PT's unpaid day is simply no shift = no pay). The cut is the
+           -- engine's own persisted figure (unpaid_leave_deduction) — exact in every
+           -- case, including a base clamped to 0; it is 0 for PT by construction.
            SUM(CASE WHEN pl.employment_type = 'ft' THEN pl.unpaid_leave_days ELSE 0 END) AS total_unpaid_days,
-           SUM(CASE WHEN pl.employment_type = 'ft' AND pl.unpaid_leave_days > 0 AND pl.monthly_salary_snapshot > 0
-                    THEN MIN(ROUND(pl.monthly_salary_snapshot / 30.0 * pl.unpaid_leave_days, 2), pl.monthly_salary_snapshot)
-                    ELSE 0 END) AS total_base_cut
+           SUM(pl.unpaid_leave_deduction) AS total_base_cut
     FROM payroll_lines pl
     JOIN payroll_periods pp ON pl.period_id = pp.id
     JOIN branches b ON b.id = pp.branch_id

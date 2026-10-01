@@ -4,7 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postSvcToAccounta, removeSvcFromAccounta } from "@/lib/accounta-db";
-import { isManualSvcMonth, isSharedSvcMonth, setSvcBatchPayDates } from "@/lib/service-charge";
+import { isManualSvcMonth, isSharedSvcMonth, setSvcBatchPayDates, isValidIsoDay } from "@/lib/service-charge";
 import { notifySvcBranchPaid } from "@/lib/payout-notify";
 
 // PATCH /api/admin/persona/service-charge/payout — 3-step flow mirroring payroll
@@ -140,18 +140,35 @@ export async function PATCH(req: Request) {
     if (batch.status !== "paid") return NextResponse.json({ error: "must_be_paid_to_post" }, { status: 400 });
     const pinErr = requirePin(user.id, d.pin);
     if (pinErr) return pinErr;
-    let posted: { staff: number; net: number; wht: number; groupInsurance: number };
+    // The actual transfer dates are confirmed as part of posting (owner
+    // 2026-10-01: "เลือกวันโอนจริงก่อนลงบัญชี") — omitted = keep, null = default.
+    // Validated up front (a real calendar day) so a typo is a 400, not a 500,
+    // and set + post + status flip happen in ONE transaction so a failed post
+    // never leaves the dates changed on a still-unposted batch.
+    for (const v of [d.svcPayDate, d.meetingPayDate]) {
+      if (typeof v === "string" && !isValidIsoDay(v)) return NextResponse.json({ error: "bad_date", message: "วันที่ไม่ถูกต้อง" }, { status: 400 });
+    }
+    let posted: { staff: number; net: number; wht: number; groupInsurance: number } | null = null;
     try {
-      posted = postSvcToAccounta(batch.id, user.id);
+      db.transaction(() => {
+        if (d.svcPayDate !== undefined || d.meetingPayDate !== undefined) {
+          const cur = db.prepare("SELECT svc_pay_date, meeting_pay_date FROM svc_payout_batches WHERE id = ?")
+            .get(batch.id) as { svc_pay_date: string | null; meeting_pay_date: string | null };
+          setSvcBatchPayDates(branchId, d.yearMonth,
+            d.svcPayDate === undefined ? cur.svc_pay_date : d.svcPayDate,
+            d.meetingPayDate === undefined ? cur.meeting_pay_date : d.meetingPayDate);
+        }
+        posted = postSvcToAccounta(batch.id, user.id);
+        db.prepare(`
+          UPDATE svc_payout_batches
+          SET status = 'posted', total_net = ?, total_wht = ?,
+              posted_by_user_id = ?, posted_at = COALESCE(posted_at, ?)
+          WHERE id = ?
+        `).run(posted.net, posted.wht, user.id, now, batch.id);
+      })();
     } catch (e) {
       return NextResponse.json({ error: "post_failed", detail: (e as Error).message }, { status: 500 });
     }
-    db.prepare(`
-      UPDATE svc_payout_batches
-      SET status = 'posted', total_net = ?, total_wht = ?,
-          posted_by_user_id = ?, posted_at = COALESCE(posted_at, ?)
-      WHERE id = ?
-    `).run(posted.net, posted.wht, user.id, now, batch.id);
     return NextResponse.json({ ok: true, accounta: posted });
   }
 

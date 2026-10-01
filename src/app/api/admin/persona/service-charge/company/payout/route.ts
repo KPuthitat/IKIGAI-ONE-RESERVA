@@ -4,7 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postSvcToAccounta, removeSvcFromAccounta } from "@/lib/accounta-db";
-import { companySvcPayoutState, setSvcBatchPayDates } from "@/lib/service-charge";
+import { companySvcPayoutState, setSvcBatchPayDates, isValidIsoDay } from "@/lib/service-charge";
 import { notifySvcCompanyPaid } from "@/lib/payout-notify";
 
 // PATCH /api/admin/persona/service-charge/company/payout — company-wide payout,
@@ -126,11 +126,24 @@ export async function PATCH(req: Request) {
     if (state.status !== "paid") return NextResponse.json({ error: "must_be_paid_to_post", message: "ต้องทำจ่ายก่อน" }, { status: 400 });
     const pinErr = requirePin(user.id, d.pin);
     if (pinErr) return pinErr;
+    // Transfer dates ride along with posting — a malformed day is a 400, not a
+    // 500 from inside the transaction.
+    for (const v of [d.svcPayDate, d.meetingPayDate]) {
+      if (typeof v === "string" && !isValidIsoDay(v)) return NextResponse.json({ error: "bad_date", message: "วันที่ไม่ถูกต้อง" }, { status: 400 });
+    }
     let net = 0, wht = 0, staff = 0;
     try {
       const tx = db.transaction(() => {
         for (const b of state.branches) if (b.status === "paid") {
-          const batch = db.prepare("SELECT id FROM svc_payout_batches WHERE branch_id = ? AND year_month = ?").get(b.id, d.yearMonth) as { id: number };
+          const batch = db.prepare("SELECT id, svc_pay_date, meeting_pay_date FROM svc_payout_batches WHERE branch_id = ? AND year_month = ?")
+            .get(b.id, d.yearMonth) as { id: number; svc_pay_date: string | null; meeting_pay_date: string | null };
+          // The actual transfer dates are confirmed as part of posting (owner
+          // 2026-10-01: "เลือกวันโอนจริงก่อนลงบัญชี") — omitted = keep, null = default.
+          if (d.svcPayDate !== undefined || d.meetingPayDate !== undefined) {
+            setSvcBatchPayDates(b.id, d.yearMonth,
+              d.svcPayDate === undefined ? batch.svc_pay_date : d.svcPayDate,
+              d.meetingPayDate === undefined ? batch.meeting_pay_date : d.meetingPayDate);
+          }
           const r = postSvcToAccounta(batch.id, user.id);
           net += r.net; wht += r.wht; staff += r.staff;
           db.prepare(`UPDATE svc_payout_batches SET status = 'posted', total_net = ?, total_wht = ?, posted_by_user_id = ?, posted_at = COALESCE(posted_at, ?) WHERE id = ?`)

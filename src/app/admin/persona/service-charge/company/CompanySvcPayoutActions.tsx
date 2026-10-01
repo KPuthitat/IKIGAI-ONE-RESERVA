@@ -44,7 +44,9 @@ export default function CompanySvcPayoutActions({
   async function call(action: Action, withPin?: string) {
     setBusy(true); setError(null);
     try {
-      const dates = action === "set_pay_dates"
+      // Posting confirms the transfer dates too (owner 2026-10-01: pick them
+      // BEFORE the books are written), so both actions send the editor's values.
+      const dates = action === "set_pay_dates" || action === "post"
         ? { svcPayDate: dSvc || null, meetingPayDate: hasMeetingFee ? (dMtg || null) : null }
         : {};
       const res = await fetch(apiUrl("/api/admin/persona/service-charge/company/payout"), {
@@ -146,7 +148,8 @@ export default function CompanySvcPayoutActions({
                 className={`${btnBase} text-rose-700 hover:bg-rose-50`}>
                 ↺ ยกเลิกทำจ่าย
               </button>
-              <button type="button" disabled={busy} onClick={() => { setPinFor("post"); setError(null); }}
+              <button type="button" disabled={busy}
+                onClick={() => { setDSvc(payDates?.svcPayDateSet ? payDates.svcPayDate : ""); setDMtg(payDates?.meetingPayDateSet ? payDates.meetingPayDate : ""); setPinFor("post"); setError(null); }}
                 className={`${btnBase} bg-emerald-600 hover:bg-emerald-700 text-white font-medium`}>
                 3. ลงบัญชี ACCOUNTA
               </button>
@@ -178,11 +181,11 @@ export default function CompanySvcPayoutActions({
             </h3>
             <p className="text-[11px] text-slate-500 mb-2">
               {pinFor === "finalize" && `ล็อกยอด เซอร์วิสชาร์จ เดือน ${yearMonth} ทุกสาขา. ใส่ PIN เพื่อยืนยัน.`}
-              {pinFor === "post" && `บันทึกยอด เดือน ${yearMonth} ลง ACCOUNTA แยกต้นทุนตามสาขา. ใส่ PIN.`}
+              {pinFor === "post" && `บันทึกยอด เดือน ${yearMonth} ลง ACCOUNTA แยกต้นทุนตามสาขา — ยืนยันวันโอนจริงด้านล่างก่อน (ว่าง = ค่าเริ่มต้น). ใส่ PIN.`}
               {pinFor === "unpost" && `ลบรายการบัญชีของเดือน ${yearMonth} ทุกสาขา แล้วกลับเป็นยังไม่ลงบัญชี. ใส่ PIN.`}
               {pinFor === "set_pay_dates" && `วันที่เงินออกจากบัญชีจริงของรอบ ${yearMonth} — เว้นว่าง = ใช้ค่าเริ่มต้น · สาขาที่ลงบัญชีไปแล้ว ระบบจะย้ายรายการใน ACCOUNTA ไปวันใหม่ให้ทันที. ใส่ PIN.`}
             </p>
-            {pinFor === "set_pay_dates" && (
+            {(pinFor === "set_pay_dates" || pinFor === "post") && (
               <div className="space-y-2 mb-2">
                 <label className="block text-[11px] text-slate-600">
                   วันโอนเซอร์วิสชาร์จ <span className="text-slate-400">(ว่าง = วันที่ 20 → {payDates?.svcPayDateSet ? "" : payDates?.svcPayDate ?? ""})</span>
@@ -196,7 +199,7 @@ export default function CompanySvcPayoutActions({
                 )}
               </div>
             )}
-            <input type="password" inputMode="numeric" autoFocus={pinFor !== "set_pay_dates"} value={pin}
+            <input type="password" inputMode="numeric" autoFocus={pinFor !== "set_pay_dates" && pinFor !== "post"} value={pin}
               onChange={(e) => setPin(e.target.value)} placeholder="PIN"
               onKeyDown={(e) => { if (e.key === "Enter" && !busy && pin.trim() && pinFor) { e.preventDefault(); void call(pinFor, pin); } }}
               className="input w-full text-center tracking-widest mb-2" />

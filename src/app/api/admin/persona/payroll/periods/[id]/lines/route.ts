@@ -151,11 +151,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       salary_tax_mode_snapshot,
       shift_minutes, break_deducted_minutes, regular_minutes, ot_minutes,
       holiday_minutes,
-      days_worked, leave_days, unpaid_leave_days, unpaired_clockins,
+      days_worked, leave_days, unpaid_leave_days, unpaid_leave_deduction, unpaired_clockins,
       base_pay, ot_pay, service_charge, other_additions, gross_pay,
       sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay,
       is_helper
-    ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?)
+    ) VALUES (?,?,?,?,?, ?,?,?, ?, ?,?,?,?, ?, ?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?,?, ?)
   `).run(
     periodId, computed.user_id,
     computed.employee_code, computed.display_name, computed.employment_type,
@@ -164,7 +164,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     computed.shift_minutes, computed.break_deducted_minutes,
     computed.regular_minutes, computed.ot_minutes,
     computed.holiday_minutes,
-    computed.days_worked, computed.leave_days, computed.unpaid_leave_days, computed.unpaired_clockins,
+    computed.days_worked, computed.leave_days, computed.unpaid_leave_days, computed.unpaid_leave_deduction, computed.unpaired_clockins,
     computed.base_pay, computed.ot_pay, computed.service_charge,
     computed.other_additions, computed.gross_pay,
     computed.sso_amount, computed.tax_amount, computed.other_deductions, drinkDed, mealpassDed,

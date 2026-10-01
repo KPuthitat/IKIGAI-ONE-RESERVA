@@ -234,7 +234,7 @@ export async function PATCH(
     db.prepare(`
       UPDATE payroll_lines
       SET regular_minutes = ?, ot_minutes = ?, holiday_minutes = ?,
-          days_worked = ?, leave_days = ?, unpaid_leave_days = ?,
+          days_worked = ?, leave_days = ?, unpaid_leave_days = ?, unpaid_leave_deduction = ?,
           base_pay = ?, ot_pay = ?, service_charge = ?,
           other_additions = ?, other_deductions = ?, meeting_fee = ?,
           gross_pay = ?, sso_amount = ?, tax_amount = ?,
@@ -249,7 +249,7 @@ export async function PATCH(
       WHERE period_id = ? AND user_id = ?
     `).run(
       computed.regular_minutes, computed.ot_minutes, computed.holiday_minutes,
-      computed.days_worked, computed.leave_days, computed.unpaid_leave_days,
+      computed.days_worked, computed.leave_days, computed.unpaid_leave_days, computed.unpaid_leave_deduction,
       computed.base_pay, computed.ot_pay, computed.service_charge,
       computed.other_additions, computed.other_deductions, line.meeting_fee,
       // เบี้ยประชุม is preserved through a manual override (owner 2026-09-02) — added
