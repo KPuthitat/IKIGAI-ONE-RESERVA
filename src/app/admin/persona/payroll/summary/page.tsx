@@ -6,8 +6,7 @@ import { getLang } from "@/lib/lang-server";
 import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
-import { nameWithPrefix } from "@/lib/name";
-import { computeMonthlySvcSummary, computeCompanySvcSummary, meetingFeeByUserCompany } from "@/lib/service-charge";
+import { monthlyPayrollRollup, type MonthPerson } from "@/lib/payroll-month";
 import { listExportScopes } from "@/lib/payroll-summary-doc";
 import ExportDialog from "./ExportDialog";
 
@@ -57,24 +56,7 @@ function monthLabel(yearMonth: string, lang: Lang): string {
 // fmtMoney moved to @/lib/format (2026-05) — imported above so every
 // payroll surface shares an identical 2dp shape.
 
-// Per-employee aggregate row across all periods that pay in the month
-type EmpRow = {
-  user_id: number;
-  display_name: string;
-  title_prefix: string | null;
-  employment_type: "pt" | "ft" | null;
-  salary_tax_mode_snapshot: "sso" | "wht" | null;
-  total_gross: number;
-  total_sso: number;
-  total_tax: number;
-  total_net: number;
-  period_count: number;
-  // In-round deductions (owner 2026-10-01: "ระหว่างเดือนมีใครถูกหักอะไร ลงให้ครบ").
-  total_drink: number;        // ค่าเครื่องดื่ม (จ้อจี้)
-  total_mealpass: number;     // ค่าอาหารข้ามบริษัท (ศาลาชิลล์)
-  total_unpaid_days: number;  // FT only: ลาไม่รับค่าจ้าง + ขาดงาน (วัน) — PT days never cut pay
-  total_base_cut: number;     // FT only: the engine's persisted unpaid_leave_deduction — ฐานประกันสังคมจึงต่ำกว่าเงินเดือน
-};
+// Per-person rows come from monthlyPayrollRollup (MonthPerson) — see @/lib/payroll-month.
 
 // Per-period aggregate (header summary of each period)
 type PeriodRow = {
@@ -119,235 +101,44 @@ export default function PayrollMonthlySummaryPage({
     ORDER BY p.pay_date, p.id
   `).all(from, to) as PeriodRow[];
 
-  // Per-employee aggregate across all those periods
-  const empRows = db.prepare(`
-    SELECT pl.user_id,
-           pl.display_name,
-           u.title_prefix,
-           MAX(pl.employment_type) AS employment_type,
-           MAX(pl.salary_tax_mode_snapshot) AS salary_tax_mode_snapshot,
-           SUM(pl.gross_pay)  AS total_gross,
-           SUM(pl.sso_amount) AS total_sso,
-           SUM(pl.tax_amount) AS total_tax,
-           SUM(pl.net_pay)    AS total_net,
-           COUNT(*)            AS period_count,
-           SUM(pl.drink_deductions)    AS total_drink,
-           SUM(pl.mealpass_deductions) AS total_mealpass,
-           -- FT only (a PT's unpaid day is simply no shift = no pay). The cut is the
-           -- engine's own persisted figure (unpaid_leave_deduction) — exact in every
-           -- case, including a base clamped to 0; it is 0 for PT by construction.
-           SUM(CASE WHEN pl.employment_type = 'ft' THEN pl.unpaid_leave_days ELSE 0 END) AS total_unpaid_days,
-           SUM(pl.unpaid_leave_deduction) AS total_base_cut
-    FROM payroll_lines pl
-    JOIN payroll_periods pp ON pl.period_id = pp.id
-    LEFT JOIN users u ON u.id = pl.user_id
-    WHERE pp.pay_date >= ? AND pp.pay_date <= ?
-    GROUP BY pl.user_id
-    ORDER BY (MAX(pl.employment_type) = 'ft') DESC,
-             (MAX(pl.employment_type) = 'pt') DESC,
-             pl.display_name
-  `).all(from, to) as EmpRow[];
-
-  // Per-branch GROSS columns were removed (owner 2026-09-03: "ยุบให้เรียบ") — the
-  // company sectioning + the สังกัด column already carry the branch split at
-  // overview altitude; the granular NAMA-vs-HYPO-per-person amounts live on the
-  // per-branch payroll pages, not this month-total overview.
-
-  // สังกัด (home branch) per user — is_primary=1, else lowest branch_id.
-  const homeRows = db.prepare(`
-    SELECT ub.user_id,
-           COALESCE(
-             (SELECT branch_id FROM user_branches WHERE user_id = ub.user_id AND is_primary = 1 LIMIT 1),
-             (SELECT MIN(branch_id) FROM user_branches WHERE user_id = ub.user_id)
-           ) AS home_branch_id,
-           (SELECT name FROM branches WHERE id = (
-             SELECT COALESCE(
-               (SELECT branch_id FROM user_branches WHERE user_id = ub.user_id AND is_primary = 1 LIMIT 1),
-               (SELECT MIN(branch_id) FROM user_branches WHERE user_id = ub.user_id)
-             ))) AS home_branch_name
-    FROM (SELECT DISTINCT user_id FROM user_branches) ub
-  `).all() as Array<{ user_id: number; home_branch_id: number | null; home_branch_name: string | null }>;
-  const homeByUser = new Map<number, string | null>();
-  for (const r of homeRows) homeByUser.set(r.user_id, r.home_branch_name);
-
-  // ── Group by COMPANY (owner 2026-08-01) ──────────────────────────────
-  // The books are separate per company (e.g. NAMA+HYPO = one company, AT HOME =
-  // another), so the summary must not mix them. Each branch belongs to a
-  // company; we render a section per company and aggregate each person's pay PER
-  // COMPANY so each company's section ties out to its own books.
-  //
-  // The set of branches to include is the UNION of (payroll periods paying this
-  // month) ∪ (service-charge activity in svcMonth) — owner 2026-09-03: anyone who
-  // received money from a company that had transactions must appear, or the tax
-  // docs (ใบหัก ณ ที่จ่าย) miss people (e.g. ศาลาชิลล์ staff who only get service
-  // charge, or a company with no payroll round paying this month but SVC to pay).
-  const svcMonth = shiftMonth(month, -1);
-  type BranchRow = { branch_id: number; branch_name: string; company_id: number | null; company_name: string | null };
-  const payrollBranches = db.prepare(`
-    SELECT b.id AS branch_id, b.name AS branch_name, b.company_id AS company_id, c.name_th AS company_name
-    FROM payroll_periods pp
-    JOIN branches b ON b.id = pp.branch_id
-    LEFT JOIN companies c ON c.id = b.company_id
-    WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
-    GROUP BY b.id
-  `).all(from, to) as BranchRow[];
-  const svcBranches = db.prepare(`
-    SELECT b.id AS branch_id, b.name AS branch_name, b.company_id AS company_id, c.name_th AS company_name
-    FROM branches b
-    LEFT JOIN companies c ON c.id = b.company_id
-    WHERE b.id IN (SELECT DISTINCT branch_id FROM daily_service_charge WHERE substr(date, 1, 7) = ?)
-  `).all(svcMonth) as BranchRow[];
-  const companyBranches: BranchRow[] = [];
-  const seenBranch = new Set<number>();
-  for (const b of [...payrollBranches, ...svcBranches]) {
-    if (seenBranch.has(b.branch_id)) continue;
-    seenBranch.add(b.branch_id);
-    companyBranches.push(b);
-  }
-  companyBranches.sort((a, b) =>
-    (a.company_id == null ? 1 : 0) - (b.company_id == null ? 1 : 0)
-    || (a.company_id ?? 0) - (b.company_id ?? 0)
-    || a.branch_id - b.branch_id);
-
+  // ── ONE data set (owner 2026-10-01) ──────────────────────────────────
+  // Every figure on this page comes from monthlyPayrollRollup — the same rollup
+  // the export document and the monthly payslip read — so no surface can
+  // disagree. The page only groups and renders.
+  const rollup = monthlyPayrollRollup(db, month);
+  const svcMonth = rollup.svcMonth;
+  const homeByUser = rollup.homeByUser;
   type CompanyGroup = { key: number | null; name: string };
-  const companyGroups: CompanyGroup[] = [];
-  const companyByKey = new Map<number | null, CompanyGroup>();
-  for (const cb of companyBranches) {
-    if (companyByKey.has(cb.company_id)) continue;
-    const g = { key: cb.company_id, name: cb.company_name ?? "ไม่ระบุบริษัท" };
-    companyByKey.set(cb.company_id, g);
-    companyGroups.push(g);
-  }
+  const companyGroups: CompanyGroup[] = rollup.companies;
+  type EmpCompanyRow = MonthPerson;
+  const rowsByCompany = rollup.byCompany;
 
-  // Per (user, company) payroll aggregate — company-scoped totals (branch-stamped
-  // periods only; legacy NULL-branch periods are pre-migration and excluded).
-  type EmpCompanyRow = EmpRow & { company_id: number | null };
-  const empCompanyRows = db.prepare(`
-    SELECT pl.user_id, pl.display_name, u.title_prefix, b.company_id AS company_id,
-           MAX(pl.employment_type) AS employment_type,
-           MAX(pl.salary_tax_mode_snapshot) AS salary_tax_mode_snapshot,
-           SUM(pl.gross_pay)  AS total_gross,
-           SUM(pl.sso_amount) AS total_sso,
-           SUM(pl.tax_amount) AS total_tax,
-           SUM(pl.net_pay)    AS total_net,
-           COUNT(*)            AS period_count,
-           SUM(pl.drink_deductions)    AS total_drink,
-           SUM(pl.mealpass_deductions) AS total_mealpass,
-           -- FT only (a PT's unpaid day is simply no shift = no pay). The cut is the
-           -- engine's own persisted figure (unpaid_leave_deduction) — exact in every
-           -- case, including a base clamped to 0; it is 0 for PT by construction.
-           SUM(CASE WHEN pl.employment_type = 'ft' THEN pl.unpaid_leave_days ELSE 0 END) AS total_unpaid_days,
-           SUM(pl.unpaid_leave_deduction) AS total_base_cut
-    FROM payroll_lines pl
-    JOIN payroll_periods pp ON pl.period_id = pp.id
-    JOIN branches b ON b.id = pp.branch_id
-    LEFT JOIN users u ON u.id = pl.user_id
-    WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
-    GROUP BY pl.user_id, b.company_id
-  `).all(from, to) as EmpCompanyRow[];
-
-  // Service charge (owner 2026-08-01/08-02) — a SEPARATE monthly system. Money
-  // landing in THIS month's pocket is the PREVIOUS month's SVC (paid ~the 20th),
-  // exactly like the payslip, so we pull SVC for svcMonth. Sourced from the SAME
-  // engine as the real payout (computeCompanySvcSummary: รวมกอง shared-pool +
-  // manual gross overrides), so it ties out to the ใบหัก ณ ที่จ่าย exactly. We
-  // keep name + type + tax mode alongside the money so a person who received ONLY
-  // service charge (no payroll line) can still be listed.
-  // mtg* = เบี้ยประชุม paid with this SVC round (see the merge below).
-  type SvcAgg = { gross: number; wht: number; gi: number; net: number;
-    mtgGross: number; mtgWht: number; mtgNet: number;
-    displayName: string; employmentType: string | null; taxMode: "sso" | "wht" };
-  const blankSvc = (displayName: string, employmentType: string | null, taxMode: "sso" | "wht"): SvcAgg =>
-    ({ gross: 0, wht: 0, gi: 0, net: 0, mtgGross: 0, mtgWht: 0, mtgNet: 0, displayName, employmentType, taxMode });
-  const svcByUserCompany = new Map<string, SvcAgg>();
-  const addSvc = (companyKey: number | null, row: {
-    userId: number; displayName: string; employmentType: string | null; taxMode: "sso" | "wht";
-    netAllocation: number; whtAmount: number; groupInsurance: number; netPayout: number;
-  }) => {
-    if (!row.netAllocation && !row.netPayout) return;
-    const k = `${row.userId}|${String(companyKey)}`;
-    const cur = svcByUserCompany.get(k) ?? blankSvc(row.displayName, row.employmentType, row.taxMode);
-    cur.gross += row.netAllocation;
-    cur.wht += row.whtAmount;
-    cur.gi += row.groupInsurance;
-    cur.net += row.netPayout;
-    svcByUserCompany.set(k, cur);
-  };
-  const seenCompany = new Set<number>();
-  for (const cb of companyBranches) {
-    if (cb.company_id == null || seenCompany.has(cb.company_id)) continue;
-    seenCompany.add(cb.company_id);
-    try { for (const row of computeCompanySvcSummary(cb.company_id, svcMonth).rows) addSvc(cb.company_id, row); }
-    catch { /* svc may be absent for a company */ }
-  }
-  for (const cb of companyBranches) {
-    if (cb.company_id != null) continue; // pre-migration NULL-company branch
-    try { for (const row of computeMonthlySvcSummary(cb.branch_id, svcMonth).rows) addSvc(cb.company_id, row); }
-    catch { /* no svc for this branch */ }
-  }
-  // เบี้ยประชุม (owner 2026-10-01) — paid WITH the service-charge round, so it lands
-  // in the same pocket month as SVC. Sourced from the shared helper the export
-  // document also reads, so this page and the ภ.ง.ด.1 / bank sheet can never
-  // disagree. It covers every branch that has a fee (per-meeting override or home
-  // branch), even one with no SVC/payroll activity; a meeting-fee-only person gets
-  // a row via the synth loop below, filed under their real employment type.
-  for (const m of meetingFeeByUserCompany(svcMonth).values()) {
-    const k = `${m.userId}|${String(m.companyId)}`;
-    const cur = svcByUserCompany.get(k) ?? blankSvc(m.displayName, m.employmentType, m.taxMode);
-    cur.mtgGross += m.mtgGross; cur.mtgWht += m.mtgWht; cur.mtgNet += m.mtgNet;
-    svcByUserCompany.set(k, cur);
-  }
-  const svcFor = (userId: number, companyKey: number | null): SvcAgg =>
-    svcByUserCompany.get(`${userId}|${String(companyKey)}`) ?? blankSvc("", null, "sso");
-
-  // Person rows per company = payroll people ∪ SVC-only people. A person who got
-  // ONLY service charge (no payroll round this month) is synthesised with zero
-  // wage figures so the SVC column + its WHT still land on the sheet.
-  const rowsByCompany = new Map<number | null, EmpCompanyRow[]>();
-  const payrollKeys = new Set<string>();
-  for (const r of empCompanyRows) {
-    payrollKeys.add(`${r.user_id}|${String(r.company_id)}`);
-    if (!rowsByCompany.has(r.company_id)) rowsByCompany.set(r.company_id, []);
-    rowsByCompany.get(r.company_id)!.push(r);
-  }
-  for (const [k, s] of svcByUserCompany) {
-    if (payrollKeys.has(k)) continue; // already has a payroll row for this company
-    const [uidStr, compStr] = k.split("|");
-    const userId = Number(uidStr);
-    const companyId = compStr === "null" ? null : Number(compStr);
-    const synth: EmpCompanyRow = {
-      user_id: userId, display_name: s.displayName, title_prefix: null, company_id: companyId,
-      employment_type: (s.employmentType === "ft" || s.employmentType === "pt") ? s.employmentType : null,
-      salary_tax_mode_snapshot: s.taxMode,
-      total_gross: 0, total_sso: 0, total_tax: 0, total_net: 0, period_count: 0,
-      total_drink: 0, total_mealpass: 0, total_unpaid_days: 0, total_base_cut: 0
-    };
-    if (!rowsByCompany.has(companyId)) rowsByCompany.set(companyId, []);
-    rowsByCompany.get(companyId)!.push(synth);
-  }
-  // Stable display order within each company: FT, then PT, then others, by name.
-  const rank = (t: string | null) => (t === "ft" ? 0 : t === "pt" ? 1 : 2);
-  for (const list of rowsByCompany.values()) {
-    list.sort((a, b) => rank(a.employment_type) - rank(b.employment_type) || a.display_name.localeCompare(b.display_name, "th"));
-  }
-  const grandSvc = [...svcByUserCompany.values()].reduce(
-    (a, s) => ({ gross: a.gross + s.gross, wht: a.wht + s.wht, gi: a.gi + s.gi, net: a.net + s.net,
-                 mtgGross: a.mtgGross + s.mtgGross, mtgWht: a.mtgWht + s.mtgWht, mtgNet: a.mtgNet + s.mtgNet }),
+  // KPI card totals — payroll across all companies (distinct people for the
+  // headcounts), SVC + meeting fee alongside.
+  // Headcount = distinct people who had a payroll line (any company), by tax mode.
+  const payrollModeByUser = new Map<number, "sso" | "wht" | null>();
+  for (const p of rollup.people) if (p.hasPayroll && !payrollModeByUser.has(p.userId)) payrollModeByUser.set(p.userId, p.taxMode);
+  const totals = rollup.people.reduce(
+    (acc, p) => ({
+      gross: acc.gross + p.comp,
+      sso:   acc.sso   + p.sso,
+      tax:   acc.tax   + p.taxWage,
+      net:   acc.net   + p.payrollNet,
+      ssoEmployees: acc.ssoEmployees,
+      whtEmployees: acc.whtEmployees
+    }),
+    {
+      gross: 0, sso: 0, tax: 0, net: 0,
+      ssoEmployees: [...payrollModeByUser.values()].filter((m) => m === "sso").length,
+      whtEmployees: [...payrollModeByUser.values()].filter((m) => m === "wht").length
+    }
+  );
+  const grandSvc = rollup.people.reduce(
+    (a, p) => ({ gross: a.gross + p.svcGross, wht: a.wht + p.svcWht, gi: a.gi + p.svcGi, net: a.net + p.svcNet,
+                 mtgGross: a.mtgGross + p.mtgGross, mtgWht: a.mtgWht + p.mtgWht, mtgNet: a.mtgNet + p.mtgNet }),
     { gross: 0, wht: 0, gi: 0, net: 0, mtgGross: 0, mtgWht: 0, mtgNet: 0 }
   );
-
-  // Aggregate totals
-  const totals = empRows.reduce(
-    (acc, r) => ({
-      gross: acc.gross + (r.total_gross ?? 0),
-      sso:   acc.sso   + (r.total_sso   ?? 0),
-      tax:   acc.tax   + (r.total_tax   ?? 0),
-      net:   acc.net   + (r.total_net   ?? 0),
-      ssoEmployees: acc.ssoEmployees + (r.salary_tax_mode_snapshot === "sso" ? 1 : 0),
-      whtEmployees: acc.whtEmployees + (r.salary_tax_mode_snapshot === "wht" ? 1 : 0)
-    }),
-    { gross: 0, sso: 0, tax: 0, net: 0, ssoEmployees: 0, whtEmployees: 0 }
-  );
+  const hasAnyRow = rollup.people.length > 0;
 
   const prev = shiftMonth(month, -1);
   const next = shiftMonth(month, +1);
@@ -362,32 +153,15 @@ export default function PayrollMonthlySummaryPage({
   // ทุกรอบจ่ายในเดือน) → SVC → เบี้ยประชุม → รวมรายรับ → หัก (ปกส./ภาษี/ประกันกลุ่ม) →
   // รวมรับจริง. SVC + meeting-fee WHT fold into the tax column; take = income − all
   // deductions.
-  const figuresFor = (r: EmpCompanyRow, companyKey: number | null) => {
-    const comp = r.total_gross ?? 0;
-    const svc = svcFor(r.user_id, companyKey);
-    const income = comp + svc.gross + svc.mtgGross;
-    const sso = r.total_sso ?? 0;
-    const tax = (r.total_tax ?? 0) + svc.wht + svc.mtgWht;
-    const gi = svc.gi;
-    // หักระหว่างเดือน (owner 2026-10-01): everything withheld inside the pay
-    // rounds besides ปกส./ภาษี — derived from the STORED net so รวมรับจริง always
-    // equals what was transferred (same rule as the export document, incl. the
-    // round2 at every step so SUM(REAL) dust never renders as "0.00"). The
-    // itemised parts come from the line columns but are capped at the total:
-    // when the welfare floor clamped a net to 0 the ledger columns exceed what
-    // was really withheld. Any remainder is shown as อื่นๆ.
-    const inRound = round2(Math.max(0, comp - (r.total_net ?? 0) - (r.total_sso ?? 0) - (r.total_tax ?? 0)));
-    const drink = round2(Math.min(r.total_drink ?? 0, inRound));
-    const mealpass = round2(Math.min(r.total_mealpass ?? 0, inRound - drink));
-    const otherDed = round2(Math.max(0, inRound - drink - mealpass));
-    const ded = round2(sso + tax + gi + inRound);
-    return {
-      comp, svcGross: svc.gross, mtgGross: svc.mtgGross, income, sso, tax, gi,
-      inRound, drink, mealpass, otherDed,
-      unpaidDays: r.total_unpaid_days ?? 0, baseCut: round2(r.total_base_cut ?? 0),
-      ded, take: round2(income - ded)
-    };
-  };
+  // All figures are pre-derived by the rollup (round2, stored-net anchored,
+  // itemised parts capped) — this is a plain read so the page can't diverge.
+  const figuresFor = (r: EmpCompanyRow, _companyKey: number | null) => ({
+    comp: r.comp, svcGross: r.svcGross, mtgGross: r.mtgGross, income: r.income,
+    sso: r.sso, tax: r.tax, gi: r.gi,
+    inRound: r.inRound, drink: r.drink, mealpass: r.mealpass, otherDed: r.otherDed,
+    unpaidDays: r.unpaidDays, baseCut: r.unpaidCut,
+    ded: r.ded, take: r.take
+  });
   // One table per (employment type × tax mode). Read-only overview — every figure
   // is the month's accumulation across pay rounds, sourced from the per-branch
   // payroll runs (owner 2026-09-03: แยกสัดส่วน ปกส./หัก ณ ที่จ่าย เป็นคนละตาราง; ยุบ
@@ -431,17 +205,17 @@ export default function PayrollMonthlySummaryPage({
           <tbody>
             {figs.map(({ r, f }) => {
               return (
-                <tr key={r.user_id} className="border-b border-slate-100 last:border-0">
+                <tr key={r.userId} className="border-b border-slate-100 last:border-0">
                   <td className="py-2 pr-3">
-                    <div className="font-medium text-slate-800">{nameWithPrefix(r.title_prefix, r.display_name)}</div>
+                    <div className="font-medium text-slate-800">{r.name}</div>
                     <Link
-                      href={`/admin/persona/payroll/monthly-payslip/${r.user_id}?m=${month}`}
+                      href={`/admin/persona/payroll/monthly-payslip/${r.userId}?m=${month}`}
                       className="text-[11px] text-brand hover:underline"
                     >
                       สลิปรายเดือน →
                     </Link>
                   </td>
-                  <td className="py-2 pr-3 text-xs text-slate-500 whitespace-nowrap">{homeByUser.get(r.user_id) ?? "—"}</td>
+                  <td className="py-2 pr-3 text-xs text-slate-500 whitespace-nowrap">{homeByUser.get(r.userId) ?? "—"}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">
                     {money(f.comp)}
                     {f.unpaidDays > 0 && (
@@ -533,9 +307,9 @@ export default function PayrollMonthlySummaryPage({
       {/* Export for downstream documents (ภ.ง.ด.1 / SSO / bank). สร้างเอกสาร: pick
           company/branch + format (CSV/XLSX/PDF), with pay rounds + marked
           deductions (owner 2026-07-04 → 2026-09-06). */}
-      {(empRows.length > 0 || svcByUserCompany.size > 0) && (
+      {hasAnyRow && (
         <div className="flex justify-end">
-          <ExportDialog month={month} scopes={listExportScopes(db, month)} />
+          <ExportDialog month={month} scopes={listExportScopes(db, month, rollup)} />
         </div>
       )}
 
@@ -600,10 +374,10 @@ export default function PayrollMonthlySummaryPage({
             // Split each employment type by tax mode so ประกันสังคม and
             // หัก ณ ที่จ่าย are separate tables (owner 2026-09-03: แยกสัดส่วน).
             // 'sso' or null → SSO group; 'wht' → WHT group. PT is uniformly WHT.
-            const isWht = (r: EmpCompanyRow) => r.salary_tax_mode_snapshot === "wht";
-            const cft = crows.filter((r) => r.employment_type === "ft");
-            const cpt = crows.filter((r) => r.employment_type === "pt");
-            const coth = crows.filter((r) => r.employment_type !== "ft" && r.employment_type !== "pt");
+            const isWht = (r: EmpCompanyRow) => r.taxMode === "wht";
+            const cft = crows.filter((r) => r.employmentType === "ft");
+            const cpt = crows.filter((r) => r.employmentType === "pt");
+            const coth = crows.filter((r) => r.employmentType !== "ft" && r.employmentType !== "pt");
             const ftSso = cft.filter((r) => !isWht(r));
             const ftWht = cft.filter((r) => isWht(r));
             const othSso = coth.filter((r) => !isWht(r));

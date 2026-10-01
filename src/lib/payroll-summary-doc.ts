@@ -12,6 +12,9 @@
 //   • It is strictly READ-ONLY: it reflects the payroll lines exactly as stored
 //     (net from net_pay), so a round that is already finalized/posted is never
 //     recomputed or altered — only computed value here is the display-side SVC.
+//   • Owner 2026-10-01: the per-person figures come from monthlyPayrollRollup —
+//     the SAME data set the summary page and the monthly payslip read — so the
+//     exported sheet ties out to every screen to the satang.
 //
 // Layout: per company → per branch heading → (a) รอบจ่าย broken down per person
 // (ยอดก่อนหัก → หัก → สุทธิ) and (b) a final per-person rollup for the month
@@ -20,7 +23,7 @@
 import type Database from "better-sqlite3";
 import { getDb } from "./db";
 import { nameWithPrefix } from "./name";
-import { computeMonthlySvcSummary, computeCompanySvcSummary, meetingFeeByUserCompany } from "./service-charge";
+import { monthlyPayrollRollup, type MonthBranch, type MonthPerson, type MonthRollup } from "./payroll-month";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -32,18 +35,6 @@ const TH_MONTHS = [
 export function monthLabelTh(yearMonth: string): string {
   const [y, m] = yearMonth.split("-").map(Number);
   return `${TH_MONTHS[m - 1]} ${y + 543}`;
-}
-
-function monthRange(ym: string): { from: string; to: string } {
-  const [y, m] = ym.split("-").map(Number);
-  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return { from: `${ym}-01`, to: `${ym}-${String(lastDay).padStart(2, "0")}` };
-}
-
-function shiftMonth(ym: string, delta: number): string {
-  const [y, m] = ym.split("-").map(Number);
-  const total = y * 12 + (m - 1) + delta;
-  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
 }
 
 // ── Scope ────────────────────────────────────────────────────────────
@@ -82,60 +73,27 @@ export type ScopeOption = {
   companyKey?: number | null;
 };
 
-type BranchRow = {
-  branch_id: number; branch_name: string;
-  company_id: number | null; company_name: string | null;
-};
-
-// Union of branches that either paid payroll this month or had SVC activity in
-// the SVC month — same rule as the summary page, so nobody is dropped.
-function unionBranches(db: Database.Database, month: string): BranchRow[] {
-  const { from, to } = monthRange(month);
-  const svcMonth = shiftMonth(month, -1);
-  const payroll = db.prepare(`
-    SELECT b.id AS branch_id, b.name AS branch_name, b.company_id AS company_id, c.name_th AS company_name
-    FROM payroll_periods pp
-    JOIN branches b ON b.id = pp.branch_id
-    LEFT JOIN companies c ON c.id = b.company_id
-    WHERE pp.pay_date >= ? AND pp.pay_date <= ? AND pp.branch_id IS NOT NULL
-    GROUP BY b.id
-  `).all(from, to) as BranchRow[];
-  const svc = db.prepare(`
-    SELECT b.id AS branch_id, b.name AS branch_name, b.company_id AS company_id, c.name_th AS company_name
-    FROM branches b
-    LEFT JOIN companies c ON c.id = b.company_id
-    WHERE b.id IN (SELECT DISTINCT branch_id FROM daily_service_charge WHERE substr(date, 1, 7) = ?)
-  `).all(svcMonth) as BranchRow[];
-  const out: BranchRow[] = [];
-  const seen = new Set<number>();
-  for (const b of [...payroll, ...svc]) {
-    if (seen.has(b.branch_id)) continue;
-    seen.add(b.branch_id);
-    out.push(b);
-  }
-  out.sort((a, b) =>
-    (a.company_id == null ? 1 : 0) - (b.company_id == null ? 1 : 0)
-    || (a.company_id ?? 0) - (b.company_id ?? 0)
-    || a.branch_id - b.branch_id);
-  return out;
+/** Branches in scope for the month (payroll ∪ SVC ∪ meeting-fee), from the shared rollup. */
+function monthBranches(db: Database.Database, month: string, rollup?: MonthRollup): MonthBranch[] {
+  return (rollup ?? monthlyPayrollRollup(db, month)).branches;
 }
 
 /** Selectable export scopes for the month: ทุกบริษัท + each company + each branch. */
-export function listExportScopes(db: Database.Database, month: string): ScopeOption[] {
-  const branches = unionBranches(db, month);
+export function listExportScopes(db: Database.Database, month: string, rollup?: MonthRollup): ScopeOption[] {
+  const branches = monthBranches(db, month, rollup);
   const opts: ScopeOption[] = [{ value: "all", label: "ทุกบริษัท (แยกหัวข้อสาขาในไฟล์เดียว)", kind: "all" }];
   const seenCompany = new Set<string>();
   for (const b of branches) {
-    const key = String(b.company_id);
+    const key = String(b.companyId);
     if (!seenCompany.has(key)) {
       seenCompany.add(key);
       opts.push({
-        value: `company:${b.company_id ?? "null"}`,
-        label: b.company_name ?? "ไม่ระบุบริษัท",
-        kind: "company", companyKey: b.company_id
+        value: `company:${b.companyId ?? "null"}`,
+        label: b.companyName ?? "ไม่ระบุบริษัท",
+        kind: "company", companyKey: b.companyId
       });
     }
-    opts.push({ value: `branch:${b.branch_id}`, label: b.branch_name, kind: "branch", companyKey: b.company_id });
+    opts.push({ value: `branch:${b.branchId}`, label: b.branchName, kind: "branch", companyKey: b.companyId });
   }
   return opts;
 }
@@ -248,17 +206,6 @@ function addRowToTotals(t: DocTotals, r: EmpDocRow) {
   t.take = round2(t.take + r.take);
 }
 
-// SVC row shape both engine variants share (fields we consume).
-type SvcRow = {
-  userId: number; displayName: string; employmentType: string | null;
-  taxMode: "sso" | "wht"; netAllocation: number; whtAmount: number;
-  groupInsurance: number; netPayout: number;
-};
-// mtg* = เบี้ยประชุม paid with the same SVC round (merged in companySvcByUser).
-type SvcAgg = { gross: number; wht: number; gi: number; net: number;
-  mtgGross: number; mtgWht: number;
-  displayName: string; employmentType: string | null; taxMode: "sso" | "wht" };
-
 function companyInfo(db: Database.Database, companyId: number | null) {
   if (companyId == null) return { name: "ไม่ระบุบริษัท", taxId: null as string | null, address: null as string | null };
   const c = db.prepare("SELECT name_th, tax_id, address FROM companies WHERE id = ?")
@@ -266,113 +213,19 @@ function companyInfo(db: Database.Database, companyId: number | null) {
   return { name: c?.name_th ?? "ไม่ระบุบริษัท", taxId: c?.tax_id ?? null, address: c?.address ?? null };
 }
 
-/**
- * Company-level SVC per user (the authority): computeCompanySvcSummary handles
- * รวมกอง shared-pool + cross-branch caps so it agrees with the actual payout.
- * Falls back to summing the per-branch engine for a NULL-company branch set.
- */
-function companySvcByUser(
-  companyId: number | null, branchIds: number[], svcMonth: string
-): Map<number, SvcAgg> {
-  let rows: SvcRow[] = [];
-  if (companyId != null) {
-    try { rows = computeCompanySvcSummary(companyId, svcMonth).rows as unknown as SvcRow[]; }
-    catch { rows = []; }
-  } else {
-    for (const b of branchIds) {
-      try { rows.push(...(computeMonthlySvcSummary(b, svcMonth).rows as unknown as SvcRow[])); }
-      catch { /* no svc */ }
-    }
-  }
-  const map = new Map<number, SvcAgg>();
-  const blank = (displayName: string, employmentType: string | null, taxMode: "sso" | "wht"): SvcAgg =>
-    ({ gross: 0, wht: 0, gi: 0, net: 0, mtgGross: 0, mtgWht: 0, displayName, employmentType, taxMode });
-  for (const r of rows) {
-    if (!r.netAllocation && !r.netPayout) continue;
-    const cur = map.get(r.userId) ?? blank(r.displayName, r.employmentType, r.taxMode);
-    cur.gross += r.netAllocation; cur.wht += r.whtAmount; cur.gi += r.groupInsurance; cur.net += r.netPayout;
-    map.set(r.userId, cur);
-  }
-  // เบี้ยประชุม rides the same SVC round (owner 2026-10-01) — the SAME shared
-  // helper the summary page reads, so the exported sheet ties out to the screen.
-  // Keyed by company (like the page): a meeting-fee-only person is added here so
-  // they still land on the ภ.ง.ด.1 / bank sheet with their 3%.
-  for (const m of meetingFeeByUserCompany(svcMonth).values()) {
-    if (m.companyId !== companyId) continue;
-    const cur = map.get(m.userId) ?? blank(m.displayName, m.employmentType, m.taxMode);
-    cur.mtgGross = round2(cur.mtgGross + m.mtgGross); cur.mtgWht = round2(cur.mtgWht + m.mtgWht);
-    map.set(m.userId, cur);
-  }
-  return map;
-}
-
-type EmpAgg = {
-  user_id: number; display_name: string; title_prefix: string | null;
-  employment_type: "pt" | "ft" | null; salary_tax_mode_snapshot: "sso" | "wht" | null;
-  total_gross: number; total_net: number; total_sso: number; total_tax: number; period_count: number;
-};
-
-/** Company-wide per-person rollup rows (payroll across all company branches + company SVC). */
-function buildCompanyRows(
-  db: Database.Database, range: { from: string; to: string },
-  branchIds: number[], svcByUser: Map<number, SvcAgg>, homeByUser: Map<number, string | null>
-): EmpDocRow[] {
-  const empRows: EmpAgg[] = branchIds.length === 0 ? [] : (db.prepare(`
-    SELECT pl.user_id, pl.display_name, u.title_prefix,
-           MAX(pl.employment_type) AS employment_type,
-           MAX(pl.salary_tax_mode_snapshot) AS salary_tax_mode_snapshot,
-           SUM(pl.gross_pay)  AS total_gross,
-           SUM(pl.net_pay)    AS total_net,
-           SUM(pl.sso_amount) AS total_sso,
-           SUM(pl.tax_amount) AS total_tax,
-           COUNT(*)           AS period_count
-    FROM payroll_lines pl
-    JOIN payroll_periods pp ON pp.id = pl.period_id
-    LEFT JOIN users u ON u.id = pl.user_id
-    WHERE pp.pay_date >= ? AND pp.pay_date <= ?
-      AND pp.branch_id IN (${branchIds.map(() => "?").join(",")})
-    GROUP BY pl.user_id
-  `).all(range.from, range.to, ...branchIds) as EmpAgg[]);
-
-  const rows: EmpDocRow[] = [];
-  const seen = new Set<number>();
-  const mk = (
-    userId: number, name: string, emp: string | null, taxMode: string | null,
-    comp: number, payrollNet: number, ssoRaw: number, taxRaw: number, periodCount: number
-  ): EmpDocRow => {
-    const svc = svcByUser.get(userId);
-    const svcGross = round2(svc?.gross ?? 0);
-    const mtgGross = round2(svc?.mtgGross ?? 0);
-    const income = round2(comp + svcGross + mtgGross);
-    const sso = round2(ssoRaw);
-    const tax = round2(taxRaw + (svc?.wht ?? 0) + (svc?.mtgWht ?? 0));
-    const gi = round2(svc?.gi ?? 0);
-    // payrollDed captures EVERYTHING withheld in the round (sso + tax + drink /
-    // mealpass / other), from the stored net so it always reconciles. อื่นๆ =
-    // whatever isn't sso/tax.
-    const payrollDed = round2(comp - payrollNet);
-    const other = round2(Math.max(0, payrollDed - sso - taxRaw));
-    const deduction = round2(sso + tax + gi + other);
-    const take = round2(income - deduction);
-    return {
-      userId, name, empTypeLabel: typeLabel(emp), taxModeLabel: taxLabel(taxMode),
-      homeBranch: homeByUser.get(userId) ?? "—",
-      comp: round2(comp), svcGross, mtgGross, income, sso, tax, gi, other, deduction, take, periodCount
-    };
+/** One export row from the shared monthly rollup — no arithmetic of its own, so the
+ *  sheet shows exactly what the summary page / payslip show. หักอื่นๆ = everything
+ *  withheld inside the pay rounds (drink / mealpass / other), derived from the
+ *  stored net; รวมรับจริง = ยอดก่อนหัก − รวมหัก. */
+function docRowFrom(p: MonthPerson): EmpDocRow {
+  return {
+    userId: p.userId, name: p.name,
+    empTypeLabel: typeLabel(p.employmentType), taxModeLabel: taxLabel(p.taxMode),
+    homeBranch: p.homeBranch ?? "—",
+    comp: p.comp, svcGross: p.svcGross, mtgGross: p.mtgGross, income: p.income,
+    sso: p.sso, tax: p.tax, gi: p.gi, other: p.inRound, deduction: p.ded, take: p.take,
+    periodCount: p.periodCount
   };
-  for (const r of empRows) {
-    seen.add(r.user_id);
-    rows.push(mk(r.user_id, nameWithPrefix(r.title_prefix, r.display_name),
-      r.employment_type, r.salary_tax_mode_snapshot,
-      r.total_gross ?? 0, r.total_net ?? 0, r.total_sso ?? 0, r.total_tax ?? 0, r.period_count ?? 0));
-  }
-  // SVC-only people (no payroll round this month) — zero-wage row so their SVC
-  // + its WHT still land on the sheet.
-  for (const [uid, s] of svcByUser) {
-    if (seen.has(uid)) continue;
-    rows.push(mk(uid, s.displayName, s.employmentType, s.taxMode, 0, 0, 0, 0, 0));
-  }
-  return rows;
 }
 
 const rowRank = (r: EmpDocRow) => (r.empTypeLabel.startsWith("ประจำ") ? 0 : r.empTypeLabel.startsWith("พาร์ท") ? 1 : 2);
@@ -442,47 +295,36 @@ function buildRoundGroups(
  */
 export function buildPayrollSummaryDoc(month: string, scope: ExportScope): PayrollSummaryDoc {
   const db = getDb();
-  const range = monthRange(month);
-  const svcMonth = shiftMonth(month, -1);
-  const branches = unionBranches(db, month);
-
-  const homeRows = db.prepare(`
-    SELECT ub.user_id,
-           (SELECT name FROM branches WHERE id = COALESCE(
-              (SELECT branch_id FROM user_branches WHERE user_id = ub.user_id AND is_primary = 1 LIMIT 1),
-              (SELECT MIN(branch_id) FROM user_branches WHERE user_id = ub.user_id))) AS home_branch_name
-    FROM (SELECT DISTINCT user_id FROM user_branches) ub
-  `).all() as Array<{ user_id: number; home_branch_name: string | null }>;
-  const homeByUser = new Map<number, string | null>();
-  for (const r of homeRows) homeByUser.set(r.user_id, r.home_branch_name);
+  const rollup = monthlyPayrollRollup(db, month);
+  const range = { from: rollup.from, to: rollup.to };
+  const svcMonth = rollup.svcMonth;
+  const branches = rollup.branches;
+  const homeByUser = rollup.homeByUser;
 
   // Which companies + (optional) single-branch filter the scope asks for.
   let companyKeys: Array<number | null>;
   let branchFilter: number | null = null;
   let scopeLabel = "ทุกบริษัท";
   if (scope.kind === "all") {
-    companyKeys = [];
-    for (const b of branches) if (!companyKeys.includes(b.company_id)) companyKeys.push(b.company_id);
+    companyKeys = rollup.companies.map((c) => c.key);
   } else if (scope.kind === "company") {
     companyKeys = [scope.id];
     scopeLabel = companyInfo(db, scope.id).name;
   } else {
-    const b = branches.find((x) => x.branch_id === scope.id)
-      ?? (db.prepare(`SELECT b.id AS branch_id, b.name AS branch_name, b.company_id AS company_id, c.name_th AS company_name
-            FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?`).get(scope.id) as BranchRow | undefined);
-    companyKeys = [b?.company_id ?? null];
+    const b = branches.find((x) => x.branchId === scope.id)
+      ?? (db.prepare(`SELECT b.id AS branchId, b.name AS branchName, b.company_id AS companyId, c.name_th AS companyName
+            FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?`).get(scope.id) as MonthBranch | undefined);
+    companyKeys = [b?.companyId ?? null];
     branchFilter = scope.id;
-    scopeLabel = b ? `${b.branch_name}${b.company_name ? ` · ${b.company_name}` : ""}` : "สาขา";
+    scopeLabel = b ? `${b.branchName}${b.companyName ? ` · ${b.companyName}` : ""}` : "สาขา";
   }
 
   const companies: CompanyDoc[] = [];
   for (const ck of companyKeys) {
-    const compBranches = branches.filter((b) => b.company_id === ck);
-    if (compBranches.length === 0) continue;
-    const allBranchIds = compBranches.map((b) => b.branch_id);
-    // Company-authoritative SVC + company-wide per-person rollup.
-    const svcByUser = companySvcByUser(ck, allBranchIds, svcMonth);
-    const companyRows = buildCompanyRows(db, range, allBranchIds, svcByUser, homeByUser);
+    const compBranches = branches.filter((b) => b.companyId === ck);
+    // Company-wide per-person rows — the shared rollup (payroll + company SVC + เบี้ยประชุม).
+    const companyRows = (rollup.byCompany.get(ck) ?? []).map(docRowFrom);
+    if (compBranches.length === 0 && companyRows.length === 0) continue;
     const rowsByHome = new Map<string, EmpDocRow[]>();
     for (const r of companyRows) {
       const arr = rowsByHome.get(r.homeBranch) ?? [];
@@ -490,17 +332,17 @@ export function buildPayrollSummaryDoc(month: string, scope: ExportScope): Payro
     }
 
     const blocks: BranchBlock[] = [];
-    const shown = branchFilter != null ? compBranches.filter((b) => b.branch_id === branchFilter) : compBranches;
+    const shown = branchFilter != null ? compBranches.filter((b) => b.branchId === branchFilter) : compBranches;
     const claimed = new Set<number>();
     for (const b of shown) {
-      const roundGroups = buildRoundGroups(db, range, b.branch_id, homeByUser);
-      const rollup = (rowsByHome.get(b.branch_name) ?? []).slice()
+      const roundGroups = buildRoundGroups(db, range, b.branchId, homeByUser);
+      const rollupRows = (rowsByHome.get(b.branchName) ?? []).slice()
         .sort((x, y) => rowRank(x) - rowRank(y) || x.name.localeCompare(y.name, "th"));
-      for (const r of rollup) claimed.add(r.userId);
-      if (roundGroups.length === 0 && rollup.length === 0) continue;
+      for (const r of rollupRows) claimed.add(r.userId);
+      if (roundGroups.length === 0 && rollupRows.length === 0) continue;
       const totals = zeroTotals();
-      for (const r of rollup) addRowToTotals(totals, r);
-      blocks.push({ branchId: b.branch_id, branchName: b.branch_name, roundGroups, rollup, totals });
+      for (const r of rollupRows) addRowToTotals(totals, r);
+      blocks.push({ branchId: b.branchId, branchName: b.branchName, roundGroups, rollup: rollupRows, totals });
     }
     // People whose home branch isn't among the shown branches (rotators homed
     // elsewhere) — only when not filtering to one branch, so the company total ties.
@@ -515,6 +357,7 @@ export function buildPayrollSummaryDoc(month: string, scope: ExportScope): Payro
         blocks.push({ branchId: null, branchName: home, roundGroups: [], rollup: rows, totals });
       }
     }
+    if (blocks.length === 0) continue;
 
     const info = companyInfo(db, ck);
     const cTotals = zeroTotals();
