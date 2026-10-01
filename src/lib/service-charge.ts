@@ -2314,6 +2314,50 @@ export function computeBranchSvcPayout(branchId: number, yearMonth: string): Bra
   return [...rowsByUser.values()];
 }
 
+export type MeetingFeeAgg = {
+  userId: number; companyId: number | null; displayName: string;
+  employmentType: string | null; taxMode: "sso" | "wht";
+  mtgGross: number; mtgWht: number; mtgNet: number;
+};
+
+/**
+ * เบี้ยประชุม paid with the svcMonth service-charge round, merged per (user,
+ * company) across EVERY branch that has a fee that month — the per-meeting
+ * override branch or the home branch — including a branch with no SVC and no
+ * payroll round, so a fee pointed at a quiet branch is never dropped. The
+ * payroll summary page and its export document both read this one map, so the
+ * screen and the ภ.ง.ด.1 / bank sheet can never disagree (owner 2026-10-01).
+ * Tax (wht/net) comes from computeBranchSvcPayout so it follows the real payout.
+ * Key: `${userId}|${companyId ?? "null"}`.
+ */
+export function meetingFeeByUserCompany(svcMonth: string): Map<string, MeetingFeeAgg> {
+  const db = getDb();
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const out = new Map<string, MeetingFeeAgg>();
+  const companyOf = db.prepare("SELECT company_id FROM branches WHERE id = ?");
+  const empTypeOf = db.prepare("SELECT employment_type FROM users WHERE id = ?");
+  // The branch set comes from the fee bucketing itself, not from SVC/payroll activity.
+  for (const branchId of meetingFeeGrossByBranchUser(svcMonth).keys()) {
+    const companyId = (companyOf.get(branchId) as { company_id: number | null } | undefined)?.company_id ?? null;
+    let rows: BranchSvcPayoutRow[] = [];
+    try { rows = computeBranchSvcPayout(branchId, svcMonth); } catch { /* no payout for this branch */ }
+    for (const p of rows) {
+      if (!p.meetingFeeGross) continue;
+      const k = `${p.userId}|${companyId ?? "null"}`;
+      const cur = out.get(k) ?? {
+        userId: p.userId, companyId, displayName: p.displayName,
+        employmentType: (empTypeOf.get(p.userId) as { employment_type: string | null } | undefined)?.employment_type ?? null,
+        taxMode: p.taxMode, mtgGross: 0, mtgWht: 0, mtgNet: 0
+      };
+      cur.mtgGross = round2(cur.mtgGross + p.meetingFeeGross);
+      cur.mtgWht = round2(cur.mtgWht + p.meetingFeeWht);
+      cur.mtgNet = round2(cur.mtgNet + p.meetingFeeNet);
+      out.set(k, cur);
+    }
+  }
+  return out;
+}
+
 /**
  * Authoritative per-person SVC for DISPLAY surfaces (payslip, summary), adapted
  * to the MonthlySvcRow shape so existing consumers are unchanged (owner

@@ -166,6 +166,36 @@ process.env.DATABASE_PATH = TMP;
     return !!ra && near(ra.meetingFeeGross, 300) && near(rb?.meetingFeeGross ?? 0, 0);
   })());
 
+  // ── ACCOUNTA books on the ACTUAL pay day, not the computed 20th (owner 2026-10-01) ──
+  // paid_at is a UTC ISO stamp; the booked date must be the Bangkok calendar day.
+  const bookedDate = () => (db.prepare(
+    "SELECT bill_date, paid_date FROM accounta_expenses WHERE svc_payout_batch_id=? AND category='เบี้ยประชุม'"
+  ).get(batchA) as { bill_date: string; paid_date: string } | undefined);
+  db.prepare("UPDATE svc_payout_batches SET paid_at = ? WHERE id = ?").run("2026-09-30T10:00:00.000Z", batchA); // 17:00 BKK, 30 Sep
+  postSvcToAccounta(batchA, uid);
+  ok("accounta: ลงวันที่จ่ายจริง 30 ก.ย. (ไม่ใช่ 20 ต.ค. ที่คำนวณ)",
+    bookedDate()?.bill_date === "2026-09-30" && bookedDate()?.paid_date === "2026-09-30");
+  db.prepare("UPDATE svc_payout_batches SET paid_at = ? WHERE id = ?").run("2026-09-30T18:30:00.000Z", batchA); // 01:30 BKK, 1 Oct
+  postSvcToAccounta(batchA, uid);
+  ok("accounta: paid_at หลังเที่ยงคืนไทย → ลง 1 ต.ค. (แปลงโซนเวลาถูก)", bookedDate()?.bill_date === "2026-10-01");
+  db.prepare("UPDATE svc_payout_batches SET paid_at = NULL WHERE id = ?").run(batchA);
+  postSvcToAccounta(batchA, uid);
+  ok("accounta: ยังไม่กดจ่าย → fallback วันที่ 20 เดือนถัดไป", bookedDate()?.bill_date === "2026-10-20");
+
+  // ── meetingFeeByUserCompany: the ONE map the payroll summary page + export read (owner 2026-10-01) ──
+  db.prepare("UPDATE users SET employment_type = 'ft' WHERE id = ?").run(mtgU);
+  const feeCo = sc.meetingFeeByUserCompany(ym).get(`${mtgU}|${co}`);
+  ok("helper: เบี้ย 300 ของ mtgU อยู่ใต้บริษัท co (สาขาบ้าน A)", !!feeCo && near(feeCo.mtgGross, 300) && near(feeCo.mtgNet, 300));
+  ok("helper: ดึง employment_type จริงมาให้ (ft) ไม่ใช่ null → ไม่ตกตาราง 'อื่นๆ'", feeCo?.employmentType === "ft");
+  // Point the fee at a branch with NO company, NO service charge and NO payroll —
+  // it must still be counted (under company null), not silently dropped.
+  setMeetingFeeBranch(meet, mtgU, noCoBranch);
+  const feeQuiet = sc.meetingFeeByUserCompany(ym);
+  ok("helper: เบี้ยที่ชี้ไปสาขาเงียบ (ไม่มี SVC/payroll) ยังถูกนับ ใต้บริษัท null",
+    near(feeQuiet.get(`${mtgU}|null`)?.mtgGross ?? 0, 300) && !feeQuiet.has(`${mtgU}|${co}`));
+  setMeetingFeeBranch(meet, mtgU, null);
+  ok("helper: เคลียร์ override แล้วกลับมาใต้บริษัท co", near(sc.meetingFeeByUserCompany(ym).get(`${mtgU}|${co}`)?.mtgGross ?? 0, 300));
+
   // ── Resignation SVC: forfeit the FINAL month, keep earlier months (owner 2026-09-20) ──
   // ฐิติวรดา-style case: last working day 6 Sept, resignation approved with forfeit_svc,
   // decided back in AUGUST. She must still appear in Aug (paid, full month) and Sept
