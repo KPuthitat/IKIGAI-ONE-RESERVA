@@ -39,6 +39,7 @@ process.env.DATABASE_PATH = TMP;
 (async () => {
   const dbMod = await import("../src/lib/db");
   const ir = await import("../src/lib/ir-db");
+  const irLine = await import("../src/lib/ir-line");
   const { getDb } = dbMod;
   const { createReport, updateReport, listReports, getReport, openCount, trendFor,
     getReportDetail, updateReporterSections, canReporterEdit, reportIdsTouching, setPeople } = ir;
@@ -197,6 +198,23 @@ process.env.DATABASE_PATH = TMP;
   }
   // old rows (no RCA) decode to empty lists
   ok("legacy row without RCA decodes to empty lists", (() => { const d = getReportDetail(a.id, branchId)!; return d.rca.whyChain.length === 0 && d.rca.contributing.length === 0 && d.rca.recommendations.length === 0 && d.people.length === 0; })());
+
+  // 8) RM LINE group settings + the new-report card (owner 2026-10-02)
+  ok("ir line group unset by default", ir.getIrLineGroupId(branchId) === null);
+  ir.setIrLineGroupId(branchId, "  Cabc123  ");
+  ok("setIrLineGroupId trims + stores", ir.getIrLineGroupId(branchId) === "Cabc123");
+  ir.setIrLineGroupId(branchId, "   ");
+  ok("blank group id clears the binding", ir.getIrLineGroupId(branchId) === null);
+  const card = irLine.irNewReportFlex(getReportDetail(c.id, branchId)!, { branchName: "NAMA", reportUrl: "https://x.test/admin/ir/1" });
+  const cardJson = JSON.stringify(card);
+  ok("card altText names the code, severity and branch", card.altText.includes(getReport(c.id, branchId)!.code!) && card.altText.includes("ปานกลาง") && card.altText.includes("NAMA"));
+  ok("card carries description, root cause, recommendations and the open button", cardJson.includes("ซุปหกใส่ข้อมือลูกค้า") && cardJson.includes("ไม่มีขั้นตอนรับมือช่วงพีค") && cardJson.includes("เปลี่ยนถาดกันลื่น") && cardJson.includes("https://x.test/admin/ir/1"));
+  const reporterName = (db.prepare("SELECT display_name FROM users WHERE id = ?").get(uid) as { display_name: string }).display_name;
+  const anonCard = JSON.stringify(irLine.irNewReportFlex(getReportDetail(b.id, branchId)!, { branchName: "NAMA", reportUrl: null }));
+  ok("anonymous card says ไม่ระบุตัวตน and never carries the reporter's name", anonCard.includes("ไม่ระบุตัวตน") && !anonCard.includes(reporterName) && !anonCard.includes("\"uri\""));
+  ok("named card does carry the reporter's name", cardJson.includes(reporterName));
+  const skipped = await irLine.notifyIrRmGroup(branchId, c.id);
+  ok("notify without a group id is a skip, not an error", !skipped.ok && skipped.skipped === "no_group");
 
   console.log(`\nir test: ${passed} passed, ${failed} failed`);
   cleanup();

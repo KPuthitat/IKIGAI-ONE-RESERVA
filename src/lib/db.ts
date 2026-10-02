@@ -1843,6 +1843,15 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_ir_report_people_report ON ir_report_people(report_id);
   `);
+  // IR per-branch settings (owner 2026-10-02): the RM team's LINE group that a
+  // new report is pushed to (platform OA must be a member). Mirrors salesa_settings.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ir_settings (
+      branch_id      INTEGER PRIMARY KEY REFERENCES branches(id) ON DELETE CASCADE,
+      line_group_id  TEXT,
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
 
   // ── DF — Doctor Fee (clinic only) ────────────────────────────────
   // Owner 2026-08: a doctor's pay = rate% of the clinic's service revenue on

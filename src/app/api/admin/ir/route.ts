@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { listReports, createReport, type IrStatus, type IrSeverity } from "@/lib/ir-db";
 import { IrCreateBody, toCreateInput } from "@/lib/ir-schema";
+import { notifyIrRmGroupAsync } from "@/lib/ir-line";
 
 // GET  /api/admin/ir            — list this branch's incident reports
 // POST /api/admin/ir            — file a new report
@@ -38,6 +39,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
   }
   const report = createReport(toCreateInput(parsed.data, branchId, user.id));
+  // Tell the RM team's LINE group (owner 2026-10-02) — never blocks the filing.
+  notifyIrRmGroupAsync(branchId, report.id);
   const reports = listReports({ branchId, status: "all" });
   return NextResponse.json({ ok: true, report, reports });
 }

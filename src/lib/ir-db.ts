@@ -508,3 +508,19 @@ export function trendFor(branchId: number): IrTrend {
     byStatus, bySeverity, byCategoryGroup, byMonth, recentHigh
   };
 }
+
+// ── Per-branch settings (owner 2026-10-02): RM LINE group ───────────────────
+
+export function getIrLineGroupId(branchId: number): string | null {
+  const r = getDb().prepare("SELECT line_group_id FROM ir_settings WHERE branch_id = ?")
+    .get(branchId) as { line_group_id: string | null } | undefined;
+  return r?.line_group_id?.trim() || null;
+}
+
+export function setIrLineGroupId(branchId: number, groupId: string | null): void {
+  getDb().prepare(
+    `INSERT INTO ir_settings (branch_id, line_group_id, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(branch_id) DO UPDATE SET line_group_id = excluded.line_group_id, updated_at = datetime('now')`
+  ).run(branchId, groupId?.trim() || null);
+}
