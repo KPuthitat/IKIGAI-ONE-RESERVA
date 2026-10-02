@@ -73,12 +73,12 @@ export function irNewReportFlex(r: IrReportDetail, meta: IrCardMeta): LineFlexMe
         type: "box", layout: "vertical", paddingAll: "12px", spacing: "sm",
         contents: [
           { type: "button", style: "primary", color: "#0e2724", height: "sm", action: { type: "uri", label: "เปิดดูรายงาน / ทบทวน", uri: meta.reportUrl } },
-          { type: "text", text: "ทีม RM ทบทวนและกำหนดมาตรการในระบบ NOKHOOK OS", size: "xxs", color: "#aaaaaa", wrap: true, align: "center" }
+          { type: "text", text: "ทีมบริหารความเสี่ยงทบทวนและกำหนดมาตรการในระบบ NOKHOOK OS", size: "xxs", color: "#aaaaaa", wrap: true, align: "center" }
         ]
       }
     : {
         type: "box", layout: "vertical", paddingAll: "10px",
-        contents: [{ type: "text", text: "ทีม RM ทบทวนและกำหนดมาตรการในระบบ NOKHOOK OS", size: "xxs", color: "#aaaaaa", wrap: true, align: "center" }]
+        contents: [{ type: "text", text: "ทีมบริหารความเสี่ยงทบทวนและกำหนดมาตรการในระบบ NOKHOOK OS", size: "xxs", color: "#aaaaaa", wrap: true, align: "center" }]
       };
   const code = r.code ?? `#${r.id}`;
   return {
@@ -135,14 +135,14 @@ export function irCaseClosedFlex(r: IrReportDetail, meta: IrCardMeta): LineFlexM
   const code = r.code ?? `#${r.id}`;
   const body: unknown[] = [
     { type: "text", text: dismissed
-        ? "ทีม RM ทบทวนแล้ว เห็นว่ารายการนี้ไม่นับเป็นเหตุการณ์ — ไม่ใช่ความผิดของผู้แจ้ง ขอบคุณที่ช่วยกันเฝ้าระวัง"
-        : "ทีม RM ทบทวนและกำหนดมาตรการแล้ว ขอบคุณที่แจ้งและช่วยวิเคราะห์ — รายงานของคุณช่วยกันไม่ให้เกิดซ้ำ",
+        ? "ทีมบริหารความเสี่ยงทบทวนแล้ว เห็นว่ารายการนี้ไม่นับเป็นเหตุการณ์ ซึ่งไม่ใช่ความผิดของผู้แจ้ง ขอบคุณที่ช่วยกันเฝ้าระวัง"
+        : "ทีมบริหารความเสี่ยงทบทวนและกำหนดมาตรการแล้ว ขอบคุณที่แจ้งและช่วยวิเคราะห์ รายงานของท่านช่วยป้องกันไม่ให้เกิดซ้ำ",
       size: "sm", color: "#333333", wrap: true },
     { type: "separator", margin: "md", color: "#eeeeee" },
     kv("หมวด", `${categoryLabel(r.category)} · ${incidentTypeLabel(r.incident_type)}`),
     kv("เกิดเมื่อ", fmtWhen(r.occurred_at)),
     kv("สถานะ", st.labelTh, color),
-    ...(r.root_cause ? section("สาเหตุราก (ทีม RM)", clip(r.root_cause, 300)) : []),
+    ...(r.root_cause ? section("สาเหตุราก (ทีมบริหารความเสี่ยง)", clip(r.root_cause, 300)) : []),
     ...(r.corrective_action ? section("มาตรการแก้ไข / ป้องกัน", clip(r.corrective_action, 400)) : []),
     ...(r.assignee_name ? [kv("ผู้รับผิดชอบ", nameWithPrefix(r.assignee_prefix, r.assignee_name))] : []),
     ...(r.due_date ? [kv("กำหนดเสร็จ", fmtWhen(r.due_date))] : [])
@@ -151,7 +151,7 @@ export function irCaseClosedFlex(r: IrReportDetail, meta: IrCardMeta): LineFlexM
     type: "box", layout: "vertical", paddingAll: "12px", spacing: "sm",
     contents: [
       ...(meta.reportUrl ? [{ type: "button", style: "primary", color: "#0e2724", height: "sm", action: { type: "uri", label: "เปิดดูรายงาน", uri: meta.reportUrl } }] : []),
-      { type: "text", text: "NOKHOOK OS · IR · ไม่ใช่การลงโทษ เน้นเรียนรู้และป้องกัน", size: "xxs", color: "#aaaaaa", wrap: true, align: "center" }
+      { type: "text", text: "NOKHOOK OS · IR · ไม่ใช่การลงโทษ เน้นการเรียนรู้และป้องกัน", size: "xxs", color: "#aaaaaa", wrap: true, align: "center" }
     ]
   };
   return {

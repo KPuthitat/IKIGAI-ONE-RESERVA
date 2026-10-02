@@ -32,11 +32,11 @@ export default function StaffIrPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-800">ความเสี่ยง / IR</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            เกิดเหตุ เกือบพลาด หรือข้อร้องเรียน — แจ้งด้วยตัวเองภายใน 24 ชม. เพื่อหาสาเหตุและกันไม่ให้เกิดซ้ำ (ไม่ใช่เพื่อลงโทษ)
+            เมื่อเกิดเหตุการณ์ เหตุการณ์เกือบผิดพลาด หรือข้อร้องเรียน ให้แจ้งด้วยตนเองภายใน 24 ชั่วโมง เพื่อค้นหาสาเหตุและป้องกันไม่ให้เกิดซ้ำ (ไม่ใช่เพื่อลงโทษ)
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/staff/ir/guide" className="btn btn-secondary text-sm">คู่มือการเขียน</Link>
+          <Link href="/staff/ir/guide" className="btn btn-secondary text-sm">คู่มือการเขียนรายงาน</Link>
           <Link href="/staff/ir/new" className="btn btn-primary text-sm">+ แจ้งเหตุการณ์</Link>
         </div>
       </div>

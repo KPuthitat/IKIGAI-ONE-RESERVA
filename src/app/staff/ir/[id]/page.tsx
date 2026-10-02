@@ -31,7 +31,7 @@ export default function StaffIrDetailPage({ params, searchParams }: { params: { 
       <Link href="/staff/ir" className="text-sm text-slate-500 hover:text-brand">← ความเสี่ยง / IR</Link>
       {searchParams.sent === "1" && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm px-3 py-2">
-          ส่งรายงานแล้ว ขอบคุณที่แจ้ง — ทีม RM จะทบทวนและแจ้งผลผ่านสถานะของรายงานนี้ คุณยังแก้ไขเพิ่มเติมได้จนกว่าจะปิดเคส
+          ส่งรายงานเรียบร้อยแล้ว ขอบคุณที่แจ้ง ทีมบริหารความเสี่ยงจะทบทวนและแจ้งผลผ่านสถานะของรายงานนี้ ท่านยังแก้ไขเพิ่มเติมได้จนกว่าจะปิดเคส
         </div>
       )}
       <StaffIrDetailClient

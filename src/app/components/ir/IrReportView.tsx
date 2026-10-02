@@ -95,8 +95,8 @@ export default function IrReportView({ r, showVerdict = true }: { r: IrReportDet
 
       {showVerdict && (r.root_cause || r.corrective_action || r.assignee_name || r.due_date || r.reviewed_at) && (
         <div className="card space-y-2 border-sky-200 bg-sky-50/40">
-          <h2 className="font-semibold text-sky-800 text-sm">ผลการทบทวนโดยทีม RM</h2>
-          {r.root_cause && <Block label="สาเหตุราก (RM)" text={r.root_cause} />}
+          <h2 className="font-semibold text-sky-800 text-sm">ผลการทบทวนโดยทีมบริหารความเสี่ยง (RM)</h2>
+          {r.root_cause && <Block label="สาเหตุราก (ทีมบริหารความเสี่ยง)" text={r.root_cause} />}
           {r.corrective_action && <Block label="แนวทางแก้ไข/ป้องกัน" text={r.corrective_action} />}
           <dl className="grid sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
             {r.assignee_name && <Row label="ผู้รับผิดชอบ" value={nameWithPrefix(r.assignee_prefix, r.assignee_name)} />}

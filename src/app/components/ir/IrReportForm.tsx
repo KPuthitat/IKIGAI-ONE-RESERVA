@@ -115,8 +115,8 @@ export default function IrReportForm({
 
   function validate(): string | null {
     if (!description.trim()) return "กรุณาเล่าว่าเกิดอะไรขึ้น";
-    if (!whys[0]?.trim()) return "กรุณาตอบ \"ทำไม\" อย่างน้อย 1 ชั้นในส่วนวิเคราะห์สาเหตุ";
-    if (!rootCause.trim()) return "กรุณาสรุปสาเหตุรากที่คุณคิดว่าเป็นต้นตอ";
+    if (!whys[0]?.trim()) return "กรุณาตอบ \"ทำไม\" อย่างน้อย 1 ครั้งในส่วนวิเคราะห์สาเหตุ";
+    if (!rootCause.trim()) return "กรุณาสรุปสาเหตุรากที่เห็นว่าเป็นต้นตอ";
     if (!recs.some((r) => r.trim())) return "กรุณาเสนอแนวทางป้องกันอย่างน้อย 1 ข้อ";
     for (const p of people) {
       if (p.userId == null && !p.name.trim()) return "ผู้เกี่ยวข้องที่เป็นบุคคลภายนอก กรุณาระบุชื่อ";
@@ -165,8 +165,8 @@ export default function IrReportForm({
         <div>
           <h2 className="font-bold text-slate-800">{editing ? `แก้ไขรายงาน ${initial!.code ?? `#${initial!.id}`}` : "แจ้งเหตุการณ์ / ความเสี่ยง (IR)"}</h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            เขียนตามจริง ไม่ใช่เพื่อหาคนผิด แต่เพื่อหาสาเหตุและกันไม่ให้เกิดซ้ำ ·{" "}
-            <Link href={guideHref} className="text-brand hover:underline" target="_blank">อ่านคู่มือการเขียน →</Link>
+            เขียนตามความเป็นจริง เพื่อค้นหาสาเหตุและป้องกันไม่ให้เกิดซ้ำ ไม่ใช่เพื่อค้นหาผู้กระทำผิด ·{" "}
+            <Link href={guideHref} className="text-brand hover:underline" target="_blank">อ่านคู่มือการเขียนรายงาน →</Link>
           </p>
         </div>
       </div>
@@ -220,11 +220,11 @@ export default function IrReportForm({
         {!anonymous && (
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={selfInvolved} onChange={(e) => setSelfInvolved(e.target.checked)} className="w-4 h-4" />
-            ฉันเป็นผู้เกี่ยวข้องโดยตรงกับเหตุการณ์นี้ (ผู้ทำ / ผู้อยู่ในเหตุการณ์)
+            ฉันเป็นผู้เกี่ยวข้องโดยตรงกับเหตุการณ์นี้ (ผู้กระทำ หรือผู้อยู่ในเหตุการณ์)
           </label>
         )}
         {people.length === 0 && (
-          <p className="text-xs text-slate-400">ถ้ามีเพื่อนร่วมงานหรือบุคคลอื่นเกี่ยวข้อง กด “+ เพิ่มชื่อผู้อื่น” — ระบุทุกคนที่อยู่ในเหตุการณ์ เพื่อให้ทีม RM สอบถามเพิ่มเติมได้ ไม่ใช่เพื่อโทษใคร</p>
+          <p className="text-xs text-slate-400">หากมีเพื่อนร่วมงานหรือบุคคลอื่นเกี่ยวข้อง เลือก “+ เพิ่มชื่อผู้อื่น” และระบุทุกคนที่อยู่ในเหตุการณ์ เพื่อให้ทีมบริหารความเสี่ยงสอบถามข้อมูลเพิ่มเติมได้ ไม่ใช่เพื่อกล่าวโทษผู้ใด</p>
         )}
         {people.map((p) => (
           <div key={p.key} className="rounded-lg border border-slate-200 p-2.5 space-y-2 bg-slate-50/60">
@@ -254,11 +254,11 @@ export default function IrReportForm({
 
       {/* 3) ข้อเท็จจริง */}
       <FormSection title="3. เกิดอะไรขึ้น (ข้อเท็จจริง)">
-        <Field label="เล่าเหตุการณ์" hint="ใคร ทำอะไร ที่ไหน เมื่อไร อย่างไร — เขียนสิ่งที่เห็นจริง ไม่ใส่ความเห็น">
+        <Field label="เล่าเหตุการณ์" hint="ใคร ทำอะไร ที่ไหน เมื่อใด อย่างไร เขียนเฉพาะสิ่งที่เห็นจริง ไม่ใส่ความเห็น">
           <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)}
             placeholder="เช่น เวลา 12:40 ขณะเสิร์ฟน้ำซุปร้อนให้โต๊ะ 5 ถาดเอียง ซุปหกใส่แขนลูกค้า ลูกค้าถูกน้ำร้อนบริเวณข้อมือซ้าย" />
         </Field>
-        <Field label="ลำดับเหตุการณ์" hint="ก่อน → ระหว่าง → หลัง (ถ้ามี)">
+        <Field label="ลำดับเหตุการณ์" hint="ก่อนเกิดเหตุ ขณะเกิดเหตุ หลังเกิดเหตุ (ถ้ามี)">
           <textarea rows={3} value={timeline} onChange={(e) => setTimeline(e.target.value)}
             placeholder={"12:30 รับออเดอร์ 4 โต๊ะพร้อมกัน\n12:38 ยกถาด 3 ถ้วยคนเดียว\n12:40 ซุปหก\n12:41 ล้างน้ำเย็น แจ้งหัวหน้า"} />
         </Field>
@@ -268,18 +268,18 @@ export default function IrReportForm({
         </Field>
         <Field label="แก้ไขเฉพาะหน้าไปแล้วอย่างไร" hint="ถ้ามี">
           <textarea rows={2} value={immediate} onChange={(e) => setImmediate(e.target.value)}
-            placeholder="เช่น ปฐมพยาบาล / เปลี่ยนของ / ขอโทษลูกค้า / แจ้งหัวหน้า" />
+            placeholder="เช่น ปฐมพยาบาล / เปลี่ยนสินค้า / กล่าวขอโทษลูกค้า / แจ้งหัวหน้างาน" />
         </Field>
       </FormSection>
 
       {/* 4) RCA */}
       <FormSection title="4. วิเคราะห์สาเหตุราก (Root Cause Analysis)">
-        <p className="text-xs text-slate-500 -mt-1">ถาม “ทำไม” ซ้ำจากคำตอบก่อนหน้า จนถึงสาเหตุที่แก้ได้จริง (ไม่ต้องครบ 5 ชั้นถ้าถึงต้นตอแล้ว)</p>
+        <p className="text-xs text-slate-500 -mt-1">ถาม “ทำไม” ซ้ำจากคำตอบก่อนหน้า จนถึงสาเหตุที่แก้ไขได้จริง (ไม่จำเป็นต้องครบ 5 ครั้ง หากถึงต้นตอแล้ว)</p>
         <div className="space-y-2">
           {whyList.map((w, i) => (
-            <Field key={i} label={`ทำไม #${i + 1}`} hint={WHY_PROMPTS[i]}>
+            <Field key={i} label={`ทำไม ครั้งที่ ${i + 1}`} hint={WHY_PROMPTS[i]}>
               <input type="text" value={w} onChange={(e) => setWhys((arr) => setAt([...arr, ...Array(Math.max(0, i + 1 - arr.length)).fill("")], i, e.target.value))}
-                placeholder={i === 0 ? "เช่น เพราะยกถาด 3 ถ้วยคนเดียว" : i === 1 ? "เช่น เพราะมีออเดอร์พร้อมกัน 4 โต๊ะ และคนเสิร์ฟมีคนเดียว" : "…"} />
+                placeholder={i === 0 ? "เช่น เพราะยกถาด 3 ถ้วยคนเดียว" : i === 1 ? "เช่น เพราะมีรายการสั่งอาหาร 4 โต๊ะพร้อมกัน และมีพนักงานเสิร์ฟคนเดียว" : "…"} />
             </Field>
           ))}
         </div>
@@ -300,9 +300,9 @@ export default function IrReportForm({
             })}
           </div>
         </div>
-        <Field label="สรุปสาเหตุราก" hint="1–2 ประโยค สิ่งที่ถ้าแก้แล้วจะไม่เกิดซ้ำ">
+        <Field label="สรุปสาเหตุราก" hint="1–2 ประโยค สิ่งที่หากแก้ไขแล้วจะไม่เกิดซ้ำ">
           <textarea rows={2} value={rootCause} onChange={(e) => setRootCause(e.target.value)}
-            placeholder="เช่น ช่วงพีคไม่มีการจัดคนเสิร์ฟสำรอง และไม่มีกติกาว่าของร้อนห้ามยกเกิน 2 ถ้วยต่อถาด" />
+            placeholder="เช่น ช่วงลูกค้าหนาแน่นไม่มีการจัดพนักงานเสิร์ฟสำรอง และไม่มีข้อกำหนดว่าอาหารร้อนห้ามยกเกิน 2 ถ้วยต่อถาด" />
         </Field>
       </FormSection>
 
@@ -311,12 +311,12 @@ export default function IrReportForm({
         <button type="button" onClick={() => setRecs((r) => (r.length < IR_MAX_RECOMMENDATIONS ? [...r, ""] : r))}
           className="text-xs text-brand hover:underline">+ เพิ่มข้อ</button>
       }>
-        <p className="text-xs text-slate-500 -mt-1">เสนอสิ่งที่แก้ที่ระบบ/ขั้นตอน/อุปกรณ์ ไม่ใช่ “จะระวังมากขึ้น” — ระบุว่าใครทำ ทำอะไร เมื่อไร</p>
+        <p className="text-xs text-slate-500 -mt-1">เสนอสิ่งที่แก้ไขที่ระบบ ขั้นตอน หรืออุปกรณ์ ไม่ใช่ “จะระมัดระวังมากขึ้น” และระบุว่าทำอะไร ผู้ใดรับผิดชอบ เมื่อใด</p>
         {recs.map((r, i) => (
           <div key={i} className="flex items-start gap-2">
             <span className="text-xs text-slate-400 mt-2.5 w-4 shrink-0">{i + 1}.</span>
             <input type="text" value={r} onChange={(e) => setRecs((arr) => setAt(arr, i, e.target.value))} className="input !py-1.5 text-sm flex-1"
-              placeholder={i === 0 ? "เช่น ช่วงพีคให้ครัวช่วยเสิร์ฟของร้อน และจำกัด 2 ถ้วยต่อถาด (หัวหน้ากะ · เริ่มสัปดาห์หน้า)" : "…"} />
+              placeholder={i === 0 ? "เช่น ช่วงลูกค้าหนาแน่นให้ครัวช่วยเสิร์ฟอาหารร้อน และจำกัด 2 ถ้วยต่อถาด (หัวหน้ากะ เริ่มสัปดาห์หน้า)" : "…"} />
             {recs.length > 1 && <button type="button" onClick={() => setRecs((arr) => arr.filter((_, j) => j !== i))} className="text-xs text-rose-500 hover:underline mt-2">ลบ</button>}
           </div>
         ))}
@@ -325,7 +325,7 @@ export default function IrReportForm({
       {!editing && allowAnonymous && (
         <label className="flex items-start gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} className="w-4 h-4 mt-0.5" />
-          <span>แจ้งโดยไม่ระบุตัวตน <span className="text-xs text-slate-400">(ระบบจะไม่บันทึกว่าใครเป็นผู้แจ้ง และจะแก้ไขรายงานภายหลังไม่ได้)</span></span>
+          <span>แจ้งโดยไม่ระบุตัวตน <span className="text-xs text-slate-400">(ระบบจะไม่บันทึกว่าผู้ใดเป็นผู้แจ้ง และจะไม่สามารถแก้ไขรายงานภายหลังได้)</span></span>
         </label>
       )}
 
