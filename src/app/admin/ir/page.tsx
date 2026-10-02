@@ -6,8 +6,9 @@ import { getLang } from "@/lib/lang-server";
 import { formatDate } from "@/lib/i18n";
 import { nameWithPrefix } from "@/lib/name";
 import {
-  trendFor, IR_SEVERITIES, severityMeta, categoryLabel, statusMeta
+  trendFor, getIrLineGroupId, IR_SEVERITIES, severityMeta, categoryLabel, statusMeta
 } from "@/lib/ir-db";
+import IrLineSettings from "./IrLineSettings";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "IR · ความเสี่ยง/อุบัติการณ์" };
@@ -58,6 +59,9 @@ export default function IrDashboard() {
           <Link href="/admin/ir/reports?new=1" className="btn btn-primary text-sm">+ แจ้งเหตุการณ์</Link>
         </div>
       </div>
+
+      {/* RM LINE group (owner 2026-10-02) */}
+      <IrLineSettings initialGroupId={getIrLineGroupId(branchId)} />
 
       {/* KPI tiles */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
