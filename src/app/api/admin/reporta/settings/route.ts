@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
-import { isSalesaBranch, getLineGroupId, setLineGroupId, getMonthlyTarget, setMonthlyTarget, listMonthlyTargets, setMonthlyTargetFor, getMerchantName, setMerchantName, getCardColor, setCardColor, branchOpensOn, setBranchOpensOn, getBranchHours, branchWeekHours } from "@/lib/salesa-db";
+import { isSalesaBranch, getLineGroupId, setLineGroupId, getMonthlyTarget, setMonthlyTarget, listMonthlyTargets, setMonthlyTargetFor, getMerchantName, setMerchantName, getCardColor, setCardColor, branchOpensOn, setBranchOpensOn, getBranchHours, branchWeekHours, getRdBranchCode, setRdBranchCode } from "@/lib/salesa-db";
 
 // REPORTA settings — the HOD LINE group id the daily/weekly cards are pushed to
 // (per branch), the sales targets (default + per-month overrides), merchant
@@ -19,7 +19,7 @@ function ctx() {
 function snapshot(branchId: number) {
   return {
     ok: true, lineGroupId: getLineGroupId(branchId), monthlyTarget: getMonthlyTarget(branchId),
-    monthTargets: listMonthlyTargets(branchId), merchantName: getMerchantName(branchId), cardColor: getCardColor(branchId),
+    monthTargets: listMonthlyTargets(branchId), merchantName: getMerchantName(branchId), rdBranchCode: getRdBranchCode(branchId), cardColor: getCardColor(branchId),
     opensOn: branchOpensOn(branchId), hours: getBranchHours(branchId), weekHours: branchWeekHours(branchId)
   };
 }
@@ -36,6 +36,8 @@ const Body = z.object({
   // Per-month overrides (owner 2026-10-02): { "2026-11": 650000, "2026-12": null }.
   monthTargets: z.record(z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), z.number().min(0).max(1_000_000_000).nullable()).optional(),
   merchantName: z.string().max(200).nullable().optional(),
+  // RD branch code printed in the tax-invoice export ("00001"); the guard for that file (owner 2026-10-02).
+  rdBranchCode: z.string().max(10).nullable().optional(),
   cardColor: z.string().max(9).nullable().optional(),
   opensOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
   // Hours (open/close, lunch break, closed days) are read from RESERVA — nothing to set here.
@@ -52,6 +54,7 @@ export async function POST(req: Request) {
     for (const [ym, t] of Object.entries(parsed.data.monthTargets)) setMonthlyTargetFor(branchId!, ym, t);
   }
   if (parsed.data.merchantName !== undefined) setMerchantName(branchId!, parsed.data.merchantName);
+  if (parsed.data.rdBranchCode !== undefined) setRdBranchCode(branchId!, parsed.data.rdBranchCode);
   if (parsed.data.cardColor !== undefined) setCardColor(branchId!, parsed.data.cardColor);
   if (parsed.data.opensOn !== undefined) setBranchOpensOn(branchId!, parsed.data.opensOn);
   return NextResponse.json(snapshot(branchId!));

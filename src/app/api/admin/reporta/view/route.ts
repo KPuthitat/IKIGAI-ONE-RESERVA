@@ -8,6 +8,7 @@ import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarg
 import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars, revshareIncomeForBranch, applyRevshareToTarget, remainingMonthOutlook, composeExpenseAnalysis } from "@/lib/salesa-analytics";
 import { expenseCategoryTotals, expenseAccrualTotal } from "@/lib/accounta-db";
 import { salesPushPlan } from "@/lib/salesa-push";
+import { corporateCustomers } from "@/lib/salesa-corporate";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
 // day's full analytics + menu ranking. ?week=YYYY-MM-DD (a Monday): the weekly
@@ -47,6 +48,13 @@ export function GET(req: Request) {
     const fy = Number(sp.get("year")) || bkkNow().year;
     const allowed = user.role === "super_admin" ? null : [branchId];
     return NextResponse.json({ ok: true, festivals: festivalAnalysis(fy, todayIsoF, allowed) });
+  }
+
+  // Corporate customers from the tax-invoice export (owner 2026-10-02) — the
+  // active branch's companies for the viewed year. Display-only; never a sales total.
+  if (sp.get("corporate") != null) {
+    const cy = Number(sp.get("year")) || bkkNow().year;
+    return NextResponse.json({ ok: true, corporate: corporateCustomers(branchId, cy, todayBkkIso()) });
   }
 
   // Full-year per-branch growth bars (owner 2026-09-21) — same role scoping.

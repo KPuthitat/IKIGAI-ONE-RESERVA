@@ -2,19 +2,21 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { isSalesaBranch, clearDay, listDayMerchants, getMerchantName } from "@/lib/salesa-db";
+import { isSalesaBranch, clearDay, listDayMerchants, getMerchantName, clearMismatchedTaxInvoices, getRdBranchCode } from "@/lib/salesa-db";
 
-// Delete imported data. Two modes (owner 2026-09-16/17):
+// Delete imported data. Three modes (owner 2026-09-16/17, 2026-10-02):
 //  • { date }        — remove one day's sales + menu (wrong day, re-import).
 //  • { mode:"mismatched" } — remove every day whose POS merchant doesn't match
 //    the branch (cleans up files imported into the wrong branch).
+//  • { mode:"taxinvoice_mismatched" } — remove tax invoices whose RD branch
+//    code isn't the branch's configured one (needs the code set in settings).
 // Admin/หัวหน้างาน (reporta.manage) only.
 
 export const dynamic = "force-dynamic";
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const Body = z.object({
   date: z.string().regex(ISO).optional(),
-  mode: z.enum(["mismatched"]).optional()
+  mode: z.enum(["mismatched", "taxinvoice_mismatched"]).optional()
 });
 
 const norm = (s: string | null) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -41,6 +43,12 @@ export async function POST(req: Request) {
       if (row.merchant && !matches(row.merchant, expected)) removed += clearDay(branchId, row.date);
     }
     return NextResponse.json({ ok: true, removed, expected });
+  }
+
+  if (parsed.data.mode === "taxinvoice_mismatched") {
+    const expected = getRdBranchCode(branchId);
+    if (!expected) return NextResponse.json({ error: "rd_code_required", message: "ตั้ง “เลขที่สาขาสรรพากร” ของสาขานี้ในหน้าตั้งค่าก่อน" }, { status: 400 });
+    return NextResponse.json({ ok: true, removed: clearMismatchedTaxInvoices(branchId), expected });
   }
 
   if (!parsed.data.date) return NextResponse.json({ error: "date_required" }, { status: 400 });

@@ -2162,6 +2162,37 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_branch_event_notes_bd
       ON branch_event_notes(branch_id, event_date);
+    -- Full tax invoices the shop issued (owner 2026-10-02): the POS
+    -- "รายงานใบกำกับภาษีขาย" (RD format) export, one row per invoice. The
+    -- customers who ask for one are almost all companies, so this is the
+    -- corporate-customer view for offline marketing (who comes, how often,
+    -- when in the month, which weekday, near which holiday, how much so far).
+    -- A CUSTOMER view only — never added to the branch's sales totals (the
+    -- invoices are a subset of the receipts already counted).
+    -- Dedup: an invoice number is unique per RD branch, so re-importing a
+    -- daily / weekly / monthly file that overlaps earlier files only adds the
+    -- new invoice numbers (INSERT OR IGNORE on the PK).
+    CREATE TABLE IF NOT EXISTS salesa_tax_invoices (
+      branch_id        INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      invoice_no       TEXT NOT NULL,                 -- "RT-20260900002"
+      invoice_date     TEXT NOT NULL,                 -- YYYY-MM-DD
+      customer_name    TEXT NOT NULL,
+      tax_id           TEXT,                          -- 13 digits
+      customer_kind    TEXT NOT NULL DEFAULT 'company',   -- 'company' | 'person'
+      hq_label         TEXT,                          -- "HQ (00000)"
+      cust_branch_code TEXT,                          -- the customer's own RD branch
+      amount           REAL NOT NULL DEFAULT 0,       -- pre-VAT
+      vat              REAL NOT NULL DEFAULT 0,
+      total            REAL NOT NULL DEFAULT 0,       -- what the customer paid
+      note             TEXT,
+      status           TEXT,                          -- 'ออกแล้ว' | 'ยกเลิก' | …
+      rd_branch_code   TEXT,                          -- OUR RD branch code from the file ("00001")
+      imported_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      imported_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (branch_id, invoice_no)
+    );
+    CREATE INDEX IF NOT EXISTS idx_salesa_taxinv_day ON salesa_tax_invoices(branch_id, invoice_date);
+    CREATE INDEX IF NOT EXISTS idx_salesa_taxinv_cust ON salesa_tax_invoices(branch_id, tax_id);
   `);
   // Columns added after salesa_settings first shipped — ALTER for existing
   // installs (owner 2026-09-17). Idempotent.
@@ -2186,6 +2217,12 @@ function runMigrations(db: Database.Database): void {
     }
     if (!ssCols.some((c) => c.name === "break_weekday_only")) {
       db.exec("ALTER TABLE salesa_settings ADD COLUMN break_weekday_only INTEGER NOT NULL DEFAULT 1");
+    }
+    // The branch's Revenue Department branch code ("00001") as printed in the
+    // tax-invoice export preamble (owner 2026-10-02) — the wrong-branch guard
+    // for that file, which carries no POS merchant name. NULL = not enforced.
+    if (!ssCols.some((c) => c.name === "rd_branch_code")) {
+      db.exec("ALTER TABLE salesa_settings ADD COLUMN rd_branch_code TEXT");
     }
     const sdCols = db.prepare("PRAGMA table_info(salesa_daily)").all() as Array<{ name: string }>;
     if (!sdCols.some((c) => c.name === "has_receipt")) {

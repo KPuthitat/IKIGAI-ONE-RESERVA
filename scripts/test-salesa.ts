@@ -1037,6 +1037,101 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const xb = analytics.insightBundle(bidX, analytics.insightRangeFor("month", 2026, 11, "2026-11-30"));
   ok("insightBundle carries extremes + hourlyDayType", xb.extremes.n === 3 && xb.hourlyDayType.hasData);
 
+  // ── Tax-invoice export → corporate customers (owner 2026-10-02) ──
+  // Mirrors the POS "sale_taxInvoice_rdformat" layout: 9 preamble lines, a
+  // blank, a 2-row header, one row per invoice, a "รวม" footer.
+  type TaxRow = { date: string; no: string; name: string; taxId: string; hq?: string; branch?: string; amount: string; vat: string; total: string; status?: string };
+  const taxBuf = (rdCode: string, start: string, end: string, rows: TaxRow[]): Buffer => wbBuf({
+    "รายงานใบกำกับภาษีขาย": [
+      ["ชื่อรายงาน : รายงานใบกำกับภาษีขาย"], ["ผู้ออกรายงาน : ทดสอบ"], ["ชื่อผู้ประกอบการ : บริษัท ทดสอบ จำกัด"],
+      ["เลขประจำตัวผู้เสียภาษี : 0205565041960"], [`สาขา : ${rdCode}`], ["ที่อยู่ : 1 ถนนทดสอบ"],
+      ["วันที่ออกรายงาน : 03/10/2026 02:00:01"], [`ช่วงวันที่ : ${start}-${end}`], ["ประเภท : รูปแบบสรรพากร"], [],
+      ["ข้อมูลทั่วไป", "", "", "ข้อมูลผู้ซื้อสินค้า/ผู้รับบริการ", "", "ชื่อสถานประกอบการ", "", "มูลค่าทางภาษี"],
+      ["ลำดับที่", "วัน/เดือน/ปี", "เลขที่ใบกำกับภาษีขาย", "ชื่อ", "เลขประจำตัวผู้เสียภาษีอากร", "สำนักงานใหญ่", "สาขา", "มูลค่าสินค้าหรือบริการ", "จำนวนเงินภาษีมูลค่าเพิ่ม", "จำนวนเงินรวม", "หมายเหตุ", "สถานะ"],
+      ...rows.map((r, i) => [String(i + 1), r.date, r.no, r.name, r.taxId, r.hq ?? "HQ (00000)", r.branch ?? "00000", r.amount, r.vat, r.total, "", r.status ?? "ออกแล้ว"]),
+      ["", "", "", "", "", "", "รวม"]
+    ]
+  });
+  const DKSH = { name: "บริษัท ดีเคเอสเอช (ประเทศไทย) จำกัด", taxId: "0105523002118", hq: "", branch: "00016" };
+  const QUIET = { name: "บริษัท เงียบ จำกัด", taxId: "0105500000001" };
+  const PERSON = { name: "นาง ทดสอบ ใจดี", taxId: "3100200000001" };
+  const augFile = taxBuf("00002", "01/08/2026", "31/08/2026", [
+    { date: "01/08/2026", no: "RT-20260800001", ...QUIET, amount: "934.58", vat: "65.42", total: "1,000.00" },
+    { date: "19/08/2026", no: "RT-20260800002", ...DKSH, amount: "1,884.14", vat: "131.86", total: "2,016.00" },
+    { date: "20/08/2026", no: "RT-20260800003", ...PERSON, amount: "500.00", vat: "35.00", total: "535.00" }
+  ]);
+  const julFile = taxBuf("00002", "01/07/2569", "31/07/2569", [   // พ.ศ. dates → normalised
+    { date: "25/07/2569", no: "RT-20260700001", ...QUIET, amount: "934.58", vat: "65.42", total: "1,000.00" }
+  ]);
+  const sepFile = taxBuf("00002", "01/09/2026", "30/09/2026", [
+    { date: "08/09/2026", no: "RT-20260900001", ...DKSH, amount: "1,155.15", vat: "80.85", total: "1,236.00" },
+    { date: "16/09/2026", no: "RT-20260900002", ...DKSH, amount: "1,320.59", vat: "92.41", total: "1,413.00" },
+    { date: "20/09/2026", no: "RT-20260900003", ...DKSH, amount: "100.00", vat: "7.00", total: "107.00" }
+  ]);
+  ok("tax_invoice: recognised, and not mistaken for the other kinds", parse.isTaxInvoice(augFile) && !parse.isCloseUp(augFile) && !parse.isOverview(augFile) && !parse.isReceipt(augFile));
+  ok("tax_invoice: the other kinds are not mistaken for it", !parse.isTaxInvoice(closeUpBuf("16/09/2026", "X")) && !parse.isTaxInvoice(overviewBuf("16/09/2026", "X", [["a", "10"]], [["b", "20"]])));
+  const tAug = parse.parseTaxInvoice(augFile);
+  ok("tax_invoice: range + RD branch code from the preamble", tAug.rangeStart === "2026-08-01" && tAug.rangeEnd === "2026-08-31" && tAug.rdBranchCode === "00002" && tAug.operatorTaxId === "0205565041960");
+  ok("tax_invoice: 3 rows (footer skipped), amounts de-commaed", tAug.rows.length === 3 && tAug.rows[1].total === 2016 && near(tAug.rows[1].amount, 1884.14) && near(tAug.rows[1].vat, 131.86));
+  ok("tax_invoice: company vs person (juristic tax id starts with 0; นาง / citizen id → person)", tAug.rows[1].customerKind === "company" && tAug.rows[2].customerKind === "person" && tAug.rows[0].customerKind === "company");
+  ok("tax_invoice: customer's own RD branch kept (DKSH branch 00016)", tAug.rows[1].customerBranchCode === "00016" && tAug.rows[0].customerBranchCode === "00000" && tAug.rows[1].status === "ออกแล้ว");
+  ok("tax_invoice: พ.ศ. dates normalised to CE", parse.parseTaxInvoice(julFile).rangeStart === "2026-07-01" && parse.parseTaxInvoice(julFile).rows[0].date === "2026-07-25");
+  ok("tax_invoice: parseSalesFile dispatches", parse.parseSalesFile(augFile).kind === "tax_invoice");
+
+  const bidC = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('corp','CORP')").run().lastInsertRowid);
+  const bidC2 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('corp2','CORP2')").run().lastInsertRowid);
+  const r1 = sdb.upsertTaxInvoices(bidC, uid, tAug);
+  ok("tax_invoice import: first file adds every row", r1.added === 3 && r1.skipped === 0 && r1.updated === 0 && r1.total === 3);
+  const r2 = sdb.upsertTaxInvoices(bidC, uid, tAug);
+  ok("tax_invoice import: the same file again adds nothing (dedup on invoice no)", r2.added === 0 && r2.skipped === 3 && r2.updated === 0);
+  sdb.upsertTaxInvoices(bidC, uid, parse.parseTaxInvoice(julFile));
+  const r3 = sdb.upsertTaxInvoices(bidC, uid, parse.parseTaxInvoice(sepFile));
+  ok("tax_invoice import: a later month adds only its rows", r3.added === 3 && sdb.listTaxInvoices(bidC).length === 7);
+  // A weekly re-export overlapping September: one already-known invoice now
+  // CANCELLED (status updated in place), one new invoice, one plain duplicate.
+  const weekFile = taxBuf("00002", "14/09/2026", "20/09/2026", [
+    { date: "16/09/2026", no: "RT-20260900002", ...DKSH, amount: "1,320.59", vat: "92.41", total: "1,413.00" },
+    { date: "20/09/2026", no: "RT-20260900003", ...DKSH, amount: "100.00", vat: "7.00", total: "107.00", status: "ยกเลิก" },
+    { date: "20/09/2026", no: "RT-20260900003", ...DKSH, amount: "100.00", vat: "7.00", total: "107.00", status: "ยกเลิก" },   // duplicated inside the file
+    { date: "01/10/2026", no: "RT-20261000001", name: "บริษัท ใหม่ จำกัด", taxId: "0105500000002", amount: "934.58", vat: "65.42", total: "1,000.00" }
+  ]);
+  const r4 = sdb.upsertTaxInvoices(bidC, uid, parse.parseTaxInvoice(weekFile));
+  ok("tax_invoice import: overlap → 1 new, 1 status update, 2 skipped (incl. in-file duplicate)", r4.added === 1 && r4.updated === 1 && r4.skipped === 2);
+  ok("tax_invoice import: the cancelled status is stored", sdb.listTaxInvoices(bidC).find((r) => r.invoice_no === "RT-20260900003")?.status === "ยกเลิก");
+  // Another branch (RD 00001) also invoiced DKSH once → cross-branch totals.
+  sdb.upsertTaxInvoices(bidC2, uid, parse.parseTaxInvoice(taxBuf("00001", "01/09/2026", "30/09/2026", [
+    { date: "08/09/2026", no: "RTW2026090001", ...DKSH, amount: "6,445.78", vat: "451.22", total: "6,897.00" }
+  ])));
+  ok("tax_invoice: RD codes seen per branch", sdb.taxInvoiceRdCodes(bidC).join(",") === "00002" && sdb.taxInvoiceRdCodes(bidC2).join(",") === "00001");
+  sdb.setRdBranchCode(bidC, "2");
+  ok("tax_invoice: RD branch code setting zero-pads + round-trips", sdb.getRdBranchCode(bidC) === "00002");
+
+  const corp = await import("../src/lib/salesa-corporate");
+  db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-09-09", "วันทดสอบองค์กร", "CorpTest");
+  const cr = corp.corporateCustomers(bidC, 2026, "2026-10-02");
+  ok("corporate: coverage counts (8 invoices, 1 cancelled, 1 person)", cr.hasData && cr.coverage.invoices === 8 && cr.coverage.cancelled === 1 && cr.coverage.persons === 1 && cr.coverage.personInvoices === 1 && cr.coverage.from === "2026-07-25" && cr.coverage.to === "2026-10-01");
+  ok("corporate: 3 companies, 2 repeat; persons + cancelled excluded from rows", cr.companies === 3 && cr.repeatCompanies === 2 && cr.rows.every((r) => !r.name.startsWith("นาง")));
+  const dk = cr.rows[0];
+  ok("corporate: top by this year's spend = DKSH (3 issued visits, 4,665 = 2,016+1,236+1,413)", dk.name === DKSH.name && dk.visitsYear === 3 && dk.visits === 3 && dk.spendYear === 4665 && dk.avgPerVisit === 1555);
+  ok("corporate: DKSH months Aug=1 Sep=2, phase กลางเดือน 2/3, weekday พุธ 2/3", dk.months[7] === 1 && dk.months[8] === 2 && dk.phase?.key === "mid" && dk.phase.count === 2 && dk.weekday?.label === "พุธ" && dk.weekday.count === 2);
+  ok("corporate: DKSH cadence from the covered span (25 ก.ค.→2 ต.ค. ≈ 2.3 months → 1.3/month, worded ~1.5)", dk.perMonth === 1.3 && dk.cadence === "เดือนละ ~1.5 ครั้ง" && dk.avgGapDays === 14);
+  ok("corporate: DKSH near-holiday visit (8 ก.ย. is 1 day before the 9 ก.ย. test holiday)", dk.nearHoliday.count === 1 && dk.nearHoliday.names[0] === "วันทดสอบองค์กร");
+  ok("corporate: DKSH last visit 16 ก.ย. (16 days ago), not overdue, customer branch 00016 shown", dk.lastVisit === "2026-09-16" && dk.daysSinceLast === 16 && !dk.overdue && dk.custBranchCode === "00016");
+  ok("corporate: DKSH cross-branch totals (4 visits, 11,562 incl. the other branch)", dk.otherBranches && dk.groupVisits === 4 && dk.groupSpend === 11562);
+  ok("corporate: DKSH blurb reads like the owner's sentence", dk.blurb.includes("ปีนี้มา 3 ครั้ง (เดือนละ ~1.5 ครั้ง) รวม 4,665 บาท") && dk.blurb.includes("มักมากลางเดือน วันพุธ") && dk.blurb.includes("ล่าสุด 16 กันยายน 2569 (16 วันก่อน)") && dk.blurb.includes("ทุกสาขารวม 4 ครั้ง 11,562 บาท"));
+  const qt = cr.rows.find((r) => r.name === QUIET.name)!;
+  ok("corporate: a repeat customer quiet for 62 days vs a 7-day gap is flagged overdue", qt.visits === 2 && qt.avgGapDays === 7 && qt.daysSinceLast === 62 && qt.overdue && cr.overdue[0] === QUIET.name && qt.blurb.includes("เงียบนานกว่ารอบปกติ"));
+  ok("corporate: first-ever visit this month → newThisMonth", cr.newThisMonth.length === 1 && cr.newThisMonth[0] === "บริษัท ใหม่ จำกัด" && cr.rows.find((r) => r.name === "บริษัท ใหม่ จำกัด")?.cadence === "มาครั้งเดียว");
+  ok("corporate: year totals (6 issued company invoices, 7,665 this year, same all-time)", cr.invoicesYear === 6 && cr.spendYear === 7665 && cr.spendAll === 7665 && cr.rdCodes.expected === "00002" && cr.rdCodes.seen.join(",") === "00002");
+  const crPrev = corp.corporateCustomers(bidC, 2025, "2026-10-02");
+  ok("corporate: a year with no visits keeps the customer list but zero year figures", crPrev.hasData && crPrev.invoicesYear === 0 && crPrev.rows[0].visitsYear === 0 && crPrev.rows[0].cadence === "ปีนี้ยังไม่มา" && crPrev.newThisMonth.length === 0);
+  ok("corporate: a branch with no invoices → hasData false", !corp.corporateCustomers(bid, 2026, "2026-10-02").hasData);
+  // Wrong-branch cleanup: a 00001 file imported under the 00002 branch is removable once the code is set.
+  sdb.upsertTaxInvoices(bidC, uid, parse.parseTaxInvoice(taxBuf("00001", "01/09/2026", "30/09/2026", [
+    { date: "08/09/2026", no: "RTW2026090099", ...DKSH, amount: "100.00", vat: "7.00", total: "107.00" }
+  ])));
+  ok("corporate: mismatched RD code is reported, then removable", corp.corporateCustomers(bidC, 2026, "2026-10-02").rdCodes.seen.join(",") === "00001,00002" && sdb.clearMismatchedTaxInvoices(bidC) === 1 && sdb.taxInvoiceRdCodes(bidC).join(",") === "00002");
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
