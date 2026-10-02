@@ -103,3 +103,37 @@ export function categoryLabel(key: string): string {
 export function categoryGroup(key: string): string {
   return CATEGORY_GROUP.get(key) ?? "อื่นๆ";
 }
+
+// ── Reporter RCA vocabulary (owner 2026-10-01) ─────────────────────────────
+// Contributing factors the reporter ticks after the 5 Whys — the classic
+// fishbone heads, in plain Thai. Stored as the key list (contributing_json).
+export type IrFactorKey = "people" | "process" | "equipment" | "environment" | "communication" | "material" | "other";
+export const IR_CONTRIBUTING_FACTORS: Array<{ key: IrFactorKey; labelTh: string; hintTh: string }> = [
+  { key: "people", labelTh: "คน", hintTh: "ความรู้/ทักษะไม่พอ, เหนื่อยล้า, รีบ, คนไม่พอ" },
+  { key: "process", labelTh: "ขั้นตอน/วิธีทำงาน", hintTh: "ไม่มีขั้นตอน, ขั้นตอนไม่ชัด, ไม่ได้ทำตามขั้นตอน" },
+  { key: "equipment", labelTh: "อุปกรณ์/เครื่องมือ", hintTh: "ชำรุด, ไม่เหมาะ, ไม่มี, ใช้ผิดวิธี" },
+  { key: "environment", labelTh: "สิ่งแวดล้อม", hintTh: "แสง, พื้นลื่น, แคบ, เสียงดัง, อากาศร้อน" },
+  { key: "communication", labelTh: "การสื่อสาร", hintTh: "ส่งต่อข้อมูลไม่ครบ, เข้าใจผิด, ไม่ได้แจ้ง" },
+  { key: "material", labelTh: "วัตถุดิบ/ยา/ของ", hintTh: "ของหมด, ของผิด, ป้ายไม่ชัด, หมดอายุ" },
+  { key: "other", labelTh: "อื่นๆ", hintTh: "ระบุในสาเหตุราก" }
+];
+export const IR_FACTOR_KEYS = IR_CONTRIBUTING_FACTORS.map((f) => f.key);
+export function factorLabel(key: string): string {
+  return IR_CONTRIBUTING_FACTORS.find((f) => f.key === key)?.labelTh ?? key;
+}
+
+// Roles for other people named in a report.
+export type IrPersonRole = "involved" | "witness" | "affected";
+export const IR_PERSON_ROLES: Array<{ value: IrPersonRole; labelTh: string }> = [
+  { value: "involved", labelTh: "ผู้เกี่ยวข้อง / ร่วมเหตุการณ์" },
+  { value: "witness", labelTh: "ผู้เห็นเหตุการณ์" },
+  { value: "affected", labelTh: "ผู้ได้รับผลกระทบ" }
+];
+export function personRoleLabel(v: string): string {
+  return IR_PERSON_ROLES.find((r) => r.value === v)?.labelTh ?? v;
+}
+
+// Limits shared by the forms and the APIs.
+export const IR_MAX_WHYS = 5;
+export const IR_MAX_RECOMMENDATIONS = 8;
+export const IR_MAX_PEOPLE = 10;

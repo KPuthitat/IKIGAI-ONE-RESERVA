@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth";
-import { getDb } from "@/lib/db";
-import { getReport } from "@/lib/ir-db";
-import ReportDetailClient, { type AssigneeOption } from "./ReportDetailClient";
+import { getReportDetail, irColleagues } from "@/lib/ir-db";
+import ReportDetailClient from "./ReportDetailClient";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "IR · รายละเอียดเหตุการณ์" };
@@ -24,16 +23,11 @@ export default function IrReportDetail({ params }: { params: { id: string } }) {
 
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) notFound();
-  const report = getReport(id, branchId);
+  const report = getReportDetail(id, branchId);
   if (!report) notFound();
 
   // Assignee options — active staff/admin who could own the corrective action.
-  const assignees = getDb().prepare(
-    `SELECT id, display_name, title_prefix FROM users
-     WHERE role IN ('staff','admin')
-       AND status NOT IN ('disabled','resigned')
-     ORDER BY display_name`
-  ).all() as AssigneeOption[];
+  const assignees = irColleagues();
 
   return (
     <div className="space-y-4">

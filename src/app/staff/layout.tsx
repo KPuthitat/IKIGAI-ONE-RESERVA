@@ -160,6 +160,16 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/walk-in", label: t(lang, "staff.walkIn.title") }
       ]
     },
+    // ความเสี่ยง / IR — every employee (owner 2026-10-01): file an incident
+    // yourself, read the branch's reports, and the writing guide.
+    {
+      label: "ความเสี่ยง / IR",
+      items: [
+        { href: gate("/staff/ir/new"), label: "แจ้งเหตุการณ์ / ความเสี่ยง" },
+        { href: gate("/staff/ir"), label: "รายงาน IR ของสาขา" },
+        { href: "/staff/ir/guide", label: "คู่มือการเขียนรายงาน" }
+      ]
+    },
     // สุขภาพพนักงาน — "ผลตรวจสุขภาพ" เห็นได้ทุกคน (ผลตรวจของตัวเอง);
     // "โครงการควบคุมน้ำหนัก" เห็นเฉพาะคนที่อยู่ในโครงการ (privacy).
     {
