@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import {
-  getReportDetail, updateReport, IR_CATEGORY_KEYS,
+  getReport, getReportDetail, updateReport, IR_CATEGORY_KEYS,
   type IrStatus, type IrSeverity
 } from "@/lib/ir-db";
+import { notifyIrReporterClosedAsync } from "@/lib/ir-line";
+
+const isTerminal = (s: string) => s === "closed" || s === "dismissed";
 
 // GET   /api/admin/ir/[id]   — one report (branch-scoped)
 // PATCH /api/admin/ir/[id]   — RM review: status flow + PDCA fields
@@ -48,6 +51,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
   }
   const d = parsed.data;
+  const before = getReport(id, branchId);
   const report = updateReport(id, branchId, {
     status: d.status as IrStatus | undefined,
     severity: d.severity as IrSeverity | undefined,
@@ -59,6 +63,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     discussedAt: d.discussed_at
   }, user.id);
   if (!report) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  // The case just reached closed / dismissed → tell the reporter on LINE
+  // (owner 2026-10-02). Fire-and-forget; anonymous reports are skipped.
+  if (before && !isTerminal(before.status) && isTerminal(report.status)) notifyIrReporterClosedAsync(branchId, id);
   // Detail shape (RCA + people) so the review page re-renders in one piece.
   return NextResponse.json({ ok: true, report: getReportDetail(id, branchId) });
 }

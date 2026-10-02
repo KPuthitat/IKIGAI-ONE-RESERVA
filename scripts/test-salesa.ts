@@ -467,6 +467,18 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   // Active span Jan15→Jan31 = 17 days; project the remaining 334 days at that rate.
   ok("annual projected uses branch's active span", ap != null && near(ap.projectedNett, 50000 + (50000 / 17) * 334));
   ok("annual pct of target ≈ 4.17", ap != null && near(ap.pctOfTarget, (50000 / 1200000) * 100));
+  // Per-month targets (owner 2026-10-02): a month's own figure overrides the default.
+  sdb.setMonthlyTargetFor(bid7, "2026-03", 150000);
+  ok("month target: March override wins, April falls back to the default", sdb.getMonthlyTargetFor(bid7, 2026, 3) === 150000 && sdb.getMonthlyTargetFor(bid7, 2026, 4) === 100000);
+  ok("month target: listMonthlyTargets lists the override", sdb.listMonthlyTargets(bid7).some((t) => t.ym === "2026-03" && t.target === 150000));
+  ok("annual target = sum of the 12 effective months (11×100k + 150k)", analytics.annualProjection(bid7, "2026-01-31")?.annualTarget === 1250000);
+  sdb.setMonthlyTargetFor(bid7, "2026-03", null);
+  ok("month target: clearing the override returns to default (annual back to 1.2M)", sdb.getMonthlyTargetFor(bid7, 2026, 3) === 100000 && analytics.annualProjection(bid7, "2026-01-31")?.annualTarget === 1200000);
+  ok("month target: bad month key throws", (() => { try { sdb.setMonthlyTargetFor(bid7, "2026-13", 1); return false; } catch { return true; } })());
+  const bidPM = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('rpm','RESTPM')").run().lastInsertRowid);
+  sdb.setMonthlyTargetFor(bidPM, "2026-05", 50000);
+  ok("month target: a branch with ONLY a per-month target counts as targeted", sdb.branchIdsWithTarget().includes(bidPM) && sdb.getMonthlyTargetFor(bidPM, 2026, 4) === null);
+  ok("month target: annual target of a per-month-only branch = that month alone", analytics.annualProjection(bidPM, "2026-01-31")?.annualTarget === 50000);
   const bidNoTgt = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('rnt','RESTNT')").run().lastInsertRowid);
   ok("annual no target → null", analytics.annualProjection(bidNoTgt, "2026-01-31") === null);
   const bid8 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('r8','REST8')").run().lastInsertRowid);
@@ -636,9 +648,9 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const apNew = analytics.annualProjection(bidNew, "2026-09-20");
   ok("annual: new branch is prorated (opens_on 25/07)", !!apNew && apNew.prorated === true && apNew.openedIso === "2026-07-25");
   ok("annual: new branch full-year figure kept for reference (7.2M)", !!apNew && apNew.fullYearTarget === 7200000);
-  ok("annual: new branch target prorated to open span (~3.156M, not 7.2M)", (() => {
+  ok("annual: new branch target prorated month-wise (ก.ค. 7/31 วัน + ส.ค.–ธ.ค. เต็ม ≈ 3.135M, not 7.2M)", (() => {
     if (!apNew) return false;
-    const expect = 7200000 * (160 / 365); // 25 ก.ค.→31 ธ.ค. = 160 วัน / 365
+    const expect = 600000 * (7 / 31) + 5 * 600000; // 25 ก.ค.→31 ก.ค. = 7/31 ของเดือน + 5 เดือนเต็ม
     return Math.abs(apNew.annualTarget - expect) < 1 && apNew.annualTarget < 7200000;
   })());
   // Established branch: opens_on in a PRIOR year → full ×12, not prorated — even
@@ -652,8 +664,19 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   const apCo = analytics.annualProjectionForBranches([bidNew, bidOld], "2026-09-20");
   ok("annual: company roll-up flags prorated + sums both targets", (() => {
     if (!apCo) return false;
-    const expect = 7200000 * (160 / 365) + 6000000;
+    const expect = (600000 * (7 / 31) + 5 * 600000) + 6000000;
     return apCo.prorated === true && apCo.branchCount === 2 && Math.abs(apCo.annualTarget - expect) < 1 && apCo.fullYearTarget === 13200000;
+  })());
+
+  // Growing per-month targets + mid-year opening: only the operating months count,
+  // each at its OWN target (owner 2026-10-02) — not a days/365 slice of the year sum.
+  const bidGrow = Number(db.prepare("INSERT INTO branches (slug,name,opens_on) VALUES ('grw','GROW','2026-07-01')").run().lastInsertRowid);
+  sdb.setMonthlyTarget(bidGrow, 100000);
+  for (const ym of ["2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"]) sdb.setMonthlyTargetFor(bidGrow, ym, 200000);
+  fput2(bidGrow, "2026-07-02", 1000);
+  ok("annual: growing targets prorate month-wise (opened 1 ก.ค. → 6 × 200k = 1.2M, full year 1.8M)", (() => {
+    const ap = analytics.annualProjection(bidGrow, "2026-09-20");
+    return !!ap && ap.annualTarget === 1200000 && ap.fullYearTarget === 1800000 && ap.prorated === true;
   })());
 
   // ── 15b) projection run-rate spans from opens_on, not first sale (owner
@@ -692,7 +715,7 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("annual: Buddhist-year opens_on still prorates (~3.156M, not 7.2M)", (() => {
     const ap = analytics.annualProjection(bidBE, "2026-09-20");
     if (!ap) return false;
-    const expect = 7200000 * (160 / 365);
+    const expect = (600000 * (7 / 31) + 5 * 600000);
     return ap.prorated === true && ap.openedIso === "2026-07-25" && Math.abs(ap.annualTarget - expect) < 1;
   })());
   // Writing a Buddhist year via setBranchOpensOn stores canonical CE.

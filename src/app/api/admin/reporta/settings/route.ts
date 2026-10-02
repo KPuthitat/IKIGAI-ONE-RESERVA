@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
-import { isSalesaBranch, getLineGroupId, setLineGroupId, getMonthlyTarget, setMonthlyTarget, getMerchantName, setMerchantName, getCardColor, setCardColor, branchOpensOn, setBranchOpensOn, getBranchHours, setBranchBreak } from "@/lib/salesa-db";
+import { isSalesaBranch, getLineGroupId, setLineGroupId, getMonthlyTarget, setMonthlyTarget, listMonthlyTargets, setMonthlyTargetFor, getMerchantName, setMerchantName, getCardColor, setCardColor, branchOpensOn, setBranchOpensOn, getBranchHours, branchWeekHours } from "@/lib/salesa-db";
 
 // REPORTA settings — the HOD LINE group id the daily/weekly cards are pushed to
-// (per branch). The NOKHOOK OS platform OA must be a member of that group.
-// Owner 2026-09-16.
+// (per branch), the sales targets (default + per-month overrides), merchant
+// name, card colour, opening date. Operating hours are RESERVA's (read-only
+// here). Owner 2026-09-16 → 2026-10-02.
 
 export const dynamic = "force-dynamic";
 
@@ -15,24 +16,29 @@ function ctx() {
   return { user, branchId, ok: branchId != null && isSalesaBranch(branchId) };
 }
 
+function snapshot(branchId: number) {
+  return {
+    ok: true, lineGroupId: getLineGroupId(branchId), monthlyTarget: getMonthlyTarget(branchId),
+    monthTargets: listMonthlyTargets(branchId), merchantName: getMerchantName(branchId), cardColor: getCardColor(branchId),
+    opensOn: branchOpensOn(branchId), hours: getBranchHours(branchId), weekHours: branchWeekHours(branchId)
+  };
+}
+
 export function GET() {
   const { branchId, ok } = ctx();
   if (!ok) return NextResponse.json({ error: "no_branch" }, { status: 403 });
-  return NextResponse.json({ ok: true, lineGroupId: getLineGroupId(branchId!), monthlyTarget: getMonthlyTarget(branchId!), merchantName: getMerchantName(branchId!), cardColor: getCardColor(branchId!), opensOn: branchOpensOn(branchId!), hours: getBranchHours(branchId!) });
+  return NextResponse.json(snapshot(branchId!));
 }
 
-const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const Body = z.object({
   lineGroupId: z.string().max(200).nullable().optional(),
   monthlyTarget: z.number().min(0).max(1_000_000_000).nullable().optional(),
+  // Per-month overrides (owner 2026-10-02): { "2026-11": 650000, "2026-12": null }.
+  monthTargets: z.record(z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), z.number().min(0).max(1_000_000_000).nullable()).optional(),
   merchantName: z.string().max(200).nullable().optional(),
   cardColor: z.string().max(9).nullable().optional(),
-  opensOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  // Open/close are managed in RESERVA (branches); ANALYTICA only sets the break.
-  break: z.object({
-    breakStart: z.string().regex(HHMM).nullable(), breakEnd: z.string().regex(HHMM).nullable(),
-    breakWeekdayOnly: z.boolean(),
-  }).nullable().optional()
+  opensOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+  // Hours (open/close, lunch break, closed days) are read from RESERVA — nothing to set here.
 });
 
 export async function POST(req: Request) {
@@ -42,12 +48,11 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   if (parsed.data.lineGroupId !== undefined) setLineGroupId(branchId!, parsed.data.lineGroupId);
   if (parsed.data.monthlyTarget !== undefined) setMonthlyTarget(branchId!, parsed.data.monthlyTarget);
+  if (parsed.data.monthTargets !== undefined) {
+    for (const [ym, t] of Object.entries(parsed.data.monthTargets)) setMonthlyTargetFor(branchId!, ym, t);
+  }
   if (parsed.data.merchantName !== undefined) setMerchantName(branchId!, parsed.data.merchantName);
   if (parsed.data.cardColor !== undefined) setCardColor(branchId!, parsed.data.cardColor);
   if (parsed.data.opensOn !== undefined) setBranchOpensOn(branchId!, parsed.data.opensOn);
-  if (parsed.data.break !== undefined) {
-    try { setBranchBreak(branchId!, parsed.data.break); }
-    catch { return NextResponse.json({ error: "bad_hours" }, { status: 400 }); }
-  }
-  return NextResponse.json({ ok: true, lineGroupId: getLineGroupId(branchId!), monthlyTarget: getMonthlyTarget(branchId!), merchantName: getMerchantName(branchId!), cardColor: getCardColor(branchId!), opensOn: branchOpensOn(branchId!), hours: getBranchHours(branchId!) });
+  return NextResponse.json(snapshot(branchId!));
 }

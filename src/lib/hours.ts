@@ -8,6 +8,7 @@ export type HoursWindow = {
   open: string; close: string;              // "HH:MM"
   breakStart: string | null; breakEnd: string | null;
   breakWeekdayOnly: boolean;
+  breakDays?: number[];                     // exact weekdays the break applies on (0=Sun); absent = legacy flag only
 };
 
 const hourOf = (t: string) => Number(t.slice(0, 2));
@@ -17,10 +18,11 @@ function bounds(h: HoursWindow): { start: number; end: number; isBreak: (hour: n
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
   const bs = h.breakStart ? hourOf(h.breakStart) : null;
   const be = h.breakEnd ? hourOf(h.breakEnd) : null;
-  // The monthly chart aggregates weekdays + weekends, so a weekday-only break is
-  // NOT visually muted (weekends are open) — it's noted in the caption instead.
-  // Only an every-day break dims its columns.
-  const mute = bs != null && be != null && !h.breakWeekdayOnly;
+  // The monthly chart aggregates weekdays + weekends, so a break that skips any
+  // day is NOT visually muted (those days are open) — it's noted in the caption
+  // instead. Only an every-day break dims its columns.
+  const everyDay = h.breakDays ? h.breakDays.length === 7 : !h.breakWeekdayOnly;
+  const mute = bs != null && be != null && everyDay;
   const isBreak = (hour: number) => mute && hour >= bs! && hour < be!;
   return { start, end, isBreak };
 }
@@ -40,10 +42,18 @@ export function hourSpan(h: HoursWindow | null | undefined, dataMin: number | nu
   return { hours, isBreak: b ? b.isBreak : () => false };
 }
 
-/** Short "09:00–21:00 · พัก 14:00–16:00 (จ–ศ)" caption. */
+const DAY_ABBR = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+
+/** Short "09:00–21:00 · พัก 14:00–16:00 (จ–ศ)" caption. A break on some other
+ *  subset of days lists them ("(จ,อ,พ,พฤ,ศ,ส)"); an every-day break has no suffix. */
 export function hoursLabel(h: HoursWindow | null | undefined): string | null {
   if (!h) return null;
   let s = `${h.open}–${h.close}`;
-  if (h.breakStart && h.breakEnd) s += ` · พัก ${h.breakStart}–${h.breakEnd}${h.breakWeekdayOnly ? " (จ–ศ)" : ""}`;
+  if (h.breakStart && h.breakEnd) {
+    const suffix = h.breakWeekdayOnly ? " (จ–ศ)"
+      : h.breakDays && h.breakDays.length > 0 && h.breakDays.length < 7 ? ` (${[1, 2, 3, 4, 5, 6, 0].filter((d) => h.breakDays!.includes(d)).map((d) => DAY_ABBR[d]).join(",")})`
+      : "";
+    s += ` · พัก ${h.breakStart}–${h.breakEnd}${suffix}`;
+  }
   return s;
 }

@@ -632,12 +632,45 @@ export function getMonthlyTarget(branchId: number): number | null {
   return r?.monthly_target ?? null;
 }
 
-/** Branch ids that have a positive monthly target — used for the company-wide
- *  annual projection (owner 2026-09-20). */
+/** Branch ids that have a positive target (default or any month) — used for the
+ *  company-wide annual projection (owner 2026-09-20). */
 export function branchIdsWithTarget(): number[] {
   return (getDb().prepare(
-    "SELECT branch_id FROM salesa_settings WHERE monthly_target IS NOT NULL AND monthly_target > 0"
+    `SELECT branch_id FROM salesa_settings WHERE monthly_target IS NOT NULL AND monthly_target > 0
+     UNION SELECT branch_id FROM salesa_monthly_targets WHERE target > 0`
   ).all() as Array<{ branch_id: number }>).map((r) => r.branch_id);
+}
+
+// ── Per-month targets (owner 2026-10-02: "เราจะไม่ 6 แสนไปทุกเดือน เราจะต้องเติบโต") ──
+// A specific month's target overrides the branch default; months without one
+// fall back to the default. The annual target sums the 12 effective months.
+
+/** The effective target for (year, month): the month's own figure, else the default. */
+export function getMonthlyTargetFor(branchId: number, year: number, month: number): number | null {
+  const ym = `${year}-${String(month).padStart(2, "0")}`;
+  const r = getDb().prepare("SELECT target FROM salesa_monthly_targets WHERE branch_id = ? AND ym = ?")
+    .get(branchId, ym) as { target: number } | undefined;
+  if (r && r.target > 0) return r.target;
+  return getMonthlyTarget(branchId);
+}
+
+export function listMonthlyTargets(branchId: number): Array<{ ym: string; target: number }> {
+  return getDb().prepare("SELECT ym, target FROM salesa_monthly_targets WHERE branch_id = ? ORDER BY ym")
+    .all(branchId) as Array<{ ym: string; target: number }>;
+}
+
+/** Set a month's target; null / 0 removes the override (back to the default). */
+export function setMonthlyTargetFor(branchId: number, ym: string, target: number | null): void {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)) throw new Error("bad_month");
+  const db = getDb();
+  if (target == null || !(target > 0)) {
+    db.prepare("DELETE FROM salesa_monthly_targets WHERE branch_id = ? AND ym = ?").run(branchId, ym);
+    return;
+  }
+  db.prepare(
+    `INSERT INTO salesa_monthly_targets (branch_id, ym, target, updated_at) VALUES (?, ?, ?, datetime('now'))
+     ON CONFLICT(branch_id, ym) DO UPDATE SET target = excluded.target, updated_at = datetime('now')`
+  ).run(branchId, ym, target);
 }
 
 export function setMonthlyTarget(branchId: number, target: number | null): void {
@@ -649,64 +682,77 @@ export function setMonthlyTarget(branchId: number, target: number | null): void 
   ).run(branchId, clean);
 }
 
-// ── Per-branch operating hours (owner 2026-09-27) ───────────────────────────
-// The peak-hours chart is pinned to the branch's real เวลาทำการ. Open/close are
-// LINKED to RESERVA — they live on branches.open_time/close_time (edited on the
-// RESERVA settings page), so ANALYTICA follows automatically. The lunch break is
-// ANALYTICA-only (RESERVA doesn't model it) and lives in salesa_settings.
+// ── Per-branch operating hours (owner 2026-09-27 → 2026-10-02) ───────────────
+// The peak-hours chart is pinned to the branch's real เวลาทำการ. EVERYTHING comes
+// from RESERVA (branches): open/close, the lunch break (lunch_break_start/end +
+// lunch_break_weekdays) and the weekly closed days — ANALYTICA no longer keeps
+// its own break (owner 2026-10-02: "แค่ดึงข้อมูลเวลาทำการแต่ละวันจาก RESERVA มาก็พอ").
 export type BranchHours = {
   open: string; close: string;              // "HH:MM" — from RESERVA (branches)
   breakStart: string | null; breakEnd: string | null;
-  breakWeekdayOnly: boolean;
+  breakWeekdayOnly: boolean;                // the lunch break applies on Mon–Fri only
+  breakDays: number[];                      // the exact weekdays (0=Sun) the break applies on
 };
-export type BranchBreak = { breakStart: string | null; breakEnd: string | null; breakWeekdayOnly: boolean };
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
-
-/** The branch's operating hours: open/close from RESERVA (branches) + the
- *  ANALYTICA lunch break. Null only when RESERVA has no open/close. */
-export function getBranchHours(branchId: number): BranchHours | null {
-  const b = getDb().prepare("SELECT open_time, close_time FROM branches WHERE id = ?")
-    .get(branchId) as { open_time: string | null; close_time: string | null } | undefined;
-  if (!b?.open_time || !b.close_time || !HHMM.test(b.open_time) || !HHMM.test(b.close_time)) return null;
-  const s = getDb().prepare("SELECT break_start, break_end, break_weekday_only FROM salesa_settings WHERE branch_id = ?")
-    .get(branchId) as { break_start: string | null; break_end: string | null; break_weekday_only: number | null } | undefined;
-  // Surface the stored break ONLY when it still sits inside RESERVA's current
-  // hours — so narrowing the RESERVA window later self-corrects the chart and the
-  // settings page instead of showing/blocking on a now-invalid break.
-  const mins = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
-  let breakStart: string | null = null, breakEnd: string | null = null;
-  if (s?.break_start && s.break_end && HHMM.test(s.break_start) && HHMM.test(s.break_end)
-      && mins(s.break_start) >= mins(b.open_time) && mins(s.break_end) <= mins(b.close_time) && mins(s.break_end) > mins(s.break_start)) {
-    breakStart = s.break_start; breakEnd = s.break_end;
-  }
-  return { open: b.open_time, close: b.close_time, breakStart, breakEnd, breakWeekdayOnly: (s?.break_weekday_only ?? 1) === 1 };
+const minsOf = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+function parseDays(raw: string | null | undefined): number[] {
+  if (!raw) return [];
+  try { const a = JSON.parse(raw); return Array.isArray(a) ? a.filter((x) => Number.isInteger(x) && x >= 0 && x <= 6) : []; } catch { return []; }
+}
+type BranchHoursRow = {
+  open_time: string | null; close_time: string | null;
+  lunch_break_start: string | null; lunch_break_end: string | null; lunch_break_weekdays: string | null;
+  closed_weekdays: string | null;
+};
+function hoursRow(branchId: number): BranchHoursRow | undefined {
+  return getDb().prepare(
+    "SELECT open_time, close_time, lunch_break_start, lunch_break_end, lunch_break_weekdays, closed_weekdays FROM branches WHERE id = ?"
+  ).get(branchId) as BranchHoursRow | undefined;
+}
+/** RESERVA's lunch break for the branch, only when it sits inside the open window. */
+function lunchBreak(b: BranchHoursRow): { start: string; end: string } | null {
+  if (!b.lunch_break_start || !b.lunch_break_end || !HHMM.test(b.lunch_break_start) || !HHMM.test(b.lunch_break_end)) return null;
+  if (minsOf(b.lunch_break_end) <= minsOf(b.lunch_break_start)) return null;
+  if (b.open_time && b.close_time && HHMM.test(b.open_time) && HHMM.test(b.close_time)
+      && (minsOf(b.lunch_break_start) < minsOf(b.open_time) || minsOf(b.lunch_break_end) > minsOf(b.close_time))) return null;
+  return { start: b.lunch_break_start, end: b.lunch_break_end };
 }
 
-/** Set (or clear, with a null-break) the ANALYTICA lunch break. Open/close are
- *  managed in RESERVA, so they aren't touched here. Validates the break sits
- *  inside RESERVA's opening hours; throws so the API can surface a clear error. */
-export function setBranchBreak(branchId: number, brk: BranchBreak | null): void {
-  let bs: string | null = null, be: string | null = null, wk = 1;
-  // A break needs BOTH ends or neither — reject a half-filled one rather than
-  // silently storing no break.
-  if (brk && (!!brk.breakStart !== !!brk.breakEnd)) throw new Error("bad_range");
-  if (brk && brk.breakStart && brk.breakEnd) {
-    const mins = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
-    if (!HHMM.test(brk.breakStart) || !HHMM.test(brk.breakEnd)) throw new Error("bad_time");
-    if (mins(brk.breakEnd) <= mins(brk.breakStart)) throw new Error("bad_range");
-    const b = getDb().prepare("SELECT open_time, close_time FROM branches WHERE id = ?")
-      .get(branchId) as { open_time: string | null; close_time: string | null } | undefined;
-    if (b?.open_time && b.close_time && HHMM.test(b.open_time) && HHMM.test(b.close_time)
-        && (mins(brk.breakStart) < mins(b.open_time) || mins(brk.breakEnd) > mins(b.close_time))) throw new Error("bad_range");
-    bs = brk.breakStart; be = brk.breakEnd;
-  }
-  if (brk) wk = brk.breakWeekdayOnly ? 1 : 0;
-  getDb().prepare(
-    `INSERT INTO salesa_settings (branch_id, break_start, break_end, break_weekday_only, updated_at)
-     VALUES (?, ?, ?, ?, datetime('now'))
-     ON CONFLICT(branch_id) DO UPDATE SET break_start = excluded.break_start, break_end = excluded.break_end,
-       break_weekday_only = excluded.break_weekday_only, updated_at = datetime('now')`
-  ).run(branchId, bs, be, wk);
+/** The branch's operating hours from RESERVA. Null only when RESERVA has no
+ *  valid open/close. breakWeekdayOnly = RESERVA's lunch weekdays are all Mon–Fri. */
+export function getBranchHours(branchId: number): BranchHours | null {
+  const b = hoursRow(branchId);
+  if (!b?.open_time || !b.close_time || !HHMM.test(b.open_time) || !HHMM.test(b.close_time)) return null;
+  // RESERVA's rule (settings / booking form / timetable): no lunch weekday ticked
+  // = no break at all, so an empty list means none here too.
+  const days = parseDays(b.lunch_break_weekdays).sort((a, c) => a - c);
+  const brk = days.length ? lunchBreak(b) : null;
+  return {
+    open: b.open_time, close: b.close_time,
+    breakStart: brk?.start ?? null, breakEnd: brk?.end ?? null,
+    breakWeekdayOnly: !!brk && days.every((d) => d >= 1 && d <= 5),
+    breakDays: brk ? days : []
+  };
+}
+
+/** Per-day view of the same RESERVA hours (Mon first) for the settings page. */
+export type DayHours = { dow: number; label: string; closed: boolean; open: string | null; close: string | null; breakStart: string | null; breakEnd: string | null };
+const DAY_LABEL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+export function branchWeekHours(branchId: number): DayHours[] {
+  const b = hoursRow(branchId);
+  const valid = !!b?.open_time && !!b.close_time && HHMM.test(b.open_time) && HHMM.test(b.close_time);
+  const closedDays = new Set(parseDays(b?.closed_weekdays));
+  const lunchDays = parseDays(b?.lunch_break_weekdays);       // empty = no break (RESERVA rule)
+  const brk = b && lunchDays.length ? lunchBreak(b) : null;
+  return [1, 2, 3, 4, 5, 6, 0].map((dow) => {
+    const closed = closedDays.has(dow);
+    const hasBreak = !!brk && !closed && lunchDays.includes(dow);
+    return {
+      dow, label: DAY_LABEL[dow], closed,
+      open: valid && !closed ? b!.open_time : null, close: valid && !closed ? b!.close_time : null,
+      breakStart: hasBreak ? brk!.start : null, breakEnd: hasBreak ? brk!.end : null
+    };
+  });
 }
 
 // ── Monthly card sent-tracking (owner F) ────────────────────────────────────

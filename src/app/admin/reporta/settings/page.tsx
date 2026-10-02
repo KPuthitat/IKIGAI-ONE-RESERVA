@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { isSalesaBranch, getLineGroupId, getMonthlyTarget, getMerchantName, getCardColor, branchOpensOn, getBranchHours } from "@/lib/salesa-db";
+import { isSalesaBranch, getLineGroupId, getMonthlyTarget, listMonthlyTargets, getMerchantName, getCardColor, branchOpensOn, branchWeekHours } from "@/lib/salesa-db";
 import ReportaSettingsClient from "./ReportaSettingsClient";
 
 export const dynamic = "force-dynamic";
@@ -25,10 +25,10 @@ export default function ReportaSettingsPage() {
     <div className="space-y-4 max-w-xl">
       <Link href="/admin/reporta" className="text-sm text-slate-500 hover:text-brand">← ANALYTICA</Link>
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">ตั้งค่ากลุ่ม LINE หัวหน้างาน</h1>
-        <p className="text-sm text-slate-500 mt-1">สาขา {branch?.name ?? `#${branchId}`} · การ์ดสรุปยอดขายรายวัน/รายสัปดาห์จะถูกส่งเข้ากลุ่มนี้</p>
+        <h1 className="text-2xl font-bold text-slate-800">ตั้งค่า ANALYTICA</h1>
+        <p className="text-sm text-slate-500 mt-1">สาขา {branch?.name ?? `#${branchId}`} · กลุ่ม LINE หัวหน้างาน · เป้ายอดขาย · สีการ์ด · เวลาทำการ (จาก RESERVA)</p>
       </div>
-      <ReportaSettingsClient initialGroupId={getLineGroupId(branchId)} initialTarget={getMonthlyTarget(branchId)} initialMerchant={getMerchantName(branchId)} initialColor={getCardColor(branchId)} initialOpensOn={branchOpensOn(branchId)} initialHours={getBranchHours(branchId)} />
+      <ReportaSettingsClient initialGroupId={getLineGroupId(branchId)} initialTarget={getMonthlyTarget(branchId)} initialMonthTargets={listMonthlyTargets(branchId)} initialMerchant={getMerchantName(branchId)} initialColor={getCardColor(branchId)} initialOpensOn={branchOpensOn(branchId)} weekHours={branchWeekHours(branchId)} />
     </div>
   );
 }

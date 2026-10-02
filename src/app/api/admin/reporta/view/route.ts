@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { branchTodayCol } from "@/lib/daily-col";
 import { isClinicaBranch, clinicaRangeAgg } from "@/lib/clinica-db";
 import { clinicaMonth, clinicaWeek, clinicaDay } from "@/lib/clinica-analytics";
-import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTarget, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR, getBranchHours } from "@/lib/salesa-db";
+import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTargetFor, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR, getBranchHours } from "@/lib/salesa-db";
 import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars, revshareIncomeForBranch, applyRevshareToTarget, remainingMonthOutlook, composeExpenseAnalysis } from "@/lib/salesa-analytics";
 import { expenseCategoryTotals, expenseAccrualTotal } from "@/lib/accounta-db";
 import { salesPushPlan } from "@/lib/salesa-push";
@@ -118,7 +118,7 @@ export function GET(req: Request) {
   // ส่วนแบ่งยอดขาย (RevShare) settled this month — folded into the target like the
   // monthly total (owner 2026-09-23), added flat so it isn't run-rate-annualized.
   const revshareIncome = revshareIncomeForBranch(branchId, year, month);
-  const target = getMonthlyTarget(branchId);
+  const target = getMonthlyTargetFor(branchId, year, month);   // the viewed month's own target, else the default
   const tp = target != null ? targetProgress(target, monthCompare.mtdNett, monthCompare.throughDay, year, month) : null;
   const monthTarget = tp ? applyRevshareToTarget(tp, revshareIncome) : null;
   const ymKey = `${year}-${String(month).padStart(2, "0")}`;

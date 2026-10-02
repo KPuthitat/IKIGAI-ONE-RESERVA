@@ -216,6 +216,22 @@ process.env.DATABASE_PATH = TMP;
   const skipped = await irLine.notifyIrRmGroup(branchId, c.id);
   ok("notify without a group id is a skip, not an error", !skipped.ok && skipped.skipped === "no_group");
 
+  // 9) Reporter feedback card when the RM closes the case (owner 2026-10-02)
+  const closedDetail = getReportDetail(c.id, branchId)!;   // c was closed above with an RM verdict
+  const closedCard = irLine.irCaseClosedFlex(closedDetail, { branchName: "NAMA", reportUrl: "https://x.test/staff/ir/9" });
+  const closedJson = JSON.stringify(closedCard);
+  ok("closed card: title says ปิดแล้ว, carries the RM root cause + corrective action + link", closedCard.altText.includes("ปิดเคสแล้ว") && closedJson.includes("RM: ขั้นตอนช่วงพีค") && closedJson.includes("RM: ออกกติกา") && closedJson.includes("https://x.test/staff/ir/9"));
+  updateReport(c.id, branchId, { status: "dismissed" }, uid);
+  const dismissedCard = irLine.irCaseClosedFlex(getReportDetail(c.id, branchId)!, { branchName: "NAMA", reportUrl: null });
+  ok("dismissed card: says ไม่นับเป็นเหตุการณ์ and reassures it's not the reporter's fault", dismissedCard.altText.includes("ไม่นับเป็นเหตุการณ์") && JSON.stringify(dismissedCard).includes("ไม่ใช่ความผิดของผู้แจ้ง"));
+  const anonClose = await irLine.notifyIrReporterClosed(branchId, b.id);
+  ok("notify reporter: anonymous report is skipped", !anonClose.ok && anonClose.skipped === "anonymous");
+  const savedLine = (db.prepare("SELECT line_user_id FROM users WHERE id = ?").get(uid) as { line_user_id: string | null }).line_user_id;
+  db.prepare("UPDATE users SET line_user_id = NULL WHERE id = ?").run(uid);
+  const noLine = await irLine.notifyIrReporterClosed(branchId, c.id);
+  ok("notify reporter: reporter without LINE is skipped", !noLine.ok && noLine.skipped === "no_line_user_id");
+  db.prepare("UPDATE users SET line_user_id = ? WHERE id = ?").run(savedLine, uid);
+
   console.log(`\nir test: ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed ? 1 : 0);
