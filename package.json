@@ -46,6 +46,7 @@
     "test:payout-notify": "node --import tsx scripts/test-payout-notify.ts",
     "test:credit-note": "node --import tsx scripts/verify-credit-note.ts",
     "test:org-chart": "node --import tsx scripts/verify-org-chart.ts",
+    "test:org-structure": "node --import tsx scripts/test-org-structure.ts",
     "db:init": "node --import tsx scripts/init-db.ts",
     "db:seed": "node --import tsx scripts/seed.ts",
     "db:backup": "node scripts/backup-local.mjs",

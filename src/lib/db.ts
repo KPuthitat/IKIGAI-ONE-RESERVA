@@ -4890,6 +4890,7 @@ function runMigrations(db: Database.Database): void {
   userCol("payment_method",     "TEXT");  // bank / cash
   userCol("driver_license_no",  "TEXT");
   userCol("manpower_type",      "TEXT");  // new / replacement
+  userCol("department",         "TEXT");  // service / kitchen / management / other (ฝ่าย — owner 2026-10-02)
   // Self-onboarding gate: when 1, staff is allowed to edit their own
   // profile via /staff/persona/profile. Admin flips to 0 after they
   // confirm the data is complete (so staff can't change KYC fields).
@@ -9281,6 +9282,7 @@ export type EmployeeProfile = {
   payment_method: "bank" | "cash" | null;
   driver_license_no: string | null;
   manpower_type: "new" | "replacement" | null;
+  department: "service" | "kitchen" | "management" | "other" | null;
   profile_self_edit_open: number;
   // Salary (already present)
   hourly_rate: number | null;

@@ -4,17 +4,27 @@ import { useState, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { nameWithPrefix } from "@/lib/name";
+import Link from "next/link";
 import { buildOrgForest, descendantsOf, type OrgTreeNode } from "@/lib/org-chart-tree";
+import { departmentTone, DEPARTMENTS } from "@/lib/org-vocab";
 
 export type OrgPlacementLite = {
   nodeId: number; userId: number; displayName: string; titlePrefix: string | null; nickname: string | null;
   jobTitle: string | null; role: string; department: string | null; sortOrder: number; parentNodeIds: number[];
+};
+export type OrgIssueLite = { userId: number; name: string; kind: string; text: string };
+export type AutoChartLite = {
+  placements: OrgPlacementLite[];
+  issues: OrgIssueLite[];
+  counts: Array<{ department: string | null; label: string; count: number }>;
+  tier1: number[]; tier2: number[];
 };
 export type OrgBranchData = {
   id: number; name: string;
   placements: OrgPlacementLite[];
   candidates: Array<{ userId: number; displayName: string; titlePrefix: string | null; nickname: string | null; jobTitle: string | null }>;
   departments: string[];
+  auto: AutoChartLite;
 };
 
 const DEPT_COLORS = [
@@ -23,6 +33,8 @@ const DEPT_COLORS = [
   "bg-rose-100 text-rose-800 border-rose-200", "bg-teal-100 text-teal-800 border-teal-200"
 ];
 function deptColor(dep: string): string {
+  const known = DEPARTMENTS.find((d) => d.labelTh === dep);
+  if (known) return departmentTone(known.key);
   let h = 0;
   for (let i = 0; i < dep.length; i++) h = (h * 31 + dep.charCodeAt(i)) >>> 0;
   return DEPT_COLORS[h % DEPT_COLORS.length];
@@ -38,6 +50,8 @@ export default function OrgChartClient({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const multiBranch = branches.length > 1;
+  // "auto" = derived from the chain of command (default); "manual" = the hand-drawn chart.
+  const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [tab, setTab] = useState<string>(multiBranch ? "company" : String(branches[0]?.id ?? activeBranchId));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -81,11 +95,24 @@ export default function OrgChartClient({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">ผังองค์กร</h1>
-        <p className="text-sm text-slate-500 mt-0.5">
-          {companyName ? <b>{companyName}</b> : null} · โครงสร้างสายงานแยกตามสาขาและแผนก · แก้ไขได้ในหน้านี้
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">ผังองค์กร</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {companyName ? <b>{companyName}</b> : null}
+            {mode === "auto"
+              ? " · สร้างอัตโนมัติจาก สายบังคับบัญชา (ผู้บริหาร → หัวหน้างาน) + ผู้บังคับบัญชา/ฝ่าย ในโปรไฟล์พนักงาน — แก้ที่ต้นทาง"
+              : " · ผังวาดเอง — เพิ่มกล่อง/ลากเส้นในหน้านี้ (ไม่เกี่ยวกับการอนุมัติ)"}
+          </p>
+        </div>
+        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-sm">
+          {(["auto", "manual"] as const).map((m) => (
+            <button key={m} type="button" onClick={() => setMode(m)}
+              className={`px-3 py-1 rounded-md transition ${mode === m ? "bg-white shadow-sm font-semibold text-slate-800" : "text-slate-500 hover:text-slate-700"}`}>
+              {m === "auto" ? "อัตโนมัติ" : "วาดเอง"}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
@@ -103,9 +130,19 @@ export default function OrgChartClient({
         ))}
       </div>
 
-      {err && <p className="text-sm text-rose-600">{err}</p>}
+      {mode === "auto" && (
+        <div className="space-y-4">
+          {(tab === "company" ? branches : branches.filter((b) => String(b.id) === tab)).map((b) => <AutoBranchCard key={b.id} branch={b} />)}
+          <p className="text-xs text-slate-400">
+            เส้นสาย = ผู้บังคับบัญชาที่ตั้งไว้ · ชั้นบนสุด = ผู้บริหาร (ชั้นที่ 2) · ถัดมา = หัวหน้างาน (ชั้นที่ 1) · ป้ายสี = ฝ่าย ·
+            แก้ชั้นที่ <Link href="/admin/persona/approval-chain" className="text-brand underline">สายบังคับบัญชา</Link> · แก้ผู้บังคับบัญชา/ฝ่ายที่หน้าพนักงานแต่ละคน
+          </p>
+        </div>
+      )}
 
-      {tab === "company" ? (
+      {mode === "manual" && err && <p className="text-sm text-rose-600">{err}</p>}
+
+      {mode === "manual" && (tab === "company" ? (
         <div className="space-y-4">
           {branches.map((b) => (
             <div key={b.id} className="card">
@@ -165,11 +202,13 @@ export default function OrgChartClient({
             </div>
           );
         })
-      )}
+      ))}
 
-      <p className="text-xs text-slate-400">
-        เส้นสาย = ใครดูแลใคร (หัวหน้าอยู่บน) · ป้ายสี = แผนก · คนเดียวเพิ่มได้หลายกล่อง และอยู่ใต้ได้หลายหัวหน้า
-      </p>
+      {mode === "manual" && (
+        <p className="text-xs text-slate-400">
+          เส้นสาย = ใครดูแลใคร (หัวหน้าอยู่บน) · ป้ายสี = แผนก · คนเดียวเพิ่มได้หลายกล่อง และอยู่ใต้ได้หลายหัวหน้า
+        </p>
+      )}
 
       {/* Edit dialog */}
       {editing && editNode && editBranch && (
@@ -239,10 +278,52 @@ export default function OrgChartClient({
   );
 }
 
-function BranchTree({ branch, editable, onEdit }: {
-  branch: OrgBranchData; editable: boolean; onEdit: (nodeId: number) => void;
+/** One branch's derived chart: headcount by ฝ่าย, the tree, and what's still unset. */
+function AutoBranchCard({ branch }: { branch: OrgBranchData }) {
+  const a = branch.auto;
+  const chainEmpty = a.tier1.length === 0 && a.tier2.length === 0;
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-baseline justify-between gap-3 flex-wrap">
+        <h2 className="font-bold text-slate-800">{branch.name}</h2>
+        <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+          {a.counts.map((c) => (
+            <span key={c.department ?? "none"} className={`px-2 py-0.5 rounded-full border ${c.department ? departmentTone(c.department) : "bg-slate-50 text-slate-400 border-slate-200"}`}>
+              {c.label} {c.count} คน
+            </span>
+          ))}
+        </div>
+      </div>
+      {chainEmpty ? (
+        <p className="text-sm text-slate-400 py-6 text-center">
+          ยังไม่ได้ตั้งสายบังคับบัญชาของสาขานี้ — <Link href="/admin/persona/approval-chain" className="text-brand underline">ตั้งผู้บริหารและหัวหน้างาน</Link> แล้วผังจะขึ้นเอง
+        </p>
+      ) : a.placements.length === 0 ? (
+        <p className="text-sm text-slate-400 py-6 text-center">ยังไม่มีพนักงานในสาขานี้</p>
+      ) : (
+        <BranchTree branch={branch} placements={a.placements} editable={false} onEdit={() => {}} />
+      )}
+      {a.issues.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+          <div className="text-xs font-bold text-amber-800 mb-1">ยังไม่ครบ {a.issues.length} รายการ — ผังจะสมบูรณ์เมื่อแก้ที่หน้าพนักงาน</div>
+          <ul className="text-xs text-amber-900 space-y-0.5">
+            {a.issues.map((i, idx) => (
+              <li key={`${i.userId}-${i.kind}-${idx}`}>
+                • {i.text} — <Link href={`/admin/persona/employees/${i.userId}`} className="underline">แก้ไข</Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BranchTree({ branch, placements, editable, onEdit }: {
+  branch: OrgBranchData; placements?: OrgPlacementLite[]; editable: boolean; onEdit: (nodeId: number) => void;
 }) {
-  const roots = useMemo(() => buildOrgForest(branch.placements), [branch.placements]);
+  const source = placements ?? branch.placements;
+  const roots = useMemo(() => buildOrgForest(source), [source]);
   if (roots.length === 0) return null;
   return (
     <div className="overflow-x-auto">
