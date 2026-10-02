@@ -28,7 +28,7 @@ export default function StaffIrClient({ reports, mine }: { reports: IrReportView
       </div>
       {list.length === 0 ? (
         <div className="card text-sm text-slate-400">
-          {scope === "mine" ? "คุณยังไม่มีรายงาน — ถ้ามีเหตุการณ์ กด “+ แจ้งเหตุการณ์”" : "ไม่มีรายการ"}
+          {scope === "mine" ? "ยังไม่มีรายงานของท่าน หากมีเหตุการณ์ กรุณาเลือก “+ แจ้งเหตุการณ์”" : "ไม่มีรายการ"}
         </div>
       ) : (
         <div className="space-y-2">

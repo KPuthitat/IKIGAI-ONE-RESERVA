@@ -74,6 +74,7 @@ export default function ReportsClient({ initialReports, colleagues, selfUserId }
       {showForm && (
         <IrReportForm
           apiBase="/api/admin/ir"
+          guideHref="/admin/ir/guide"
           colleagues={colleagues}
           selfUserId={selfUserId}
           onDone={(r) => { router.push(`/admin/ir/${r.id}`); router.refresh(); }}

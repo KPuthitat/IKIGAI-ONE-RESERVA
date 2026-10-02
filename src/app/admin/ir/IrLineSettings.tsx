@@ -35,7 +35,7 @@ export default function IrLineSettings({ initialGroupId }: { initialGroupId: str
     <div className="card space-y-3">
       <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-2 text-left">
         <div>
-          <h2 className="font-semibold text-slate-800 text-sm">แจ้งเตือน LINE ไปกลุ่มทีม RM</h2>
+          <h2 className="font-semibold text-slate-800 text-sm">แจ้งเตือน LINE ไปกลุ่มทีมบริหารความเสี่ยง (RM)</h2>
           <p className="text-xs text-slate-500 mt-0.5">
             {saved ? <>เปิดอยู่ · รายงานใหม่ทุกฉบับส่งเข้ากลุ่ม <span className="font-mono">{saved.slice(0, 6)}…</span></> : "ยังไม่ได้ตั้งค่า — รายงานใหม่จะไม่ส่งเข้า LINE"}
           </p>
@@ -46,7 +46,7 @@ export default function IrLineSettings({ initialGroupId }: { initialGroupId: str
         <div className="space-y-2.5 pt-1 border-t border-slate-100">
           {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.kind === "ok" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-700"}`}>{msg.text}</div>}
           <div>
-            <label className="label">LINE Group ID ของกลุ่มทีม RM</label>
+            <label className="label">LINE Group ID ของกลุ่มทีมบริหารความเสี่ยง</label>
             <input value={groupId} onChange={(e) => setGroupId(e.target.value)} placeholder="เช่น Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" className="input" />
             <p className="text-xs text-slate-500 mt-1.5">
               เพิ่มบัญชี NOKHOOK OS (platform OA) เข้ากลุ่มก่อน แล้วนำ Group ID มาใส่ · เว้นว่างเพื่อปิดการส่ง · ตั้งแยกต่อสาขา

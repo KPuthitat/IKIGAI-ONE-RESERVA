@@ -36,6 +36,18 @@ export default function ReportDetailClient({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [resendMsg, setResendMsg] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+
+  async function resend() {
+    setResending(true); setResendMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/ir/${r.id}/resend`), { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      setResendMsg(res.ok && j.ok ? "ส่งเข้ากลุ่ม LINE ของทีมบริหารความเสี่ยงแล้ว" : humanizeApiError(j, "ส่งไม่สำเร็จ"));
+    } catch { setResendMsg("เชื่อมต่อไม่สำเร็จ"); }
+    finally { setResending(false); }
+  }
 
   async function save() {
     setBusy(true); setErr(null);
@@ -74,7 +86,7 @@ export default function ReportDetailClient({
       {/* Right: RM review / PDCA */}
       <div className="lg:col-span-2 space-y-4">
         <div className="card space-y-4">
-          <FormSection title="ทบทวนและติดตาม (RM)">
+          <FormSection title="ทบทวนและติดตาม (ทีมบริหารความเสี่ยง)">
             <Field label="สถานะ">
               <div className="flex flex-wrap gap-1.5">
                 {IR_STATUSES.map((s) => (
@@ -106,13 +118,13 @@ export default function ReportDetailClient({
 
           <FormSection title="สาเหตุและการแก้ไข (PDCA)">
             <Field label="สาเหตุราก (Root cause)" hint={r.reporter_root_cause && !rootCause ? (
-              <button type="button" className="text-brand hover:underline" onClick={() => setRootCause(r.reporter_root_cause ?? "")}>ใช้ของผู้แจ้ง</button>
+              <button type="button" className="text-brand hover:underline" onClick={() => setRootCause(r.reporter_root_cause ?? "")}>ใช้ข้อความของผู้แจ้ง</button>
             ) : undefined}>
               <textarea rows={2} value={rootCause} onChange={(e) => setRootCause(e.target.value)}
                 placeholder="ทำไมถึงเกิด — วิเคราะห์ถึงต้นตอ ไม่ใช่แค่อาการ" />
             </Field>
             <Field label="แนวทางแก้ไข/ป้องกัน" hint={r.rca.recommendations.length > 0 && !corrective ? (
-              <button type="button" className="text-brand hover:underline" onClick={() => setCorrective(r.rca.recommendations.map((x, i) => `${i + 1}. ${x}`).join("\n"))}>ใช้ข้อเสนอของผู้แจ้ง</button>
+              <button type="button" className="text-brand hover:underline" onClick={() => setCorrective(r.rca.recommendations.map((x, i) => `${i + 1}. ${x}`).join("\n"))}>ใช้ข้อเสนอแนะของผู้แจ้ง</button>
             ) : undefined}>
               <textarea rows={3} value={corrective} onChange={(e) => setCorrective(e.target.value)}
                 placeholder="จะทำอะไรเพื่อไม่ให้เกิดซ้ำ" />
@@ -140,6 +152,12 @@ export default function ReportDetailClient({
             {savedAt ? <span className="text-xs text-emerald-600">บันทึกแล้ว</span> : <span />}
             <button type="button" className="btn btn-primary" onClick={save} disabled={busy}>
               {busy ? "กำลังบันทึก…" : "บันทึกการทบทวน"}
+            </button>
+          </div>
+          <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+            <span className="text-xs text-slate-500">{resendMsg ?? "ส่งรายงานนี้เข้ากลุ่ม LINE ของทีมบริหารความเสี่ยงอีกครั้ง"}</span>
+            <button type="button" className="btn btn-secondary text-sm" onClick={resend} disabled={resending}>
+              {resending ? "กำลังส่ง…" : "ส่งเข้ากลุ่ม LINE อีกครั้ง"}
             </button>
           </div>
         </div>
