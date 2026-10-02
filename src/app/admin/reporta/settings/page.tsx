@@ -22,7 +22,7 @@ export default function ReportaSettingsPage() {
   const branch = getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
 
   return (
-    <div className="space-y-4 max-w-xl">
+    <div className="space-y-4 max-w-6xl">
       <Link href="/admin/reporta" className="text-sm text-slate-500 hover:text-brand">← ANALYTICA</Link>
       <div>
         <h1 className="text-2xl font-bold text-slate-800">ตั้งค่า ANALYTICA</h1>
