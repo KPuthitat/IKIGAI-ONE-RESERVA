@@ -332,15 +332,148 @@ export function parseReceipt(buf: Buffer | ArrayBuffer): SalesReceipt {
   return { date: pre.date, dateEnd: pre.dateEnd ?? pre.date, merchant: pre.merchant, bills };
 }
 
+// ── tax_invoice (รายงานใบกำกับภาษีขาย, RD format — owner 2026-10-02) ────────
+//
+// The POS "sale_taxInvoice_rdformat" export: every full tax invoice the shop
+// issued in a date range — i.e. the customers who asked for one, which are
+// almost all COMPANIES. One sheet; a 9-line preamble (operator, tax id, RD
+// branch code "สาขา : 00002", date range), a two-row header, one row per
+// invoice, and a trailing "รวม" row. Dates are dd/mm/yyyy (CE in this export;
+// a Buddhist year is normalised just in case). Amounts carry thousands commas.
+//
+// This file is a CUSTOMER view, not a sales total: the invoices are a subset of
+// the receipts already counted by close_up, so nothing here is ever added to
+// the branch's nett (owner: "มองในมุมยอดขาย ไม่ต้องบวกเพิ่มจากไฟล์อื่นๆ").
+
+export type TaxInvoiceCustomerKind = "company" | "person";
+
+export type TaxInvoiceRow = {
+  invoiceNo: string;          // "RT-20260900002" — the dedup key (unique per RD branch)
+  date: string;               // YYYY-MM-DD
+  customerName: string;
+  taxId: string | null;       // 13 digits; null when blank
+  customerKind: TaxInvoiceCustomerKind;
+  hqLabel: string | null;     // "HQ (00000)" or blank
+  customerBranchCode: string | null;   // the CUSTOMER's RD branch ("00016" = DKSH branch 16)
+  amount: number;             // มูลค่าสินค้าหรือบริการ (pre-VAT)
+  vat: number;
+  total: number;              // จำนวนเงินรวม (what the customer paid)
+  note: string | null;
+  status: string | null;      // "ออกแล้ว" | "ยกเลิก" | …
+};
+
+export type SalesTaxInvoice = {
+  rangeStart: string;         // YYYY-MM-DD — "ช่วงวันที่ : 01/09/2026-30/09/2026"
+  rangeEnd: string;
+  rdBranchCode: string | null;   // OUR RD branch code in the preamble ("00001" / "00002")
+  operator: string | null;    // ชื่อผู้ประกอบการ
+  operatorTaxId: string | null;
+  rows: TaxInvoiceRow[];
+};
+
+const TAX_INVOICE_TITLE = /รายงานใบกำกับภาษีขาย/;
+const TAX_INVOICE_NO_HEADER = /เลขที่ใบกำกับภาษี/;
+
+/** Recognise the RD-format sales tax-invoice report. */
+export function isTaxInvoice(buf: Buffer | ArrayBuffer): boolean {
+  const s = sheetsByName(buf);
+  const first = s.get(() => true);
+  if (!first) return false;
+  const titled = first.slice(0, 3).some((r) => TAX_INVOICE_TITLE.test(cell(r, 0)));
+  const headed = first.slice(0, 20).some((r) => r.some((c) => TAX_INVOICE_NO_HEADER.test(String(c ?? ""))));
+  return titled || headed;
+}
+
+/** "dd/mm/yyyy" → "YYYY-MM-DD" (a พ.ศ. year is converted). Null when malformed. */
+function dmyToIso(s: string): string | null {
+  const m = s.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return null;
+  let y = Number(m[3]);
+  if (y > 2400) y -= 543;
+  const mo = Number(m[2]), d = Number(m[1]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/** Thai juristic-person tax ids start with 0; a 13-digit citizen id starts
+ *  with 1–8. A name led by a personal title is a person regardless. */
+export function taxInvoiceCustomerKind(name: string, taxId: string | null): TaxInvoiceCustomerKind {
+  if (/^(นาย|นาง|นางสาว|น\.ส\.|ด\.ช\.|ด\.ญ\.|เด็กชาย|เด็กหญิง|Mr\.?|Mrs\.?|Ms\.?|Miss)\s/i.test(name.trim())) return "person";
+  if (taxId && /^\d{13}$/.test(taxId) && taxId[0] !== "0") return "person";
+  return "company";
+}
+
+export function parseTaxInvoice(buf: Buffer | ArrayBuffer): SalesTaxInvoice {
+  const s = sheetsByName(buf);
+  const rows = s.get(() => true);
+  if (!rows) throw new Error("tax_invoice: ไฟล์ว่าง");
+
+  // Preamble: "label : value" lines in column A.
+  const pre = new Map<string, string>();
+  for (const r of rows.slice(0, 12)) {
+    const m = cell(r, 0).match(/^([^:]+?)\s*:\s*(.+)$/);
+    if (m) pre.set(m[1].trim(), m[2].trim());
+  }
+  const rangeRaw = pre.get("ช่วงวันที่") ?? "";
+  const rm = rangeRaw.match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/);
+  const rangeStart = rm ? dmyToIso(rm[1]) : null;
+  const rangeEnd = rm ? dmyToIso(rm[2]) : null;
+  if (!rangeStart || !rangeEnd) throw new Error("tax_invoice: ไม่พบช่วงวันที่ในไฟล์ (ช่วงวันที่ :)");
+  const rdBranchCode = (pre.get("สาขา") ?? "").match(/\d{5}/)?.[0] ?? null;
+  const operator = pre.get("ชื่อผู้ประกอบการ") ?? null;
+  const operatorTaxId = (pre.get("เลขประจำตัวผู้เสียภาษี") ?? "").match(/\d{13}/)?.[0] ?? null;
+
+  // Column header row: the one holding "เลขที่ใบกำกับภาษี…". Columns are located
+  // by header text so a re-ordered export still parses.
+  const hdrIdx = rows.findIndex((r) => r.some((c) => TAX_INVOICE_NO_HEADER.test(String(c ?? ""))));
+  if (hdrIdx < 0) throw new Error("tax_invoice: ไม่พบหัวตาราง (เลขที่ใบกำกับภาษีขาย)");
+  const header = rows[hdrIdx].map((c) => String(c ?? "").trim());
+  const col = (re: RegExp) => header.findIndex((h) => re.test(h));
+  const ci = {
+    date: col(/วัน\/เดือน\/ปี|วันที่/), no: col(TAX_INVOICE_NO_HEADER), name: col(/^ชื่อ$/),
+    taxId: col(/เลขประจำตัวผู้เสียภาษี/), hq: col(/สำนักงานใหญ่/), branch: col(/^สาขา$/),
+    amount: col(/มูลค่าสินค้า/), vat: col(/ภาษีมูลค่าเพิ่ม/), total: col(/จำนวนเงินรวม/),
+    note: col(/หมายเหตุ/), status: col(/สถานะ/)
+  };
+  if (ci.no < 0 || ci.date < 0 || ci.name < 0 || ci.total < 0) throw new Error("tax_invoice: หัวตารางไม่ครบ (วันที่ / เลขที่ / ชื่อ / จำนวนเงินรวม)");
+
+  const out: TaxInvoiceRow[] = [];
+  for (const r of rows.slice(hdrIdx + 1)) {
+    const invoiceNo = cell(r, ci.no);
+    if (!invoiceNo) continue;                       // blank spacer / the "รวม" footer
+    const date = dmyToIso(cell(r, ci.date));
+    if (!date) continue;
+    const customerName = cell(r, ci.name).replace(/\s+/g, " ");
+    if (!customerName) continue;
+    const taxIdRaw = ci.taxId >= 0 ? cell(r, ci.taxId).replace(/\D/g, "") : "";
+    const taxId = taxIdRaw || null;
+    const custBranch = ci.branch >= 0 ? cell(r, ci.branch) : "";
+    out.push({
+      invoiceNo, date, customerName, taxId,
+      customerKind: taxInvoiceCustomerKind(customerName, taxId),
+      hqLabel: ci.hq >= 0 ? (cell(r, ci.hq) || null) : null,
+      customerBranchCode: custBranch || null,
+      amount: round2(ci.amount >= 0 ? num(r[ci.amount]) : 0),
+      vat: round2(ci.vat >= 0 ? num(r[ci.vat]) : 0),
+      total: round2(num(r[ci.total])),
+      note: ci.note >= 0 ? (cell(r, ci.note) || null) : null,
+      status: ci.status >= 0 ? (cell(r, ci.status) || null) : null
+    });
+  }
+  return { rangeStart, rangeEnd, rdBranchCode, operator, operatorTaxId, rows: out };
+}
+
 /** Dispatcher: sniff a buffer and parse whichever kind it is. */
 export type SalesFileParse =
   | { kind: "close_up"; closeUp: SalesCloseUp }
   | { kind: "overview"; overview: SalesOverview }
-  | { kind: "receipt"; receipt: SalesReceipt };
+  | { kind: "receipt"; receipt: SalesReceipt }
+  | { kind: "tax_invoice"; taxInvoice: SalesTaxInvoice };
 
 export function parseSalesFile(buf: Buffer | ArrayBuffer): SalesFileParse {
   if (isCloseUp(buf)) return { kind: "close_up", closeUp: parseCloseUp(buf) };
   if (isOverview(buf)) return { kind: "overview", overview: parseOverview(buf) };
+  if (isTaxInvoice(buf)) return { kind: "tax_invoice", taxInvoice: parseTaxInvoice(buf) };
   if (isReceipt(buf)) return { kind: "receipt", receipt: parseReceipt(buf) };
-  throw new Error("ไม่รู้จักรูปแบบไฟล์ — ต้องเป็นรายงาน Close up (ยอดขาย) / Overview (เมนู) / Receipt (ใบเสร็จ) จาก POS");
+  throw new Error("ไม่รู้จักรูปแบบไฟล์ — ต้องเป็นรายงาน Close up (ยอดขาย) / Overview (เมนู) / Receipt (ใบเสร็จ) / ใบกำกับภาษีขาย (รูปแบบสรรพากร) จาก POS");
 }

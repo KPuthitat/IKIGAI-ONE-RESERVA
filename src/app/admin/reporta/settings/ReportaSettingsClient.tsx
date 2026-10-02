@@ -26,10 +26,10 @@ function upcomingMonths(): string[] {
 const ymLabel = (ym: string) => `${TH_MONTHS[Number(ym.slice(5, 7)) - 1]} ${Number(ym.slice(0, 4)) + 543}`;
 
 export default function ReportaSettingsClient({
-  initialGroupId, initialTarget, initialMonthTargets, initialMerchant, initialColor, initialOpensOn, weekHours
+  initialGroupId, initialTarget, initialMonthTargets, initialMerchant, initialRdCode = null, initialColor, initialOpensOn, weekHours
 }: {
   initialGroupId: string | null; initialTarget: number | null; initialMonthTargets: MonthTarget[];
-  initialMerchant: string | null; initialColor: string | null; initialOpensOn: string | null; weekHours: DayHours[];
+  initialMerchant: string | null; initialRdCode?: string | null; initialColor: string | null; initialOpensOn: string | null; weekHours: DayHours[];
 }) {
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
   const [target, setTarget] = useState(initialTarget != null ? String(Math.round(initialTarget)) : "");
@@ -38,6 +38,7 @@ export default function ReportaSettingsClient({
   const initialByYm = useMemo(() => Object.fromEntries(initialMonthTargets.map((t) => [t.ym, String(Math.round(t.target))])), [initialMonthTargets]);
   const [monthInputs, setMonthInputs] = useState<Record<string, string>>(() => Object.fromEntries(months.map((ym) => [ym, initialByYm[ym] ?? ""])));
   const [merchant, setMerchant] = useState(initialMerchant ?? "");
+  const [rdCode, setRdCode] = useState(initialRdCode ?? "");
   const [color, setColor] = useState(initialColor ?? DEFAULT_COLOR);
   const [opensOn, setOpensOn] = useState(initialOpensOn ?? "");
   const [saving, setSaving] = useState(false);
@@ -71,7 +72,7 @@ export default function ReportaSettingsClient({
         // branches.opens_on column (also editable in RESERVA), so re-sending an
         // untouched value could revert a concurrent edit there.
         body: JSON.stringify({
-          lineGroupId: groupId.trim() || null, monthlyTarget: defaultNum, merchantName: merchant.trim() || null, cardColor: color,
+          lineGroupId: groupId.trim() || null, monthlyTarget: defaultNum, merchantName: merchant.trim() || null, rdBranchCode: rdCode.trim() || null, cardColor: color,
           ...(Object.keys(monthTargets).length ? { monthTargets } : {}),
           ...(opensOn !== (initialOpensOn ?? "") ? { opensOn: opensOn || null } : {})
         })
@@ -162,6 +163,11 @@ export default function ReportaSettingsClient({
               <label className="label">ชื่อร้านใน POS (Merchant)</label>
               <input value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="ปกติเว้นว่าง (ใช้ชื่อสาขา)" className="input" />
               <p className="text-xs text-slate-500 mt-1.5">กันไฟล์ผิดสาขา — กรอกเฉพาะเมื่อชื่อร้านใน POS ต่างจากชื่อสาขา</p>
+            </div>
+            <div>
+              <label className="label">เลขที่สาขาสรรพากร (ในไฟล์ใบกำกับภาษี)</label>
+              <input value={rdCode} onChange={(e) => setRdCode(e.target.value.replace(/\D/g, "").slice(0, 5))} placeholder="เช่น 00001" inputMode="numeric" className="input font-mono" />
+              <p className="text-xs text-slate-500 mt-1.5">กันไฟล์ใบกำกับภาษีผิดสาขา — ตรงกับบรรทัด “สาขา : 0000X” ในไฟล์รายงานใบกำกับภาษีขาย · เว้นว่าง = ยึดตามไฟล์แรกที่นำเข้า</p>
             </div>
           </div>
           <div>

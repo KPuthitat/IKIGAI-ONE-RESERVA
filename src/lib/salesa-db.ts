@@ -4,7 +4,7 @@
 // views, and stores the HOD LINE-group binding.
 
 import { getDb } from "./db";
-import type { SalesCloseUp, SalesOverview, SalesReceipt, PayEntry, TypeEntry, MenuEntry } from "./salesa-parse";
+import type { SalesCloseUp, SalesOverview, SalesReceipt, SalesTaxInvoice, PayEntry, TypeEntry, MenuEntry } from "./salesa-parse";
 import { groupLabel, canonicalName, pairKey, findMergeCandidates, type MergeCandidate } from "./salesa-names";
 
 export type DailyRow = {
@@ -601,6 +601,96 @@ export function setMerchantName(branchId: number, name: string | null): void {
      VALUES (?, ?, datetime('now'))
      ON CONFLICT(branch_id) DO UPDATE SET merchant_name = excluded.merchant_name, updated_at = datetime('now')`
   ).run(branchId, clean);
+}
+
+// ── RD branch code (owner 2026-10-02: wrong-branch guard for tax-invoice files) ──
+
+export function getRdBranchCode(branchId: number): string | null {
+  const r = getDb().prepare("SELECT rd_branch_code FROM salesa_settings WHERE branch_id = ?")
+    .get(branchId) as { rd_branch_code: string | null } | undefined;
+  return r?.rd_branch_code ?? null;
+}
+
+/** Stores the 5-digit code ("00001"); anything else clears it. A bare "1" is
+ *  zero-padded so the owner can type the short form. */
+export function setRdBranchCode(branchId: number, code: string | null): void {
+  const digits = (code ?? "").replace(/\D/g, "");
+  const clean = digits && digits.length <= 5 ? digits.padStart(5, "0") : null;
+  getDb().prepare(
+    `INSERT INTO salesa_settings (branch_id, rd_branch_code, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(branch_id) DO UPDATE SET rd_branch_code = excluded.rd_branch_code, updated_at = datetime('now')`
+  ).run(branchId, clean);
+}
+
+// ── Tax invoices (owner 2026-10-02: corporate customers) ────────────────────
+
+export type TaxInvoiceDbRow = {
+  branch_id: number; invoice_no: string; invoice_date: string; customer_name: string; tax_id: string | null;
+  customer_kind: "company" | "person"; hq_label: string | null; cust_branch_code: string | null;
+  amount: number; vat: number; total: number; note: string | null; status: string | null; rd_branch_code: string | null;
+};
+
+export type TaxInvoiceImportResult = { added: number; updated: number; skipped: number; total: number };
+
+/** Insert the file's invoices under the branch, skipping invoice numbers the
+ *  branch already holds (owner: "ถ้าซ้ำกันให้ตัดออก ลงเพิ่มแค่ข้อมูลใหม่"). An
+ *  already-stored invoice whose STATUS changed (issued → cancelled) is updated
+ *  in place so a cancellation seen in a later export is not lost; everything
+ *  else about a duplicate is left untouched. */
+export function upsertTaxInvoices(branchId: number, userId: number, doc: SalesTaxInvoice): TaxInvoiceImportResult {
+  const db = getDb();
+  const existing = new Map<string, string | null>(
+    (db.prepare("SELECT invoice_no, status FROM salesa_tax_invoices WHERE branch_id = ?").all(branchId) as Array<{ invoice_no: string; status: string | null }>)
+      .map((r) => [r.invoice_no, r.status])
+  );
+  const ins = db.prepare(`
+    INSERT OR IGNORE INTO salesa_tax_invoices
+      (branch_id, invoice_no, invoice_date, customer_name, tax_id, customer_kind, hq_label, cust_branch_code,
+       amount, vat, total, note, status, rd_branch_code, imported_by, imported_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`);
+  const upd = db.prepare("UPDATE salesa_tax_invoices SET status = ? WHERE branch_id = ? AND invoice_no = ?");
+  const res: TaxInvoiceImportResult = { added: 0, updated: 0, skipped: 0, total: doc.rows.length };
+  db.transaction(() => {
+    const seen = new Set<string>();
+    for (const r of doc.rows) {
+      if (seen.has(r.invoiceNo)) { res.skipped++; continue; }   // duplicated inside the file itself
+      seen.add(r.invoiceNo);
+      if (existing.has(r.invoiceNo)) {
+        if ((existing.get(r.invoiceNo) ?? null) !== (r.status ?? null)) { upd.run(r.status, branchId, r.invoiceNo); res.updated++; }
+        else res.skipped++;
+        continue;
+      }
+      const info = ins.run(branchId, r.invoiceNo, r.date, r.customerName, r.taxId, r.customerKind, r.hqLabel, r.customerBranchCode,
+        r.amount, r.vat, r.total, r.note, r.status, doc.rdBranchCode, userId);
+      if (info.changes > 0) res.added++; else res.skipped++;
+    }
+  })();
+  return res;
+}
+
+/** Every stored invoice of the branch (any status), oldest first. */
+export function listTaxInvoices(branchId: number): TaxInvoiceDbRow[] {
+  return getDb().prepare("SELECT * FROM salesa_tax_invoices WHERE branch_id = ? ORDER BY invoice_date, invoice_no").all(branchId) as TaxInvoiceDbRow[];
+}
+
+/** All branches' invoices for cross-branch customer totals (owner: "ใช้จ่ายที่เราไปเท่าไหร่แล้ว"). */
+export function listTaxInvoicesAll(): TaxInvoiceDbRow[] {
+  return getDb().prepare("SELECT * FROM salesa_tax_invoices ORDER BY invoice_date, invoice_no").all() as TaxInvoiceDbRow[];
+}
+
+/** Distinct RD branch codes seen in the branch's imports — for the guard. */
+export function taxInvoiceRdCodes(branchId: number): string[] {
+  return (getDb().prepare("SELECT DISTINCT rd_branch_code AS c FROM salesa_tax_invoices WHERE branch_id = ? AND rd_branch_code IS NOT NULL ORDER BY c").all(branchId) as Array<{ c: string }>).map((r) => r.c);
+}
+
+/** Remove invoices imported under this branch whose RD branch code is not the
+ *  branch's configured one (a file imported into the wrong branch). Needs the
+ *  code to be set; returns rows removed. */
+export function clearMismatchedTaxInvoices(branchId: number): number {
+  const expected = getRdBranchCode(branchId);
+  if (!expected) return 0;
+  return getDb().prepare("DELETE FROM salesa_tax_invoices WHERE branch_id = ? AND rd_branch_code IS NOT NULL AND rd_branch_code != ?").run(branchId, expected).changes;
 }
 
 // ── Per-branch LINE card colour (owner 2026-09-17) ──────────────────────────

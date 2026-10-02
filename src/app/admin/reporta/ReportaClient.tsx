@@ -130,8 +130,27 @@ type TodayCol = { date: string; headcount: number; ftCount: number; ptCount: num
 type FestivalCell = { branchId: number; branchName: string; sales: number | null; baseline: number | null; upliftPct: number | null };
 type FestivalRow = { date: string; dateLabel: string; nameTh: string; branches: FestivalCell[] };
 type FestivalData = { year: number; branches: Array<{ id: number; name: string }>; rows: FestivalRow[] };
+// Corporate customers from the tax-invoice export (owner 2026-10-02).
+type CorporateCustomer = {
+  key: string; name: string; taxId: string | null; custBranchCode: string | null;
+  visits: number; spend: number; visitsYear: number; spendYear: number; avgPerVisit: number | null;
+  perMonth: number | null; cadence: string; avgGapDays: number | null;
+  firstVisit: string; lastVisit: string; lastVisitLabel: string; daysSinceLast: number; overdue: boolean;
+  months: number[];
+  phase: { key: "early" | "mid" | "late"; label: string; count: number } | null;
+  weekday: { dow: number; label: string; count: number } | null;
+  nearHoliday: { count: number; names: string[] };
+  groupVisits: number; groupSpend: number; otherBranches: boolean; blurb: string;
+};
+type CorporateReport = {
+  year: number; hasData: boolean;
+  coverage: { from: string | null; to: string | null; invoices: number; cancelled: number; persons: number; personInvoices: number };
+  companies: number; repeatCompanies: number; invoicesYear: number; spendYear: number; spendAll: number;
+  newThisMonth: string[]; overdue: string[]; rows: CorporateCustomer[];
+  rdCodes: { expected: string | null; seen: string[] };
+};
 // Full-year growth bars (owner 2026-09-21): per branch, monthly nett across the year.
-type YearBar = { branchId: number; branchName: string; months: Array<number | null>; total: number; growthPct: number | null; peakMonth: number | null };
+type YearBar ={ branchId: number; branchName: string; months: Array<number | null>; total: number; growthPct: number | null; peakMonth: number | null };
 type YearBarsData = { year: number; monthCount: number; branches: YearBar[] };
 // Full-year DAILY bars (owner 2026-09-21): one bar per day across the year.
 type DayBar = { branchId: number; branchName: string; values: Array<number | null>; total: number; peakIdx: number | null; lowIdx: number | null; avgPerDay: number | null };
@@ -290,6 +309,13 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
   const [festData, setFestData] = useState<FestivalData | null>(null);
   const festReqRef = useRef(0);
   const [festBusy, setFestBusy] = useState(false);
+  // Corporate customers from the tax-invoice export (owner 2026-10-02) — lazy.
+  const [corpOpen, setCorpOpen] = useState(false);
+  const [corpYear, setCorpYear] = useState(Number(initial.slice(0, 4)));
+  const [corpData, setCorpData] = useState<CorporateReport | null>(null);
+  const corpReqRef = useRef(0);
+  const [corpBusy, setCorpBusy] = useState(false);
+  const [corpShowAll, setCorpShowAll] = useState(false);
   // Full-year growth bars (owner 2026-09-21) — shown by default (owner 2026-09-21).
   const [ybOpen, setYbOpen] = useState(true);
   const [ybYear, setYbYear] = useState(Number(initial.slice(0, 4)));
@@ -419,6 +445,37 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
     if (festOpen) loadFestivals(y);
   };
 
+  // Corporate customers (owner 2026-10-02) — lazy, active branch, per year.
+  const loadCorporate = useCallback(async (y: number) => {
+    const seq = ++corpReqRef.current;
+    setCorpBusy(true);
+    try {
+      const r = await fetch(`/api/admin/reporta/view?corporate=1&year=${y}`, { cache: "no-store" }).then((x) => x.json());
+      if (seq !== corpReqRef.current) return;
+      if (r.ok) setCorpData(r.corporate);
+    } catch { /* ignore */ } finally {
+      if (seq === corpReqRef.current) setCorpBusy(false);
+    }
+  }, []);
+  const toggleCorporate = () => {
+    const next = !corpOpen;
+    setCorpOpen(next);
+    if (next && (!corpData || corpData.year !== corpYear)) loadCorporate(corpYear);
+  };
+  const stepCorpYear = (delta: number) => {
+    const y = corpYear + delta;
+    setCorpYear(y);
+    if (corpOpen) loadCorporate(y);
+  };
+  const clearTaxMismatched = async () => {
+    if (!confirm("ลบใบกำกับภาษีที่เลขที่สาขาสรรพากรไม่ตรงกับสาขานี้ (ไฟล์ที่นำเข้าผิดสาขา) ?")) return;
+    setBusy(true); setMsg(null);
+    const r = await fetch("/api/admin/reporta/clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "taxinvoice_mismatched" }) }).then((x) => x.json());
+    setBusy(false);
+    if (r.ok) { setMsg({ kind: "ok", text: r.removed > 0 ? `ลบใบกำกับภาษีที่สาขาไม่ตรงแล้ว ${r.removed} ใบ` : "ไม่พบใบกำกับภาษีที่สาขาไม่ตรง" }); loadCorporate(corpYear); }
+    else setMsg({ kind: "err", text: r.message ?? "ลบไม่สำเร็จ" });
+  };
+
   // Full-year growth bars (owner 2026-09-21) — lazy, cross-branch yearly query.
   const loadYearBars = useCallback(async (y: number) => {
     const seq = ++ybReqRef.current;
@@ -529,13 +586,24 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
       else {
         // Duplicate-file guard (owner 2026-09-19): warn when an import replaced
         // data that already existed for that day+type.
-        const kindTh = (k: string) => k === "close_up" ? "ยอดขาย" : k === "overview" ? "เมนู" : "ใบเสร็จ";
-        const dup = (r.imported as Array<{ date: string; kind: string; overwritten?: boolean }>).filter((x) => x.overwritten);
+        const kindTh = (k: string) => k === "close_up" ? "ยอดขาย" : k === "overview" ? "เมนู" : k === "tax_invoice" ? "ใบกำกับภาษี" : "ใบเสร็จ";
+        const imported = r.imported as Array<{ date: string; kind: string; note?: string; overwritten?: boolean }>;
+        const dup = imported.filter((x) => x.overwritten);
+        // Tax-invoice files dedup by invoice number, so their note (new / skipped
+        // counts) is the useful feedback (owner 2026-10-02).
+        const taxNotes = imported.filter((x) => x.kind === "tax_invoice" && x.note).map((x) => x.note as string);
         if (dup.length) {
           const list = dup.map((x) => `${thaiDate(x.date)} (${kindTh(x.kind)})`).join(", ");
           setMsg({ kind: "warn", text: `นำเข้าไฟล์สำเร็จ · ⚠️ ทับข้อมูลเดิม ${dup.length} รายการ — ${list}` });
+        } else if (taxNotes.length) {
+          setMsg({ kind: "ok", text: `นำเข้าไฟล์สำเร็จ · ${taxNotes.join(" · ")}` });
         } else {
           setMsg({ kind: "ok", text: "นำเข้าไฟล์สำเร็จ" });
+        }
+        if (taxNotes.length) {
+          // Refresh the corporate-customer card if it's open (it's lazy-loaded).
+          setCorpData(null);
+          if (corpOpen) loadCorporate(corpYear);
         }
         setPicked([]);
         if (fileRef.current) fileRef.current.value = "";
@@ -768,7 +836,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
             </svg>
           </div>
           <div className="text-sm font-semibold text-slate-700">ลากไฟล์มาวางที่นี่ หรือ <span className="text-emerald-600 underline">เลือกไฟล์</span></div>
-          <div className="mt-1 text-xs text-slate-400">ไฟล์ <b>Close up</b> (ยอดขาย) · <b>Overview</b> (เมนู) · <b>Receipt</b> (ใบเสร็จ) — ระบบแยกประเภทและวันที่ให้เอง จะนำเข้าทีละไฟล์หรือพร้อมกันก็ได้</div>
+          <div className="mt-1 text-xs text-slate-400">ไฟล์ <b>Close up</b> (ยอดขาย) · <b>Overview</b> (เมนู) · <b>Receipt</b> (ใบเสร็จ) · <b>ใบกำกับภาษีขาย</b> (รูปแบบสรรพากร — ลูกค้าองค์กร) — ระบบแยกประเภทและวันที่ให้เอง จะนำเข้าทีละไฟล์หรือพร้อมกันก็ได้</div>
         </div>
 
         {/* One-at-a-time: pick a single file and import it immediately. */}
@@ -1349,6 +1417,156 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                     className="text-xs text-slate-500 hover:text-rose-600 shrink-0">ยกเลิกรวม</button>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Corporate customers (owner 2026-10-02): the companies that asked for a
+          full tax invoice — imported from the POS "รายงานใบกำกับภาษีขาย" export in
+          the box above. Per company: cadence, visits this year, when in the
+          month / which weekday, near which holiday, spend so far, gone quiet.
+          Display-only (never a sales total). Lazy-loaded, active branch. */}
+      {!isClinic && (
+        <div className="card">
+          <button type="button" onClick={toggleCorporate} className="w-full flex items-center justify-between gap-2 text-left">
+            <div>
+              <h2 className="font-bold text-slate-800">ลูกค้าองค์กร — จากใบกำกับภาษีขาย</h2>
+              <p className="text-xs text-slate-500 mt-0.5">บริษัทที่ขอใบกำกับภาษี: มาบ่อยแค่ไหน ปีนี้กี่ครั้ง มักมาช่วงไหนของเดือน วันไหน ใกล้วันหยุดใด ใช้จ่ายกับเราไปเท่าไหร่ — สำหรับวางแผนการตลาดออฟไลน์ · มุมมองลูกค้าเท่านั้น ไม่นำไปรวมกับยอดขาย</p>
+            </div>
+            <span className="text-slate-400 text-sm shrink-0">{corpOpen ? "▲ ซ่อน" : "▼ ดู"}</span>
+          </button>
+          {corpOpen && (
+            <div className="mt-3 space-y-3">
+              <NavStepper eyebrow="ปี" label={`${corpYear + 543}`}
+                onPrev={() => stepCorpYear(-1)} onNext={() => stepCorpYear(1)} nextDisabled={corpYear >= Number(todayBkk().slice(0, 4))} />
+              {corpBusy ? (
+                <p className="text-sm text-slate-400 text-center py-4">กำลังโหลด…</p>
+              ) : !corpData || !corpData.hasData ? (
+                <div className="text-sm text-slate-400 text-center py-4 space-y-1">
+                  <p>ยังไม่มีข้อมูลใบกำกับภาษีของสาขานี้</p>
+                  <p className="text-xs">ส่งออกรายงาน “ใบกำกับภาษีขาย (รูปแบบสรรพากร)” จาก POS เป็นรายวัน รายสัปดาห์ หรือรายเดือนก็ได้ แล้วนำเข้าในกล่องด้านบน — ใบที่ซ้ำกันจะถูกข้าม เพิ่มเฉพาะใบใหม่</p>
+                </div>
+              ) : (() => {
+                const c = corpData;
+                const shown = corpShowAll ? c.rows : c.rows.slice(0, 15);
+                const monthPeak = Math.max(1, ...c.rows.flatMap((r) => r.months));
+                return (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="rounded-xl bg-emerald-50 p-3">
+                        <div className="text-[11px] text-slate-500">บริษัทที่ขอใบกำกับภาษี</div>
+                        <div className="text-lg font-bold text-slate-800 tabular-nums">{intTh(c.companies)} <span className="text-xs font-normal text-slate-500">ราย</span></div>
+                        <div className="text-[11px] text-slate-500">มาซ้ำ {intTh(c.repeatCompanies)} ราย</div>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <div className="text-[11px] text-slate-500">ใบกำกับภาษีปี {corpYear + 543}</div>
+                        <div className="text-lg font-bold text-slate-800 tabular-nums">{intTh(c.invoicesYear)} <span className="text-xs font-normal text-slate-500">ใบ</span></div>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <div className="text-[11px] text-slate-500">ยอดบริษัทปีนี้ (รวม VAT)</div>
+                        <div className="text-lg font-bold text-slate-800 tabular-nums">{baht(c.spendYear)}</div>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <div className="text-[11px] text-slate-500">รวมทุกปีที่มีข้อมูล</div>
+                        <div className="text-lg font-bold text-slate-800 tabular-nums">{baht(c.spendAll)}</div>
+                        {c.coverage.from && c.coverage.to && <div className="text-[11px] text-slate-500">ข้อมูล {thaiDate(c.coverage.from)} – {thaiDate(c.coverage.to)}</div>}
+                      </div>
+                    </div>
+                    {(c.overdue.length > 0 || c.newThisMonth.length > 0) && (
+                      <div className="space-y-1 text-sm">
+                        {c.overdue.length > 0 && (
+                          <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2">
+                            <b>ลูกค้าประจำที่เงียบไปนานกว่ารอบปกติ — ควรติดต่อ:</b> {c.overdue.slice(0, 6).join(", ")}{c.overdue.length > 6 ? ` และอีก ${c.overdue.length - 6} ราย` : ""}
+                          </div>
+                        )}
+                        {c.newThisMonth.length > 0 && (
+                          <div className="rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-2">
+                            <b>บริษัทใหม่เดือนนี้ (มาครั้งแรก):</b> {c.newThisMonth.slice(0, 6).join(", ")}{c.newThisMonth.length > 6 ? ` และอีก ${c.newThisMonth.length - 6} ราย` : ""}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm border-collapse">
+                        <thead>
+                          <tr className="text-xs text-slate-500 border-b border-slate-200">
+                            <th className="text-left py-2 pr-3">บริษัท</th>
+                            <th className="text-right py-2 px-2 whitespace-nowrap">ปีนี้ (ครั้ง)</th>
+                            <th className="text-right py-2 px-2 whitespace-nowrap">ยอดปีนี้</th>
+                            <th className="text-right py-2 px-2 whitespace-nowrap">เฉลี่ย/ครั้ง</th>
+                            <th className="text-left py-2 px-2 whitespace-nowrap">ความถี่</th>
+                            <th className="text-left py-2 px-2 whitespace-nowrap">มักมา</th>
+                            <th className="text-left py-2 px-2 whitespace-nowrap">รายเดือน</th>
+                            <th className="text-left py-2 pl-2 whitespace-nowrap">ล่าสุด</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {shown.map((r) => (
+                            <tr key={r.key} className={`border-b border-slate-100 align-top ${r.overdue ? "bg-amber-50/40" : ""}`}>
+                              <td className="py-2 pr-3 min-w-[14rem]">
+                                <div className="font-medium text-slate-800">{r.name}{r.custBranchCode && <span className="text-[11px] text-slate-400 font-normal"> · สาขา {r.custBranchCode}</span>}</div>
+                                <div className="text-[11px] text-slate-500 mt-0.5">{r.blurb}</div>
+                              </td>
+                              <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">
+                                <div className="font-semibold text-slate-700">{intTh(r.visitsYear)}</div>
+                                <div className="text-[11px] text-slate-400">ทั้งหมด {intTh(r.visits)}{r.otherBranches ? ` · ทุกสาขา ${intTh(r.groupVisits)}` : ""}</div>
+                              </td>
+                              <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">
+                                <div className="font-semibold text-slate-700">{baht(r.spendYear)}</div>
+                                <div className="text-[11px] text-slate-400">ทั้งหมด {baht(r.spend)}</div>
+                              </td>
+                              <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">{r.avgPerVisit != null ? baht(r.avgPerVisit) : "—"}</td>
+                              <td className="py-2 px-2 whitespace-nowrap">
+                                <div>{r.cadence}</div>
+                                {r.avgGapDays != null && <div className="text-[11px] text-slate-400">ห่างกัน ~{intTh(r.avgGapDays)} วัน</div>}
+                              </td>
+                              <td className="py-2 px-2 whitespace-nowrap">
+                                {r.visitsYear === 0 ? <span className="text-slate-300">—</span> : (
+                                  <>
+                                    <div>{r.phase ? `${r.phase.label} (${r.phase.count}/${r.visitsYear})` : "—"}</div>
+                                    <div className="text-[11px] text-slate-500">{r.weekday ? `วัน${r.weekday.label} (${r.weekday.count}/${r.visitsYear})` : ""}</div>
+                                    {r.nearHoliday.count > 0 && <div className="text-[11px] text-amber-700">ใกล้วันหยุด {r.nearHoliday.count} ครั้ง · {r.nearHoliday.names.slice(0, 2).join(", ")}</div>}
+                                  </>
+                                )}
+                              </td>
+                              <td className="py-2 px-2">
+                                <div className="flex items-end gap-[2px] h-6" title={r.months.map((v, i) => `${TH_MONTHS[i + 1]}: ${v} ครั้ง`).join(" · ")}>
+                                  {r.months.map((v, i) => (
+                                    <div key={i} className="w-[7px] h-full flex items-end">
+                                      <div className={`w-full rounded-sm ${v > 0 ? "bg-emerald-500" : "bg-slate-100"}`} style={{ height: v > 0 ? `${Math.max(25, (v / monthPeak) * 100)}%` : "15%" }} />
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="py-2 pl-2 whitespace-nowrap">
+                                <div>{r.lastVisitLabel}</div>
+                                <div className={`text-[11px] ${r.overdue ? "text-amber-700 font-medium" : "text-slate-400"}`}>{r.daysSinceLast > 0 ? `${intTh(r.daysSinceLast)} วันก่อน` : "วันนี้"}{r.overdue ? " · เงียบนานกว่าปกติ" : ""}</div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {c.rows.length > 15 && (
+                      <button type="button" onClick={() => setCorpShowAll((v) => !v)} className="text-xs text-brand hover:underline">
+                        {corpShowAll ? "แสดงเฉพาะ 15 อันดับแรก" : `ดูทั้งหมด ${intTh(c.rows.length)} บริษัท`}
+                      </button>
+                    )}
+                    <p className="text-[11px] text-slate-400">
+                      เรียงตามยอดปีที่เลือก · ยอด = จำนวนเงินรวมในใบกำกับภาษี (รวม VAT) · ความถี่คิดจากช่วงที่มีข้อมูลในปีนี้ · มักมา = ต้นเดือน (1–10) / กลางเดือน (11–20) / ปลายเดือน (21–31) และวันในสัปดาห์ที่พบบ่อยสุด · ใกล้วันหยุด = ภายใน ±3 วันของวันหยุดนักขัตฤกษ์ · “เงียบนานกว่าปกติ” = ไม่มาเกิน 1.5 เท่าของระยะห่างปกติ
+                      {c.coverage.persons > 0 && <> · บุคคลธรรมดา {intTh(c.coverage.persons)} ราย ({intTh(c.coverage.personInvoices)} ใบ) ไม่แสดงในตาราง</>}
+                      {c.coverage.cancelled > 0 && <> · ใบที่ยกเลิก {intTh(c.coverage.cancelled)} ใบ ไม่นับ</>}
+                    </p>
+                    {c.rdCodes.expected && c.rdCodes.seen.some((s) => s !== c.rdCodes.expected) && (
+                      <div className="flex items-center justify-between gap-2 flex-wrap text-xs rounded-lg bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2">
+                        <span>พบใบกำกับภาษีจากสาขาสรรพากร {c.rdCodes.seen.filter((s) => s !== c.rdCodes.expected).join(", ")} ปนอยู่ (สาขานี้คือ {c.rdCodes.expected})</span>
+                        <button type="button" onClick={clearTaxMismatched} disabled={busy} className="font-semibold hover:underline disabled:opacity-50">ลบใบที่สาขาไม่ตรง</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

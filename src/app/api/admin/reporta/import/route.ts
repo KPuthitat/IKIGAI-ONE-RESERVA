@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
-import { isSalesaBranch, upsertDaily, upsertMenu, upsertReceipts, getMerchantName, existingKinds } from "@/lib/salesa-db";
+import { isSalesaBranch, upsertDaily, upsertMenu, upsertReceipts, getMerchantName, existingKinds, upsertTaxInvoices, getRdBranchCode, taxInvoiceRdCodes } from "@/lib/salesa-db";
 import { parseSalesFile, type SalesFileParse } from "@/lib/salesa-parse";
 import { getDb } from "@/lib/db";
 import { thaiDate } from "@/lib/revshare";
@@ -43,6 +43,13 @@ export async function POST(req: Request) {
 
   // Pass 1: parse + validate everything before saving anything.
   const parsedFiles: Array<{ name: string; parsed: SalesFileParse; merchant: string | null }> = [];
+  // RD branch-code guard for the tax-invoice export (owner 2026-10-02): that
+  // file carries no POS merchant name, only the Revenue Department branch code
+  // ("สาขา : 00002"). Expected = the code set in settings; when none is set,
+  // the code of the branch's earlier tax-invoice imports (so a second branch's
+  // file can't slip in once the first one is established).
+  const expectedRd = getRdBranchCode(branchId);
+  const seenRd = expectedRd ? [] : taxInvoiceRdCodes(branchId);
   for (const file of files) {
     if (file.size > 8 * 1024 * 1024) {
       return NextResponse.json({ error: "file_too_large", message: `ไฟล์ใหญ่เกิน 8MB: ${file.name}` }, { status: 400 });
@@ -52,6 +59,22 @@ export async function POST(req: Request) {
       parsed = parseSalesFile(Buffer.from(await file.arrayBuffer()));
     } catch (e) {
       return NextResponse.json({ error: "parse_failed", message: `${file.name}: ${(e as Error).message}` }, { status: 422 });
+    }
+    if (parsed.kind === "tax_invoice") {
+      // A range file by nature (daily / weekly / monthly export) — no single-day
+      // guard; rows dedup on invoice number instead.
+      const code = parsed.taxInvoice.rdBranchCode;
+      const mismatch = code && (expectedRd ? code !== expectedRd : (seenRd.length > 0 && !seenRd.includes(code)));
+      if (mismatch) {
+        return NextResponse.json({
+          error: "rd_branch_mismatch",
+          message: `ไฟล์ใบกำกับภาษีนี้เป็นของสาขาสรรพากร ${code} แต่สาขาที่ใช้งานอยู่คือ ${expectedRd ?? seenRd.join("/")} — ตรวจสอบสาขาที่เลือก หรือตั้ง "เลขที่สาขาสรรพากร" ในหน้าตั้งค่า: ${file.name}`
+        }, { status: 422 });
+      }
+      // The first accepted file of a batch sets the code the rest must match.
+      if (code && !expectedRd && !seenRd.includes(code)) seenRd.push(code);
+      parsedFiles.push({ name: file.name, parsed, merchant: null });
+      continue;
     }
     // Single-day guard (owner 2026-09-20): the POS "Date:" header must be ONE
     // day. A file exported for a range (e.g. 15–20 ก.ย. in one file) would save
@@ -87,7 +110,15 @@ export async function POST(req: Request) {
     // Per-file try/catch so an unexpected save error returns a clear message
     // instead of a 500 the client can only show as "อัปโหลดผิดพลาด" (owner 2026-09-20).
     try {
-      if (f.parsed.kind === "close_up") {
+      if (f.parsed.kind === "tax_invoice") {
+        const t = f.parsed.taxInvoice;
+        const r = upsertTaxInvoices(branchId, user.id, t);
+        const dupNote = r.skipped + r.updated > 0 ? ` · ซ้ำ ${r.skipped + r.updated} ใบ (ข้าม${r.updated ? ` · อัปเดตสถานะ ${r.updated}` : ""})` : "";
+        results.push({
+          filename: f.name, kind: "tax_invoice", date: t.rangeEnd, merchant: null, overwritten: false,
+          note: `ใบกำกับภาษี ${thaiDate(t.rangeStart)} – ${thaiDate(t.rangeEnd)} · ${r.total} ใบ · เพิ่มใหม่ ${r.added}${dupNote}${t.rdBranchCode ? ` · สาขาสรรพากร ${t.rdBranchCode}` : ""}`
+        });
+      } else if (f.parsed.kind === "close_up") {
         const c = f.parsed.closeUp;
         const overwritten = existingKinds(branchId, c.date).sales;
         upsertDaily(branchId, user.id, c);
