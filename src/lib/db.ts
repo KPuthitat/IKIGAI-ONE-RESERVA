@@ -1852,6 +1852,18 @@ function runMigrations(db: Database.Database): void {
       updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  // ANALYTICA per-month sales targets (owner 2026-10-02): a month's own target
+  // overrides salesa_settings.monthly_target (the default), so the target can
+  // grow month by month instead of one flat figure.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS salesa_monthly_targets (
+      branch_id   INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      ym          TEXT NOT NULL,              -- YYYY-MM
+      target      REAL NOT NULL,
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (branch_id, ym)
+    );
+  `);
 
   // ── DF — Doctor Fee (clinic only) ────────────────────────────────
   // Owner 2026-08: a doctor's pay = rate% of the clinic's service revenue on

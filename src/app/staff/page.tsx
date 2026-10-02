@@ -7,7 +7,7 @@ import { nameWithPrefix } from "@/lib/name";
 import { HubCard, type HubCardProps } from "@/components/HubCard";
 import { getMyEnrollment, type MjActor } from "@/lib/mounjaro-db";
 import { moduleHits } from "@/lib/module-usage";
-import { getMonthlyTarget, isSalesaBranch } from "@/lib/salesa-db";
+import { getMonthlyTargetFor, isSalesaBranch } from "@/lib/salesa-db";
 import { monthComparison, targetProgress } from "@/lib/salesa-analytics";
 import { clinicaRangeAgg } from "@/lib/clinica-db";
 import TeamGoalHero from "@/app/components/TeamGoalHero";
@@ -36,10 +36,10 @@ export default function StaffHomePage({
   try {
     const bid = user.activeBranchId;
     if (bid != null && isSalesaBranch(bid)) {
-      const target = getMonthlyTarget(bid);
+      const todayIso = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+      const y = Number(todayIso.slice(0, 4)), m = Number(todayIso.slice(5, 7));
+      const target = getMonthlyTargetFor(bid, y, m);
       if (target != null && target > 0) {
-        const todayIso = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-        const y = Number(todayIso.slice(0, 4)), m = Number(todayIso.slice(5, 7));
         const mc = monthComparison(bid, y, m, todayIso);
         // Fold in a clinic branch's billed net (owner 2026-09-27: คลินิกยอดไม่ขึ้น) —
         // its revenue lives in clinica_bills, not POS, so add it to the MTD.

@@ -196,32 +196,43 @@ process.env.DATABASE_PATH = TMP;
       && hoursLabel({ open: "11:00", close: "21:00", breakStart: "14:00", breakEnd: "16:00", breakWeekdayOnly: true }) === "11:00–21:00 · พัก 14:00–16:00 (จ–ศ)";
   })());
   const sdb = await import("../src/lib/salesa-db");
-  // Open/close are LINKED to RESERVA (branches); the break is ANALYTICA-only.
-  db.prepare("UPDATE branches SET open_time='11:00', close_time='21:00' WHERE id=?").run(branch);
-  ok("hours: เปิด–ปิด ดึงจาก RESERVA (branches) = 11:00–21:00", (() => {
+  // Everything comes from RESERVA (branches): open/close, lunch break, closed days (owner 2026-10-02).
+  db.prepare("UPDATE branches SET open_time='11:00', close_time='21:00', lunch_break_start=NULL, lunch_break_end=NULL, lunch_break_weekdays=NULL, closed_weekdays=NULL WHERE id=?").run(branch);
+  ok("hours: เปิด–ปิด ดึงจาก RESERVA = 11:00–21:00 ไม่มีพัก", (() => {
     const h = sdb.getBranchHours(branch);
-    return !!h && h.open === "11:00" && h.close === "21:00" && h.breakStart === null;
+    return !!h && h.open === "11:00" && h.close === "21:00" && h.breakStart === null && h.breakWeekdayOnly === false;
   })());
-  sdb.setBranchBreak(branch, { breakStart: "14:00", breakEnd: "16:00", breakWeekdayOnly: true });
-  ok("hours: ตั้งพัก 14–16 (จ–ศ) แล้วอ่านกลับ", (() => {
+  db.prepare("UPDATE branches SET lunch_break_start='14:00', lunch_break_end='16:00', lunch_break_weekdays='[1,2,3,4,5]' WHERE id=?").run(branch);
+  ok("hours: พักกลางวันของ RESERVA 14–16 จ–ศ → breakWeekdayOnly", (() => {
     const h = sdb.getBranchHours(branch);
     return !!h && h.breakStart === "14:00" && h.breakEnd === "16:00" && h.breakWeekdayOnly === true;
   })());
-  sdb.setBranchBreak(branch, null);
-  ok("hours: ล้างพัก → เปิด–ปิดยังอยู่ (จาก RESERVA)", (() => { const h = sdb.getBranchHours(branch); return !!h && h.breakStart === null && h.open === "11:00"; })());
+  db.prepare("UPDATE branches SET lunch_break_weekdays='[0,1,2,3,4,5,6]' WHERE id=?").run(branch);
+  ok("hours: พักทุกวัน → breakWeekdayOnly false", sdb.getBranchHours(branch)?.breakWeekdayOnly === false);
+  db.prepare("UPDATE branches SET lunch_break_weekdays='[1,2,3,4,5,6]' WHERE id=?").run(branch);
+  ok("hours: พัก จ–ส → ไม่ใช่ weekdayOnly แต่ breakDays บอกวันที่แน่นอน และ caption ไม่เขียนทุกวัน", (() => {
+    const h = sdb.getBranchHours(branch);
+    return !!h && h.breakWeekdayOnly === false && h.breakDays.join() === "1,2,3,4,5,6" && hoursLabel(h) === "11:00–21:00 · พัก 14:00–16:00 (จ,อ,พ,พฤ,ศ,ส)";
+  })());
+  ok("hourSpan: พัก จ–ส ไม่ dim คอลัมน์ (อาทิตย์เปิด)", (() => { const h = sdb.getBranchHours(branch)!; const sp = hourSpan(h, 11, 21); return !!sp && !sp.isBreak(14); })());
+  db.prepare("UPDATE branches SET lunch_break_weekdays='[0,1,2,3,4,5,6]' WHERE id=?").run(branch);
+  ok("hourSpan: พักทุกวัน → dim คอลัมน์ 14–15", (() => { const h = sdb.getBranchHours(branch)!; const sp = hourSpan(h, 11, 21); return !!sp && sp.isBreak(14) && sp.isBreak(15) && !sp.isBreak(16); })());
+  db.prepare("UPDATE branches SET lunch_break_weekdays=NULL WHERE id=?").run(branch);
+  ok("hours: ไม่ติ๊กวันพัก = ไม่มีพัก (กติกา RESERVA)", sdb.getBranchHours(branch)?.breakStart === null && sdb.getBranchHours(branch)?.breakDays.length === 0);
+  db.prepare("UPDATE branches SET lunch_break_weekdays='[1,2,3,4,5]' WHERE id=?").run(branch);
   db.prepare("UPDATE branches SET open_time='', close_time='' WHERE id=?").run(branch);
   ok("hours: RESERVA เวลาว่าง/ไม่ถูกต้อง → null", sdb.getBranchHours(branch) === null);
-  db.prepare("UPDATE branches SET open_time='11:00', close_time='21:00' WHERE id=?").run(branch);
-  const throws = (fn: () => void) => { try { fn(); return false; } catch { return true; } };
-  ok("hours: พักนอกเวลาทำการ → throw", throws(() => sdb.setBranchBreak(branch, { breakStart: "22:00", breakEnd: "23:00", breakWeekdayOnly: true })));
-  ok("hours: พักสิ้นสุดก่อนเริ่ม → throw", throws(() => sdb.setBranchBreak(branch, { breakStart: "16:00", breakEnd: "14:00", breakWeekdayOnly: true })));
-  ok("hours: พักครึ่งเดียว (มีแค่เริ่ม) → throw", throws(() => sdb.setBranchBreak(branch, { breakStart: "14:00", breakEnd: null, breakWeekdayOnly: true })));
-  // Clamp: a stored break that no longer fits narrowed RESERVA hours is not surfaced.
-  sdb.setBranchBreak(branch, { breakStart: "14:00", breakEnd: "16:00", breakWeekdayOnly: true });
-  db.prepare("UPDATE branches SET open_time='15:00' WHERE id=?").run(branch);
-  ok("hours: พักที่ตกนอกเวลาใหม่ → ไม่แสดง (clamp)", (() => { const h = sdb.getBranchHours(branch); return !!h && h.open === "15:00" && h.breakStart === null; })());
+  // A lunch break outside the open window (e.g. hours narrowed later) is not surfaced.
+  db.prepare("UPDATE branches SET open_time='15:00', close_time='21:00' WHERE id=?").run(branch);
+  ok("hours: พักที่ตกนอกเวลาทำการ → ไม่แสดง (clamp)", (() => { const h = sdb.getBranchHours(branch); return !!h && h.open === "15:00" && h.breakStart === null; })());
   db.prepare("UPDATE branches SET open_time='11:00' WHERE id=?").run(branch);
-  ok("hours: ขยายเวลากลับ → พักเดิมกลับมาแสดง", (() => { const h = sdb.getBranchHours(branch); return !!h && h.breakStart === "14:00" && h.breakEnd === "16:00"; })());
+  ok("hours: ขยายเวลากลับ → พักกลับมาแสดง", (() => { const h = sdb.getBranchHours(branch); return !!h && h.breakStart === "14:00" && h.breakEnd === "16:00"; })());
+  // Per-day table for the settings page.
+  db.prepare("UPDATE branches SET closed_weekdays='[1]', lunch_break_weekdays='[1,2,3,4,5]' WHERE id=?").run(branch);
+  const wk = sdb.branchWeekHours(branch);
+  ok("weekHours: 7 วัน เริ่มจันทร์ · จันทร์ปิด (closed_weekdays)", wk.length === 7 && wk[0].dow === 1 && wk[0].closed && wk[0].open === null && wk[0].breakStart === null);
+  ok("weekHours: อังคาร 11:00–21:00 พัก 14–16", wk[1].dow === 2 && !wk[1].closed && wk[1].open === "11:00" && wk[1].close === "21:00" && wk[1].breakStart === "14:00");
+  ok("weekHours: อาทิตย์เปิดแต่ไม่พัก (ไม่อยู่ใน lunch weekdays)", wk[6].dow === 0 && !wk[6].closed && wk[6].open === "11:00" && wk[6].breakStart === null);
 
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();

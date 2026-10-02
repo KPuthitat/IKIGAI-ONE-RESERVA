@@ -4,7 +4,7 @@
 
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
 import type { MenuEntry } from "./salesa-parse";
-import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, hourlyReceiptsByDay, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTarget, branchIdsWithTarget, branchOpensOn, type DailyRow } from "./salesa-db";
+import { getDaily, listRange, getMenu, menuRange, hourlyReceipts, hourlyReceiptsByDay, itemUnitsRange, receiptItemSets, hasReceiptData, getMonthlyTargetFor, branchIdsWithTarget, branchOpensOn, type DailyRow } from "./salesa-db";
 import { clinicaRangeAgg, clinicaMaxBillDayInMonth, clinicaBranchesWithBillsInYear, clinicaMonthlyNet, clinicaDailyNet, clinicaYtdProjection, isClinicaBranch, clinicaDailyNetRange } from "./clinica-db";
 import { getDb } from "./db";
 import { eventNotesForDay, eventNotesForRange, type EventNoteDay } from "./event-notes";
@@ -684,27 +684,33 @@ function branchYtdProjection(branchId: number, todayIso: string): { ytd: number;
 
 const dayNum = (iso: string) => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
 
-/** A branch's target for the calendar year. Full year = monthly×12; but a branch
- *  whose authoritative opening date (branches.opens_on) falls within this year is
- *  prorated to its available span (open date → Dec 31), so a store that opened
- *  25/07 isn't judged against a whole-year 7.2M (owner 2026-09-21). */
+/** A branch's target for the calendar year = the sum of its 12 effective monthly
+ *  targets (a month's own figure, else the default — owner 2026-10-02); but a
+ *  branch whose authoritative opening date (branches.opens_on) falls within this
+ *  year is prorated to its available span (open date → Dec 31), so a store that
+ *  opened 25/07 isn't judged against a whole-year figure (owner 2026-09-21). */
 function branchAnnualTarget(branchId: number, year: number): { annualTarget: number; fullYearTarget: number; openedIso: string | null } | null {
-  const monthly = getMonthlyTarget(branchId);
-  if (monthly == null || monthly <= 0) return null;
-  const fullYearTarget = monthly * 12;
-  const jan1 = `${year}-01-01`, dec31 = `${year}-12-31`;
+  const months = Array.from({ length: 12 }, (_, i) => Math.max(0, getMonthlyTargetFor(branchId, year, i + 1) ?? 0));
+  const fullYearTarget = round2(months.reduce((a, m) => a + m, 0));
+  if (fullYearTarget <= 0) return null;
+  const jan1 = `${year}-01-01`;
   const opensOn = branchOpensOn(branchId);
   const openedThisYear = opensOn != null && opensOn.slice(0, 4) === String(year) && opensOn > jan1;
-  if (!openedThisYear) return { annualTarget: round2(fullYearTarget), fullYearTarget, openedIso: null };
-  const yearDays = dayNum(dec31) - dayNum(jan1) + 1;
-  const availDays = dayNum(dec31) - dayNum(opensOn as string) + 1;
-  // A malformed opens_on (e.g. an impossible calendar date that slipped past
-  // input validation) yields NaN — fall back to the full-year target rather
-  // than poisoning the company roll-up with NaN.
-  if (!Number.isFinite(availDays) || availDays <= 0) {
-    return { annualTarget: round2(fullYearTarget), fullYearTarget, openedIso: null };
+  if (!openedThisYear) return { annualTarget: fullYearTarget, fullYearTarget, openedIso: null };
+  // Month-wise proration (targets may differ per month): months before opening
+  // count 0, the opening month counts its remaining days, later months in full.
+  const openM = Number((opensOn as string).slice(5, 7)), openD = Number((opensOn as string).slice(8, 10));
+  const dim = daysInMonth(year, openM);
+  if (!Number.isFinite(openM) || !Number.isFinite(openD) || openM < 1 || openM > 12 || openD < 1 || openD > dim) {
+    return { annualTarget: fullYearTarget, fullYearTarget, openedIso: null };
   }
-  return { annualTarget: round2(fullYearTarget * (availDays / yearDays)), fullYearTarget, openedIso: opensOn };
+  const annualTarget = round2(months.reduce((a, m, i) => {
+    const mo = i + 1;
+    if (mo < openM) return a;
+    if (mo === openM) return a + m * ((dim - openD + 1) / dim);
+    return a + m;
+  }, 0));
+  return { annualTarget, fullYearTarget, openedIso: opensOn };
 }
 
 function buildAnnual(year: number, t: { annualTarget: number; fullYearTarget: number; openedIso: string | null }, ytd: number, projected: number, todayIso: string, branchCount: number): AnnualProjection | null {
@@ -899,7 +905,7 @@ export function companyOverview(branchIds: number[], year: number, month: number
       ? round2(listRange(b.id, todayIso, todayIso).filter((d) => d.has_sales).reduce((s, d) => s + d.nett, 0)
                + clinicaRangeAgg(b.id, todayIso, todayIso).nett)
       : null;
-    const monthTarget = getMonthlyTarget(b.id);
+    const monthTarget = getMonthlyTargetFor(b.id, year, month);
     const pctOfTarget = monthTarget && monthTarget > 0 ? round2((mtdNett / monthTarget) * 100) : null;
     rows.push({ branchId: b.id, branchName: b.name, mtdNett, prevSameNett, momPct: relPct(posNett, prevSameNett), lastYearNett, lastYearPct: relPct(posNett, lastYearNett), revshareIncome, bills, pax, todayNett, monthTarget, pctOfTarget });
     tMtd += mtdNett; tBills += bills; tPax += pax; tRev += revshareIncome;

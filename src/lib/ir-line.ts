@@ -9,7 +9,7 @@ import { getDb } from "./db";
 import { publicBaseUrl } from "./line-login";
 import { nameWithPrefix } from "./name";
 import {
-  getReportDetail, getIrLineGroupId, severityMeta, categoryLabel, incidentTypeLabel, personRoleLabel,
+  getReportDetail, getIrLineGroupId, severityMeta, statusMeta, categoryLabel, incidentTypeLabel, personRoleLabel,
   type IrReportDetail
 } from "./ir-db";
 
@@ -122,4 +122,77 @@ export function notifyIrRmGroupAsync(branchId: number, reportId: number): void {
   notifyIrRmGroup(branchId, reportId)
     .then((r) => { if (!r.ok && r.error) console.warn(`[ir-notify] push failed for report ${reportId}: ${r.error}`); })
     .catch((e) => console.warn("[ir-notify] push threw:", e));
+}
+
+// ── Reporter feedback when the RM closes the case (owner 2026-10-02) ─────────
+// Pushed to the reporter's own LINE (users.line_user_id) when the status
+// reaches closed / dismissed. Anonymous reports have no reporter to tell.
+
+export function irCaseClosedFlex(r: IrReportDetail, meta: IrCardMeta): LineFlexMessage {
+  const dismissed = r.status === "dismissed";
+  const color = dismissed ? "#475569" : "#166534";
+  const st = statusMeta(r.status);
+  const code = r.code ?? `#${r.id}`;
+  const body: unknown[] = [
+    { type: "text", text: dismissed
+        ? "ทีม RM ทบทวนแล้ว เห็นว่ารายการนี้ไม่นับเป็นเหตุการณ์ — ไม่ใช่ความผิดของผู้แจ้ง ขอบคุณที่ช่วยกันเฝ้าระวัง"
+        : "ทีม RM ทบทวนและกำหนดมาตรการแล้ว ขอบคุณที่แจ้งและช่วยวิเคราะห์ — รายงานของคุณช่วยกันไม่ให้เกิดซ้ำ",
+      size: "sm", color: "#333333", wrap: true },
+    { type: "separator", margin: "md", color: "#eeeeee" },
+    kv("หมวด", `${categoryLabel(r.category)} · ${incidentTypeLabel(r.incident_type)}`),
+    kv("เกิดเมื่อ", fmtWhen(r.occurred_at)),
+    kv("สถานะ", st.labelTh, color),
+    ...(r.root_cause ? section("สาเหตุราก (ทีม RM)", clip(r.root_cause, 300)) : []),
+    ...(r.corrective_action ? section("มาตรการแก้ไข / ป้องกัน", clip(r.corrective_action, 400)) : []),
+    ...(r.assignee_name ? [kv("ผู้รับผิดชอบ", nameWithPrefix(r.assignee_prefix, r.assignee_name))] : []),
+    ...(r.due_date ? [kv("กำหนดเสร็จ", fmtWhen(r.due_date))] : [])
+  ];
+  const footer: unknown = {
+    type: "box", layout: "vertical", paddingAll: "12px", spacing: "sm",
+    contents: [
+      ...(meta.reportUrl ? [{ type: "button", style: "primary", color: "#0e2724", height: "sm", action: { type: "uri", label: "เปิดดูรายงาน", uri: meta.reportUrl } }] : []),
+      { type: "text", text: "NOKHOOK OS · IR · ไม่ใช่การลงโทษ เน้นเรียนรู้และป้องกัน", size: "xxs", color: "#aaaaaa", wrap: true, align: "center" }
+    ]
+  };
+  return {
+    type: "flex",
+    altText: `IR ${code} ${dismissed ? "ทบทวนแล้ว ไม่นับเป็นเหตุการณ์" : "ปิดเคสแล้ว"} · ${meta.branchName}`,
+    contents: {
+      type: "bubble", size: "mega",
+      header: {
+        type: "box", layout: "vertical", backgroundColor: color, paddingAll: "16px", spacing: "xs",
+        contents: [
+          { type: "text", text: `NOKHOOK OS · IR · ${meta.branchName}`, size: "xxs", color: "#ffffffcc" },
+          { type: "text", text: dismissed ? `รายงาน ${code} ทบทวนแล้ว` : `เคส ${code} ปิดแล้ว`, size: "lg", weight: "bold", color: "#ffffff", wrap: true },
+          { type: "text", text: `${st.labelTh} · ${categoryLabel(r.category)}`, size: "xs", color: "#ffffffcc", wrap: true }
+        ]
+      },
+      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },
+      footer
+    }
+  };
+}
+
+/** Push the closed-case card to the reporter. Skips (not an error) when the
+ *  report is anonymous, the reporter has no LINE, or the OA isn't configured. */
+export async function notifyIrReporterClosed(branchId: number, reportId: number): Promise<{ ok: boolean; skipped?: string; error?: string }> {
+  const r = getReportDetail(reportId, branchId);
+  if (!r) return { ok: false, error: "not_found" };
+  if (r.is_anonymous === 1 || r.reporter_user_id == null) return { ok: false, skipped: "anonymous" };
+  const u = getDb().prepare("SELECT line_user_id FROM users WHERE id = ?").get(r.reporter_user_id) as { line_user_id: string | null } | undefined;
+  const to = u?.line_user_id?.trim() || null;
+  if (!to) return { ok: false, skipped: "no_line_user_id" };
+  const token = getPlatformChannel()?.channel_token?.trim() ?? null;
+  if (!token) return { ok: false, skipped: "platform_oa_not_configured" };
+  const branch = getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
+  const base = publicBaseUrl();
+  const flex = irCaseClosedFlex(r, { branchName: branch?.name ?? `สาขา #${branchId}`, reportUrl: base ? `${base}/staff/ir/${r.id}` : null });
+  const res = await sendLinePush(token, { to, messages: [flex] });
+  return { ok: res.ok, error: res.ok ? undefined : (res.error ?? `line_${res.status}`) };
+}
+
+export function notifyIrReporterClosedAsync(branchId: number, reportId: number): void {
+  notifyIrReporterClosed(branchId, reportId)
+    .then((r) => { if (!r.ok && r.error) console.warn(`[ir-notify] reporter push failed for report ${reportId}: ${r.error}`); })
+    .catch((e) => console.warn("[ir-notify] reporter push threw:", e));
 }
