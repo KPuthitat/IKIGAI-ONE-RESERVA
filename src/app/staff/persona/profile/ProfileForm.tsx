@@ -8,6 +8,7 @@ import { useLang } from "@/lib/LangProvider";
 import Switch from "@/app/components/Switch";
 import type { EmployeeProfile } from "@/lib/db";
 import { nameWithPrefix } from "@/lib/name";
+import { DEPARTMENTS } from "@/lib/org-vocab";
 
 // Shared multi-section profile form.
 //
@@ -27,11 +28,12 @@ export type ProfileSupervisor = { id: number; display_name: string; title_prefix
 type Mode = "self" | "admin";
 
 export default function ProfileForm({
-  mode, profile, supervisors
+  mode, profile, supervisors, supervisorHint
 }: {
   mode: Mode;
   profile: EmployeeProfile;
   supervisors: ProfileSupervisor[];
+  supervisorHint?: string;          // why the supervisor list is what it is (chain-of-command rule)
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -82,6 +84,7 @@ export default function ProfileForm({
     emergency_phone:        profile.emergency_phone ?? "",
     // Admin-only fields
     supervisor_user_id: profile.supervisor_user_id ?? "",
+    department:         profile.department ?? "",
     job_title:          profile.job_title ?? "",
     contract_end_date:  profile.contract_end_date ?? "",
     employment_status:  profile.employment_status ?? "",
@@ -172,6 +175,7 @@ export default function ProfileForm({
       };
       if (adminMode) {
         body.supervisor_user_id = f.supervisor_user_id ? Number(f.supervisor_user_id) : null;
+        body.department         = f.department || null;
         body.job_title          = f.job_title || null;
         body.contract_end_date  = f.contract_end_date || null;
         body.employment_status  = f.employment_status || null;
@@ -481,6 +485,15 @@ export default function ProfileForm({
                   <option key={s.id} value={s.id}>{nameWithPrefix(s.title_prefix, s.display_name)}</option>
                 ))}
               </select>
+              {supervisorHint && <p className="text-[11px] text-slate-500 mt-1">{supervisorHint}</p>}
+            </Field>
+            <Field label={t("staff.persona.profile.field.department")}>
+              <select className="input" value={f.department}
+                onChange={(e) => update("department", e.target.value)}>
+                <option value="">—</option>
+                {DEPARTMENTS.map((d) => <option key={d.key} value={d.key}>{d.labelTh}</option>)}
+              </select>
+              <p className="text-[11px] text-slate-500 mt-1">{t("staff.persona.profile.field.departmentHint")}</p>
             </Field>
             <Field label={t("staff.persona.profile.field.employmentStatus")}>
               <select className="input" value={f.employment_status}

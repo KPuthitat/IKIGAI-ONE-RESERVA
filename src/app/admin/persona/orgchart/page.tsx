@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import {
   listCompanyBranchesForOrg, listBranchOrgPlacements, listBranchOrgCandidates, listBranchDepartments
 } from "@/lib/org-chart";
+import { buildAutoOrgChart } from "@/lib/org-structure";
 import OrgChartClient, { type OrgBranchData } from "./OrgChartClient";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,9 @@ export default function OrgChartPage() {
     name: b.name,
     placements: listBranchOrgPlacements(b.id),
     candidates: listBranchOrgCandidates(b.id),
-    departments: listBranchDepartments(b.id)
+    departments: listBranchDepartments(b.id),
+    // Derived chart (owner 2026-10-02): tiers + supervisor + ฝ่าย — no drawing.
+    auto: buildAutoOrgChart(b.id)
   }));
 
   return (

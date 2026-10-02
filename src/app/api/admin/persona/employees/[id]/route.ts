@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { validateSupervisor, SUPERVISOR_ERROR_TH } from "@/lib/org-structure";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
@@ -139,6 +140,7 @@ const Body = z.object({
   payment_method:     z.enum(["bank", "cash"]).nullable().optional(),
   driver_license_no:  z.string().max(40).nullable().optional(),
   manpower_type:      z.enum(["new", "replacement"]).nullable().optional(),
+  department:         z.enum(["service", "kitchen", "management", "other"]).nullable().optional(),
   profile_self_edit_open: z.boolean().optional()
 });
 
@@ -412,7 +414,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("emergency_name");
   addField("emergency_relationship");
   addField("emergency_phone");
+  // Chain-of-command rule (owner 2026-10-02): the supervisor must sit in the
+  // tier above this person in their branches, and never form a cycle.
+  if ("supervisor_user_id" in data) {
+    const err = validateSupervisor(id, data.supervisor_user_id ?? null);
+    if (err) return NextResponse.json({ error: `supervisor_${err}`, message: SUPERVISOR_ERROR_TH[err] }, { status: 400 });
+  }
   addField("supervisor_user_id");
+  addField("department");
   addField("job_title");
   addField("contract_end_date");
   addField("employment_status");

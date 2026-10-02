@@ -4,7 +4,8 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb, type EmployeeProfile } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import ProfileForm, { type ProfileSupervisor } from "@/app/staff/persona/profile/ProfileForm";
+import ProfileForm from "@/app/staff/persona/profile/ProfileForm";
+import { supervisorOptionsFor } from "@/lib/org-structure";
 import { nameWithPrefix } from "@/lib/name";
 import ImpersonateButton from "./ImpersonateButton";
 
@@ -67,14 +68,16 @@ export default function AdminEmployeeProfilePage({
     }
   }
 
-  // Supervisor dropdown — any non-disabled account (ProfileForm filters
-  // out the employee themselves). Kept un-branch-scoped on purpose so a
-  // cross-branch supervisor can still be selected by the owner.
-  const supervisors = db.prepare(
-    `SELECT id, display_name, title_prefix FROM users
-      WHERE status NOT IN ('disabled', 'resigned', 'terminated') AND is_test_account = 0
-      ORDER BY display_name`
-  ).all() as ProfileSupervisor[];
+  // Supervisor dropdown = the tier above this person in their own branches
+  // (owner 2026-10-02): staff → tier-1 heads, tier-1 head → tier-2 executives,
+  // executive → other executives. The chain is set at สายบังคับบัญชา.
+  const supOpts = supervisorOptionsFor(id);
+  // Keep the currently stored supervisor visible even if the chain changed
+  // since (the save will be refused until it's fixed — the hint says why).
+  const current = row.supervisor_user_id != null && !supOpts.options.some((o) => o.id === row.supervisor_user_id)
+    ? (db.prepare("SELECT id, display_name, title_prefix FROM users WHERE id = ?").get(row.supervisor_user_id) as { id: number; display_name: string; title_prefix: string | null } | undefined)
+    : undefined;
+  const supervisors = current ? [current, ...supOpts.options] : supOpts.options;
 
   // "ยังไม่ได้กรอก" check — the full profile fields (first_name_th
   // etc.) sit on users alongside the on-boarding display_name. A
@@ -124,7 +127,8 @@ export default function AdminEmployeeProfilePage({
         </div>
       )}
 
-      <ProfileForm mode="admin" profile={row} supervisors={supervisors} />
+      <ProfileForm mode="admin" profile={row} supervisors={supervisors}
+        supervisorHint={current ? `${supOpts.hint} · ผู้บังคับบัญชาที่บันทึกไว้ไม่ตรงกฎนี้แล้ว กรุณาเลือกใหม่` : supOpts.hint} />
     </div>
   );
 }

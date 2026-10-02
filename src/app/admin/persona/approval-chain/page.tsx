@@ -9,6 +9,7 @@ import type { Metadata } from "next";
 import { requireAdmin, getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getBranchTierMembers, type TierMember } from "@/lib/approval-tiers";
+import { buildAutoOrgChart } from "@/lib/org-structure";
 import ApprovalChainClient, { type EligibleUser } from "./ApprovalChainClient";
 
 export const dynamic = "force-dynamic";
@@ -53,12 +54,32 @@ export default function ApprovalChainPage() {
     ORDER BY u.display_name
   `).all(branchId) as EligibleUser[];
 
+  // What the chain implies for the org chart (owner 2026-10-02): people whose
+  // stored supervisor no longer fits the tiers, heads without an executive, etc.
+  const auto = buildAutoOrgChart(branchId);
+  const chainIssues = auto.issues.filter((i) => i.kind !== "no_department");
+
   return (
     <div className="space-y-4">
       <div>
         <Link href="/admin/persona" className="text-sm text-slate-500 hover:text-brand">
           ← กลับ
         </Link>
+      </div>
+      <div className="card bg-slate-50 border-slate-200 text-xs text-slate-600 space-y-1">
+        <div className="font-bold text-slate-700">เชื่อมโยงกับผังองค์กรและโปรไฟล์พนักงาน</div>
+        <div>· พนักงานทั่วไปเลือก “ผู้บังคับบัญชา” ได้เฉพาะคนในชั้นที่ 1 · คนในชั้นที่ 1 เลือกได้เฉพาะคนในชั้นที่ 2</div>
+        <div>· <Link href="/admin/persona/orgchart" className="text-brand underline">ผังองค์กร</Link> สร้างจากชั้นเหล่านี้ + ผู้บังคับบัญชา/ฝ่าย ในโปรไฟล์ โดยอัตโนมัติ</div>
+        {chainIssues.length > 0 && (
+          <div className="pt-1 text-amber-800">
+            <div className="font-bold">ตอนนี้ยังไม่สอดคล้อง {chainIssues.length} รายการ:</div>
+            <ul className="space-y-0.5">
+              {chainIssues.map((i, idx) => (
+                <li key={`${i.userId}-${idx}`}>• {i.text} — <Link href={`/admin/persona/employees/${i.userId}`} className="underline">แก้ไข</Link></li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
       <div>
         <h1 className="text-2xl font-bold text-slate-800">
