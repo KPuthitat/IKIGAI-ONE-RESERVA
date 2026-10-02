@@ -3,34 +3,26 @@
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { apiUrl } from "@/lib/url";
-import { humanizeApiError } from "@/lib/error-messages";
 import { nameWithPrefix } from "@/lib/name";
-import { FormSection, Field } from "@/app/components/FormKit";
+import IrReportForm, { type ColleagueOption } from "@/app/components/ir/IrReportForm";
 import {
-  IR_SEVERITIES, IR_STATUSES, IR_INCIDENT_TYPES, IR_CATEGORY_GROUPS,
-  severityMeta, statusMeta, categoryLabel, incidentTypeLabel,
-  type IrSeverity, type IrIncidentType
+  IR_SEVERITIES, IR_STATUSES, IR_CATEGORY_GROUPS,
+  severityMeta, statusMeta, categoryLabel, incidentTypeLabel
 } from "@/lib/ir-vocab";
 import type { IrReportView } from "@/lib/ir-db";
 
-// datetime-local value → the same wall-clock as an ISO-ish string the API
-// stores verbatim (occurred_at). We keep it simple: "YYYY-MM-DDTHH:mm".
-function nowLocalInput(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
 function fmtOccurred(s: string): string {
   const d = new Date(s);
   if (isNaN(d.getTime())) return s;
   return d.toLocaleString("th-TH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-export default function ReportsClient({ initialReports }: { initialReports: IrReportView[] }) {
+export default function ReportsClient({ initialReports, colleagues, selfUserId }: {
+  initialReports: IrReportView[]; colleagues: ColleagueOption[]; selfUserId: number;
+}) {
   const router = useRouter();
   const params = useSearchParams();
-  const [reports, setReports] = useState<IrReportView[]>(initialReports);
+  const [reports] = useState<IrReportView[]>(initialReports);
   const [showForm, setShowForm] = useState(params.get("new") === "1");
 
   const [fStatus, setFStatus] = useState<string>("open");
@@ -77,9 +69,15 @@ export default function ReportsClient({ initialReports }: { initialReports: IrRe
         <span className="text-slate-400">{filtered.length} รายการ</span>
       </div>
 
+      {/* The SAME detailed form staff use (owner 2026-10-01) — facts, 5 Whys,
+          factors, recommendations, people. Lands on the new report's page. */}
       {showForm && (
-        <NewReportForm
-          onDone={(refreshed) => { setReports(refreshed); setShowForm(false); router.refresh(); }}
+        <IrReportForm
+          apiBase="/api/admin/ir"
+          colleagues={colleagues}
+          selfUserId={selfUserId}
+          onDone={(r) => { router.push(`/admin/ir/${r.id}`); router.refresh(); }}
+          onCancel={() => setShowForm(false)}
         />
       )}
 
@@ -124,112 +122,5 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
         active ? "bg-brand text-white border-brand" : "bg-white text-slate-600 border-slate-200 hover:border-brand/40"}`}>
       {children}
     </button>
-  );
-}
-
-function NewReportForm({ onDone }: { onDone: (refreshed: IrReportView[]) => void }) {
-  const [occurredAt, setOccurredAt] = useState(nowLocalInput());
-  const [location, setLocation] = useState("");
-  const [category, setCategory] = useState(IR_CATEGORY_GROUPS[0].items[0].key);
-  const [incidentType, setIncidentType] = useState<IrIncidentType>("actual");
-  const [severity, setSeverity] = useState<IrSeverity>(2);
-  const [description, setDescription] = useState("");
-  const [immediate, setImmediate] = useState("");
-  const [anonymous, setAnonymous] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function submit() {
-    if (!description.trim()) { setErr("กรุณากรอกรายละเอียดเหตุการณ์"); return; }
-    setBusy(true); setErr(null);
-    try {
-      const res = await fetch(apiUrl("/api/admin/ir"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          occurred_at: occurredAt,
-          location_detail: location.trim() || undefined,
-          category, incident_type: incidentType, severity,
-          description: description.trim(),
-          immediate_action: immediate.trim() || undefined,
-          anonymous
-        })
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ")); return; }
-      onDone(j.reports as IrReportView[]);
-    } catch {
-      setErr("บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const sevMeta = severityMeta(severity);
-
-  return (
-    <div className="card space-y-4">
-      <FormSection title="แจ้งเหตุการณ์ / ความเสี่ยง">
-        <div className="grid sm:grid-cols-2 gap-2.5">
-          <Field label="เกิดขึ้นเมื่อ">
-            <input type="datetime-local" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} />
-          </Field>
-          <Field label="จุดเกิดเหตุ" hint="ถ้ามี">
-            <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="เช่น ครัว / ห้องหัตถการ / หน้าร้าน" />
-          </Field>
-        </div>
-        <div className="grid sm:grid-cols-2 gap-2.5">
-          <Field label="หมวดเหตุการณ์">
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {IR_CATEGORY_GROUPS.map((g) => (
-                <optgroup key={g.group} label={g.group}>
-                  {g.items.map((it) => <option key={it.key} value={it.key}>{it.labelTh}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          </Field>
-          <Field label="ชนิด">
-            <select value={incidentType} onChange={(e) => setIncidentType(e.target.value as IrIncidentType)}>
-              {IR_INCIDENT_TYPES.map((it) => <option key={it.value} value={it.value}>{it.labelTh}</option>)}
-            </select>
-          </Field>
-        </div>
-      </FormSection>
-
-      <FormSection title="ระดับความรุนแรง">
-        <div className="flex flex-wrap gap-1.5">
-          {IR_SEVERITIES.map((s) => (
-            <button type="button" key={s.value} onClick={() => setSeverity(s.value)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs border transition-colors ${
-                severity === s.value ? s.tone + " ring-1 ring-current font-semibold" : "bg-white text-slate-600 border-slate-200 hover:border-brand/40"}`}>
-              {s.value} · {s.labelTh}
-            </button>
-          ))}
-        </div>
-        <p className="text-[11px] text-slate-400">{sevMeta.descTh}</p>
-      </FormSection>
-
-      <FormSection title="รายละเอียด">
-        <Field label="เกิดอะไรขึ้น">
-          <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)}
-            placeholder="อธิบายเหตุการณ์ตามจริง ใคร ทำอะไร ที่ไหน ผลเป็นอย่างไร" />
-        </Field>
-        <Field label="แก้ไขเฉพาะหน้าไปแล้วอย่างไร" hint="ถ้ามี">
-          <textarea rows={2} value={immediate} onChange={(e) => setImmediate(e.target.value)}
-            placeholder="เช่น ปฐมพยาบาล / เปลี่ยนของ / แจ้งหัวหน้า" />
-        </Field>
-      </FormSection>
-
-      <label className="flex items-center gap-2 text-sm text-slate-600">
-        <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} className="w-4 h-4" />
-        แจ้งโดยไม่ระบุตัวตน (ระบบจะไม่บันทึกว่าใครเป็นผู้แจ้ง)
-      </label>
-
-      {err && <div className="text-sm text-rose-600">{err}</div>}
-      <div className="flex justify-end">
-        <button type="button" className="btn btn-primary" onClick={submit} disabled={busy}>
-          {busy ? "กำลังบันทึก…" : "ส่งรายงาน"}
-        </button>
-      </div>
-    </div>
   );
 }

@@ -7,8 +7,8 @@
 
 import { getDb } from "./db";
 import {
-  IR_OPEN_STATUSES, categoryGroup,
-  type IrSeverity, type IrIncidentType, type IrStatus
+  IR_OPEN_STATUSES, IR_MAX_WHYS, IR_MAX_RECOMMENDATIONS, IR_MAX_PEOPLE, IR_FACTOR_KEYS, categoryGroup,
+  type IrSeverity, type IrIncidentType, type IrStatus, type IrPersonRole
 } from "./ir-vocab";
 
 // Re-export the client-safe vocabulary so server callers can keep importing
@@ -43,6 +43,34 @@ export type IrReport = {
   resolved_at: string | null;
   created_at: string;
   updated_at: string;
+  // Reporter's structured account + RCA (owner 2026-10-01). JSON columns are
+  // parsed by the view helpers below; raw here.
+  timeline: string | null;
+  impact: string | null;
+  why_chain_json: string | null;
+  contributing_json: string | null;
+  reporter_root_cause: string | null;
+  recommendations_json: string | null;
+  self_involved: number;
+  reporter_updated_at: string | null;
+};
+
+// Another person named in the report. user_id is null for a non-employee.
+export type IrPerson = {
+  id: number;
+  report_id: number;
+  user_id: number | null;
+  name: string;
+  role: IrPersonRole;
+  note: string | null;
+};
+export type IrPersonInput = { userId?: number | null; name?: string | null; role: IrPersonRole; note?: string | null };
+
+// The reporter's RCA sections, decoded from the JSON columns.
+export type IrRca = {
+  whyChain: string[];
+  contributing: string[];
+  recommendations: string[];
 };
 
 // A row joined with the reporter / assignee display names for list + detail.
@@ -53,6 +81,27 @@ export type IrReportView = IrReport & {
   assignee_name: string | null;
   assignee_prefix: string | null;
 };
+
+// Detail view = the row + decoded RCA + the people named (owner 2026-10-01).
+export type IrReportDetail = IrReportView & { rca: IrRca; people: IrPerson[] };
+
+function parseList(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim().length > 0) : [];
+  } catch { return []; }
+}
+export function decodeRca(r: Pick<IrReport, "why_chain_json" | "contributing_json" | "recommendations_json">): IrRca {
+  return {
+    whyChain: parseList(r.why_chain_json),
+    contributing: parseList(r.contributing_json).filter((k) => (IR_FACTOR_KEYS as string[]).includes(k)),
+    recommendations: parseList(r.recommendations_json)
+  };
+}
+const cleanList = (arr: string[] | undefined | null, max: number, maxLen = 600): string[] | undefined =>
+  arr === undefined || arr === null ? undefined
+    : arr.map((x) => String(x ?? "").trim().slice(0, maxLen)).filter((x) => x.length > 0).slice(0, max);
 
 const VIEW_SELECT = `
   SELECT r.*,
@@ -105,6 +154,50 @@ export function getReport(id: number, branchId: number): IrReportView | null {
     .get(id, branchId) as IrReportView | undefined) ?? null;
 }
 
+export function listPeople(reportId: number): IrPerson[] {
+  return getDb().prepare(
+    "SELECT id, report_id, user_id, name, role, note FROM ir_report_people WHERE report_id = ? ORDER BY id"
+  ).all(reportId) as IrPerson[];
+}
+
+/** One report with its decoded RCA and the people named in it. */
+export function getReportDetail(id: number, branchId: number): IrReportDetail | null {
+  const r = getReport(id, branchId);
+  if (!r) return null;
+  return { ...r, rca: decodeRca(r), people: listPeople(r.id) };
+}
+
+/** Replace the people named in a report. An employee entry resolves its display
+ *  name from users (so a typed name can't impersonate); a non-employee keeps the
+ *  typed name. Capped at IR_MAX_PEOPLE; blank entries dropped. */
+export function setPeople(reportId: number, people: IrPersonInput[]): IrPerson[] {
+  const db = getDb();
+  const nameOf = db.prepare("SELECT display_name, title_prefix FROM users WHERE id = ?");
+  const rows: Array<{ userId: number | null; name: string; role: IrPersonRole; note: string | null }> = [];
+  const seenUser = new Set<number>();
+  for (const p of people.slice(0, IR_MAX_PEOPLE)) {
+    const role: IrPersonRole = p.role === "witness" || p.role === "affected" ? p.role : "involved";
+    const note = p.note?.trim().slice(0, 300) || null;
+    if (p.userId != null) {
+      if (seenUser.has(p.userId)) continue;
+      const u = nameOf.get(p.userId) as { display_name: string; title_prefix: string | null } | undefined;
+      if (!u) continue;
+      seenUser.add(p.userId);
+      rows.push({ userId: p.userId, name: u.display_name, role, note });
+    } else {
+      const name = p.name?.trim().slice(0, 120);
+      if (!name) continue;
+      rows.push({ userId: null, name, role, note });
+    }
+  }
+  db.transaction(() => {
+    db.prepare("DELETE FROM ir_report_people WHERE report_id = ?").run(reportId);
+    const ins = db.prepare("INSERT INTO ir_report_people (report_id, user_id, name, role, note) VALUES (?, ?, ?, ?, ?)");
+    for (const r of rows) ins.run(reportId, r.userId, r.name, r.role, r.note);
+  })();
+  return listPeople(reportId);
+}
+
 export function openCount(branchId: number): number {
   const db = getDb();
   const row = db.prepare(
@@ -127,6 +220,16 @@ export type CreateReportInput = {
   severity: IrSeverity;
   description: string;
   immediateAction?: string | null;
+  // Reporter's structured account (owner 2026-10-01) — all optional so a quick
+  // near-miss note still files; the full form asks for them.
+  timeline?: string | null;
+  impact?: string | null;
+  whyChain?: string[];
+  contributing?: string[];
+  reporterRootCause?: string | null;
+  recommendations?: string[];
+  selfInvolved?: boolean;
+  people?: IrPersonInput[];
 };
 
 // IR-YYYY-#### per branch-year, gap-free by counting existing rows in that year.
@@ -143,22 +246,141 @@ function nextCode(branchId: number, occurredAt: string): string {
 export function createReport(input: CreateReportInput): IrReport {
   const db = getDb();
   const code = nextCode(input.branchId, input.occurredAt);
+  const whyChain = cleanList(input.whyChain, IR_MAX_WHYS) ?? [];
+  const contributing = [...new Set((cleanList(input.contributing, IR_FACTOR_KEYS.length, 40) ?? []).filter((k) => (IR_FACTOR_KEYS as string[]).includes(k)))];
+  const recommendations = cleanList(input.recommendations, IR_MAX_RECOMMENDATIONS) ?? [];
   const info = db.prepare(
     `INSERT INTO ir_reports
        (code, branch_id, reporter_user_id, is_anonymous, occurred_at,
         location_detail, category, incident_type, severity,
-        description, immediate_action, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new')`
+        description, immediate_action, status,
+        timeline, impact, why_chain_json, contributing_json, reporter_root_cause,
+        recommendations_json, self_involved, reporter_updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
   ).run(
     code, input.branchId,
     input.isAnonymous ? null : input.reporterUserId,
     input.isAnonymous ? 1 : 0,
     input.occurredAt, input.locationDetail ?? null,
     input.category, input.incidentType, input.severity,
-    input.description.trim(), input.immediateAction?.trim() || null
+    input.description.trim(), input.immediateAction?.trim() || null,
+    input.timeline?.trim() || null, input.impact?.trim() || null,
+    whyChain.length ? JSON.stringify(whyChain) : null,
+    contributing.length ? JSON.stringify(contributing) : null,
+    input.reporterRootCause?.trim() || null,
+    recommendations.length ? JSON.stringify(recommendations) : null,
+    input.selfInvolved ? 1 : 0
   );
-  return db.prepare("SELECT * FROM ir_reports WHERE id = ?")
-    .get(info.lastInsertRowid) as IrReport;
+  const id = Number(info.lastInsertRowid);
+  if (input.people?.length) setPeople(id, input.people);
+  return db.prepare("SELECT * FROM ir_reports WHERE id = ?").get(id) as IrReport;
+}
+
+// ── Reporter self-edit (owner 2026-10-01) ─────────────────────────────────
+// The person who filed the report may refine THEIR sections (facts, RCA,
+// recommendations, people) until the RM closes or dismisses the case. The RM
+// verdict columns (status / root_cause / corrective_action / assignment) are
+// never touched here. Anonymous reports have no owner and cannot be edited.
+
+export type ReporterEditInput = {
+  occurredAt?: string;
+  locationDetail?: string | null;
+  category?: string;
+  incidentType?: IrIncidentType;
+  severity?: IrSeverity;
+  description?: string;
+  immediateAction?: string | null;
+  timeline?: string | null;
+  impact?: string | null;
+  whyChain?: string[];
+  contributing?: string[];
+  reporterRootCause?: string | null;
+  recommendations?: string[];
+  selfInvolved?: boolean;
+  people?: IrPersonInput[];
+};
+
+export type ReporterEditResult =
+  | { ok: true; report: IrReportDetail }
+  | { ok: false; error: "not_found" | "not_owner" | "closed" };
+
+/** May this user still edit the reporter sections of this report? */
+export function canReporterEdit(r: Pick<IrReport, "reporter_user_id" | "is_anonymous" | "status">, userId: number): boolean {
+  return r.is_anonymous !== 1 && r.reporter_user_id === userId && (IR_OPEN_STATUSES as string[]).includes(r.status);
+}
+
+export function updateReporterSections(
+  id: number, branchId: number, userId: number, patch: ReporterEditInput
+): ReporterEditResult {
+  const db = getDb();
+  const existing = db.prepare("SELECT * FROM ir_reports WHERE id = ? AND branch_id = ?").get(id, branchId) as IrReport | undefined;
+  if (!existing) return { ok: false, error: "not_found" };
+  if (existing.is_anonymous === 1 || existing.reporter_user_id !== userId) return { ok: false, error: "not_owner" };
+  if (!(IR_OPEN_STATUSES as string[]).includes(existing.status)) return { ok: false, error: "closed" };
+
+  const fields: string[] = [];
+  const vals: Array<string | number | null> = [];
+  const set = (col: string, v: string | number | null | undefined) => {
+    if (v !== undefined) { fields.push(`${col} = ?`); vals.push(v); }
+  };
+  const text = (v: string | null | undefined) => (v === undefined ? undefined : (v?.trim() || null));
+  const list = (arr: string[] | undefined, max: number) => {
+    const c = cleanList(arr, max);
+    return c === undefined ? undefined : (c.length ? JSON.stringify(c) : null);
+  };
+  set("occurred_at", patch.occurredAt);
+  // The code is IR-<occurred year>-####; moving the incident to another year
+  // re-issues it in that year so two reports never share a code.
+  if (patch.occurredAt && patch.occurredAt.slice(0, 4) !== existing.occurred_at.slice(0, 4)) {
+    set("code", nextCode(branchId, patch.occurredAt));
+  }
+  set("location_detail", text(patch.locationDetail));
+  set("category", patch.category);
+  set("incident_type", patch.incidentType);
+  set("severity", patch.severity);
+  if (patch.description !== undefined && patch.description.trim()) set("description", patch.description.trim());
+  set("immediate_action", text(patch.immediateAction));
+  set("timeline", text(patch.timeline));
+  set("impact", text(patch.impact));
+  set("why_chain_json", list(patch.whyChain, IR_MAX_WHYS));
+  const contributing = patch.contributing === undefined ? undefined
+    : patch.contributing.filter((k) => (IR_FACTOR_KEYS as string[]).includes(k));
+  set("contributing_json", contributing === undefined ? undefined : (contributing.length ? JSON.stringify([...new Set(contributing)]) : null));
+  set("reporter_root_cause", text(patch.reporterRootCause));
+  set("recommendations_json", list(patch.recommendations, IR_MAX_RECOMMENDATIONS));
+  set("self_involved", patch.selfInvolved === undefined ? undefined : (patch.selfInvolved ? 1 : 0));
+
+  db.transaction(() => {
+    if (fields.length) {
+      fields.push("reporter_updated_at = CURRENT_TIMESTAMP", "updated_at = CURRENT_TIMESTAMP");
+      vals.push(id, branchId);
+      db.prepare(`UPDATE ir_reports SET ${fields.join(", ")} WHERE id = ? AND branch_id = ?`).run(...vals);
+    }
+    if (patch.people !== undefined) setPeople(id, patch.people);
+  })();
+  return { ok: true, report: getReportDetail(id, branchId)! };
+}
+
+/** Active employees who can be named in a report / own a corrective action —
+ *  one list for the staff form, the admin form and the RM assignee picker. */
+export type IrColleague = { id: number; display_name: string; title_prefix: string | null };
+export function irColleagues(): IrColleague[] {
+  return getDb().prepare(
+    `SELECT id, display_name, title_prefix FROM users
+     WHERE role IN ('staff','admin') AND status NOT IN ('disabled','resigned')
+     ORDER BY display_name`
+  ).all() as IrColleague[];
+}
+
+/** Reports a user filed or is named in (for "ของฉัน" filters). */
+export function reportIdsTouching(branchId: number, userId: number): Set<number> {
+  const rows = getDb().prepare(
+    `SELECT r.id FROM ir_reports r WHERE r.branch_id = ? AND r.reporter_user_id = ?
+     UNION
+     SELECT p.report_id FROM ir_report_people p JOIN ir_reports r ON r.id = p.report_id
+     WHERE r.branch_id = ? AND p.user_id = ?`
+  ).all(branchId, userId, branchId, userId) as Array<{ id: number }>;
+  return new Set(rows.map((x) => x.id));
 }
 
 export type UpdateReportInput = {

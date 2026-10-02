@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import {
-  getReport, updateReport, IR_CATEGORY_KEYS,
+  getReportDetail, updateReport, IR_CATEGORY_KEYS,
   type IrStatus, type IrSeverity
 } from "@/lib/ir-db";
 
@@ -33,7 +33,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   if (branchId == null) return NextResponse.json({ error: "no_active_branch" }, { status: 400 });
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
-  const report = getReport(id, branchId);
+  const report = getReportDetail(id, branchId);
   if (!report) return NextResponse.json({ error: "not_found" }, { status: 404 });
   return NextResponse.json({ ok: true, report });
 }
@@ -59,5 +59,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     discussedAt: d.discussed_at
   }, user.id);
   if (!report) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  return NextResponse.json({ ok: true, report });
+  // Detail shape (RCA + people) so the review page re-renders in one piece.
+  return NextResponse.json({ ok: true, report: getReportDetail(id, branchId) });
 }

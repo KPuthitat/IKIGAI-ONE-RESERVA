@@ -1811,6 +1811,38 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_ir_reports_occurred
       ON ir_reports(occurred_at);
   `);
+  // Detailed self-report + RCA by the person involved (owner 2026-10-01: "ให้ผู้
+  // ที่ทำให้เกิด incident เป็นผู้ล็อกอินเข้าไปกรอกเอง" + root cause analysis +
+  // ข้อเสนอแนะ). The RM's own root_cause / corrective_action stay the review
+  // verdict; these columns are the REPORTER's structured account. Idempotent
+  // ALTERs for existing installs.
+  {
+    const irCols = db.prepare("PRAGMA table_info(ir_reports)").all() as Array<{ name: string }>;
+    const add = (col: string, ddl: string) => { if (!irCols.some((c) => c.name === col)) db.exec(`ALTER TABLE ir_reports ADD COLUMN ${col} ${ddl}`); };
+    add("timeline", "TEXT");                       // ลำดับเหตุการณ์ (what happened, step by step)
+    add("impact", "TEXT");                         // ผลกระทบ (to customer / staff / property)
+    add("why_chain_json", "TEXT");                 // JSON string[] — 5 Whys, in order
+    add("contributing_json", "TEXT");              // JSON string[] — contributing-factor keys (ir-vocab)
+    add("reporter_root_cause", "TEXT");            // reporter's own root-cause summary
+    add("recommendations_json", "TEXT");           // JSON string[] — reporter's suggestions
+    add("self_involved", "INTEGER NOT NULL DEFAULT 0");   // the reporter was directly involved
+    add("reporter_updated_at", "TEXT");            // last edit of the reporter sections
+  }
+  // Other people named in a report (colleagues involved / witnesses / affected).
+  // user_id is NULL for a non-employee (e.g. a customer) typed in by name.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ir_report_people (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id   INTEGER NOT NULL REFERENCES ir_reports(id) ON DELETE CASCADE,
+      user_id     INTEGER REFERENCES users(id),
+      name        TEXT NOT NULL,
+      role        TEXT NOT NULL DEFAULT 'involved'
+        CHECK (role IN ('involved','witness','affected')),
+      note        TEXT,
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_ir_report_people_report ON ir_report_people(report_id);
+  `);
 
   // ── DF — Doctor Fee (clinic only) ────────────────────────────────
   // Owner 2026-08: a doctor's pay = rate% of the clinic's service revenue on

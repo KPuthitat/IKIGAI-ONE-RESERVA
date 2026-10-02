@@ -95,6 +95,10 @@ export default function StaffHomePage({
           href: "/staff/inventa", icon: "inventa", tone: "emerald", eyebrow: moduleEyebrow,
           title: "INVENTA", sub: t(lang, "inv.module.desc"), cta: openModule,
         } },
+        { key: "ir", card: {
+          href: "/staff/ir", icon: "shield", tone: "amber", eyebrow: moduleEyebrow,
+          title: "ความเสี่ยง / IR", sub: "แจ้งเหตุการณ์ด้วยตัวเอง วิเคราะห์สาเหตุ และอ่านคู่มือการเขียนรายงาน", cta: openModule,
+        } },
         mjEnrolled ? { key: "health", card: {
           href: "/staff/health/exams", icon: "shield", tone: "rose", eyebrow: moduleEyebrow,
           title: t(lang, "portal.wellness.title"), sub: t(lang, "portal.wellness.staffDesc"), cta: openModule,

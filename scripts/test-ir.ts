@@ -8,6 +8,10 @@
 //   • updateReport stamps reviewed_* on first move out of 'new', stamps
 //     resolved_* on reaching a terminal status, and CLEARS it on reopen
 //   • trendFor / openCount tie out
+//   • detailed self-report (owner 2026-10-01): RCA columns + people round-trip,
+//     the reporter may edit their own open report (not others', not anonymous,
+//     not once closed), the RM verdict is untouched by a reporter edit, and
+//     reportIdsTouching finds reports a user filed or is named in
 //
 // Run:  node --import tsx scripts/test-ir.ts   (or: npm run test:ir)
 
@@ -36,7 +40,8 @@ process.env.DATABASE_PATH = TMP;
   const dbMod = await import("../src/lib/db");
   const ir = await import("../src/lib/ir-db");
   const { getDb } = dbMod;
-  const { createReport, updateReport, listReports, getReport, openCount, trendFor } = ir;
+  const { createReport, updateReport, listReports, getReport, openCount, trendFor,
+    getReportDetail, updateReporterSections, canReporterEdit, reportIdsTouching, setPeople } = ir;
 
   let passed = 0, failed = 0;
   const ok = (name: string, cond: boolean) => {
@@ -113,6 +118,85 @@ process.env.DATABASE_PATH = TMP;
   ok("trend counts our two reports", tr.total >= 2);
   ok("trend byMonth has 6 buckets", tr.byMonth.length === 6);
   ok("trend severity buckets present", Object.keys(tr.bySeverity).length === 5);
+
+  // 7) Detailed self-report + RCA + people (owner 2026-10-01)
+  const other = db.prepare(
+    "SELECT id, display_name FROM users WHERE role IN ('staff','admin') AND id != ? AND status NOT IN ('disabled','resigned') ORDER BY id LIMIT 1"
+  ).get(uid) as { id: number; display_name: string } | undefined;
+  const c = createReport({
+    branchId, reporterUserId: uid, isAnonymous: false,
+    occurredAt: `${year}-06-03T12:40`,
+    category: "resto.kitchen_accident", incidentType: "actual", severity: 3,
+    description: "ซุปหกใส่ข้อมือลูกค้า", immediateAction: "ล้างน้ำเย็น",
+    timeline: "12:30 รับออเดอร์\n12:40 ซุปหก", impact: "ลูกค้าแดงที่ข้อมือ",
+    whyChain: ["ยกถาด 3 ถ้วยคนเดียว", "คนเสิร์ฟมีคนเดียว", "", "  ", "ไม่มีกติกาช่วงพีค", "เกิน 5 ชั้น ต้องถูกตัด"],
+    contributing: ["process", "people", "bogus", "process"],
+    reporterRootCause: "ไม่มีขั้นตอนรับมือช่วงพีค",
+    recommendations: ["จำกัด 2 ถ้วยต่อถาด", "ครัวช่วยเสิร์ฟช่วงพีค"],
+    selfInvolved: true,
+    people: [
+      ...(other ? [{ userId: other.id, name: "ชื่อปลอมที่ต้องถูกแทนที่", role: "witness" as const, note: "เห็นตอนเกิดเหตุ" }] : []),
+      { userId: null, name: "ลูกค้าโต๊ะ 5", role: "affected" as const },
+      { userId: null, name: "   ", role: "involved" as const },           // blank → dropped
+      { userId: 999999999, name: "ไม่มีจริง", role: "involved" as const }  // unknown user → dropped
+    ]
+  });
+  const cd = getReportDetail(c.id, branchId)!;
+  ok("detail decodes the why chain (blanks dropped)", cd.rca.whyChain.length === 4 && cd.rca.whyChain[2] === "ไม่มีกติกาช่วงพีค");
+  ok("detail keeps only known contributing factors", cd.rca.contributing.length === 2 && cd.rca.contributing.includes("process") && cd.rca.contributing.includes("people") && !cd.rca.contributing.includes("bogus"));
+  ok("detail carries recommendations, timeline, impact, self_involved", cd.rca.recommendations.length === 2 && !!cd.timeline?.startsWith("12:30") && cd.impact === "ลูกค้าแดงที่ข้อมือ" && cd.self_involved === 1);
+  ok("people: blank + unknown-user entries dropped", cd.people.length === (other ? 2 : 1));
+  if (other) {
+    const w = cd.people.find((p) => p.user_id === other.id);
+    ok("people: employee entry takes the real display name, not the typed one", !!w && w.name === other.display_name && w.role === "witness" && w.note === "เห็นตอนเกิดเหตุ");
+  }
+  ok("people: outsider keeps the typed name with user_id null", cd.people.some((p) => p.user_id === null && p.name === "ลูกค้าโต๊ะ 5" && p.role === "affected"));
+  ok("reporter_updated_at stamped on create", cd.reporter_updated_at != null);
+
+  // reporter edit rules
+  ok("canReporterEdit: owner of an open report", canReporterEdit(cd, uid));
+  ok("canReporterEdit: someone else cannot", !canReporterEdit(cd, uid + 123456));
+  ok("canReporterEdit: anonymous report has no owner", !canReporterEdit(bView, uid));
+  const notOwner = updateReporterSections(c.id, branchId, uid + 123456, { description: "แก้โดยคนอื่น" });
+  ok("edit by non-owner refused (not_owner)", !notOwner.ok && notOwner.error === "not_owner");
+  const anonEdit = updateReporterSections(b.id, branchId, uid, { description: "x" });
+  ok("edit of an anonymous report refused", !anonEdit.ok && anonEdit.error === "not_owner");
+  // RM verdict first, then the reporter edits → verdict must survive.
+  updateReport(c.id, branchId, { status: "reviewing", rootCause: "RM: ขั้นตอนช่วงพีค", correctiveAction: "RM: ออกกติกา" }, uid);
+  const capped = updateReporterSections(c.id, branchId, uid, { whyChain: ["1", "2", "3", "4", "5", "6", "7"] });
+  ok("why chain capped at 5 on edit", capped.ok && capped.report.rca.whyChain.length === 5);
+  const edited = updateReporterSections(c.id, branchId, uid, {
+    whyChain: ["ยกถาดหนัก", "ไม่มีคนช่วย"], contributing: ["equipment"],
+    recommendations: ["เปลี่ยนถาดกันลื่น"], people: [{ userId: null, name: "ไรเดอร์", role: "witness" }]
+  });
+  ok("owner edit succeeds while open", edited.ok);
+  if (edited.ok) {
+    ok("edit replaces why chain + factors + recommendations", edited.report.rca.whyChain.length === 2 && edited.report.rca.contributing.join() === "equipment" && edited.report.rca.recommendations[0] === "เปลี่ยนถาดกันลื่น");
+    ok("edit replaces the people list", edited.report.people.length === 1 && edited.report.people[0].name === "ไรเดอร์");
+    ok("edit leaves the RM verdict untouched", edited.report.root_cause === "RM: ขั้นตอนช่วงพีค" && edited.report.corrective_action === "RM: ออกกติกา" && edited.report.status === "reviewing");
+    ok("edit keeps untouched reporter fields", edited.report.description === "ซุปหกใส่ข้อมือลูกค้า" && edited.report.reporter_root_cause === "ไม่มีขั้นตอนรับมือช่วงพีค");
+  }
+  const codeBefore = getReport(c.id, branchId)!.code;
+  const movedYear = updateReporterSections(c.id, branchId, uid, { occurredAt: `${year - 1}-06-03T12:40` });
+  ok("moving the incident to another year re-issues the code in that year", movedYear.ok && movedYear.report.code !== codeBefore && movedYear.report.code!.startsWith(`IR-${year - 1}-`));
+  updateReporterSections(c.id, branchId, uid, { occurredAt: `${year}-06-03T12:40` });
+  const noPeopleEdit = updateReporterSections(c.id, branchId, uid, { impact: "อัปเดตผลกระทบ" });
+  ok("edit without a people key keeps the existing people", noPeopleEdit.ok && noPeopleEdit.report.people.length === 1 && noPeopleEdit.report.impact === "อัปเดตผลกระทบ");
+  updateReport(c.id, branchId, { status: "closed" }, uid);
+  const closedEdit = updateReporterSections(c.id, branchId, uid, { description: "หลังปิดเคส" });
+  ok("edit after close refused (closed)", !closedEdit.ok && closedEdit.error === "closed");
+  ok("canReporterEdit false once closed", !canReporterEdit(getReport(c.id, branchId)!, uid));
+
+  // reportIdsTouching: filed or named in
+  const touchingUid = reportIdsTouching(branchId, uid);
+  ok("reportIdsTouching includes reports I filed (a, c) but not the anonymous one", touchingUid.has(a.id) && touchingUid.has(c.id) && !touchingUid.has(b.id));
+  if (other) {
+    setPeople(c.id, [{ userId: other.id, role: "involved" }]);
+    ok("reportIdsTouching includes a report I'm named in", reportIdsTouching(branchId, other.id).has(c.id));
+    ok("setPeople de-duplicates the same employee", setPeople(c.id, [{ userId: other.id, role: "involved" }, { userId: other.id, role: "witness" }]).length === 1);
+  }
+  // old rows (no RCA) decode to empty lists
+  ok("legacy row without RCA decodes to empty lists", (() => { const d = getReportDetail(a.id, branchId)!; return d.rca.whyChain.length === 0 && d.rca.contributing.length === 0 && d.rca.recommendations.length === 0 && d.people.length === 0; })());
 
   console.log(`\nir test: ${passed} passed, ${failed} failed`);
   cleanup();

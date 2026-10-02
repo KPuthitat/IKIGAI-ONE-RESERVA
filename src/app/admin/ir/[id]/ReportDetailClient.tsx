@@ -6,30 +6,23 @@ import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
 import { nameWithPrefix } from "@/lib/name";
 import { FormSection, Field } from "@/app/components/FormKit";
+import IrReportView from "@/app/components/ir/IrReportView";
 import {
   IR_SEVERITIES, IR_STATUSES, IR_CATEGORY_GROUPS,
-  severityMeta, statusMeta, categoryLabel, incidentTypeLabel,
   type IrSeverity, type IrStatus
 } from "@/lib/ir-vocab";
-import type { IrReportView } from "@/lib/ir-db";
+import type { IrReportDetail } from "@/lib/ir-db";
 
 export type AssigneeOption = { id: number; display_name: string; title_prefix: string | null };
-
-function fmtDateTime(s: string | null): string {
-  if (!s) return "—";
-  const d = new Date(s.includes("T") || s.includes(" ") ? s : `${s}T00:00:00`);
-  if (isNaN(d.getTime())) return s;
-  return d.toLocaleString("th-TH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
-}
 
 export default function ReportDetailClient({
   initialReport, assignees
 }: {
-  initialReport: IrReportView;
+  initialReport: IrReportDetail;
   assignees: AssigneeOption[];
 }) {
   const router = useRouter();
-  const [r, setR] = useState<IrReportView>(initialReport);
+  const [r, setR] = useState<IrReportDetail>(initialReport);
 
   // Review form state (seeded from the row).
   const [status, setStatus] = useState<IrStatus>(r.status);
@@ -43,9 +36,6 @@ export default function ReportDetailClient({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
-
-  const sm = severityMeta(r.severity);
-  const st = statusMeta(r.status);
 
   async function save() {
     setBusy(true); setErr(null);
@@ -63,7 +53,7 @@ export default function ReportDetailClient({
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "บันทึกไม่สำเร็จ")); return; }
-      setR(j.report as IrReportView);
+      setR(j.report as IrReportDetail);
       setSavedAt(Date.now());
       router.refresh();
     } catch {
@@ -75,49 +65,10 @@ export default function ReportDetailClient({
 
   return (
     <div className="grid lg:grid-cols-5 gap-4">
-      {/* Left: the report as filed (read-only) */}
-      <div className="lg:col-span-3 space-y-4">
-        <div className="card space-y-3">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-slate-400 tabular-nums">{r.code ?? `#${r.id}`}</span>
-                <span className={`text-[11px] px-1.5 py-0.5 rounded border ${sm.tone}`}>{sm.labelTh}</span>
-                <span className={`text-[11px] px-1.5 py-0.5 rounded border ${st.tone}`}>{st.labelTh}</span>
-              </div>
-              <h1 className="text-lg font-bold text-slate-800 mt-1.5">{categoryLabel(r.category)}</h1>
-            </div>
-          </div>
-
-          <dl className="grid sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <Row label="เกิดขึ้นเมื่อ" value={fmtDateTime(r.occurred_at)} />
-            <Row label="ชนิด" value={incidentTypeLabel(r.incident_type)} />
-            <Row label="จุดเกิดเหตุ" value={r.location_detail || "—"} />
-            <Row label="ผู้แจ้ง" value={r.is_anonymous ? "ไม่ระบุตัวตน" : (r.reporter_name ? nameWithPrefix(r.reporter_prefix, r.reporter_name) : "—")} />
-          </dl>
-
-          <div>
-            <div className="text-xs text-slate-400 mb-1">เกิดอะไรขึ้น</div>
-            <p className="text-sm text-slate-700 whitespace-pre-wrap">{r.description}</p>
-          </div>
-          {r.immediate_action && (
-            <div>
-              <div className="text-xs text-slate-400 mb-1">แก้ไขเฉพาะหน้า</div>
-              <p className="text-sm text-slate-700 whitespace-pre-wrap">{r.immediate_action}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Audit trail */}
-        <div className="card">
-          <h2 className="font-semibold text-slate-700 mb-2 text-sm">ประวัติการดำเนินการ</h2>
-          <ul className="text-xs text-slate-500 space-y-1">
-            <li>แจ้งเมื่อ {fmtDateTime(r.created_at)}</li>
-            {r.reviewed_at && <li>เริ่มทบทวนเมื่อ {fmtDateTime(r.reviewed_at)}</li>}
-            {r.discussed_at && <li>เข้าประชุมทบทวนวันที่ {fmtDateTime(r.discussed_at)}</li>}
-            {r.resolved_at && <li>ปิดเคสเมื่อ {fmtDateTime(r.resolved_at)}</li>}
-          </ul>
-        </div>
+      {/* Left: the report as the reporter wrote it — facts, RCA, recommendations,
+          people — through the SAME view staff see (owner 2026-10-01). */}
+      <div className="lg:col-span-3">
+        <IrReportView r={r} showVerdict={false} />
       </div>
 
       {/* Right: RM review / PDCA */}
@@ -154,12 +105,16 @@ export default function ReportDetailClient({
           </FormSection>
 
           <FormSection title="สาเหตุและการแก้ไข (PDCA)">
-            <Field label="สาเหตุราก (Root cause)">
+            <Field label="สาเหตุราก (Root cause)" hint={r.reporter_root_cause && !rootCause ? (
+              <button type="button" className="text-brand hover:underline" onClick={() => setRootCause(r.reporter_root_cause ?? "")}>ใช้ของผู้แจ้ง</button>
+            ) : undefined}>
               <textarea rows={2} value={rootCause} onChange={(e) => setRootCause(e.target.value)}
                 placeholder="ทำไมถึงเกิด — วิเคราะห์ถึงต้นตอ ไม่ใช่แค่อาการ" />
             </Field>
-            <Field label="แนวทางแก้ไข/ป้องกัน">
-              <textarea rows={2} value={corrective} onChange={(e) => setCorrective(e.target.value)}
+            <Field label="แนวทางแก้ไข/ป้องกัน" hint={r.rca.recommendations.length > 0 && !corrective ? (
+              <button type="button" className="text-brand hover:underline" onClick={() => setCorrective(r.rca.recommendations.map((x, i) => `${i + 1}. ${x}`).join("\n"))}>ใช้ข้อเสนอของผู้แจ้ง</button>
+            ) : undefined}>
+              <textarea rows={3} value={corrective} onChange={(e) => setCorrective(e.target.value)}
                 placeholder="จะทำอะไรเพื่อไม่ให้เกิดซ้ำ" />
             </Field>
             <div className="grid grid-cols-2 gap-2.5">
@@ -189,15 +144,6 @@ export default function ReportDetailClient({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs text-slate-400">{label}</dt>
-      <dd className="text-slate-700">{value}</dd>
     </div>
   );
 }

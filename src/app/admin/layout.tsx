@@ -268,7 +268,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           label: "รายการเหตุการณ์",
           badge: irOpenCount > 0 ? irOpenCount : undefined
         },
-        { href: "/admin/ir/reports?new=1", label: "+ แจ้งเหตุการณ์" }
+        { href: "/admin/ir/reports?new=1", label: "+ แจ้งเหตุการณ์" },
+        { href: "/staff/ir/guide", label: "คู่มือการเขียนรายงาน" }
       ]
     }] : []),
     // สุขภาพพนักงาน — รวม "ผลตรวจสุขภาพ" (ย้ายมาจาก PERSONA) + โครงการ Mounjaro.

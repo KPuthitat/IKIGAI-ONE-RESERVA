@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { listReports } from "@/lib/ir-db";
+import { listReports, irColleagues } from "@/lib/ir-db";
 import ReportsClient from "./ReportsClient";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ export default function IrReportsPage() {
         <h1 className="text-2xl font-bold text-slate-800">รายการเหตุการณ์</h1>
         <p className="text-sm text-slate-500 mt-1">สาขา <b>{branch?.name ?? `#${branchId}`}</b></p>
       </div>
-      <ReportsClient initialReports={listReports({ branchId, status: "all" })} />
+      <ReportsClient initialReports={listReports({ branchId, status: "all" })} colleagues={irColleagues()} selfUserId={user.id} />
     </div>
   );
 }
