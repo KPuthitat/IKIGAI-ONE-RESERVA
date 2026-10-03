@@ -141,7 +141,12 @@ function TopSpendersPanel() {
   const [scope, setScope] = useState<"all" | "year">("all");
   const [data, setData] = useState<ClinicaTopSpenders | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showAll, setShowAll] = useState<Record<string, boolean>>({});
+  // How many ranks to show per group — 3 / 5 / 10 (owner 2026-10-04: ไม่ให้เยอะเกินไป).
+  // Remembered per browser; the data always holds the top 10.
+  const [topN, setTopN] = useState<3 | 5 | 10>(() => {
+    try { const v = Number(window.localStorage.getItem("clinicaTopN")); return v === 5 || v === 10 ? v : 3; } catch { return 3; }
+  });
+  const pickN = (n: 3 | 5 | 10) => { setTopN(n); try { window.localStorage.setItem("clinicaTopN", String(n)); } catch { /* ignore */ } };
 
   async function load(s: "all" | "year") {
     setBusy(true);
@@ -157,7 +162,7 @@ function TopSpendersPanel() {
     <div className="card space-y-2">
       <button type="button" onClick={toggle} className="w-full flex items-center justify-between gap-2 text-left">
         <div>
-          <h3 className="font-bold text-slate-800 text-sm">ผู้ใช้จ่ายสูงสุดตามสิทธิ์ (10 อันดับแรก)</h3>
+          <h3 className="font-bold text-slate-800 text-sm">ผู้ใช้จ่ายสูงสุดตามสิทธิ์</h3>
           <p className="text-[11px] text-slate-500 mt-0.5">ยอดสะสมต่อคนไข้ (HN) แยกตามกลุ่มผู้จ่าย: เงินสด ประกันกลุ่มแต่ละบริษัท พร้อมความถี่และช่วงที่มา — สำหรับพิจารณามอบสิทธิพิเศษ · ซ่อนไว้ กดเพื่อเปิดดู</p>
         </div>
         <span className="text-slate-400 text-xs shrink-0">{open ? "▲ ซ่อน" : "▼ เปิดดู"}</span>
@@ -171,6 +176,14 @@ function TopSpendersPanel() {
                 {s === "all" ? "สะสมทั้งหมดที่นำเข้า" : "เฉพาะปีนี้"}
               </button>
             ))}
+            <span className="text-slate-300 mx-1">|</span>
+            <span className="text-slate-500">แสดง</span>
+            {([3, 5, 10] as const).map((n) => (
+              <button key={n} type="button" onClick={() => pickN(n)}
+                className={`px-2.5 py-1 rounded-full border ${topN === n ? "bg-brand text-white border-brand" : "bg-white text-slate-600 border-slate-200"}`}>
+                {n} อันดับ
+              </button>
+            ))}
             {data && data.from && data.to && <span className="text-slate-400 ml-1">ข้อมูล {thaiDate(data.from)} – {thaiDate(data.to)} · {intTh(data.patients)} คนไข้ · {intTh(data.bills)} บิล · {baht(data.net)}</span>}
           </div>
           {busy ? (
@@ -179,7 +192,7 @@ function TopSpendersPanel() {
             <p className="text-sm text-slate-400 text-center py-3">ยังไม่มีบิลในช่วงนี้</p>
           ) : (
             data.groups.map((g) => {
-              const rows = showAll[g.group] ? g.top : g.top.slice(0, 3);
+              const rows = g.top.slice(0, topN);
               return (
                 <div key={g.group} className="space-y-2">
                   <div className="flex items-baseline justify-between gap-2 flex-wrap">
@@ -187,11 +200,6 @@ function TopSpendersPanel() {
                     <div className="text-[11px] text-slate-500">{bahtC(g.net, g.bills)} · {intTh(g.patients)} คนไข้{g.due > 0.5 ? ` · ค้างเบิก ${baht(g.due)}` : ""}</div>
                   </div>
                   {rows.map((t) => <TopSpenderBlock key={t.hn} t={t} />)}
-                  {g.top.length > 3 && (
-                    <button type="button" onClick={() => setShowAll((v) => ({ ...v, [g.group]: !v[g.group] }))} className="text-xs text-brand hover:underline">
-                      {showAll[g.group] ? "แสดงเฉพาะ 3 อันดับแรก" : `ดูครบ ${g.top.length} อันดับ`}
-                    </button>
-                  )}
                 </div>
               );
             })
