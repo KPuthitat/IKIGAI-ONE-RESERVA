@@ -5326,7 +5326,7 @@ export function formatDate(input: string | Date, lang: Lang): string {
   const day = d.getDate();
   const month = d.getMonth();
   const year = d.getFullYear();
-  if (lang === "th") return `${day} ${TH_MONTHS[month]} ${year + 543}`;
+  if (lang === "th") return `${day} ${TH_MONTHS[month]} พ.ศ. ${year + 543}`;
   return `${EN_MONTHS[month]} ${day}, ${year}`;
 }
 

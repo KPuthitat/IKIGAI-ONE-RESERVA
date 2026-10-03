@@ -23,7 +23,7 @@ function upcomingMonths(): string[] {
   const y = now.getUTCFullYear(), m = now.getUTCMonth();
   return Array.from({ length: 12 }, (_, i) => { const d = new Date(Date.UTC(y, m + i, 1)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`; });
 }
-const ymLabel = (ym: string) => `${TH_MONTHS[Number(ym.slice(5, 7)) - 1]} ${Number(ym.slice(0, 4)) + 543}`;
+const ymLabel = (ym: string) => `${TH_MONTHS[Number(ym.slice(5, 7)) - 1]} พ.ศ. ${Number(ym.slice(0, 4)) + 543}`;
 
 export default function ReportaSettingsClient({
   initialGroupId, initialTarget, initialMonthTargets, initialMerchant, initialColor, initialOpensOn, weekHours

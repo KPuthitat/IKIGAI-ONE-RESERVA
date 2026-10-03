@@ -51,7 +51,7 @@ function formatBkk(ts: string, lang: Lang): string {
   if (lang === "th") {
     const [y, m, dd] = date.split("-");
     const yBE = String(Number(y) + 543);
-    return `${dd}/${m}/${yBE.slice(2)} ${time}`;
+    return `${dd}/${m}/${yBE} ${time}`;
   }
   return `${date} ${time}`;
 }
@@ -65,7 +65,7 @@ function timeBkk(ts: string): string {
 // DD/MM/YY for a YYYY-MM-DD Bangkok calendar date (BE year in Thai).
 function formatDate(ymd: string, lang: Lang): string {
   const [y, m, dd] = ymd.split("-");
-  if (lang === "th") return `${dd}/${m}/${String(Number(y) + 543).slice(2)}`;
+  if (lang === "th") return `${dd}/${m}/${Number(y) + 543}`;
   return `${dd}/${m}/${y.slice(2)}`;
 }
 

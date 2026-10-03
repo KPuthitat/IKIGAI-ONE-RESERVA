@@ -16,10 +16,10 @@ import { DfSendModal, DfDailyPreview, DfWeeklyPreview, type DailyPreviewData, ty
 const TH_MONTHS = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 // Full month names everywhere — no abbreviations (owner 2026-09-13).
 const TH_MON = TH_MONTHS;
-function thDate(iso: string): string { const [y, m, d] = iso.split("-").map(Number); return `${d} ${TH_MON[m]} ${y + 543}`; }
+function thDate(iso: string): string { const [y, m, d] = iso.split("-").map(Number); return `${d} ${TH_MON[m]} พ.ศ. ${y + 543}`; }
 function weekLabel(a: string, b: string): string {
   const [, am, ad] = a.split("-").map(Number); const [by, bm, bd] = b.split("-").map(Number);
-  return `${ad}${am === bm ? "" : ` ${TH_MON[am]}`}–${bd} ${TH_MON[bm]} ${by + 543}`;
+  return `${ad}${am === bm ? "" : ` ${TH_MON[am]}`}–${bd} ${TH_MON[bm]} พ.ศ. ${by + 543}`;
 }
 
 type PinAction =
@@ -167,7 +167,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
       {/* Month navigator */}
       <div className="flex items-center justify-center gap-3">
         <button type="button" onClick={() => shift(-1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">←</button>
-        <span className="text-sm font-bold text-slate-700">{TH_MONTHS[view.month]} {view.year + 543}</span>
+        <span className="text-sm font-bold text-slate-700">{TH_MONTHS[view.month]} พ.ศ. {view.year + 543}</span>
         <button type="button" onClick={() => shift(1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">→</button>
       </div>
 
@@ -185,7 +185,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
             {busy ? "กำลังทำงาน…" : "นำเข้าไฟล์รายงานประจำวัน"}
           </button>
           <button type="button" disabled={busy}
-            onClick={() => setPending({ kind: "clear_month", label: `${TH_MONTHS[view.month]} ${view.year + 543}` })}
+            onClick={() => setPending({ kind: "clear_month", label: `${TH_MONTHS[view.month]} พ.ศ. ${view.year + 543}` })}
             className="rounded-md border border-rose-300 text-rose-600 px-3 py-2 text-xs font-medium hover:bg-rose-50 disabled:opacity-40">
             ล้างข้อมูลนำเข้าเดือนนี้
           </button>

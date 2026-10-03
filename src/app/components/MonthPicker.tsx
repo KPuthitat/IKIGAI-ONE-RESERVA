@@ -53,7 +53,7 @@ export default function MonthPicker({
   }
 
   // Display label on the button — full Thai or English with year
-  const yearDisplay = lang === "th" ? `${selY + 543}` : `${selY}`;
+  const yearDisplay = lang === "th" ? `พ.ศ. ${selY + 543}` : `${selY}`;
   const monthDisplay = months[selM - 1];
 
   return (

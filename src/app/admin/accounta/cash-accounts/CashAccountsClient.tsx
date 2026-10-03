@@ -25,7 +25,7 @@ const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "ม
 function fmtThaiDate(iso: string | null): string {
   if (!iso) return "—";
   const [y, m, d] = iso.split("-").map(Number);
-  return `${d} ${TH_MON[m]} ${y + 543}`;
+  return `${d} ${TH_MON[m]} พ.ศ. ${y + 543}`;
 }
 
 const TYPE_LABEL: Record<AccType, string> = {

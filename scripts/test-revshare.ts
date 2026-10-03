@@ -89,9 +89,9 @@ const F: Floor[] = [
   eq("x.netNoVat", s.netAmount, 66_000 - 1_980);
   eq("x.opMonth jan→jan", opMonthFor("2026-01-15", 2026, 1), 1);
   eq("x.opMonth jan→aug", opMonthFor("2026-01-15", 2026, 8), 8);
-  ok("x.roundLabel same-month", roundLabel("2026-06-15", "2026-06-21") === "15–21 มิถุนายน 2569");
-  ok("x.roundLabel cross-month", roundLabel("2026-06-30", "2026-07-06") === "30 มิถุนายน – 6 กรกฎาคม 2569");
-  ok("x.roundLabel single", roundLabel("2026-06-19", "2026-06-19") === "19 มิถุนายน 2569");
+  ok("x.roundLabel same-month", roundLabel("2026-06-15", "2026-06-21") === "15–21 มิถุนายน พ.ศ. 2569");
+  ok("x.roundLabel cross-month", roundLabel("2026-06-30", "2026-07-06") === "30 มิถุนายน – 6 กรกฎาคม พ.ศ. 2569");
+  ok("x.roundLabel single", roundLabel("2026-06-19", "2026-06-19") === "19 มิถุนายน พ.ศ. 2569");
 }
 
 // default floor template = flat 20,000/month (owner 2026-06-23)

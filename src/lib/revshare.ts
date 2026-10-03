@@ -209,7 +209,7 @@ export const TH_MONTHS_ABBR = TH_MONTHS_FULL;
 /** "2026-06-15" → "15 มิถุนายน 2569". */
 export function thaiDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
-  return `${d} ${TH_MONTHS_FULL[m]} ${y + 543}`;
+  return `${d} ${TH_MONTHS_FULL[m]} พ.ศ. ${y + 543}`;
 }
 
 /** A label for a round's date span — full month names + พ.ศ. year, no
@@ -219,7 +219,7 @@ export function thaiDate(iso: string): string {
 export function roundLabel(startIso: string, endIso: string): string {
   const [sy, sm, sd] = startIso.split("-").map(Number);
   const [ey, em, ed] = endIso.split("-").map(Number);
-  const syB = sy + 543, eyB = ey + 543;
+  const syB = `พ.ศ. ${sy + 543}`, eyB = `พ.ศ. ${ey + 543}`;
   if (startIso === endIso) return `${sd} ${TH_MONTHS_FULL[sm]} ${syB}`;
   if (sy === ey && sm === em) return `${sd}–${ed} ${TH_MONTHS_FULL[sm]} ${syB}`;
   if (sy === ey) return `${sd} ${TH_MONTHS_FULL[sm]} – ${ed} ${TH_MONTHS_FULL[em]} ${eyB}`;

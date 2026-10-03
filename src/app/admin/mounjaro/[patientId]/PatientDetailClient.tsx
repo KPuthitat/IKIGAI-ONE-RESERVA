@@ -59,7 +59,7 @@ function toBE(d: string | null): string {
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return "—";
   const m = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-  return `${dt.getDate()} ${m[dt.getMonth()]} ${dt.getFullYear() + 543}`;
+  return `${dt.getDate()} ${m[dt.getMonth()]} พ.ศ. ${dt.getFullYear() + 543}`;
 }
 function calcBMI(w?: number | null, h?: number | null): number | null {
   if (!w || !h) return null;

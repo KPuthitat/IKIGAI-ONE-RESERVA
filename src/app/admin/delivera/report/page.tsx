@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ยอดขายเดลิเวอรี่ · DELIVERA" };
 
 const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-function monthLabel(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} ${y + 543}`; }
+function monthLabel(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} พ.ศ. ${y + 543}`; }
 function dayLabel(d: string): string { const [, , dd] = d.split("-"); return String(Number(dd)); }
 
 export default function DeliveraReportPage({ searchParams }: { searchParams: { month?: string } }) {

@@ -55,7 +55,7 @@ function thaiDate(iso: string): string {
   if (isNaN(d.getTime())) return iso.slice(0, 10);
   // Use Bangkok-local calendar date.
   const bkk = new Date(d.getTime() + 7 * 3600_000);
-  return `${bkk.getUTCDate()} ${TH_MONTHS[bkk.getUTCMonth()]} ${bkk.getUTCFullYear() + 543}`;
+  return `${bkk.getUTCDate()} ${TH_MONTHS[bkk.getUTCMonth()]} พ.ศ. ${bkk.getUTCFullYear() + 543}`;
 }
 
 function baht(n: number): string {

@@ -48,7 +48,7 @@ function monthRange(yearMonth: string): { from: string; to: string } {
 function monthLabel(yearMonth: string, lang: Lang): string {
   const [y, m] = yearMonth.split("-").map(Number);
   const months = lang === "th" ? TH_MONTHS : EN_MONTHS;
-  const yearDisplay = lang === "th" ? y + 543 : y;
+  const yearDisplay = lang === "th" ? `พ.ศ. ${y + 543}` : String(y);
   return `${months[m - 1]} ${yearDisplay}`;
 }
 

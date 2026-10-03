@@ -1,5 +1,6 @@
 "use client";
 
+import { thDateBE } from "@/lib/th-month";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -14,7 +15,7 @@ import type { IrReportView } from "@/lib/ir-db";
 function fmtOccurred(s: string): string {
   const d = new Date(s);
   if (isNaN(d.getTime())) return s;
-  return d.toLocaleString("th-TH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return thDateBE(d, { time: true });
 }
 
 export default function ReportsClient({ initialReports, colleagues, selfUserId }: {

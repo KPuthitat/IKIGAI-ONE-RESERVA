@@ -72,7 +72,7 @@ export default function AdminAscendaPage({
     const k = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
     periodOptions.push({
       key: k,
-      label: `${TH_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}`
+      label: `${TH_MONTHS[d.getUTCMonth()]} พ.ศ. ${d.getUTCFullYear() + 543}`
     });
   }
 

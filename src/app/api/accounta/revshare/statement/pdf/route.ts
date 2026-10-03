@@ -37,7 +37,7 @@ export async function GET(req: Request) {
     seller: { name: seller.name, address: seller.reg_address ?? seller.company_address, taxBranchCode: seller.tax_branch_code, phone: seller.contact_phone, taxId: seller.company_tax_id },
     partner: { name: partner.name, venue: partner.venue },
     buyer: { taxId: partner.tax_id, address: partner.address, branchCode: partner.branch_code },
-    monthLabel: `${TH_MONTHS_FULL[month]} ${year + 543}`,
+    monthLabel: `${TH_MONTHS_FULL[month]} พ.ศ. ${year + 543}`,
     invoiceNo: preview.stored?.invoice_no ?? null,
     status: STATUS_TH[preview.stored?.status ?? "draft"],
     withVat: partner.vat_enabled && preview.result.vatAmount > 0,

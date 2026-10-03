@@ -352,7 +352,7 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("monthly total (14658+13000)", mo.totalNett === 27658 && mo.dayCount === 2);
   ok("monthly vs prev month (Aug 14000)", near(mo.prevMonthPct ?? 0, ((27658 - 14000) / 14000) * 100));
   ok("monthly vs last year (2025-09 50000)", near(mo.lastYearPct ?? 0, ((27658 - 50000) / 50000) * 100));
-  ok("monthly label full Thai", mo.label === "กันยายน 2569" && mo.ym === "2026-09");
+  ok("monthly label full Thai", mo.label === "กันยายน พ.ศ. 2569" && mo.ym === "2026-09");
 
   // same-period MoM/YoY (owner 2026-09-23): prev-month days AFTER this month's
   // last data day must be excluded (compare 1..throughDay, not full vs full).
@@ -1121,7 +1121,7 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ok("corporate: DKSH near-holiday visit (8 ก.ย. is 1 day before the 9 ก.ย. test holiday)", dk.nearHoliday.count === 1 && dk.nearHoliday.names[0] === "วันทดสอบองค์กร");
   ok("corporate: DKSH last visit 16 ก.ย. (16 days ago), not overdue, customer branch 00016 shown", dk.lastVisit === "2026-09-16" && dk.daysSinceLast === 16 && !dk.overdue && dk.custBranchCode === "00016");
   ok("corporate: DKSH cross-branch totals (4 visits, 11,562 incl. the other branch)", dk.otherBranches && dk.groupVisits === 4 && dk.groupSpend === 11562);
-  ok("corporate: DKSH blurb reads like the owner's sentence", dk.blurb.includes("ปีนี้มา 3 ครั้ง (เดือนละ ~1.5 ครั้ง) รวม 4,665 บาท") && dk.blurb.includes("มักมากลางเดือน วันพุธ") && dk.blurb.includes("ล่าสุด 16 กันยายน 2569 (16 วันก่อน)") && dk.blurb.includes("ทุกสาขารวม 4 ครั้ง 11,562 บาท"));
+  ok("corporate: DKSH blurb reads like the owner's sentence", dk.blurb.includes("ปีนี้มา 3 ครั้ง (เดือนละ ~1.5 ครั้ง) รวม 4,665 บาท") && dk.blurb.includes("มักมากลางเดือน วันพุธ") && dk.blurb.includes("ล่าสุด 16 กันยายน พ.ศ. 2569 (16 วันก่อน)") && dk.blurb.includes("ทุกสาขารวม 4 ครั้ง 11,562 บาท"));
   const qt = cr.rows.find((r) => r.name === QUIET.name)!;
   ok("corporate: a repeat customer quiet for 62 days vs a 7-day gap is flagged overdue", qt.visits === 2 && qt.avgGapDays === 7 && qt.daysSinceLast === 62 && qt.overdue && cr.overdue[0] === QUIET.name && qt.blurb.includes("เงียบนานกว่ารอบปกติ"));
   ok("corporate: first-ever visit this month → newThisMonth", cr.newThisMonth.length === 1 && cr.newThisMonth[0] === "บริษัท ใหม่ จำกัด" && cr.rows.find((r) => r.name === "บริษัท ใหม่ จำกัด")?.cadence === "มาครั้งเดียว");

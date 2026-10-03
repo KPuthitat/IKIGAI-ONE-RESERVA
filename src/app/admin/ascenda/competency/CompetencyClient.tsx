@@ -120,7 +120,7 @@ export default function CompetencyClient({
           <label className="label">รอบประเมิน</label>
           <div className="flex gap-2">
             <select className="input w-24" value={year} onChange={(e) => go(userId, `${e.target.value}-${pq}`)}>
-              {[year - 2, year - 1, year, year + 1].map((y) => <option key={y} value={y}>{y + 543}</option>)}
+              {[year - 2, year - 1, year, year + 1].map((y) => <option key={y} value={y}>พ.ศ. {y + 543}</option>)}
             </select>
             <select className="input w-20" value={pq} onChange={(e) => go(userId, `${py}-${e.target.value}`)}>
               {QUARTERS.map((q) => <option key={q} value={q}>{q}</option>)}
@@ -137,7 +137,7 @@ export default function CompetencyClient({
       ) : (
         <>
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="text-sm text-slate-600">ประเมิน: <b className="text-slate-800">{initial.userName}</b> · รอบ {pq} ปี {year + 543}
+            <div className="text-sm text-slate-600">ประเมิน: <b className="text-slate-800">{initial.userName}</b> · รอบ {pq} ปี พ.ศ. {year + 543}
               <span className={`ml-2 text-[11px] px-2 py-0.5 rounded ${status === "final" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{status === "final" ? "ยืนยันแล้ว" : "ร่าง"}</span>
             </div>
             <div>

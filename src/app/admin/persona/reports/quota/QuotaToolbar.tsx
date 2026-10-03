@@ -56,7 +56,7 @@ export default function QuotaToolbar({
         >
           {yearOptions.map((y) => (
             <option key={y} value={y}>
-              {lang === "th" ? `${y + 543} (${y})` : y}
+              {lang === "th" ? `พ.ศ. ${y + 543}` : y}
             </option>
           ))}
         </select>

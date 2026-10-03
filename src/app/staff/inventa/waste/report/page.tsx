@@ -30,7 +30,7 @@ export default function WasteReportPage({ searchParams }: { searchParams: { mont
   const sum = wasteSummary(branchId, month);
 
   const [, mm] = month.split("-").map(Number);
-  const monthLabel = lang === "en" ? month : `${TH_MONTHS[mm]} ${Number(month.slice(0, 4)) + 543}`;
+  const monthLabel = lang === "en" ? month : `${TH_MONTHS[mm]} พ.ศ. ${Number(month.slice(0, 4)) + 543}`;
   const prev = shiftMonth(month, -1);
   const next = shiftMonth(month, 1);
   const isFuture = next > bkkMonth();

@@ -3,6 +3,7 @@
 // configured group (ir_settings.line_group_id). Never blocks the filing: the
 // route fires it and moves on; a missing group / token just logs and skips.
 
+import { thDateBE } from "./th-month";
 import { sendLinePush, type LineFlexMessage } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
 import { getDb } from "./db";
@@ -27,7 +28,7 @@ function clip(s: string | null | undefined, max: number): string {
 function fmtWhen(s: string): string {
   const d = new Date(s.includes("T") || s.includes(" ") ? s : `${s}T00:00:00`);
   if (isNaN(d.getTime())) return s;
-  return d.toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return thDateBE(d, { time: true });
 }
 function kv(label: string, value: string, color = "#1a1a2e"): unknown {
   return {

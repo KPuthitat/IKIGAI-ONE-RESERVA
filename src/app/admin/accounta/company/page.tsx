@@ -24,7 +24,7 @@ const TH_MON_ABBR = [
 // ที่เลือกอยู่ (activeBranchId → branches.company_id). ปีเลือกได้ผ่าน ?year=.
 function thMonthLabel(month: string): string {
   const [y, m] = month.split("-").map(Number);
-  return `${TH_MON_ABBR[m]} ${y + 543}`;
+  return `${TH_MON_ABBR[m]} พ.ศ. ${y + 543}`;
 }
 // "YYYY-MM-DD" → "22 สิงหาคม" (day + full Thai month, no year).
 function thDayLabel(date: string): string {
@@ -126,7 +126,7 @@ export default function CompanyOverviewPage({
           {yearOptions.map((y) => (
             <Link key={y} href={`/admin/accounta/company?year=${y}`}
               className={`rounded-lg px-2.5 py-1 text-sm font-medium ${y === year ? "bg-brand text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
-              {y + 543}
+              พ.ศ. {y + 543}
             </Link>
           ))}
         </div>
@@ -136,7 +136,7 @@ export default function CompanyOverviewPage({
         <h1 className="text-2xl font-bold text-slate-800">ภาพรวมบริษัท (รวมสาขา)</h1>
         <p className="text-sm text-slate-500 mt-1">
           <b>{data.companyName}</b> · รวม {data.branchNames.length} สาขา
-          {data.branchNames.length > 0 ? ` (${data.branchNames.join(" + ")})` : ""} · ปี {year + 543}
+          {data.branchNames.length > 0 ? ` (${data.branchNames.join(" + ")})` : ""} · ปี พ.ศ. {year + 543}
         </p>
         <p className="text-[11px] text-slate-400 mt-1">
           ตัวเลขรวมทุกสาขาของบริษัทนี้ · ใช้ติดตามภายใน ไม่ใช่เอกสารยื่นภาษีอย่างเป็นทางการ
@@ -147,7 +147,7 @@ export default function CompanyOverviewPage({
       {annual && (
         <div className="card space-y-2">
           <div className="flex items-baseline justify-between gap-2">
-            <h2 className="font-bold text-slate-800">ประมาณการเป้าทั้งปี {annual.year + 543} · รวมสาขา</h2>
+            <h2 className="font-bold text-slate-800">ประมาณการเป้าทั้งปี พ.ศ. {annual.year + 543} · รวมสาขา</h2>
             <span className={`text-sm font-bold ${annual.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{annual.pctOfTarget.toFixed(0)}% ของเป้า</span>
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">

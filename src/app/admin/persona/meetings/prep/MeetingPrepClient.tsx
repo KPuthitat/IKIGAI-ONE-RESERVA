@@ -1,5 +1,6 @@
 "use client";
 
+import { thDateBE } from "@/lib/th-month";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
@@ -9,7 +10,7 @@ import type { PrepSummaryRow } from "@/lib/meeting-prep";
 
 const fmtDateTime = (iso: string) => {
   const d = new Date(iso.endsWith("Z") || iso.includes("T") ? iso : iso.replace(" ", "T") + "Z");
-  return isNaN(d.getTime()) ? iso : d.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return isNaN(d.getTime()) ? iso : thDateBE(d, { time: true });
 };
 
 export default function MeetingPrepClient({

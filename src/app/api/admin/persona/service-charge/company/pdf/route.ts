@@ -1,3 +1,4 @@
+import { thDateBE } from "@/lib/th-month";
 import { NextResponse } from "next/server";
 import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -72,13 +73,11 @@ export async function GET(req: Request) {
   const totalOtherDeductions = round2(summary.rows.reduce((s, r) => s + r.otherDeductions, 0));
 
   const [yyyy, mm] = month.split("-").map(Number);
-  const generatedLabel = new Date().toLocaleString("th-TH", {
-    timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "short"
-  });
+  const generatedLabel = thDateBE(new Date(), { bangkok: true, time: true });
 
   const pdf = await generateSvcSummaryPdf({
     company: { name: company?.name_th ?? "", taxId: company?.tax_id ?? null, address: company?.address ?? null },
-    monthLabel: `${TH_MONTHS_FULL[mm]} ${yyyy + 543}`,
+    monthLabel: `${TH_MONTHS_FULL[mm]} พ.ศ. ${yyyy + 543}`,
     shared: isSharedSvcMonth(companyId, month),
     // The accountant must see the ACTUAL transfer date ACCOUNTA books on, not
     // the computed 20th (owner 2026-10-01). Falls back to the 20th before a

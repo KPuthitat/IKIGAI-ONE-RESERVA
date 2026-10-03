@@ -25,7 +25,7 @@ function fmtBaht(n: number): string {
 
 function fmtThaiDate(yyyymmdd: string): string {
   const [y, m, d] = yyyymmdd.split("-").map(Number);
-  return `${d} ${TH_MONTHS_ABBR[m - 1]} ${y + 543}`;
+  return `${d} ${TH_MONTHS_ABBR[m - 1]} พ.ศ. ${y + 543}`;
 }
 
 export default function AscendaDailyPage({

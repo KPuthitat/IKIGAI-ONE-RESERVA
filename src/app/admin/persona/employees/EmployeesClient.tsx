@@ -1125,7 +1125,7 @@ function EditModal({
     const TH = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
       "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
     const [y, m] = ym.split("-").map(Number);
-    return (m >= 1 && m <= 12 && y) ? `${TH[m - 1]} ${y + 543}` : ym;
+    return (m >= 1 && m <= 12 && y) ? `${TH[m - 1]} พ.ศ. ${y + 543}` : ym;
   };
 
   return (
@@ -1702,7 +1702,7 @@ function EditModal({
                     const now = new Date(Date.now() + 7 * 3600 * 1000);
                     for (let off = 3; off >= -3; off--) {
                       const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + off, 1));
-                      opts.push({ v: d.toISOString().slice(0, 7), label: `${TH_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}` });
+                      opts.push({ v: d.toISOString().slice(0, 7), label: `${TH_MONTHS[d.getUTCMonth()]} พ.ศ. ${d.getUTCFullYear() + 543}` });
                     }
                     // Keep an out-of-range stored value visible so a bad entry can be corrected.
                     if (giStartMonth && !opts.some((o) => o.v === giStartMonth)) opts.unshift({ v: giStartMonth, label: giStartMonth });
@@ -1748,7 +1748,7 @@ function EditModal({
                       const now = new Date(Date.now() + 7 * 3600 * 1000);
                       for (let off = 3; off >= -6; off--) {
                         const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + off, 1));
-                        opts.push({ v: d.toISOString().slice(0, 7), label: `${TH_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}` });
+                        opts.push({ v: d.toISOString().slice(0, 7), label: `${TH_MONTHS[d.getUTCMonth()]} พ.ศ. ${d.getUTCFullYear() + 543}` });
                       }
                       // Keep the employment-change month + any stored value selectable
                       // even if outside the ±window.
