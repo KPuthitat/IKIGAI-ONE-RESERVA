@@ -1339,6 +1339,17 @@ export async function pushClockInCard(args: {
  *  decrypted automatically; the legacy column is run through
  *  decryptSecret too so values written after the 2026-05 vault rollout
  *  also work. */
+/** Push messages to one customer through the branch OA they follow. Returns
+ *  the skip reason when the branch has no channel token. */
+export async function pushToCustomer(branchId: number, lineUserId: string, messages: LineMessage[]): Promise<{ ok: boolean; skipped?: string }> {
+  const branch = getDb().prepare("SELECT * FROM branches WHERE id = ?").get(branchId) as Branch | undefined;
+  if (!branch) return { ok: false, skipped: "no_branch" };
+  const token = resolveBranchToken(branch);
+  if (!token) return { ok: false, skipped: "no_token" };
+  const res = await sendLinePush(token, { to: lineUserId, messages });
+  return { ok: res.ok, skipped: res.ok ? undefined : "push_failed" };
+}
+
 function resolveBranchToken(branch: Branch): string | null {
   const ch = getChannelByCode(branch.slug);
   if (ch?.channel_token) return ch.channel_token;

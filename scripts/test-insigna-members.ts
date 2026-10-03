@@ -113,6 +113,36 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234";
     ok("ageBandOf edges", m.ageBandOf(2010, "2026-10-02") === "ต่ำกว่า 20" && m.ageBandOf(1950, "2026-10-02") === "70 ขึ้นไป" && m.ageBandOf(null, "2026-10-02") === null);
   }
 
+  // ── LINE report + member messages (phase 4) ──
+  {
+    const ml = await import("../src/lib/member-line");
+    const rep = m.memberReport({ year: 2026, todayIso: "2026-10-02" });
+    const flex = ml.memberReportFlex(rep, { branchName: "NAMA", operator: "ทดสอบ", color: "#0e2724" });
+    const json = JSON.stringify(flex);
+    ok("report flex: title with พ.ศ., member codes listed, no hash in the card", flex.altText.includes("ตุลาคม พ.ศ. 2569") && json.includes("69100003") && !json.includes(m.hashLineUserId(LINE_U1)));
+    const cfg0 = ml.getMemberMessageConfig();
+    ok("message config defaults", cfg0.birthday_text === ml.DEFAULT_BIRTHDAY_TEXT && !cfg0.birthday_custom && cfg0.winback_text === ml.DEFAULT_WINBACK_TEXT);
+    const cfg1 = ml.saveMemberMessageConfig({ birthday_text: "  สุขสันต์วันเกิดจากร้าน  ", winback_text: null });
+    ok("message config saves trimmed custom text; blank = default", cfg1.birthday_text === "สุขสันต์วันเกิดจากร้าน" && cfg1.birthday_custom && cfg1.winback_text === ml.DEFAULT_WINBACK_TEXT);
+    // Birthday targets: member 2 (October, consented). Member 1 is February.
+    const bt = ml.memberPushTargets(rep, "birthday", "2026-10-02");
+    ok("birthday targets = consenting members born this month", bt.length === 1 && bt[0].birthday?.month === 10);
+    ml.recordMemberPush(bt[0].customer_hash, "birthday");
+    ok("birthday guard: already greeted this year → no target", ml.memberPushTargets(rep, "birthday", "2026-10-02").length === 0);
+    // Win-back: nobody overdue in this fixture (last visits 16 ก.ย. / 4 ต.ค.).
+    ok("win-back targets: none overdue", ml.memberPushTargets(rep, "winback", "2026-10-02").length === 0);
+    // Withdraw consent → never a target even when overdue.
+    m.setMemberMarketingConsent(bt[0].customer_hash, false);
+    ok("consent withdrawn → excluded from every audience", ml.memberPushTargets(m.memberReport({ year: 2026, todayIso: "2027-10-02" }), "birthday", "2027-10-02").length === 0);
+    m.setMemberMarketingConsent(bt[0].customer_hash, true);
+    ok("next year the birthday greeting is due again", ml.memberPushTargets(m.memberReport({ year: 2027, todayIso: "2027-10-02" }), "birthday", "2027-10-02").length === 1);
+    const card = ml.memberMessageFlex({ kind: "winback", text: "คิดถึง", branchName: "NAMA", cardUrl: "https://x/m?t=abc" });
+    ok("member message flex carries the card link and text", JSON.stringify(card).includes("https://x/m?t=abc") && card.altText.startsWith("คิดถึงนะคะ"));
+    // sendMemberMessages outside production hits the LINE dev guard (no real push) → counted as failed/skipped, nothing recorded.
+    const sendRes = await ml.sendMemberMessages({ kind: "winback", targets: bt, text: "x", sentBy: null });
+    ok("send without a branch channel token skips and records nothing", sendRes.sent === 0 && sendRes.skipped === 1 && (db.prepare("SELECT COUNT(*) AS n FROM insigna_member_pushes WHERE kind = 'winback'").get() as { n: number }).n === 0);
+  }
+
   // ── delete (right to be forgotten) ──
   const r = m.deleteMember(LINE_U1);
   ok("deleteMember removes the customer, bill links and the link token", r.deleted && m.getMemberByHash(hash1) === null && m.listLinkedBills(hash1).length === 0 && m.resolveMemberLink(t1) === null && m.countPendingBills(hash1) === 0);

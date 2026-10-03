@@ -11,6 +11,9 @@ import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { memberReport, ACQUISITION_SOURCES } from "@/lib/insigna";
 import { formatLongDate } from "@/lib/time";
+import { getLineGroupId } from "@/lib/salesa-db";
+import { getMemberMessageConfig, memberPushTargets } from "@/lib/member-line";
+import MemberSendPanel from "./MemberSendPanel";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "สมาชิก · INSIGNA" };
@@ -22,7 +25,7 @@ const sourceLabel = (k: string | null) => k ? (ACQUISITION_SOURCES.find((s) => s
 const genderTh = (g: "M" | "F" | "X" | null) => g === "F" ? "หญิง" : g === "M" ? "ชาย" : g === "X" ? "ไม่ระบุเพศ" : null;
 
 export default function InsignaMembersPage({ searchParams }: { searchParams: { year?: string; branch?: string } }) {
-  requireAdmin();
+  const user = requireAdmin();
   const todayIso = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
   const nowYear = Number(todayIso.slice(0, 4));
   const year = Number(searchParams.year) || nowYear;
@@ -34,6 +37,13 @@ export default function InsignaMembersPage({ searchParams }: { searchParams: { y
   const withVisits = r.rows.filter((m) => m.pattern);
   const noVisits = r.rows.filter((m) => !m.pattern);
   const monthPeak = Math.max(1, ...withVisits.flatMap((m) => m.pattern!.months));
+  // Sends (phase 4): the report goes to the active branch's HOD group; member
+  // messages reach consenting members not yet messaged in the guard window.
+  const activeBranchId = user.activeBranchId ?? null;
+  const hasGroup = activeBranchId != null && !!getLineGroupId(activeBranchId);
+  const cfg = getMemberMessageConfig();
+  const birthdayTargets = memberPushTargets(r, "birthday", todayIso).length;
+  const winbackTargets = memberPushTargets(r, "winback", todayIso).length;
 
   return (
     <div className="space-y-5">
@@ -89,6 +99,10 @@ export default function InsignaMembersPage({ searchParams }: { searchParams: { y
           {r.summary.areas.length > 0 && <span>ย่านที่พัก: {r.summary.areas.slice(0, 5).map((a) => `${a.area} ${a.n}`).join(" · ")}</span>}
         </div>
       )}
+
+      <MemberSendPanel year={year} branchId={branchId} hasGroup={hasGroup} activeBranchName={branchName(activeBranchId)}
+        birthdayTargets={birthdayTargets} winbackTargets={winbackTargets}
+        birthdayText={cfg.birthday_text} winbackText={cfg.winback_text} birthdayCustom={cfg.birthday_custom} winbackCustom={cfg.winback_custom} />
 
       {r.birthdays.length > 0 && (
         <div className="rounded-lg bg-pink-50 border border-pink-200 text-pink-900 px-3 py-2 text-sm">

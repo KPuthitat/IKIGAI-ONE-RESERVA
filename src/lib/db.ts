@@ -3522,6 +3522,14 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "insigna_reviews_enabled")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN insigna_reviews_enabled INTEGER NOT NULL DEFAULT 0");
   }
+  // INSIGNA member messages (owner 2026-10-03): the birthday greeting and the
+  // "we miss you" text pushed to consenting members. NULL = built-in default.
+  if (!ssCols.some((c) => c.name === "insigna_member_birthday_text")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN insigna_member_birthday_text TEXT");
+  }
+  if (!ssCols.some((c) => c.name === "insigna_member_winback_text")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN insigna_member_winback_text TEXT");
+  }
   if (!ssCols.some((c) => c.name === "insigna_review_reward_text")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN insigna_review_reward_text TEXT");
   }
@@ -7663,6 +7671,16 @@ function runMigrations(db: Database.Database): void {
       created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE (branch_id, sale_date, bill_no)
     );
+    -- Member messages already pushed (birthday greeting once a year, win-back
+    -- at most every 30 days) so a second click never repeats a message.
+    CREATE TABLE IF NOT EXISTS insigna_member_pushes (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_hash TEXT NOT NULL,
+      kind          TEXT NOT NULL,                 -- 'birthday' | 'winback'
+      sent_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      sent_by       INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_member_pushes ON insigna_member_pushes(customer_hash, kind, sent_at);
   `);
 
   // ── FEASIBILITY (project investment feasibility, owner 2026-06-16) ──
