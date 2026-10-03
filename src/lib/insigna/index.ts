@@ -197,6 +197,10 @@ export {
   type PendingBillResult
 } from "./members";
 
+// Member visit analytics (owner 2026-10-03) — the corporate-customer
+// questions asked of members, from the bills tied at checkout.
+export { memberReport, ageBandOf, type MemberReport, type MemberRow } from "./member-analytics";
+
 // Daily rollup (Phase 13). rollupYesterday() is the cron entry;
 // rollupDay(date) is the manual-recompute entry for late-arriving
 // spend imports.

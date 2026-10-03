@@ -208,6 +208,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/insigna", label: "ภาพรวม INSIGNA" },
         { href: "/admin/insigna/reviews", label: "รีวิวลูกค้า" },
         { href: "/admin/insigna/reviews/qr", label: "QR รีวิว (ติดโต๊ะ)" },
+        { href: "/admin/insigna/members", label: "สมาชิก · การมาใช้บริการ" },
         { href: "/admin/insigna/members/qr", label: "QR สมัครสมาชิก" }
       ]
     }] : []),

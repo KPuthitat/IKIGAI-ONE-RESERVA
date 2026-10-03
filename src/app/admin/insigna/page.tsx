@@ -144,6 +144,21 @@ export default function InsignaDashboard() {
         <span className="text-slate-300 group-hover:text-brand">→</span>
       </Link>
 
+      {/* Membership (owner 2026-10-03) */}
+      <Link
+        href="/admin/insigna/members"
+        className="card flex items-center gap-3 hover:border-brand transition group"
+      >
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 text-xl">✦</span>
+        <div className="flex-1">
+          <div className="font-bold text-slate-800">สมาชิก · การมาใช้บริการ</div>
+          <div className="text-xs text-slate-500">
+            สมัครผ่าน LINE (หมายเลข YYMMXXXX) · พนักงานสแกนบัตรตอนชำระเงิน · มาบ่อยแค่ไหน มักมาช่วงไหน ใครเงียบไป ใครเกิดเดือนนี้
+          </div>
+        </div>
+        <span className="text-slate-300 group-hover:text-brand">→</span>
+      </Link>
+
       {/* Sandbox — only super_admin can fire test events */}
       {user.role === "super_admin" && <Sandbox />}
 

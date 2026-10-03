@@ -82,8 +82,36 @@ process.env.INSIGNA_SALT = "test-salt-test-salt-test-salt-1234";
 
   // ── list + reverse lookup for consented pushes ──
   ok("listMembers returns the member (branch filter works)", m.listMembers().length === 1 && m.listMembers({ branchId: A }).length === 1 && m.listMembers({ branchId: 999 }).length === 0);
+  // (the analytics block below adds a second member; the delete block at the end removes only the first)
   const ids = m.lineUserIdsForHashes([hash1, "deadbeef"]);
   ok("lineUserIdsForHashes maps hash → LINE id via the operational table only", ids.get(hash1) === LINE_U1 && ids.size === 1);
+
+  // ── member visit analytics (shared engine with the corporate customers) ──
+  {
+    const LINE_U2 = "Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2";
+    const hash2 = m.hashLineUserId(LINE_U2);
+    m.getOrCreateMemberLink(LINE_U2, A);
+    m.registerMember({ customer_hash: hash2, signup_branch_id: A, birth_day: 20, birth_month: 10, birth_year: 1988, gender: "M", home_area: "บ่อวิน", acquisition_source: "google", consent_marketing: true, todayIso: "2026-10-01" });
+    const ins = db.prepare("INSERT INTO salesa_receipts (branch_id,sale_date,bill_no,hour,table_name,gross,discount,nett,payment) VALUES (?,?,?,?,?,?,?,?,?)");
+    // Two bills on 2026-08-19 (one visit, 1,000 total), then 2026-09-08 and 2026-09-16 (Wednesdays / Tuesday as in the corporate test).
+    ins.run(A, "2026-08-19", "2001", 12, "T", 600, 0, 600, "cash"); ins.run(A, "2026-08-19", "2002", 13, "T", 400, 0, 400, "cash");
+    ins.run(A, "2026-09-08", "2003", 12, "T", 1236, 0, 1236, "cash"); ins.run(A, "2026-09-16", "2004", 12, "T", 1413, 0, 1413, "cash");
+    for (const b of ["2001", "2002"]) m.addMemberBill({ customer_hash: hash2, branch_id: A, sale_date: "2026-08-19", bill_no: b });
+    m.addMemberBill({ customer_hash: hash2, branch_id: A, sale_date: "2026-09-08", bill_no: "2003" });
+    m.addMemberBill({ customer_hash: hash2, branch_id: A, sale_date: "2026-09-16", bill_no: "2004" });
+    db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-09-09", "วันทดสอบสมาชิก", "MemberTest");
+    const rep = m.memberReport({ year: 2026, todayIso: "2026-10-02" });
+    const row = rep.rows.find((x) => x.customer_hash === hash2)!;
+    // member_since is the real sign-up instant, so "new this month" counts both test members when the suite runs in the month of todayIso.
+    const realYm = new Date().toISOString().slice(0, 7);
+    ok("report: 2 members, 1 with visits, new-this-month from member_since, birthdays this month = member 2", rep.summary.members === 2 && rep.summary.withVisits === 2 && rep.summary.newThisMonth === (realYm === "2026-10" ? 2 : 0) && rep.summary.birthdaysThisMonth === 1 && rep.birthdays[0].member_code === row.member_code && rep.birthdays[0].day === 20);
+    ok("report: same-day bills merge into one visit (3 visits, 3,649 this year)", row.pattern?.visitsYear === 3 && row.pattern?.spendYear === 3649 && row.pattern?.avgPerVisit === 1216.33);
+    ok("report: pattern fields — กลางเดือน 2/3, วันพุธ 2/3, near the test holiday once, gap 14 days, not overdue", row.pattern?.phase?.key === "mid" && row.pattern?.phase?.count === 2 && row.pattern?.weekday?.label === "พุธ" && row.pattern?.nearHoliday.count === 1 && row.pattern?.avgGapDays === 14 && row.pattern?.overdue === false && row.pattern?.months[7] === 1 && row.pattern?.months[8] === 2);
+    ok("report: demographics — gender M, age band 30–39, area, source, consent", row.gender === "M" && row.ageBand === "30–39" && row.home_area === "บ่อวิน" && row.source === "google" && row.consent_marketing && rep.summary.genders.M === 1 && rep.summary.genders.F === 1 && rep.summary.areas[0].area === "บ่อวิน");
+    ok("report: rows with visits sort first; the branch filter drops visits of other branches", rep.rows[0].customer_hash === hash2 && m.memberReport({ year: 2026, todayIso: "2026-10-02", branchId: 999 }).summary.withVisits === 0);
+    ok("report: a year without visits keeps the member with zero figures", m.memberReport({ year: 2025, todayIso: "2026-10-02" }).rows.find((x) => x.customer_hash === hash2)?.pattern?.visitsYear === 0);
+    ok("ageBandOf edges", m.ageBandOf(2010, "2026-10-02") === "ต่ำกว่า 20" && m.ageBandOf(1950, "2026-10-02") === "70 ขึ้นไป" && m.ageBandOf(null, "2026-10-02") === null);
+  }
 
   // ── delete (right to be forgotten) ──
   const r = m.deleteMember(LINE_U1);
