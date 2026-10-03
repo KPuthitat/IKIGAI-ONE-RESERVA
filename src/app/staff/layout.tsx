@@ -160,6 +160,14 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/walk-in", label: t(lang, "staff.walkIn.title") }
       ]
     },
+    // INSIGNA สมาชิก — every employee (owner 2026-10-03): scan the member QR at
+    // checkout to tie the bill to the member. Staff see only the member code.
+    {
+      label: "สมาชิก",
+      items: [
+        { href: gate("/staff/insigna/scan"), label: "สแกนบัตรสมาชิก (ตอนชำระเงิน)" }
+      ]
+    },
     // ความเสี่ยง / IR — every employee (owner 2026-10-01): file an incident
     // yourself, read the branch's reports, and the writing guide.
     {
