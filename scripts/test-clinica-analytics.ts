@@ -256,6 +256,7 @@ process.env.DATABASE_PATH = TMP;
     ok("top: HN-A appears separately under บริษัท ข (per-group ranking)", all.groups.find((g) => g.group === "ประกันกลุ่ม บริษัท ข")?.top[0].hn === "HN-A");
     const yr = ca.clinicaTopSpenders(b2, { scope: "year", year: 2026 });
     ok("top: this-year scope drops the 2025 bill (HN-A cash falls to 2,000 so HN-B 2,500 leads; coverage from Feb)", yr.from === "2026-02-01" && yr.bills === 6 && yr.groups.find((g) => g.group === "เงินสด")?.top[0].hn === "HN-B" && yr.groups.find((g) => g.group === "เงินสด")?.top[1].net === 2000);
+    ok("top: each ranked patient carries a visit pattern (HN-A cash: 2 visits, last 2026-02-01, same-day merge)", (() => { const a = ca.clinicaTopSpenders(b2, { scope: "year", year: 2026 }).groups.find((g) => g.group === "เงินสด")!.top; const hnB = a.find((t) => t.hn === "HN-B")!.pattern; return !!hnB && hnB.visitsYear === 1 && hnB.lastVisit === "2026-03-01" && hnB.months[2] === 1 && hnB.cadence === "มาครั้งเดียว"; })());
     ok("top: limit caps the ranking", ca.clinicaTopSpenders(b2, { scope: "all", limit: 1 }).groups[0].top.length === 1);
     ok("top: a branch without bills → empty", ca.clinicaTopSpenders(999).groups.length === 0 && ca.clinicaTopSpenders(999).bills === 0);
   }

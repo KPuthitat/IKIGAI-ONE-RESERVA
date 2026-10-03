@@ -8,6 +8,8 @@ import { getDb } from "./db";
 import { clinicaPaidPct } from "./clinica-shared";
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
 import { eventNotesForDay, eventNotesForRange, type EventNoteDay } from "./event-notes";
+import { visitPattern, monthsCovered, type VisitPattern } from "./visit-pattern";
+import { holidaysAround } from "./salesa-corporate";
 
 function round2(n: number): number { return Math.round((n + Number.EPSILON) * 100) / 100; }
 function addDaysIso(iso: string, n: number): string {
@@ -504,7 +506,7 @@ export function clinicaDay(branchId: number, date: string): ClinicaDailyReport {
 // UI keeps the panel hidden until the owner opens it. The export has no
 // payment-method column, so เงินสด here covers cash and PromptPay together.
 
-export type TopSpender = { rank: number; hn: string; net: number; paid: number; due: number; bills: number; firstDate: string; lastDate: string };
+export type TopSpender = { rank: number; hn: string; net: number; paid: number; due: number; bills: number; firstDate: string; lastDate: string; pattern: VisitPattern | null };
 export type TopSpenderGroup = { group: string; net: number; paid: number; due: number; bills: number; patients: number; top: TopSpender[] };
 export type ClinicaTopSpenders = {
   scope: "all" | "year";
@@ -537,9 +539,22 @@ export function clinicaTopSpenders(branchId: number, opts: { scope?: "all" | "ye
       WHERE branch_id=? AND bill_date BETWEEN ? AND ? AND COALESCE(NULLIF(payer_group,''),'(ไม่ระบุ)') = ? AND NULLIF(hn,'') IS NOT NULL
       GROUP BY hn ORDER BY net DESC, bills DESC, hn LIMIT ?`
   );
+  const billStmt = db.prepare(
+    `SELECT bill_date date, ROUND(SUM(net),2) total FROM clinica_bills
+      WHERE branch_id=? AND bill_date BETWEEN ? AND ? AND COALESCE(NULLIF(payer_group,''),'(ไม่ระบุ)') = ? AND hn = ? AND bill_date <> ''
+      GROUP BY bill_date ORDER BY bill_date`
+  );
+  const todayIso = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const covered = monthsCovered(scope === "year" ? year : Number(todayIso.slice(0, 4)), cov.f, todayIso);
+  const holidays = holidaysAround(scope === "year" ? year : Number(todayIso.slice(0, 4)));
   const groups: TopSpenderGroup[] = groupRows.map((g) => ({
     group: g.grp, net: g.net, paid: g.paid, due: g.due, bills: g.bills, patients: g.patients,
-    top: (topStmt.all(branchId, start, end, g.grp, limit) as Array<Omit<TopSpender, "rank">>).map((r, i) => ({ rank: i + 1, ...r, firstDate: r.firstDate ?? "", lastDate: r.lastDate ?? "" }))
+    top: (topStmt.all(branchId, start, end, g.grp, limit) as Array<Omit<TopSpender, "rank" | "pattern">>).map((r, i) => {
+      // Visit pattern from this patient's bills in the group (same-day bills = one visit).
+      const days = billStmt.all(branchId, start, end, g.grp, r.hn) as Array<{ date: string; total: number }>;
+      const pattern = days.length ? visitPattern(days, { year: scope === "year" ? year : Number(todayIso.slice(0, 4)), todayIso, monthsCovered: covered, holidays }) : null;
+      return { rank: i + 1, ...r, firstDate: r.firstDate ?? "", lastDate: r.lastDate ?? "", pattern };
+    })
   }));
   return { scope, from: cov.f, to: cov.t, patients: cov.patients, bills: cov.bills, net: cov.net ?? 0, groups };
 }
