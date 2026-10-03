@@ -2307,7 +2307,7 @@ function ExtremesCard({ x, nowLabel }: { x: DayExtremes; nowLabel: string }) {
                 </div>
                 <div className="text-right whitespace-nowrap">
                   <div className="text-sm font-bold text-slate-800">{baht(d.nett)}</div>
-                  <div className="text-[10px] text-slate-500">{intTh(d.bills)} บิล{d.avgTicket != null ? ` · ฿${intTh(Math.round(d.avgTicket))}/บิล` : ""}</div>
+                  <div className="text-[10px] text-slate-500">{intTh(d.bills)} บิล{d.avgTicket != null ? ` · ${intTh(Math.round(d.avgTicket))} บาท/บิล` : ""}</div>
                 </div>
               </div>
               <div className="text-[11px] text-slate-500 mt-0.5">

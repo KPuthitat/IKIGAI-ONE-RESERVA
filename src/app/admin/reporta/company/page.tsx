@@ -146,15 +146,15 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                 and all four sit evenly (owner 2026-09-24). */}
             <div className={`card col-span-2 ${ov.isCurrentMonth ? "md:col-span-1" : "md:col-span-2"}`}>
               <div className="text-xs text-slate-500">ยอดขายรวม (วันที่ 1–{ov.throughDay})</div>
-              <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">฿{baht(t.mtdNett)}</div>
-              <div className="text-[11px] mt-0.5">เทียบเดือนก่อน <Pct pct={t.momPct} />{t.prevSameNett != null ? <span className="text-slate-400"> (฿{baht(t.prevSameNett)})</span> : null}</div>
-              <div className="text-[11px]">เทียบปีก่อน <Pct pct={t.lastYearPct} />{t.lastYearNett != null ? <span className="text-slate-400"> (฿{baht(t.lastYearNett)})</span> : null}</div>
-              {ov.revshareIncome > 0 && <div className="text-[10px] text-violet-600 mt-0.5">รวมส่วนแบ่งยอดขายรายเดือน ฿{baht(ov.revshareIncome)} (นอก POS)</div>}
+              <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">{baht(t.mtdNett)} บาท</div>
+              <div className="text-[11px] mt-0.5">เทียบเดือนก่อน <Pct pct={t.momPct} />{t.prevSameNett != null ? <span className="text-slate-400"> ({baht(t.prevSameNett)} บาท)</span> : null}</div>
+              <div className="text-[11px]">เทียบปีก่อน <Pct pct={t.lastYearPct} />{t.lastYearNett != null ? <span className="text-slate-400"> ({baht(t.lastYearNett)} บาท)</span> : null}</div>
+              {ov.revshareIncome > 0 && <div className="text-[10px] text-violet-600 mt-0.5">รวมส่วนแบ่งยอดขายรายเดือน {baht(ov.revshareIncome)} บาท (นอก POS)</div>}
             </div>
             {ov.isCurrentMonth && (
               <div className="card">
                 <div className="text-xs text-slate-500">ยอดขายวันนี้ (รวมสาขา)</div>
-                <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">฿{baht(t.todayNett ?? 0)}</div>
+                <div className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">{baht(t.todayNett ?? 0)} บาท</div>
               </div>
             )}
             <div className="card">
@@ -172,13 +172,13 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
           {ov.target && (
             <div className="card space-y-1">
               <div className="flex items-baseline justify-between gap-2 text-sm">
-                <span className="text-slate-500">เป้ารายเดือนรวม ({ov.targetedBranchCount} สาขาที่ตั้งเป้า) · ฿{baht(ov.target.target)}</span>
+                <span className="text-slate-500">เป้ารายเดือนรวม ({ov.targetedBranchCount} สาขาที่ตั้งเป้า) · {baht(ov.target.target)} บาท</span>
                 <span className={`font-bold ${ov.target.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{ov.target.pctOfTarget.toFixed(0)}% ของเป้า</span>
               </div>
               <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
                 <div className={`h-full ${ov.target.pctOfTarget >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, ov.target.pctOfTarget)}%` }} />
               </div>
-              <div className="text-[11px] text-slate-500">คาดสิ้นเดือน <b className={ov.target.onTrack ? "text-emerald-600" : "text-amber-600"}>฿{baht(ov.target.projectedNett)}</b> ({ov.target.projectedPct.toFixed(0)}% ของเป้า) · {ov.target.onTrack ? "มีแนวโน้มถึงเป้า ✓" : "ต่ำกว่าเป้า ต้องเร่ง"}</div>
+              <div className="text-[11px] text-slate-500">คาดสิ้นเดือน <b className={ov.target.onTrack ? "text-emerald-600" : "text-amber-600"}>{baht(ov.target.projectedNett)} บาท</b> ({ov.target.projectedPct.toFixed(0)}% ของเป้า) · {ov.target.onTrack ? "มีแนวโน้มถึงเป้า ✓" : "ต่ำกว่าเป้า ต้องเร่ง"}</div>
             </div>
           )}
 
@@ -186,14 +186,14 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
           {ov.annual && (
             <div className="card space-y-1">
               <div className="flex items-baseline justify-between gap-2 text-sm">
-                <span className="text-slate-500">เป้าทั้งปี พ.ศ. {ov.annual.year + 543} รวมบริษัท · ฿{baht(ov.annual.annualTarget)}</span>
+                <span className="text-slate-500">เป้าทั้งปี พ.ศ. {ov.annual.year + 543} รวมบริษัท · {baht(ov.annual.annualTarget)} บาท</span>
                 <span className={`font-bold ${ov.annual.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{ov.annual.pctOfTarget.toFixed(0)}% ของเป้า</span>
               </div>
-              {ov.annual.prorated && <div className="text-[11px] text-slate-400">สาขาที่เพิ่งเปิดปีนี้คิดเป้าตามวันที่เปิดจริง (เต็มปีทุกสาขา ฿{baht(ov.annual.fullYearTarget)})</div>}
+              {ov.annual.prorated && <div className="text-[11px] text-slate-400">สาขาที่เพิ่งเปิดปีนี้คิดเป้าตามวันที่เปิดจริง (เต็มปีทุกสาขา {baht(ov.annual.fullYearTarget)} บาท)</div>}
               <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
                 <div className={`h-full ${ov.annual.pctOfTarget >= 100 ? "bg-emerald-500" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, ov.annual.pctOfTarget)}%` }} />
               </div>
-              <div className="text-[11px] text-slate-500">YTD ฿{baht(ov.annual.ytdNett)} · คาดสิ้นปี <b className={ov.annual.onTrack ? "text-emerald-600" : "text-amber-600"}>฿{baht(ov.annual.projectedNett)}</b> ({ov.annual.projectedPct.toFixed(0)}% ของเป้า)</div>
+              <div className="text-[11px] text-slate-500">YTD {baht(ov.annual.ytdNett)} บาท · คาดสิ้นปี <b className={ov.annual.onTrack ? "text-emerald-600" : "text-amber-600"}>{baht(ov.annual.projectedNett)} บาท</b> ({ov.annual.projectedPct.toFixed(0)}% ของเป้า)</div>
             </div>
           )}
 
@@ -227,14 +227,14 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                         <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden mt-1 w-28">
                           <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${Math.max(2, (b.mtdNett / maxMtd) * 100)}%` }} />
                         </div>
-                        {b.revshareIncome > 0 && <div className="text-[10px] text-violet-600 mt-0.5">+ ส่วนแบ่ง ฿{baht(b.revshareIncome)}</div>}
+                        {b.revshareIncome > 0 && <div className="text-[10px] text-violet-600 mt-0.5">+ ส่วนแบ่ง {baht(b.revshareIncome)} บาท</div>}
                       </td>
-                      <td className="py-2 px-2 text-right font-semibold text-slate-700">฿{baht(b.mtdNett)}</td>
+                      <td className="py-2 px-2 text-right font-semibold text-slate-700">{baht(b.mtdNett)} บาท</td>
                       <td className="py-2 px-2 text-right"><Pct pct={b.momPct} /></td>
                       <td className="py-2 px-2 text-right"><Pct pct={b.lastYearPct} /></td>
-                      <td className="py-2 px-2 text-right text-slate-500">{b.monthTarget != null ? `฿${baht(b.monthTarget)}` : "—"}</td>
+                      <td className="py-2 px-2 text-right text-slate-500">{b.monthTarget != null ? `${baht(b.monthTarget)} บาท` : "—"}</td>
                       <td className="py-2 px-2 text-right text-slate-500">{b.pctOfTarget != null ? `${b.pctOfTarget.toFixed(0)}%` : "—"}</td>
-                      {ov.isCurrentMonth && <td className="py-2 px-2 text-right text-slate-500">{b.todayNett != null ? `฿${baht(b.todayNett)}` : "—"}</td>}
+                      {ov.isCurrentMonth && <td className="py-2 px-2 text-right text-slate-500">{b.todayNett != null ? `${baht(b.todayNett)} บาท` : "—"}</td>}
                       <td className="py-2 pl-2 text-right text-slate-500">{b.bills.toLocaleString("th-TH")}</td>
                     </tr>
                   ))}
@@ -242,12 +242,12 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                 <tfoot>
                   <tr className="border-t-2 border-slate-200 font-bold">
                     <td className="py-2 pr-2 sticky left-0 bg-white">รวมบริษัท</td>
-                    <td className="py-2 px-2 text-right">฿{baht(t.mtdNett)}</td>
+                    <td className="py-2 px-2 text-right">{baht(t.mtdNett)} บาท</td>
                     <td className="py-2 px-2 text-right"><Pct pct={t.momPct} /></td>
                     <td className="py-2 px-2 text-right"><Pct pct={t.lastYearPct} /></td>
-                    <td className="py-2 px-2 text-right text-slate-500">{ov.target ? `฿${baht(ov.target.target)}` : "—"}</td>
+                    <td className="py-2 px-2 text-right text-slate-500">{ov.target ? `${baht(ov.target.target)} บาท` : "—"}</td>
                     <td className="py-2 px-2 text-right text-slate-500">{ov.target ? `${ov.target.pctOfTarget.toFixed(0)}%` : "—"}</td>
-                    {ov.isCurrentMonth && <td className="py-2 px-2 text-right text-slate-500">฿{baht(t.todayNett ?? 0)}</td>}
+                    {ov.isCurrentMonth && <td className="py-2 px-2 text-right text-slate-500">{baht(t.todayNett ?? 0)} บาท</td>}
                     <td className="py-2 pl-2 text-right text-slate-500">{t.bills.toLocaleString("th-TH")}</td>
                   </tr>
                 </tfoot>
@@ -255,7 +255,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
             </div>
             <p className="text-[11px] text-slate-400 mt-2">
               ทำได้ = ยอดขายสะสมถึงวันที่ {ov.throughDay} ÷ เป้าทั้งเดือน
-              {ov.target ? ` · แถวรวม “ทำได้” นับเฉพาะ ${ov.targetedBranchCount} สาขาที่ตั้งเป้า (฿${baht(ov.target.mtdNett)} ÷ ฿${baht(ov.target.target)})` : ""}
+              {ov.target ? ` · แถวรวม “ทำได้” นับเฉพาะ ${ov.targetedBranchCount} สาขาที่ตั้งเป้า (${baht(ov.target.mtdNett)} บาท ÷ ${baht(ov.target.target)} บาท)` : ""}
             </p>
           </div>
 
@@ -267,9 +267,9 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
               <div className="text-[11px] text-slate-400">{thDate(wk.weekStart)}–{thDate(wk.throughIso)} · {wk.dayCount} วัน</div>
             </div>
             <div className="flex items-baseline gap-3 flex-wrap">
-              <span className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">฿{baht(wk.total.nett)}</span>
+              <span className="text-lg sm:text-xl font-bold text-slate-800 tabular-nums">{baht(wk.total.nett)} บาท</span>
               <span className="text-sm"><Pct pct={wk.total.wowPct} /></span>
-              {wk.total.prevNett != null && <span className="text-[11px] text-slate-400">สัปดาห์ก่อน ฿{baht(wk.total.prevNett)}</span>}
+              {wk.total.prevNett != null && <span className="text-[11px] text-slate-400">สัปดาห์ก่อน {baht(wk.total.prevNett)} บาท</span>}
               <span className="text-[11px] text-slate-400">· {wk.total.bills.toLocaleString("th-TH")} บิล · {wk.total.pax.toLocaleString("th-TH")} คน</span>
             </div>
             <div className="overflow-x-auto">
@@ -282,8 +282,8 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                   {wk.branches.map((b) => (
                     <tr key={b.branchId} className="border-b border-slate-50">
                       <td className="py-1.5 pr-2 text-slate-700 sticky left-0 bg-white">{b.branchName}</td>
-                      <td className="py-1.5 px-2 text-right font-semibold text-slate-700">฿{baht(b.nett)}</td>
-                      <td className="py-1.5 px-2 text-right text-slate-500">{b.prevNett != null ? `฿${baht(b.prevNett)}` : "—"}</td>
+                      <td className="py-1.5 px-2 text-right font-semibold text-slate-700">{baht(b.nett)} บาท</td>
+                      <td className="py-1.5 px-2 text-right text-slate-500">{b.prevNett != null ? `${baht(b.prevNett)} บาท` : "—"}</td>
                       <td className="py-1.5 pl-2 text-right"><Pct pct={b.wowPct} /></td>
                     </tr>
                   ))}
@@ -304,11 +304,11 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                   <div key={b.branchId}>
                     <div className="flex items-baseline justify-between gap-2 mb-1">
                       <span className="text-sm font-semibold text-slate-800">{b.branchName}</span>
-                      <span className="text-xs text-slate-500">รวม ฿{baht(b.total)}{b.growthPct != null && <span className="ml-2"><Pct pct={b.growthPct} /></span>}</span>
+                      <span className="text-xs text-slate-500">รวม {baht(b.total)} บาท{b.growthPct != null && <span className="ml-2"><Pct pct={b.growthPct} /></span>}</span>
                     </div>
                     <div className="flex items-end gap-1 h-20">
                       {b.months.map((v, i) => (
-                        <div key={i} className="flex-1 flex flex-col items-center justify-end h-full" title={`${TH_MONTHS[i + 1]}: ${v == null ? "ไม่มีข้อมูล" : `฿${baht(v)}`}`}>
+                        <div key={i} className="flex-1 flex flex-col items-center justify-end h-full" title={`${TH_MONTHS[i + 1]}: ${v == null ? "ไม่มีข้อมูล" : `${baht(v)} บาท`}`}>
                           <div className={`w-full rounded-t ${b.peakMonth === i + 1 ? "bg-emerald-500" : "bg-emerald-300"}`} style={{ height: v == null ? "0%" : `${Math.max(2, (v / peak) * 100)}%` }} />
                         </div>
                       ))}
@@ -351,7 +351,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                               : <span className="text-[11px] text-slate-300">ยังไม่มีประวัติ</span>}
                           </div>
                           {b.expectedNett != null && (
-                            <div className="text-[11px] text-slate-500">คาดยอด ~฿{baht(b.expectedNett)} (ปกติ ฿{baht(b.baselineDaily ?? 0)}/วัน)</div>
+                            <div className="text-[11px] text-slate-500">คาดยอด ~{baht(b.expectedNett)} บาท (ปกติ {baht(b.baselineDaily ?? 0)} บาท/วัน)</div>
                           )}
                           {b.basis !== "none" && b.sampleCount > 0 && (
                             <div className="text-[10px] text-slate-400">
@@ -398,7 +398,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                           <td key={c.branchId} className="py-2 px-2 text-right">
                             {c.sales == null ? <span className="text-slate-300">—</span> : (
                               <>
-                                <div className="font-semibold text-slate-700 tabular-nums">฿{baht(c.sales)}</div>
+                                <div className="font-semibold text-slate-700 tabular-nums">{baht(c.sales)} บาท</div>
                                 {c.upliftPct != null && <div className="text-[11px]"><Pct pct={c.upliftPct} /></div>}
                               </>
                             )}
@@ -430,7 +430,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                           {b.items.map((it, i) => (
                             <div key={it.name} className="flex items-baseline justify-between gap-2 text-sm">
                               <span className="text-slate-700 truncate">{i + 1}. {it.name}</span>
-                              <span className="tabular-nums text-slate-600 whitespace-nowrap">฿{baht(it.nett)}</span>
+                              <span className="tabular-nums text-slate-600 whitespace-nowrap">{baht(it.nett)} บาท</span>
                             </div>
                           ))}
                         </div>
@@ -443,7 +443,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                           {b.categories.map((c, i) => (
                             <div key={c.name} className="flex items-baseline justify-between gap-2 text-sm">
                               <span className="text-slate-700 truncate">{i + 1}. {c.name}</span>
-                              <span className="tabular-nums text-slate-600 whitespace-nowrap">฿{baht(c.nett)}</span>
+                              <span className="tabular-nums text-slate-600 whitespace-nowrap">{baht(c.nett)} บาท</span>
                             </div>
                           ))}
                         </div>

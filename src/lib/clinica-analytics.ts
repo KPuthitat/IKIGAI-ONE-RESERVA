@@ -87,7 +87,7 @@ export type ClinicaWeek = {
 
 const CAT_LABEL: Record<string, string> = { service: "ค่าบริการ/ตรวจ", drug: "ยา", lab: "แล็บ", package: "แพ็กเกจตรวจสุขภาพ", other: "อื่นๆ" };
 
-const bahtTh = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
+const bahtTh = (n: number) => `${Math.round(n).toLocaleString("th-TH")} บาท`;
 
 /** Auto executive summary + recommendations for the clinic month — the น้องฮูก
  *  card that mirrors the restaurant's "สรุป & คำแนะนำ" (owner 2026-09-26: make

@@ -15,7 +15,7 @@ export type { ClinicaMonth };
 // mix, revenue categories, top ยา/แล็บ, diagnoses, doctors and peak hours. Every
 // money figure carries its count (ครั้ง) in parentheses.
 
-const baht = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
+const baht = (n: number) => `${Math.round(n).toLocaleString("th-TH")} บาท`;
 /** Money with its count in parentheses — the house style (owner 2026-09-26). */
 const bahtC = (n: number, c: number) => `${baht(n)} (${c.toLocaleString("th-TH")} ครั้ง)`;
 const intTh = (n: number) => n.toLocaleString("th-TH");

@@ -79,7 +79,7 @@ export default function LinkedBillsPanel({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
           {[
             { label: "มาแล้ว", v: `${stats.distinctDays} วัน`, sub: `${stats.billCount} บิล` },
-            { label: "ยอดซื้อรวม", v: `฿${money(stats.totalNett)}`, sub: stats.avgNett != null ? `เฉลี่ย ฿${money(stats.avgNett)}/บิล` : "" },
+            { label: "ยอดซื้อรวม", v: `${money(stats.totalNett)} บาท`, sub: stats.avgNett != null ? `เฉลี่ย ${money(stats.avgNett)} บาท/บิล` : "" },
             { label: "เวลาที่ชอบมา", v: stats.peakHour != null ? `${String(stats.peakHour).padStart(2, "0")}:00` : "—", sub: "ช่วงที่มาบ่อยสุด" },
             { label: "มาล่าสุด", v: stats.lastVisit ?? "—", sub: stats.firstVisit ? `ครั้งแรก ${stats.firstVisit}` : "" }
           ].map((s) => (
@@ -156,7 +156,7 @@ export default function LinkedBillsPanel({
               <span className="text-slate-500 w-24">{b.sale_date}</span>
               <span className="text-slate-400">{String(b.hour).padStart(2, "0")}:00</span>
               {b.table_name && <span className="text-slate-400">· {b.table_name}</span>}
-              <span className="ml-auto font-bold text-slate-700 tabular-nums">฿{money(b.nett)}</span>
+              <span className="ml-auto font-bold text-slate-700 tabular-nums">{money(b.nett)} บาท</span>
               <button type="button" onClick={() => unlink(b)} disabled={busy}
                 className="text-slate-300 hover:text-rose-500 px-1" aria-label="ยกเลิกการผูก">×</button>
             </div>

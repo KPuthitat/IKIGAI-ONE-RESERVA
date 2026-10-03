@@ -10,7 +10,7 @@ import EventNotesView from "./EventNotesView";
 // and the week's top revenue items. The card shell (title, week stepper,
 // วิเคราะห์อีกครั้ง) lives in ReportaClient, exactly like the restaurant weekly card.
 
-const baht = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
+const baht = (n: number) => `${Math.round(n).toLocaleString("th-TH")} บาท`;
 const intTh = (n: number) => n.toLocaleString("th-TH");
 
 function Kpi({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
