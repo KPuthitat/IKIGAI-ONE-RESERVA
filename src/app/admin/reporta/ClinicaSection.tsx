@@ -44,6 +44,105 @@ function Bar({ value, max, tone = "bg-brand" }: { value: number; max: number; to
   );
 }
 
+type TopSpender = { rank: number; hn: string; net: number; paid: number; due: number; bills: number; firstDate: string; lastDate: string };
+type TopSpenderGroup = { group: string; net: number; paid: number; due: number; bills: number; patients: number; top: TopSpender[] };
+type ClinicaTopSpenders = { scope: "all" | "year"; from: string | null; to: string | null; patients: number; bills: number; net: number; groups: TopSpenderGroup[] };
+
+/** "ใคร 10 อันดับแรกของแต่ละสิทธิ์" — cumulative spend per patient (HN) within
+ *  each payer group (เงินสด, each insurer / corporate). Hidden by default and
+ *  fetched only when opened (owner 2026-10-03: ซ่อนไว้ กดเปิดดูได้), so HN-level
+ *  figures never ride along in the month payload. For granting privileges. */
+function TopSpendersPanel() {
+  const [open, setOpen] = useState(false);
+  const [scope, setScope] = useState<"all" | "year">("all");
+  const [data, setData] = useState<ClinicaTopSpenders | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [showAll, setShowAll] = useState<Record<string, boolean>>({});
+
+  async function load(s: "all" | "year") {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/admin/reporta/view?clinicaTop=1&scope=${s}`, { cache: "no-store" }).then((x) => x.json());
+      if (r?.ok) setData(r.clinicaTop);
+    } catch { /* keep the previous view */ } finally { setBusy(false); }
+  }
+  const toggle = () => { const next = !open; setOpen(next); if (next && (!data || data.scope !== scope)) load(scope); };
+  const pick = (s: "all" | "year") => { setScope(s); load(s); };
+
+  return (
+    <div className="card space-y-2">
+      <button type="button" onClick={toggle} className="w-full flex items-center justify-between gap-2 text-left">
+        <div>
+          <h3 className="font-bold text-slate-800 text-sm">ผู้ใช้จ่ายสูงสุดตามสิทธิ์ (10 อันดับแรก)</h3>
+          <p className="text-[11px] text-slate-500 mt-0.5">ยอดสะสมต่อคนไข้ (HN) แยกตามกลุ่มผู้จ่าย: เงินสด ประกันกลุ่มแต่ละบริษัท — สำหรับพิจารณามอบสิทธิพิเศษ · ซ่อนไว้ กดเพื่อเปิดดู</p>
+        </div>
+        <span className="text-slate-400 text-xs shrink-0">{open ? "▲ ซ่อน" : "▼ เปิดดู"}</span>
+      </button>
+      {open && (
+        <div className="space-y-3 pt-1 border-t border-slate-100">
+          <div className="flex items-center gap-1.5 text-xs">
+            {(["all", "year"] as const).map((s) => (
+              <button key={s} type="button" onClick={() => pick(s)}
+                className={`px-2.5 py-1 rounded-full border ${scope === s ? "bg-brand text-white border-brand" : "bg-white text-slate-600 border-slate-200"}`}>
+                {s === "all" ? "สะสมทั้งหมดที่นำเข้า" : "เฉพาะปีนี้"}
+              </button>
+            ))}
+            {data && data.from && data.to && <span className="text-slate-400 ml-1">ข้อมูล {thaiDate(data.from)} – {thaiDate(data.to)} · {intTh(data.patients)} คนไข้ · {intTh(data.bills)} บิล · {baht(data.net)}</span>}
+          </div>
+          {busy ? (
+            <p className="text-sm text-slate-400 text-center py-3">กำลังโหลด…</p>
+          ) : !data || data.groups.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-3">ยังไม่มีบิลในช่วงนี้</p>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-3">
+              {data.groups.map((g) => {
+                const rows = showAll[g.group] ? g.top : g.top.slice(0, 10);
+                return (
+                  <div key={g.group} className="rounded-xl border border-slate-100 p-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="font-semibold text-slate-800 text-sm truncate">{g.group}</div>
+                      <div className="text-[11px] text-slate-500 whitespace-nowrap">{bahtC(g.net, g.bills)} · {intTh(g.patients)} คนไข้</div>
+                    </div>
+                    {g.due > 0.5 && <div className="text-[11px] text-rose-500">ค้างเบิก {baht(g.due)}</div>}
+                    <table className="w-full text-[11px] mt-2">
+                      <thead>
+                        <tr className="text-slate-400 border-b border-slate-100">
+                          <th className="text-left py-1 w-6">#</th>
+                          <th className="text-left py-1">HN</th>
+                          <th className="text-right py-1">ยอดสะสม</th>
+                          <th className="text-right py-1">บิล</th>
+                          <th className="text-right py-1 whitespace-nowrap">ล่าสุด</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((t) => (
+                          <tr key={t.hn} className="border-b border-slate-50">
+                            <td className="py-1 text-slate-400">{t.rank}</td>
+                            <td className="py-1 font-mono text-slate-700">{t.hn}</td>
+                            <td className="py-1 text-right tabular-nums text-slate-800 font-medium">{baht(t.net)}{t.due > 0.5 && <span className="text-rose-500"> (ค้าง {baht(t.due)})</span>}</td>
+                            <td className="py-1 text-right tabular-nums text-slate-600">{intTh(t.bills)}</td>
+                            <td className="py-1 text-right text-slate-500 whitespace-nowrap">{t.lastDate ? thaiDate(t.lastDate) : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {g.top.length > 10 && (
+                      <button type="button" onClick={() => setShowAll((v) => ({ ...v, [g.group]: !v[g.group] }))} className="text-[11px] text-brand mt-1">
+                        {showAll[g.group] ? "แสดง 10 อันดับ" : `ดูทั้งหมด ${g.top.length}`}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="text-[10px] text-slate-400">ระบุด้วยรหัสคนไข้ (HN) จากไฟล์ Invoice เท่านั้น ไม่มีชื่อ · ไฟล์ไม่ระบุวิธีชำระ กลุ่ม “เงินสด” จึงรวมเงินสดและพร้อมเพย์ · ยอดสะสม = รวมสุทธิของบิลทั้งหมดในช่วงที่เลือก</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disabledReason, hours, onSendDay }: {
   c: ClinicaMonth;
   onSendReport?: () => void;
@@ -345,6 +444,9 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
           ))}
         </div>
       )}
+
+      {/* Top spenders per payer group (owner 2026-10-03) — hidden until opened. */}
+      <TopSpendersPanel />
 
       {/* Revenue by category */}
       {c.categories.length > 0 && (

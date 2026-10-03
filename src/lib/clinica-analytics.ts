@@ -496,3 +496,50 @@ export function clinicaDay(branchId: number, date: string): ClinicaDailyReport {
     eventNotes: eventNotesForDay(branchId, date),
   };
 }
+
+// ── Top spenders per payer group (owner 2026-10-03) ─────────────────────────
+// "ใครคือ 10 อันดับแรกของแต่ละสิทธิ์" — cumulative over everything imported (or
+// the current year), per กลุ่มลูกค้า from the HIS invoice export (เงินสด, each
+// insurer / corporate). Identified by HN only (the export carries no name); the
+// UI keeps the panel hidden until the owner opens it. The export has no
+// payment-method column, so เงินสด here covers cash and PromptPay together.
+
+export type TopSpender = { rank: number; hn: string; net: number; paid: number; due: number; bills: number; firstDate: string; lastDate: string };
+export type TopSpenderGroup = { group: string; net: number; paid: number; due: number; bills: number; patients: number; top: TopSpender[] };
+export type ClinicaTopSpenders = {
+  scope: "all" | "year";
+  from: string | null; to: string | null;      // bill-date coverage of the scope
+  patients: number; bills: number; net: number;
+  groups: TopSpenderGroup[];                    // by group net desc
+};
+
+export function clinicaTopSpenders(branchId: number, opts: { scope?: "all" | "year"; year?: number; limit?: number } = {}): ClinicaTopSpenders {
+  const db = getDb();
+  const scope = opts.scope ?? "all";
+  const limit = Math.min(50, Math.max(1, opts.limit ?? 10));
+  const year = opts.year ?? Number(new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 4));
+  const start = scope === "year" ? `${year}-01-01` : "0000-01-01";
+  const end = scope === "year" ? `${year}-12-31` : "9999-12-31";
+  const cov = db.prepare(
+    `SELECT MIN(NULLIF(bill_date,'')) f, MAX(bill_date) t, COUNT(*) bills, COUNT(DISTINCT NULLIF(hn,'')) patients, ROUND(SUM(net),2) net
+       FROM clinica_bills WHERE branch_id=? AND bill_date BETWEEN ? AND ?`
+  ).get(branchId, start, end) as { f: string | null; t: string | null; bills: number; patients: number; net: number | null };
+  const groupRows = db.prepare(
+    `SELECT COALESCE(NULLIF(payer_group,''),'(ไม่ระบุ)') grp, ROUND(SUM(net),2) net, ROUND(SUM(paid),2) paid, ROUND(SUM(due),2) due,
+            COUNT(*) bills, COUNT(DISTINCT NULLIF(hn,'')) patients
+       FROM clinica_bills WHERE branch_id=? AND bill_date BETWEEN ? AND ?
+       GROUP BY grp ORDER BY net DESC`
+  ).all(branchId, start, end) as Array<{ grp: string; net: number; paid: number; due: number; bills: number; patients: number }>;
+  const topStmt = db.prepare(
+    `SELECT hn, ROUND(SUM(net),2) net, ROUND(SUM(paid),2) paid, ROUND(SUM(due),2) due, COUNT(*) bills,
+            MIN(NULLIF(bill_date,'')) firstDate, MAX(bill_date) lastDate
+       FROM clinica_bills
+      WHERE branch_id=? AND bill_date BETWEEN ? AND ? AND COALESCE(NULLIF(payer_group,''),'(ไม่ระบุ)') = ? AND NULLIF(hn,'') IS NOT NULL
+      GROUP BY hn ORDER BY net DESC, bills DESC, hn LIMIT ?`
+  );
+  const groups: TopSpenderGroup[] = groupRows.map((g) => ({
+    group: g.grp, net: g.net, paid: g.paid, due: g.due, bills: g.bills, patients: g.patients,
+    top: (topStmt.all(branchId, start, end, g.grp, limit) as Array<Omit<TopSpender, "rank">>).map((r, i) => ({ rank: i + 1, ...r, firstDate: r.firstDate ?? "", lastDate: r.lastDate ?? "" }))
+  }));
+  return { scope, from: cov.f, to: cov.t, patients: cov.patients, bills: cov.bills, net: cov.net ?? 0, groups };
+}
