@@ -40,6 +40,7 @@ export type CorporateCustomer = {
   overdue: boolean;                   // quiet for longer than 1.5× their usual gap
   months: number[];                   // 12 cells — visits per month of the viewed year
   phase: { key: MonthPhase; label: string; count: number } | null;   // most common part of the month (year)
+  phaseCounts: Record<MonthPhase, number>;                            // visits in each part of the month (year)
   weekday: { dow: number; label: string; count: number } | null;    // most common weekday (year)
   nearHoliday: { count: number; names: string[] };                   // visits within ±3 days of a holiday (year)
   groupVisits: number;                // every branch, all time
@@ -225,7 +226,9 @@ export function corporateCustomers(branchId: number, year: number, todayIso: str
       custBranchCode: latest.cust_branch_code && latest.cust_branch_code !== "00000" ? latest.cust_branch_code : null,
       visits, spend, visitsYear, spendYear, avgPerVisit, perMonth, cadence: cadenceLabel(visitsYear, perMonth), avgGapDays,
       firstVisit: list[0].invoice_date, lastVisit: latest.invoice_date, lastVisitLabel: thaiDate(latest.invoice_date), daysSinceLast, overdue,
-      months, phase, weekday, nearHoliday: { count: nearCount, names: [...nearNames] },
+      months, phase,
+      phaseCounts: { early: phaseCounts.get("early") ?? 0, mid: phaseCounts.get("mid") ?? 0, late: phaseCounts.get("late") ?? 0 },
+      weekday, nearHoliday: { count: nearCount, names: [...nearNames] },
       groupVisits: g.visits, groupSpend: g.spend, otherBranches: g.branches.size > 1,
       blurb: parts.join(" · ")
     });

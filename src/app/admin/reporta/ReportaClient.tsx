@@ -138,6 +138,7 @@ type CorporateCustomer = {
   firstVisit: string; lastVisit: string; lastVisitLabel: string; daysSinceLast: number; overdue: boolean;
   months: number[];
   phase: { key: "early" | "mid" | "late"; label: string; count: number } | null;
+  phaseCounts: { early: number; mid: number; late: number };
   weekday: { dow: number; label: string; count: number } | null;
   nearHoliday: { count: number; names: string[] };
   groupVisits: number; groupSpend: number; otherBranches: boolean; blurb: string;
@@ -1515,15 +1516,28 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                               {r.avgGapDays != null && <div className="text-[11px] text-slate-500">ห่างกันครั้งละ ~{intTh(r.avgGapDays)} วัน</div>}
                             </div>
                             <div>
-                              <div className="text-[10px] uppercase tracking-wide text-slate-400">มักมาช่วง</div>
-                              {r.visitsYear === 0 ? <div className="text-slate-300">—</div> : (
-                                <>
-                                  <div className="text-slate-800">{r.phase ? r.phase.label : "—"}{r.weekday ? ` · วัน${r.weekday.label}` : ""}</div>
-                                  <div className="text-[11px] text-slate-500">
-                                    {r.phase ? `${r.phase.count} ใน ${r.visitsYear} ครั้ง` : ""}{r.weekday ? ` · วัน${r.weekday.label} ${r.weekday.count} ใน ${r.visitsYear} ครั้ง` : ""}
-                                  </div>
-                                </>
-                              )}
+                              <div className="text-[10px] uppercase tracking-wide text-slate-400">มักมาเมื่อไหร่</div>
+                              {r.visitsYear === 0 ? <div className="text-slate-300">—</div> : (() => {
+                                // Plain sentences (owner 2026-10-03: "อ่านแล้วยังงงๆ"): a part of the
+                                // month or a weekday is only called a habit when it holds at least half
+                                // of this year's visits; otherwise say the visits are spread out and
+                                // give the counts, so a weak "most common" never reads as a pattern.
+                                const n = r.visitsYear;
+                                const pc = r.phaseCounts;
+                                const phaseClear = r.phase != null && n >= 2 && r.phase.count * 2 >= n;
+                                const dayClear = r.weekday != null && n >= 2 && r.weekday.count * 2 >= n;
+                                return (
+                                  <>
+                                    <div className="text-slate-800">
+                                      {phaseClear ? `${r.phase!.label} (${r.phase!.count} จาก ${n} ครั้ง)` : n === 1 ? `${r.phase?.label ?? "—"} (มาครั้งเดียว)` : "กระจายทั้งเดือน"}
+                                    </div>
+                                    {n >= 2 && <div className="text-[11px] text-slate-500">ต้นเดือน {pc.early} · กลางเดือน {pc.mid} · ปลายเดือน {pc.late} ครั้ง</div>}
+                                    <div className={`text-[11px] mt-0.5 ${dayClear ? "text-slate-800" : "text-slate-500"}`}>
+                                      {r.weekday ? (dayClear ? `ส่วนใหญ่วัน${r.weekday.label} (${r.weekday.count} จาก ${n} ครั้ง)` : n === 1 ? `วัน${r.weekday.label}` : `ไม่มีวันประจำ บ่อยสุดวัน${r.weekday.label} (${r.weekday.count} จาก ${n} ครั้ง)`) : ""}
+                                    </div>
+                                  </>
+                                );
+                              })()}
                             </div>
                             <div>
                               <div className="text-[10px] uppercase tracking-wide text-slate-400">ใกล้วันหยุด</div>
@@ -1560,7 +1574,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                       </button>
                     )}
                     <p className="text-[11px] text-slate-400">
-                      เรียงตามยอดปีที่เลือก · ยอด = จำนวนเงินรวมในใบกำกับภาษี (รวม VAT) · ความถี่คิดจากช่วงที่มีข้อมูลในปีนี้ · มักมา = ต้นเดือน (1–10) / กลางเดือน (11–20) / ปลายเดือน (21–31) และวันในสัปดาห์ที่พบบ่อยสุด · ใกล้วันหยุด = ภายใน ±3 วันของวันหยุดนักขัตฤกษ์ · “เงียบนานกว่าปกติ” = ไม่มาเกิน 1.5 เท่าของระยะห่างปกติ
+                      เรียงตามยอดปีที่เลือก · ยอด = จำนวนเงินรวมในใบกำกับภาษี (รวม VAT) · ความถี่คิดจากช่วงที่มีข้อมูลในปีนี้ · มักมาเมื่อไหร่ = ต้นเดือน (วันที่ 1–10) / กลางเดือน (11–20) / ปลายเดือน (21–31) และวันในสัปดาห์ นับเป็น “ประจำ” เมื่ออย่างน้อยครึ่งหนึ่งของครั้งที่มาปีนี้ตกในช่วงหรือวันนั้น · ใกล้วันหยุด = ภายใน ±3 วันของวันหยุดนักขัตฤกษ์ · “เงียบนานกว่าปกติ” = ไม่มาเกิน 1.5 เท่าของระยะห่างปกติ
                       {c.coverage.persons > 0 && <> · บุคคลธรรมดา {intTh(c.coverage.persons)} ราย ({intTh(c.coverage.personInvoices)} ใบ) ไม่แสดงในตาราง</>}
                       {c.coverage.cancelled > 0 && <> · ใบที่ยกเลิก {intTh(c.coverage.cancelled)} ใบ ไม่นับ</>}
                     </p>
