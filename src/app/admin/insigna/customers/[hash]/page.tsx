@@ -307,7 +307,7 @@ export default function CustomerDrillDown({
                     </td>
                     <td className="text-slate-500 text-[10px]">{v.table_zone ?? "—"}</td>
                     <td className="text-right font-bold text-slate-800">
-                      {v.total > 0 ? `฿${fmtMoney(v.total)}` : "—"}
+                      {v.total > 0 ? `${fmtMoney(v.total)} บาท` : "—"}
                     </td>
                   </tr>
                 ))}
@@ -442,7 +442,7 @@ export default function CustomerDrillDown({
                     <td className="py-1.5 truncate text-slate-700">{a.campaign_id}</td>
                     <td className="text-slate-500">{a.channel}</td>
                     <td className="text-right text-slate-600">{a.visits}</td>
-                    <td className="text-right font-bold text-slate-800">฿{fmtMoney(a.revenue)}</td>
+                    <td className="text-right font-bold text-slate-800">{fmtMoney(a.revenue)} บาท</td>
                   </tr>
                 ))}
               </tbody>

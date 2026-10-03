@@ -85,8 +85,8 @@ export default function InsignaCustomersPage({ searchParams }: { searchParams: {
                   </td>
                   <td className="text-right tabular-nums text-slate-700">{r.distinctDays}</td>
                   <td className="text-right tabular-nums text-slate-500">{r.billCount}</td>
-                  <td className="text-right tabular-nums font-bold text-slate-800">฿{money(r.totalNett)}</td>
-                  <td className="text-right tabular-nums text-slate-500">฿{money(r.avgNett)}</td>
+                  <td className="text-right tabular-nums font-bold text-slate-800">{money(r.totalNett)} บาท</td>
+                  <td className="text-right tabular-nums text-slate-500">{money(r.avgNett)} บาท</td>
                   <td className="text-right text-xs text-slate-500">
                     {r.lastVisit ? formatLongDate(r.lastVisit, "th") : "—"}
                   </td>

@@ -299,13 +299,13 @@ export default function InsignaDashboard() {
               <div>
                 <div className="text-[10px] uppercase text-slate-500 font-bold">Total spend</div>
                 <div className="text-xl font-bold text-slate-800">
-                  ฿{fmtMoney(headline.total_spend)}
+                  {fmtMoney(headline.total_spend)} บาท
                 </div>
               </div>
               <div>
                 <div className="text-[10px] uppercase text-slate-500 font-bold">Total revenue</div>
                 <div className="text-xl font-bold text-slate-800">
-                  ฿{fmtMoney(headline.total_revenue)}
+                  {fmtMoney(headline.total_revenue)} บาท
                 </div>
               </div>
               <div>
@@ -320,7 +320,7 @@ export default function InsignaDashboard() {
                 <div className="text-[10px] uppercase text-slate-500 font-bold">Blended CAC</div>
                 <div className="text-xl font-bold text-slate-800">
                   {headline.blended_cac != null
-                    ? `฿${fmtMoney(headline.blended_cac)}`
+                    ? `${fmtMoney(headline.blended_cac)} บาท`
                     : "—"}
                 </div>
               </div>
@@ -341,8 +341,8 @@ export default function InsignaDashboard() {
                   {headline.by_channel.map((c) => (
                     <tr key={c.channel} className="border-b border-slate-100">
                       <td className="py-2 font-medium text-slate-700">{c.channel}</td>
-                      <td className="text-right text-slate-600">฿{fmtMoney(c.spend)}</td>
-                      <td className="text-right font-bold text-slate-800">฿{fmtMoney(c.revenue)}</td>
+                      <td className="text-right text-slate-600">{fmtMoney(c.spend)} บาท</td>
+                      <td className="text-right font-bold text-slate-800">{fmtMoney(c.revenue)} บาท</td>
                       <td className="text-right text-emerald-600 font-bold">
                         {c.roas != null ? `${c.roas.toFixed(2)}x` : "—"}
                       </td>

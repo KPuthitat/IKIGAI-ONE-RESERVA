@@ -15,7 +15,7 @@ export type { ClinicaMonth };
 // mix, revenue categories, top ยา/แล็บ, diagnoses, doctors and peak hours. Every
 // money figure carries its count (ครั้ง) in parentheses.
 
-const baht = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
+const baht = (n: number) => `${Math.round(n).toLocaleString("th-TH")} บาท`;
 /** Money with its count in parentheses — the house style (owner 2026-09-26). */
 const bahtC = (n: number, c: number) => `${baht(n)} (${c.toLocaleString("th-TH")} ครั้ง)`;
 const intTh = (n: number) => n.toLocaleString("th-TH");
@@ -44,9 +44,93 @@ function Bar({ value, max, tone = "bg-brand" }: { value: number; max: number; to
   );
 }
 
-type TopSpender = { rank: number; hn: string; net: number; paid: number; due: number; bills: number; firstDate: string; lastDate: string };
+type TopPattern = {
+  visitsYear: number; cadence: string; avgGapDays: number | null; lastVisitLabel: string; daysSinceLast: number; overdue: boolean;
+  months: number[]; phase: { label: string; count: number } | null; phaseCounts: { early: number; mid: number; late: number };
+  weekday: { label: string; count: number } | null; nearHoliday: { count: number; names: string[] };
+};
+type TopSpender = { rank: number; hn: string; net: number; paid: number; due: number; bills: number; firstDate: string; lastDate: string; pattern: TopPattern | null };
 type TopSpenderGroup = { group: string; net: number; paid: number; due: number; bills: number; patients: number; top: TopSpender[] };
 type ClinicaTopSpenders = { scope: "all" | "year"; from: string | null; to: string | null; patients: number; bills: number; net: number; groups: TopSpenderGroup[] };
+
+/** One patient block — the same layout as the corporate-customer card
+ *  (owner 2026-10-04: "อยากได้ทรงนี้"): rank + HN and the money on top, four
+ *  labelled facts, then the 12-month visit strip. */
+function TopSpenderBlock({ t }: { t: TopSpender }) {
+  const p = t.pattern;
+  const n = p?.visitsYear ?? 0;
+  const phaseClear = !!p && !!p.phase && n >= 2 && p.phase.count * 2 >= n;
+  const dayClear = !!p && !!p.weekday && n >= 2 && p.weekday.count * 2 >= n;
+  const peak = Math.max(1, ...(p?.months ?? [0]));
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${p?.overdue ? "border-amber-200 bg-amber-50/40" : "border-slate-100 bg-white"}`}>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-600">{t.rank}</span>
+            <span className="font-semibold text-slate-800 font-mono tracking-wide">{t.hn}</span>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap mt-1">
+            {t.due > 0.5 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-600">ค้างเบิก {baht(t.due)}</span>}
+            {p?.overdue && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">เงียบนานกว่ารอบปกติ — ควรติดต่อ</span>}
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-lg font-bold text-slate-800 tabular-nums leading-tight">{baht(t.net)}</div>
+          <div className="text-[11px] text-slate-500">สะสม {intTh(t.bills)} บิล{t.bills > 0 ? ` · เฉลี่ยบิลละ ${baht(t.net / t.bills)}` : ""}</div>
+        </div>
+      </div>
+      {p && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 mt-3 text-sm">
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-400">ความถี่</div>
+              <div className="text-slate-800">{p.cadence}</div>
+              {p.avgGapDays != null && <div className="text-[11px] text-slate-500">ห่างกันครั้งละ ~{intTh(p.avgGapDays)} วัน</div>}
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-400">มักมาเมื่อไหร่</div>
+              {n === 0 ? <div className="text-slate-300">—</div> : (
+                <>
+                  <div className="text-slate-800">{phaseClear ? `${p.phase!.label} (${p.phase!.count} จาก ${n} ครั้ง)` : n === 1 ? `${p.phase?.label ?? "—"} (มาครั้งเดียว)` : "ช่วงเวลาไม่แน่นอน"}</div>
+                  {n >= 2 && <div className="text-[11px] text-slate-500">ต้นเดือน {p.phaseCounts.early} · กลางเดือน {p.phaseCounts.mid} · ปลายเดือน {p.phaseCounts.late} ครั้ง</div>}
+                  <div className={`text-[11px] mt-0.5 ${dayClear ? "text-slate-800" : "text-slate-500"}`}>
+                    {p.weekday ? (dayClear ? `ส่วนใหญ่วัน${p.weekday.label} (${p.weekday.count} จาก ${n} ครั้ง)` : n === 1 ? `วัน${p.weekday.label}` : `ไม่มีวันประจำ บ่อยสุดวัน${p.weekday.label} (${p.weekday.count} จาก ${n} ครั้ง)`) : ""}
+                  </div>
+                </>
+              )}
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-400">ใกล้วันหยุด</div>
+              {p.nearHoliday.count > 0 ? (
+                <>
+                  <div className="text-amber-800">{intTh(p.nearHoliday.count)} ครั้ง</div>
+                  <div className="text-[11px] text-slate-500">{p.nearHoliday.names.slice(0, 2).join(", ")}</div>
+                </>
+              ) : <div className="text-slate-400">ไม่มี</div>}
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-400">มาล่าสุด</div>
+              <div className="text-slate-800">{p.lastVisitLabel}</div>
+              <div className={`text-[11px] ${p.overdue ? "text-amber-700 font-medium" : "text-slate-500"}`}>{p.daysSinceLast > 0 ? `${intTh(p.daysSinceLast)} วันก่อน` : "วันนี้"}</div>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wide text-slate-400 shrink-0">รายเดือน</span>
+            <div className="flex gap-1 flex-1 max-w-sm">
+              {p.months.map((v, i) => (
+                <div key={i} className="flex-1 min-w-0 text-center" title={`เดือนที่ ${i + 1}: ${v} ครั้ง`}>
+                  <div className={`h-5 rounded flex items-center justify-center text-[10px] tabular-nums ${v > 0 ? (v / peak >= 0.67 ? "bg-emerald-500 text-white" : "bg-emerald-200 text-emerald-900") : "bg-slate-100 text-slate-300"}`}>{v > 0 ? v : ""}</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">{i + 1}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 /** "ใคร 10 อันดับแรกของแต่ละสิทธิ์" — cumulative spend per patient (HN) within
  *  each payer group (เงินสด, each insurer / corporate). Hidden by default and
@@ -57,7 +141,12 @@ function TopSpendersPanel() {
   const [scope, setScope] = useState<"all" | "year">("all");
   const [data, setData] = useState<ClinicaTopSpenders | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showAll, setShowAll] = useState<Record<string, boolean>>({});
+  // How many ranks to show per group — 3 / 5 / 10 (owner 2026-10-04: ไม่ให้เยอะเกินไป).
+  // Remembered per browser; the data always holds the top 10.
+  const [topN, setTopN] = useState<3 | 5 | 10>(() => {
+    try { const v = Number(window.localStorage.getItem("clinicaTopN")); return v === 5 || v === 10 ? v : 3; } catch { return 3; }
+  });
+  const pickN = (n: 3 | 5 | 10) => { setTopN(n); try { window.localStorage.setItem("clinicaTopN", String(n)); } catch { /* ignore */ } };
 
   async function load(s: "all" | "year") {
     setBusy(true);
@@ -73,18 +162,26 @@ function TopSpendersPanel() {
     <div className="card space-y-2">
       <button type="button" onClick={toggle} className="w-full flex items-center justify-between gap-2 text-left">
         <div>
-          <h3 className="font-bold text-slate-800 text-sm">ผู้ใช้จ่ายสูงสุดตามสิทธิ์ (10 อันดับแรก)</h3>
-          <p className="text-[11px] text-slate-500 mt-0.5">ยอดสะสมต่อคนไข้ (HN) แยกตามกลุ่มผู้จ่าย: เงินสด ประกันกลุ่มแต่ละบริษัท — สำหรับพิจารณามอบสิทธิพิเศษ · ซ่อนไว้ กดเพื่อเปิดดู</p>
+          <h3 className="font-bold text-slate-800 text-sm">ผู้ใช้จ่ายสูงสุดตามสิทธิ์</h3>
+          <p className="text-[11px] text-slate-500 mt-0.5">ยอดสะสมต่อคนไข้ (HN) แยกตามกลุ่มผู้จ่าย: เงินสด ประกันกลุ่มแต่ละบริษัท พร้อมความถี่และช่วงที่มา — สำหรับพิจารณามอบสิทธิพิเศษ · ซ่อนไว้ กดเพื่อเปิดดู</p>
         </div>
         <span className="text-slate-400 text-xs shrink-0">{open ? "▲ ซ่อน" : "▼ เปิดดู"}</span>
       </button>
       {open && (
-        <div className="space-y-3 pt-1 border-t border-slate-100">
-          <div className="flex items-center gap-1.5 text-xs">
+        <div className="space-y-4 pt-1 border-t border-slate-100">
+          <div className="flex items-center gap-1.5 text-xs flex-wrap">
             {(["all", "year"] as const).map((s) => (
               <button key={s} type="button" onClick={() => pick(s)}
                 className={`px-2.5 py-1 rounded-full border ${scope === s ? "bg-brand text-white border-brand" : "bg-white text-slate-600 border-slate-200"}`}>
                 {s === "all" ? "สะสมทั้งหมดที่นำเข้า" : "เฉพาะปีนี้"}
+              </button>
+            ))}
+            <span className="text-slate-300 mx-1">|</span>
+            <span className="text-slate-500">แสดง</span>
+            {([3, 5, 10] as const).map((n) => (
+              <button key={n} type="button" onClick={() => pickN(n)}
+                className={`px-2.5 py-1 rounded-full border ${topN === n ? "bg-brand text-white border-brand" : "bg-white text-slate-600 border-slate-200"}`}>
+                {n} อันดับ
               </button>
             ))}
             {data && data.from && data.to && <span className="text-slate-400 ml-1">ข้อมูล {thaiDate(data.from)} – {thaiDate(data.to)} · {intTh(data.patients)} คนไข้ · {intTh(data.bills)} บิล · {baht(data.net)}</span>}
@@ -94,49 +191,20 @@ function TopSpendersPanel() {
           ) : !data || data.groups.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-3">ยังไม่มีบิลในช่วงนี้</p>
           ) : (
-            <div className="grid md:grid-cols-2 gap-3">
-              {data.groups.map((g) => {
-                const rows = showAll[g.group] ? g.top : g.top.slice(0, 10);
-                return (
-                  <div key={g.group} className="rounded-xl border border-slate-100 p-3">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <div className="font-semibold text-slate-800 text-sm truncate">{g.group}</div>
-                      <div className="text-[11px] text-slate-500 whitespace-nowrap">{bahtC(g.net, g.bills)} · {intTh(g.patients)} คนไข้</div>
-                    </div>
-                    {g.due > 0.5 && <div className="text-[11px] text-rose-500">ค้างเบิก {baht(g.due)}</div>}
-                    <table className="w-full text-[11px] mt-2">
-                      <thead>
-                        <tr className="text-slate-400 border-b border-slate-100">
-                          <th className="text-left py-1 w-6">#</th>
-                          <th className="text-left py-1">HN</th>
-                          <th className="text-right py-1">ยอดสะสม</th>
-                          <th className="text-right py-1">บิล</th>
-                          <th className="text-right py-1 whitespace-nowrap">ล่าสุด</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((t) => (
-                          <tr key={t.hn} className="border-b border-slate-50">
-                            <td className="py-1 text-slate-400">{t.rank}</td>
-                            <td className="py-1 font-mono text-slate-700">{t.hn}</td>
-                            <td className="py-1 text-right tabular-nums text-slate-800 font-medium">{baht(t.net)}{t.due > 0.5 && <span className="text-rose-500"> (ค้าง {baht(t.due)})</span>}</td>
-                            <td className="py-1 text-right tabular-nums text-slate-600">{intTh(t.bills)}</td>
-                            <td className="py-1 text-right text-slate-500 whitespace-nowrap">{t.lastDate ? thaiDate(t.lastDate) : "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {g.top.length > 10 && (
-                      <button type="button" onClick={() => setShowAll((v) => ({ ...v, [g.group]: !v[g.group] }))} className="text-[11px] text-brand mt-1">
-                        {showAll[g.group] ? "แสดง 10 อันดับ" : `ดูทั้งหมด ${g.top.length}`}
-                      </button>
-                    )}
+            data.groups.map((g) => {
+              const rows = g.top.slice(0, topN);
+              return (
+                <div key={g.group} className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                    <div className="font-bold text-slate-800">{g.group}</div>
+                    <div className="text-[11px] text-slate-500">{bahtC(g.net, g.bills)} · {intTh(g.patients)} คนไข้{g.due > 0.5 ? ` · ค้างเบิก ${baht(g.due)}` : ""}</div>
                   </div>
-                );
-              })}
-            </div>
+                  {rows.map((t) => <TopSpenderBlock key={t.hn} t={t} />)}
+                </div>
+              );
+            })
           )}
-          <p className="text-[10px] text-slate-400">ระบุด้วยรหัสคนไข้ (HN) จากไฟล์ Invoice เท่านั้น ไม่มีชื่อ · ไฟล์ไม่ระบุวิธีชำระ กลุ่ม “เงินสด” จึงรวมเงินสดและพร้อมเพย์ · ยอดสะสม = รวมสุทธิของบิลทั้งหมดในช่วงที่เลือก</p>
+          <p className="text-[10px] text-slate-400">ระบุด้วยรหัสคนไข้ (HN) จากไฟล์ Invoice เท่านั้น ไม่มีชื่อ · ไฟล์ไม่ระบุวิธีชำระ กลุ่ม “เงินสด” จึงรวมเงินสดและพร้อมเพย์ · ยอดสะสม = รวมสุทธิของบิลทั้งหมดในช่วงที่เลือก · ความถี่และช่วงที่มาคิดจากบิลของปีปัจจุบัน (หรือปีที่เลือก) · บิลวันเดียวกันนับเป็น 1 ครั้ง · “เงียบนานกว่าปกติ” = ไม่มาเกิน 1.5 เท่าของระยะห่างปกติ</p>
         </div>
       )}
     </div>

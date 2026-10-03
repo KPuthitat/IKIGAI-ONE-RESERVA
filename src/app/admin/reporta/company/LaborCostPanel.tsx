@@ -55,7 +55,7 @@ export default function LaborCostPanel({ data, monthLabel }: { data: CompanyMont
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <div className="rounded-lg bg-slate-50 border border-slate-100 p-2.5">
           <div className="text-[10px] uppercase tracking-wide font-bold text-slate-500">เฉลี่ยต่อวัน</div>
-          <div className="text-lg font-bold text-slate-800 tabular-nums">฿{baht(data.avgLaborPerDay)}</div>
+          <div className="text-lg font-bold text-slate-800 tabular-nums">{baht(data.avgLaborPerDay)} บาท</div>
           <div className="text-[11px] text-slate-400">เฉลี่ยทั้งเดือน ({data.dayCount} วัน)</div>
         </div>
         <div className="rounded-lg bg-slate-50 border border-slate-100 p-2.5">
@@ -65,8 +65,8 @@ export default function LaborCostPanel({ data, monthLabel }: { data: CompanyMont
         </div>
         <div className="rounded-lg bg-slate-50 border border-slate-100 p-2.5 col-span-2 md:col-span-1">
           <div className="text-[10px] uppercase tracking-wide font-bold text-slate-500">รวมทั้งเดือน</div>
-          <div className="text-lg font-bold text-slate-800 tabular-nums">฿{baht(data.totalLabor)}</div>
-          <div className="text-[11px] text-slate-400">ยอดขายรวม ฿{baht(data.totalSales)}</div>
+          <div className="text-lg font-bold text-slate-800 tabular-nums">{baht(data.totalLabor)} บาท</div>
+          <div className="text-[11px] text-slate-400">ยอดขายรวม {baht(data.totalSales)} บาท</div>
         </div>
       </div>
 
@@ -86,8 +86,8 @@ export default function LaborCostPanel({ data, monthLabel }: { data: CompanyMont
               {data.days.map((d) => (
                 <tr key={d.date} className="border-b border-slate-50">
                   <td className="py-1.5 pr-2 text-slate-600">{thDay(d.date)}</td>
-                  <td className="py-1.5 px-2 text-right text-slate-700">฿{baht(d.laborCost)}</td>
-                  <td className="py-1.5 px-2 text-right text-slate-500">{d.salesNett != null ? `฿${baht(d.salesNett)}` : "—"}</td>
+                  <td className="py-1.5 px-2 text-right text-slate-700">{baht(d.laborCost)} บาท</td>
+                  <td className="py-1.5 px-2 text-right text-slate-500">{d.salesNett != null ? `${baht(d.salesNett)} บาท` : "—"}</td>
                   <td className="py-1.5 pl-2 text-right"><Pct pct={d.colPct} /></td>
                 </tr>
               ))}
