@@ -112,10 +112,10 @@ function SendPinModal({ preview, onClose }: { preview: React.ReactNode; onClose:
         ) : (
           <>
             <div>
-              <p className="text-xs text-slate-400 mb-1.5">ตัวอย่างการ์ดที่จะส่งเข้ากลุ่ม LINE</p>
+              <p className="text-xs text-slate-400 mb-1.5">ตัวอย่างรายงานที่จะส่งเข้ากลุ่ม LINE</p>
               <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100">{preview}</div>
             </div>
-            <p className="text-sm text-slate-500">ยืนยันด้วย PIN เพื่อส่งการ์ดวันสำคัญที่กำลังจะมาถึงเข้ากลุ่ม LINE หัวหน้างาน</p>
+            <p className="text-sm text-slate-500">ยืนยันด้วย PIN เพื่อส่งรายงานวันสำคัญที่กำลังจะมาถึงเข้ากลุ่ม LINE หัวหน้างาน</p>
             <div>
               <label className="label text-center">PIN (4 หลัก)</label>
               <input type="password" inputMode="numeric" autoComplete="off" autoFocus maxLength={4} value={pin}

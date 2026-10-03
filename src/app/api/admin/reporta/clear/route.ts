@@ -9,7 +9,7 @@ import { isSalesaBranch, clearDay, listDayMerchants, getMerchantName, clearMisma
 //  • { mode:"mismatched" } — remove every day whose POS merchant doesn't match
 //    the branch (cleans up files imported into the wrong branch).
 //  • { mode:"taxinvoice_mismatched" } — remove tax invoices whose RD branch
-//    code isn't the branch's configured one (needs the code set in settings).
+//    code isn't the branch's สาขาภาษี (branches.tax_branch_code, set in บริษัท/สาขา).
 // Admin/หัวหน้างาน (reporta.manage) only.
 
 export const dynamic = "force-dynamic";
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
 
   if (parsed.data.mode === "taxinvoice_mismatched") {
     const expected = getRdBranchCode(branchId);
-    if (!expected) return NextResponse.json({ error: "rd_code_required", message: "ตั้ง “เลขที่สาขาสรรพากร” ของสาขานี้ในหน้าตั้งค่าก่อน" }, { status: 400 });
+    if (!expected) return NextResponse.json({ error: "rd_code_required", message: "ตั้ง “สาขาภาษี” ของสาขานี้ที่หน้า บริษัท / สาขา ก่อน" }, { status: 400 });
     return NextResponse.json({ ok: true, removed: clearMismatchedTaxInvoices(branchId), expected });
   }
 

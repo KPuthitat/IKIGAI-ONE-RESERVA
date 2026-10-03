@@ -195,7 +195,7 @@ export default function DoctorFeeRoundsClient({ view: initialView, doctors: init
           </button>
         </div>
         <span className="block text-[11px] text-slate-400">โปรแกรมจับรายการ DF ตามกฎ (ตั้งกฎที่หน้า “ค่าตอบแทนแพทย์”) · นำเข้าซ้ำได้ ระบบอัปเดตให้เอง · นำเข้าผิดไฟล์กด “ล้างข้อมูลนำเข้าเดือนนี้” แล้วนำเข้าใหม่ได้</span>
-        <span className="block text-[11px] text-emerald-700">💬 ส่งยอดค่าตอบแทน (DF) ให้แพทย์ทาง LINE: กดปุ่ม “ส่งยอด DF วันนี้” ท้ายแต่ละวัน · การ์ดรายสัปดาห์ กดขยายรอบจ่าย ▸ แล้วกด “ส่งยอด DF” ของแพทย์ท่านนั้น</span>
+        <span className="block text-[11px] text-emerald-700">💬 ส่งยอดค่าตอบแทน (DF) ให้แพทย์ทาง LINE: กดปุ่ม “ส่งยอด DF วันนี้” ท้ายแต่ละวัน · รายงานรายสัปดาห์ กดขยายรอบจ่าย ▸ แล้วกด “ส่งยอด DF” ของแพทย์ท่านนั้น</span>
       </div>
 
       {msg && <div className={`text-sm rounded-lg px-3 py-2 ${msg.kind === "ok" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>{msg.text}</div>}

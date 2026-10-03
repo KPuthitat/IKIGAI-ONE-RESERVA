@@ -45,9 +45,10 @@ export async function POST(req: Request) {
   const parsedFiles: Array<{ name: string; parsed: SalesFileParse; merchant: string | null }> = [];
   // RD branch-code guard for the tax-invoice export (owner 2026-10-02): that
   // file carries no POS merchant name, only the Revenue Department branch code
-  // ("สาขา : 00002"). Expected = the code set in settings; when none is set,
-  // the code of the branch's earlier tax-invoice imports (so a second branch's
-  // file can't slip in once the first one is established).
+  // ("สาขา : 00002"). Expected = the branch's สาขาภาษี from บริษัท/สาขา
+  // (branches.tax_branch_code — set once, used everywhere; owner 2026-10-03);
+  // when unset, the code of the branch's earlier tax-invoice imports (so a
+  // second branch's file can't slip in once the first one is established).
   const expectedRd = getRdBranchCode(branchId);
   const seenRd = expectedRd ? [] : taxInvoiceRdCodes(branchId);
   for (const file of files) {
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
       if (mismatch) {
         return NextResponse.json({
           error: "rd_branch_mismatch",
-          message: `ไฟล์ใบกำกับภาษีนี้เป็นของสาขาสรรพากร ${code} แต่สาขาที่ใช้งานอยู่คือ ${expectedRd ?? seenRd.join("/")} — ตรวจสอบสาขาที่เลือก หรือตั้ง "เลขที่สาขาสรรพากร" ในหน้าตั้งค่า: ${file.name}`
+          message: `ไฟล์ใบกำกับภาษีนี้เป็นของสาขาสรรพากร ${code} แต่สาขาที่ใช้งานอยู่คือ ${expectedRd ?? seenRd.join("/")} — ตรวจสอบสาขาที่เลือก หรือตรวจ "สาขาภาษี" ของสาขานี้ที่หน้า บริษัท / สาขา: ${file.name}`
         }, { status: 422 });
       }
       // The first accepted file of a batch sets the code the rest must match.

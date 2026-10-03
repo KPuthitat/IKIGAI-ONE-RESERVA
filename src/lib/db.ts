@@ -2218,12 +2218,6 @@ function runMigrations(db: Database.Database): void {
     if (!ssCols.some((c) => c.name === "break_weekday_only")) {
       db.exec("ALTER TABLE salesa_settings ADD COLUMN break_weekday_only INTEGER NOT NULL DEFAULT 1");
     }
-    // The branch's Revenue Department branch code ("00001") as printed in the
-    // tax-invoice export preamble (owner 2026-10-02) — the wrong-branch guard
-    // for that file, which carries no POS merchant name. NULL = not enforced.
-    if (!ssCols.some((c) => c.name === "rd_branch_code")) {
-      db.exec("ALTER TABLE salesa_settings ADD COLUMN rd_branch_code TEXT");
-    }
     const sdCols = db.prepare("PRAGMA table_info(salesa_daily)").all() as Array<{ name: string }>;
     if (!sdCols.some((c) => c.name === "has_receipt")) {
       db.exec("ALTER TABLE salesa_daily ADD COLUMN has_receipt INTEGER NOT NULL DEFAULT 0");

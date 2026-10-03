@@ -1103,8 +1103,11 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
     { date: "08/09/2026", no: "RTW2026090001", ...DKSH, amount: "6,445.78", vat: "451.22", total: "6,897.00" }
   ])));
   ok("tax_invoice: RD codes seen per branch", sdb.taxInvoiceRdCodes(bidC).join(",") === "00002" && sdb.taxInvoiceRdCodes(bidC2).join(",") === "00001");
-  sdb.setRdBranchCode(bidC, "2");
-  ok("tax_invoice: RD branch code setting zero-pads + round-trips", sdb.getRdBranchCode(bidC) === "00002");
+  // The guard's expected code is the branch's สาขาภาษี from บริษัท/สาขา (one
+  // place, owner 2026-10-03), normalised to the export's 5-digit form.
+  ok("tax_invoice: no สาขาภาษี set → guard expects nothing", sdb.getRdBranchCode(bidC) === null);
+  db.prepare("UPDATE branches SET tax_branch_code = ? WHERE id = ?").run("2", bidC);
+  ok("tax_invoice: branches.tax_branch_code '2' reads as '00002'", sdb.getRdBranchCode(bidC) === "00002");
 
   const corp = await import("../src/lib/salesa-corporate");
   db.prepare("INSERT OR REPLACE INTO public_holidays (date, name_th, name_en) VALUES (?,?,?)").run("2026-09-09", "วันทดสอบองค์กร", "CorpTest");

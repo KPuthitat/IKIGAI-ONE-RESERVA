@@ -478,7 +478,7 @@ export default function RoundsClient({
                 key: `dw-${w.weekStart}`, heading: "ส่งสรุปสวัสดิการเครื่องดื่ม (สัปดาห์)",
                 preview: <DrinkWelfareCardPreview shop={shop} sellerName={sellerName} periodLabel={roundLabel(w.start, w.end)} count={w.summary.count} total={w.summary.total} vatRate={vatRate} byTier={w.summary.byTier} cashCount={w.summary.cashCount} cashTotal={w.summary.cashTotal} />,
                 body: { kind: "drink_welfare", week_start: w.weekStart }
-              })} className="btn-secondary !py-1 !px-2.5 !text-xs shrink-0">ส่งการ์ดสัปดาห์นี้</button>
+              })} className="btn-secondary !py-1 !px-2.5 !text-xs shrink-0">ส่งรายงานสัปดาห์นี้</button>
             </div>
           ))}
           <div className="flex items-center justify-between gap-2 text-sm pt-1">
@@ -490,7 +490,7 @@ export default function RoundsClient({
               key: "dw-month", heading: "ส่งสรุปสวัสดิการเครื่องดื่ม (สิ้นเดือน)",
               preview: <DrinkWelfareCardPreview shop={shop} sellerName={sellerName} periodLabel={`${TH_MONTHS_FULL[month]} ${year + 543}`} count={drinkWelfare.month.count} total={drinkWelfare.month.total} vatRate={vatRate} byTier={drinkWelfare.month.byTier} cashCount={drinkWelfare.month.cashCount} cashTotal={drinkWelfare.month.cashTotal} />,
               body: { kind: "drink_welfare" }
-            })} className="btn-primary !py-1 !px-2.5 !text-xs shrink-0">ส่งการ์ดสิ้นเดือน</button>
+            })} className="btn-primary !py-1 !px-2.5 !text-xs shrink-0">ส่งรายงานสิ้นเดือน</button>
           </div>
         </div>
       )}
@@ -582,7 +582,7 @@ export default function RoundsClient({
               <button type="button" disabled={!xferPreview || xferPreview.rows.length === 0 || xferLoading}
                 onClick={() => setXferPinOpen(true)}
                 className="rounded-full bg-brand text-white px-4 py-2 text-sm font-bold hover:opacity-90 disabled:opacity-50">
-                ยืนยันโอน + ส่งการ์ด (PIN)
+                ยืนยันโอน + ส่งรายงาน (PIN)
               </button>
             </div>
           </div>
@@ -603,7 +603,7 @@ export default function RoundsClient({
             )}
             <p className="text-xs text-slate-600">
               โอนยอดช่วง <b>{xferPreview?.label}</b> รวม <b>฿{fmtMoney(xferPreview?.vat.total ?? 0)}</b> — ใส่ PIN เพื่อยืนยัน
-              {partner.line_group_id ? " และส่งการ์ดเข้ากลุ่ม LINE คู่ค้า" : ""}
+              {partner.line_group_id ? " และส่งรายงานเข้ากลุ่ม LINE คู่ค้า" : ""}
             </p>
           </div>}
           submitLabel="ยืนยันโอน"

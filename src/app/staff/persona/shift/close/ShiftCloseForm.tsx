@@ -1184,7 +1184,7 @@ function PreviewBlock(props: {
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between text-sm font-bold text-slate-700 hover:text-brand px-2 py-1.5"
       >
-        <span>ดูตัวอย่างการ์ดที่จะส่งเข้ากลุ่ม</span>
+        <span>ดูตัวอย่างรายงานที่จะส่งเข้ากลุ่ม</span>
         <span className="text-xs">{open ? "▼ ซ่อน" : "▶ ดู"}</span>
       </button>
       {open && (
