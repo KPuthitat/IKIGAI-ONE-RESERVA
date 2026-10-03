@@ -19,7 +19,7 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { getDb, type Branch } from "@/lib/db";
-import { sendLinePush, isReviewKeyword, notifyReviewInviteToLineUser } from "@/lib/line";
+import { sendLinePush, isReviewKeyword, notifyReviewInviteToLineUser, isMemberKeyword, notifyMemberCard } from "@/lib/line";
 import { recordInbound } from "@/lib/inbox";
 import { ingestLineBill, handleBillVerifyPostback } from "@/lib/accounta-line-bill";
 import { getChannelByCode } from "@/lib/messaging-channels";
@@ -213,6 +213,7 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // fully handle (each ends the loop) must be skipped here.
       const autoHandled = isText && (
         isReviewKeyword(textBody) ||
+        isMemberKeyword(textBody) ||
         /ยกเลิก\s*#?\s*[A-Z0-9]+/i.test(textBody) ||
         /^\s*(id|ไอดี|myid|line\s*id)\s*$/i.test(textBody) ||
         /^\s*(help|ช่วย|cmd|menu|วิธีใช้)\s*$/i.test(textBody)
@@ -293,6 +294,14 @@ export async function POST(req: Request, { params }: { params: { branch: string 
         // reward code then live in the customer's own OA chat.
         if (isReviewKeyword(text)) {
           await notifyReviewInviteToLineUser(channel.branch, userId);
+          continue;
+        }
+        // INSIGNA membership (owner 2026-10-03): the membership QR opens this OA
+        // with "สมาชิก" → push the member card, or the sign-up card for a new
+        // customer. The card link carries the customer's own token, so the
+        // LINE userId is captured without a LIFF app.
+        if (isMemberKeyword(text)) {
+          await notifyMemberCard(channel.branch, userId);
           continue;
         }
 
