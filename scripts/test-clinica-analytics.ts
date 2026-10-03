@@ -234,6 +234,32 @@ process.env.DATABASE_PATH = TMP;
   ok("weekHours: อังคาร 11:00–21:00 พัก 14–16", wk[1].dow === 2 && !wk[1].closed && wk[1].open === "11:00" && wk[1].close === "21:00" && wk[1].breakStart === "14:00");
   ok("weekHours: อาทิตย์เปิดแต่ไม่พัก (ไม่อยู่ใน lunch weekdays)", wk[6].dow === 0 && !wk[6].closed && wk[6].open === "11:00" && wk[6].breakStart === null);
 
+  // Top spenders per payer group (owner 2026-10-03).
+  {
+    const b2 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('clinic-top','TOP')").run().lastInsertRowid);
+    const mk = (billNo: string, date: string, hn: string, payer: string, net: number, paid: number, due: number): ClinicaInvoiceParse["bills"][number] =>
+      ({ billNo, date, time: "10:00:00", hn, payerGroup: payer, staff: "แอดมิน", gross: net, billDiscount: 0, net, paid, due, items: [item("GEN001", "บริการ", net)] });
+    cdb.importInvoice(b2, invParse("2025-12-01", "2026-09-30", [
+      mk("BL10", "2025-12-01", "HN-A", "เงินสด", 1000, 1000, 0),
+      mk("BL11", "2026-02-01", "HN-A", "เงินสด", 2000, 2000, 0),
+      mk("BL12", "2026-03-01", "HN-B", "เงินสด", 2500, 2500, 0),
+      mk("BL13", "2026-04-01", "HN-C", "ประกันกลุ่ม บริษัท ก", 4000, 0, 4000),
+      mk("BL14", "2026-05-01", "HN-D", "ประกันกลุ่ม บริษัท ก", 1500, 1500, 0),
+      mk("BL15", "2026-06-01", "HN-A", "ประกันกลุ่ม บริษัท ข", 700, 700, 0),
+      mk("BL16", "2026-09-30", "", "เงินสด", 300, 300, 0)   // no HN → counted in the group, never ranked
+    ]));
+    const all = ca.clinicaTopSpenders(b2, { scope: "all", year: 2026 });
+    ok("top: coverage + totals over everything imported (7 bills, 4 patients)", all.scope === "all" && all.from === "2025-12-01" && all.to === "2026-09-30" && all.bills === 7 && all.patients === 4 && near(all.net, 12000));
+    ok("top: groups by net desc — บริษัท ก 5,500 · เงินสด 5,800 first", all.groups[0].group === "เงินสด" && near(all.groups[0].net, 5800) && all.groups[1].group === "ประกันกลุ่ม บริษัท ก" && near(all.groups[1].net, 5500) && near(all.groups[1].due, 4000));
+    const cash = all.groups[0];
+    ok("top: เงินสด ranks HN-A (3,000 over 2 bills) above HN-B (2,500); blank HN not ranked", cash.top.length === 2 && cash.top[0].hn === "HN-A" && near(cash.top[0].net, 3000) && cash.top[0].bills === 2 && cash.top[0].firstDate === "2025-12-01" && cash.top[0].lastDate === "2026-02-01" && cash.top[1].hn === "HN-B" && cash.patients === 2);
+    ok("top: HN-A appears separately under บริษัท ข (per-group ranking)", all.groups.find((g) => g.group === "ประกันกลุ่ม บริษัท ข")?.top[0].hn === "HN-A");
+    const yr = ca.clinicaTopSpenders(b2, { scope: "year", year: 2026 });
+    ok("top: this-year scope drops the 2025 bill (HN-A cash falls to 2,000 so HN-B 2,500 leads; coverage from Feb)", yr.from === "2026-02-01" && yr.bills === 6 && yr.groups.find((g) => g.group === "เงินสด")?.top[0].hn === "HN-B" && yr.groups.find((g) => g.group === "เงินสด")?.top[1].net === 2000);
+    ok("top: limit caps the ranking", ca.clinicaTopSpenders(b2, { scope: "all", limit: 1 }).groups[0].top.length === 1);
+    ok("top: a branch without bills → empty", ca.clinicaTopSpenders(999).groups.length === 0 && ca.clinicaTopSpenders(999).bills === 0);
+  }
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

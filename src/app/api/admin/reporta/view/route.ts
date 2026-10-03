@@ -3,7 +3,7 @@ import { requirePermission, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { branchTodayCol } from "@/lib/daily-col";
 import { isClinicaBranch, clinicaRangeAgg } from "@/lib/clinica-db";
-import { clinicaMonth, clinicaWeek, clinicaDay } from "@/lib/clinica-analytics";
+import { clinicaMonth, clinicaWeek, clinicaDay, clinicaTopSpenders } from "@/lib/clinica-analytics";
 import { isSalesaBranch, listMonth, getLineGroupId, weeklySentAt, getMonthlyTargetFor, monthlySentAt, getCardColor, SALESA_DEFAULT_CARD_COLOR, getBranchHours } from "@/lib/salesa-db";
 import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, weekdayStats, targetProgress, insightRangeFor, insightBundle, annualProjection, festivalAnalysis, annualBranchBars, annualBranchDailyBars, revshareIncomeForBranch, applyRevshareToTarget, remainingMonthOutlook, composeExpenseAnalysis } from "@/lib/salesa-analytics";
 import { expenseCategoryTotals, expenseAccrualTotal } from "@/lib/accounta-db";
@@ -82,6 +82,13 @@ export function GET(req: Request) {
 
   // One clinic day — for the daily-send PIN preview (owner 2026-09-27: พรีวิว
   // ทุกปุ่มที่จะส่งการ์ด). Mirrors what the notify route builds for clinica-daily.
+  // Top spenders per payer group (owner 2026-10-03) — opened on demand from the
+  // clinic section (hidden by default: HN-level data). Cumulative or this year.
+  if (sp.get("clinicaTop") != null) {
+    const scope = sp.get("scope") === "year" ? "year" : "all";
+    return NextResponse.json({ ok: true, clinicaTop: clinicaTopSpenders(branchId, { scope, year: bkkNow().year }) });
+  }
+
   const clinicaDaily = sp.get("clinicaDaily") ?? "";
   if (ISO.test(clinicaDaily)) {
     return NextResponse.json({ ok: true, branchName: name, hasLineGroup, cardColor, clinicaDaily: clinicaDay(branchId, clinicaDaily) });
