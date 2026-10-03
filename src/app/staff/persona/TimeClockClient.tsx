@@ -1248,7 +1248,7 @@ function ClockAction({
     const isOut = owlPrompt.kind === "missing_out";
     const certType = isOut ? "out" : "in";
     const [yy, mm, dd] = owlPrompt.work_date.split("-");
-    const dateLabel = `${dd}/${mm}/${String(Number(yy) + 543).slice(2)}`;
+    const dateLabel = `${dd}/${mm}/${Number(yy) + 543}`;
     return (
       <div className="bg-sky-50 border-2 border-sky-200 rounded-2xl p-4 space-y-3 text-left">
         <div className="text-sm font-bold text-sky-900">น้องฮูกแจ้งเตือน</div>

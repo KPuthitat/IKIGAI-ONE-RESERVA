@@ -1551,19 +1551,19 @@ export function ledgerRange(period: LedgerPeriod, anchor: string): { start: stri
   const [y, m, d] = (/^\d{4}-\d{2}-\d{2}$/.test(anchor) ? anchor : bkkToday()).split("-").map(Number);
   const iso = (x: Date) => x.toISOString().slice(0, 10);
   if (period === "year") {
-    return { start: `${y}-01-01`, end: `${y}-12-31`, label: `ปี ${y + 543}` };
+    return { start: `${y}-01-01`, end: `${y}-12-31`, label: `ปี พ.ศ. ${y + 543}` };
   }
   if (period === "month") {
     const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
     const mm = String(m).padStart(2, "0");
-    return { start: `${y}-${mm}-01`, end: `${y}-${mm}-${String(last).padStart(2, "0")}`, label: `${["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"][m]} ${y + 543}` };
+    return { start: `${y}-${mm}-01`, end: `${y}-${mm}-${String(last).padStart(2, "0")}`, label: `${["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"][m]} พ.ศ. ${y + 543}` };
   }
   const dt = new Date(Date.UTC(y, m - 1, d));
   const dow = dt.getUTCDay();                 // 0=Sun..6=Sat
   const mon = new Date(dt.getTime() + (dow === 0 ? -6 : 1 - dow) * 86400_000);
   const sun = new Date(mon.getTime() + 6 * 86400_000);
   const TH_M = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-  const thFull = (x: Date) => `${x.getUTCDate()} ${TH_M[x.getUTCMonth() + 1]} ${x.getUTCFullYear() + 543}`;
+  const thFull = (x: Date) => `${x.getUTCDate()} ${TH_M[x.getUTCMonth() + 1]} พ.ศ. ${x.getUTCFullYear() + 543}`;
   return { start: iso(mon), end: iso(sun), label: `สัปดาห์ ${thFull(mon)} – ${thFull(sun)}` };
 }
 

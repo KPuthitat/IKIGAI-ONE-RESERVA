@@ -280,7 +280,7 @@ export default function RoundsClient({
 
       <div className="flex items-center justify-center gap-3">
         <button type="button" onClick={() => shift(-1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">←</button>
-        <span className="text-sm font-bold text-slate-700">{TH_MONTHS_FULL[month]} {year + 543}</span>
+        <span className="text-sm font-bold text-slate-700">{TH_MONTHS_FULL[month]} พ.ศ. {year + 543}</span>
         <button type="button" onClick={() => shift(1)} disabled={busy} className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50">→</button>
       </div>
 
@@ -483,12 +483,12 @@ export default function RoundsClient({
           ))}
           <div className="flex items-center justify-between gap-2 text-sm pt-1">
             <div>
-              <div className="font-bold text-slate-800">รวมทั้งเดือน ({TH_MONTHS_FULL[month]} {year + 543})</div>
+              <div className="font-bold text-slate-800">รวมทั้งเดือน ({TH_MONTHS_FULL[month]} พ.ศ. {year + 543})</div>
               <div className="text-xs text-slate-400">{drinkWelfare.month.count} แก้ว · ฿{fmtMoney(drinkWelfare.month.total)}</div>
             </div>
             <button type="button" onClick={() => setSendModal({
               key: "dw-month", heading: "ส่งสรุปสวัสดิการเครื่องดื่ม (สิ้นเดือน)",
-              preview: <DrinkWelfareCardPreview shop={shop} sellerName={sellerName} periodLabel={`${TH_MONTHS_FULL[month]} ${year + 543}`} count={drinkWelfare.month.count} total={drinkWelfare.month.total} vatRate={vatRate} byTier={drinkWelfare.month.byTier} cashCount={drinkWelfare.month.cashCount} cashTotal={drinkWelfare.month.cashTotal} />,
+              preview: <DrinkWelfareCardPreview shop={shop} sellerName={sellerName} periodLabel={`${TH_MONTHS_FULL[month]} พ.ศ. ${year + 543}`} count={drinkWelfare.month.count} total={drinkWelfare.month.total} vatRate={vatRate} byTier={drinkWelfare.month.byTier} cashCount={drinkWelfare.month.cashCount} cashTotal={drinkWelfare.month.cashTotal} />,
               body: { kind: "drink_welfare" }
             })} className="btn-primary !py-1 !px-2.5 !text-xs shrink-0">ส่งรายงานสิ้นเดือน</button>
           </div>

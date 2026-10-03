@@ -179,7 +179,7 @@ function formatThaiDate(yyyymmdd: string): string {
     "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
     "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"
   ];
-  return `${parseInt(d, 10)} ${months[parseInt(m, 10) - 1]} ${parseInt(y, 10) + 543}`;
+  return `${parseInt(d, 10)} ${months[parseInt(m, 10) - 1]} พ.ศ. ${parseInt(y, 10) + 543}`;
 }
 
 function formatEnglishDate(yyyymmdd: string): string {

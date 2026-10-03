@@ -69,7 +69,7 @@ export async function POST(req: Request) {
     `SELECT b.name, c.name_th AS company_name FROM branches b LEFT JOIN companies c ON c.id = b.company_id WHERE b.id = ?`
   ).get(branchId) as { name: string; company_name: string | null };
   const seller = sellerRow.name;
-  const monthLabel = `${TH_MONTHS_FULL[month]} ${year + 543}`;
+  const monthLabel = `${TH_MONTHS_FULL[month]} พ.ศ. ${year + 543}`;
   // Single partner name on the card (owner 2026-07-25) — the POS categories can
   // be many, so they no longer print here (they still map POS rows → partner).
   const shop = partnerShopName(partner);

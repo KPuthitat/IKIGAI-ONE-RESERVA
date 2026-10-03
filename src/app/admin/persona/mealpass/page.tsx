@@ -67,7 +67,7 @@ export default function MealpassConfirmPage() {
   const TH_MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
     "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
   const [ymY, ymM] = ym.split("-").map(Number);
-  const monthLabel = `${TH_MONTHS[ymM - 1]} ${ymY + 543}`;
+  const monthLabel = `${TH_MONTHS[ymM - 1]} พ.ศ. ${ymY + 543}`;
 
   return (
     <div className="space-y-4">

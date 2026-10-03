@@ -14,7 +14,7 @@ const FONT_BOLD = path.join(process.cwd(), "public", "fonts", "LINESeedSansTH-Bo
 const TH_MONTHS = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 function monthLabel(month: string): string {
   const [y, m] = month.split("-").map(Number);
-  return `${TH_MONTHS[m] ?? ""} ${y + 543}`;
+  return `${TH_MONTHS[m] ?? ""} พ.ศ. ${y + 543}`;
 }
 const money = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const money2 = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

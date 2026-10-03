@@ -1,3 +1,4 @@
+import { thDateBE } from "@/lib/th-month";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { requireSuperAdmin } from "@/lib/auth";
@@ -13,9 +14,7 @@ export default function MounjaroConsentPage() {
   requireSuperAdmin();
   const active = getActiveConsent();
   const updatedTh = active?.updated_at
-    ? new Date(active.updated_at.replace(" ", "T") + "Z").toLocaleDateString("th-TH", {
-        timeZone: "Asia/Bangkok", year: "numeric", month: "long", day: "numeric"
-      })
+    ? thDateBE(new Date(active.updated_at.replace(" ", "T") + "Z"), { bangkok: true })
     : "—";
 
   return (

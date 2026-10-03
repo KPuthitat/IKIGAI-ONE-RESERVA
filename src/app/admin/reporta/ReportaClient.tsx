@@ -22,7 +22,7 @@ const intTh = (n: number) => n.toLocaleString("th-TH");
 
 function thaiDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
-  return `${d} ${TH_MONTHS[m]} ${y + 543}`;
+  return `${d} ${TH_MONTHS[m]} พ.ศ. ${y + 543}`;
 }
 function mondayOf(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -587,20 +587,18 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
         // Duplicate-file guard (owner 2026-09-19): warn when an import replaced
         // data that already existed for that day+type.
         const kindTh = (k: string) => k === "close_up" ? "ยอดขาย" : k === "overview" ? "เมนู" : k === "tax_invoice" ? "ใบกำกับภาษี" : "ใบเสร็จ";
-        const imported = r.imported as Array<{ date: string; kind: string; note?: string; overwritten?: boolean }>;
+        const imported = r.imported as Array<{ date: string; kind: string; overwritten?: boolean }>;
         const dup = imported.filter((x) => x.overwritten);
-        // Tax-invoice files dedup by invoice number, so their note (new / skipped
-        // counts) is the useful feedback (owner 2026-10-02).
-        const taxNotes = imported.filter((x) => x.kind === "tax_invoice" && x.note).map((x) => x.note as string);
+        // Tax-invoice files dedup by invoice number silently — a plain "สำเร็จ" is
+        // all the owner wants to read (2026-10-03: "เวิ่นเว้อเกินไป").
+        const hasTax = imported.some((x) => x.kind === "tax_invoice");
         if (dup.length) {
           const list = dup.map((x) => `${thaiDate(x.date)} (${kindTh(x.kind)})`).join(", ");
           setMsg({ kind: "warn", text: `นำเข้าไฟล์สำเร็จ · ⚠️ ทับข้อมูลเดิม ${dup.length} รายการ — ${list}` });
-        } else if (taxNotes.length) {
-          setMsg({ kind: "ok", text: `นำเข้าไฟล์สำเร็จ · ${taxNotes.join(" · ")}` });
         } else {
           setMsg({ kind: "ok", text: "นำเข้าไฟล์สำเร็จ" });
         }
-        if (taxNotes.length) {
+        if (hasTax) {
           // Refresh the corporate-customer card if it's open (it's lazy-loaded).
           setCorpData(null);
           if (corpOpen) loadCorporate(corpYear);
@@ -688,7 +686,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
     const pv = await fetch(`/api/admin/reporta/view?monthly=${ym}`, { cache: "no-store" }).then((x) => x.json()).catch(() => null);
     const monthly: MonthlyAnalytics | null = pv?.ok ? pv.monthly : null;
     setPin({
-      title: `ส่งสรุปเดือน ${TH_MONTHS[m]} ${y + 543}`,
+      title: `ส่งสรุปเดือน ${TH_MONTHS[m]} พ.ศ. ${y + 543}`,
       preview: monthly ? <MonthlyPreview m={monthly} branchName={branchName} operator={operatorName} color={cardColor} /> : undefined,
       run: async (p) => {
         const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "monthly", year: y, month: m, pin: p }) }).then((x) => x.json());
@@ -703,7 +701,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
   // and monthly-sent marker as the restaurant monthly card.
   const sendClinica = (y: number, m: number) => {
     setPin({
-      title: `ส่งสรุปคลินิก ${TH_MONTHS[m]} ${y + 543}`,
+      title: `ส่งสรุปคลินิก ${TH_MONTHS[m]} พ.ศ. ${y + 543}`,
       preview: clinica ? <ClinicaPreview c={clinica} branchName={branchName} operator={operatorName} color={cardColor} /> : undefined,
       run: async (p) => {
         const r = await fetch("/api/admin/reporta/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "clinica", year: y, month: m, pin: p }) }).then((x) => x.json());
@@ -874,7 +872,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           to where you import; month header + target progress + monthly send stay. */}
       <div className="card space-y-3">
         <div className="flex items-center justify-center">
-          <NavStepper eyebrow="เดือน" label={`${TH_MONTHS[month]} ${year + 543}`}
+          <NavStepper eyebrow="เดือน" label={`${TH_MONTHS[month]} พ.ศ. ${year + 543}`}
             onPrev={() => shiftMonth(-1)} onNext={() => shiftMonth(1)}
             prevTitle="เดือนก่อน" nextTitle="เดือนถัดไป" />
         </div>
@@ -919,7 +917,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
             {annual && (
               <div className="pt-2 mt-1 border-t border-slate-200 space-y-1">
                 <div className="flex items-baseline justify-between gap-2 text-[11px]">
-                  <span className="text-slate-500">เป้าทั้งปี {annual.year + 543} · {baht(annual.annualTarget)}</span>
+                  <span className="text-slate-500">เป้าทั้งปี พ.ศ. {annual.year + 543} · {baht(annual.annualTarget)}</span>
                   <span className={`font-bold ${annual.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{annual.pctOfTarget.toFixed(0)}% ของเป้า</span>
                 </div>
                 {annual.prorated && (
@@ -1438,7 +1436,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           </button>
           {corpOpen && (
             <div className="mt-3 space-y-3">
-              <NavStepper eyebrow="ปี" label={`${corpYear + 543}`}
+              <NavStepper eyebrow="ปี" label={`พ.ศ. ${corpYear + 543}`}
                 onPrev={() => stepCorpYear(-1)} onNext={() => stepCorpYear(1)} nextDisabled={corpYear >= Number(todayBkk().slice(0, 4))} />
               {corpBusy ? (
                 <p className="text-sm text-slate-400 text-center py-4">กำลังโหลด…</p>
@@ -1460,7 +1458,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                         <div className="text-[11px] text-slate-500">มาซ้ำ {intTh(c.repeatCompanies)} ราย</div>
                       </div>
                       <div className="rounded-xl bg-slate-50 p-3">
-                        <div className="text-[11px] text-slate-500">ใบกำกับภาษีปี {corpYear + 543}</div>
+                        <div className="text-[11px] text-slate-500">ใบกำกับภาษีปี พ.ศ. {corpYear + 543}</div>
                         <div className="text-lg font-bold text-slate-800 tabular-nums">{intTh(c.invoicesYear)} <span className="text-xs font-normal text-slate-500">ใบ</span></div>
                       </div>
                       <div className="rounded-xl bg-slate-50 p-3">
@@ -1487,66 +1485,74 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                         )}
                       </div>
                     )}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm border-collapse">
-                        <thead>
-                          <tr className="text-xs text-slate-500 border-b border-slate-200">
-                            <th className="text-left py-2 pr-3">บริษัท</th>
-                            <th className="text-right py-2 px-2 whitespace-nowrap">ปีนี้ (ครั้ง)</th>
-                            <th className="text-right py-2 px-2 whitespace-nowrap">ยอดปีนี้</th>
-                            <th className="text-right py-2 px-2 whitespace-nowrap">เฉลี่ย/ครั้ง</th>
-                            <th className="text-left py-2 px-2 whitespace-nowrap">ความถี่</th>
-                            <th className="text-left py-2 px-2 whitespace-nowrap">มักมา</th>
-                            <th className="text-left py-2 px-2 whitespace-nowrap">รายเดือน</th>
-                            <th className="text-left py-2 pl-2 whitespace-nowrap">ล่าสุด</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {shown.map((r) => (
-                            <tr key={r.key} className={`border-b border-slate-100 align-top ${r.overdue ? "bg-amber-50/40" : ""}`}>
-                              <td className="py-2 pr-3 min-w-[14rem]">
-                                <div className="font-medium text-slate-800">{r.name}{r.custBranchCode && <span className="text-[11px] text-slate-400 font-normal"> · สาขา {r.custBranchCode}</span>}</div>
-                                <div className="text-[11px] text-slate-500 mt-0.5">{r.blurb}</div>
-                              </td>
-                              <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">
-                                <div className="font-semibold text-slate-700">{intTh(r.visitsYear)}</div>
-                                <div className="text-[11px] text-slate-400">ทั้งหมด {intTh(r.visits)}{r.otherBranches ? ` · ทุกสาขา ${intTh(r.groupVisits)}` : ""}</div>
-                              </td>
-                              <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">
-                                <div className="font-semibold text-slate-700">{baht(r.spendYear)}</div>
-                                <div className="text-[11px] text-slate-400">ทั้งหมด {baht(r.spend)}</div>
-                              </td>
-                              <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">{r.avgPerVisit != null ? baht(r.avgPerVisit) : "—"}</td>
-                              <td className="py-2 px-2 whitespace-nowrap">
-                                <div>{r.cadence}</div>
-                                {r.avgGapDays != null && <div className="text-[11px] text-slate-400">ห่างกัน ~{intTh(r.avgGapDays)} วัน</div>}
-                              </td>
-                              <td className="py-2 px-2 whitespace-nowrap">
-                                {r.visitsYear === 0 ? <span className="text-slate-300">—</span> : (
-                                  <>
-                                    <div>{r.phase ? `${r.phase.label} (${r.phase.count}/${r.visitsYear})` : "—"}</div>
-                                    <div className="text-[11px] text-slate-500">{r.weekday ? `วัน${r.weekday.label} (${r.weekday.count}/${r.visitsYear})` : ""}</div>
-                                    {r.nearHoliday.count > 0 && <div className="text-[11px] text-amber-700">ใกล้วันหยุด {r.nearHoliday.count} ครั้ง · {r.nearHoliday.names.slice(0, 2).join(", ")}</div>}
-                                  </>
-                                )}
-                              </td>
-                              <td className="py-2 px-2">
-                                <div className="flex items-end gap-[2px] h-6" title={r.months.map((v, i) => `${TH_MONTHS[i + 1]}: ${v} ครั้ง`).join(" · ")}>
-                                  {r.months.map((v, i) => (
-                                    <div key={i} className="w-[7px] h-full flex items-end">
-                                      <div className={`w-full rounded-sm ${v > 0 ? "bg-emerald-500" : "bg-slate-100"}`} style={{ height: v > 0 ? `${Math.max(25, (v / monthPeak) * 100)}%` : "15%" }} />
-                                    </div>
-                                  ))}
+                    {/* One block per company (owner 2026-10-03: "วางการรายงานให้อ่านง่ายกว่านี้") —
+                        name + this year's money on the top line, then four labelled
+                        facts, then the 12-month visit strip. No overflow, no repeated text. */}
+                    <div className="space-y-2">
+                      {shown.map((r) => (
+                        <div key={r.key} className={`rounded-xl border px-4 py-3 ${r.overdue ? "border-amber-200 bg-amber-50/40" : "border-slate-100 bg-white"}`}>
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-800 leading-snug">{r.name}</div>
+                              <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                                {r.custBranchCode && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">สาขาลูกค้า {r.custBranchCode}</span>}
+                                {r.otherBranches && <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-700">มาทั้งสองสาขา · รวม {intTh(r.groupVisits)} ครั้ง {baht(r.groupSpend)}</span>}
+                                {r.overdue && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">เงียบนานกว่ารอบปกติ — ควรติดต่อ</span>}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="text-lg font-bold text-slate-800 tabular-nums leading-tight">{baht(r.spendYear)}</div>
+                              <div className="text-[11px] text-slate-500">
+                                ปีนี้ {intTh(r.visitsYear)} ครั้ง{r.avgPerVisit != null ? ` · เฉลี่ยครั้งละ ${baht(r.avgPerVisit)}` : ""}
+                                {r.visits !== r.visitsYear && <> · ทุกปี {intTh(r.visits)} ครั้ง {baht(r.spend)}</>}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 mt-3 text-sm">
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wide text-slate-400">ความถี่</div>
+                              <div className="text-slate-800">{r.cadence}</div>
+                              {r.avgGapDays != null && <div className="text-[11px] text-slate-500">ห่างกันครั้งละ ~{intTh(r.avgGapDays)} วัน</div>}
+                            </div>
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wide text-slate-400">มักมาช่วง</div>
+                              {r.visitsYear === 0 ? <div className="text-slate-300">—</div> : (
+                                <>
+                                  <div className="text-slate-800">{r.phase ? r.phase.label : "—"}{r.weekday ? ` · วัน${r.weekday.label}` : ""}</div>
+                                  <div className="text-[11px] text-slate-500">
+                                    {r.phase ? `${r.phase.count} ใน ${r.visitsYear} ครั้ง` : ""}{r.weekday ? ` · วัน${r.weekday.label} ${r.weekday.count} ใน ${r.visitsYear} ครั้ง` : ""}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wide text-slate-400">ใกล้วันหยุด</div>
+                              {r.nearHoliday.count > 0 ? (
+                                <>
+                                  <div className="text-amber-800">{intTh(r.nearHoliday.count)} ครั้ง</div>
+                                  <div className="text-[11px] text-slate-500">{r.nearHoliday.names.slice(0, 2).join(", ")}</div>
+                                </>
+                              ) : <div className="text-slate-400">ไม่มี</div>}
+                            </div>
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wide text-slate-400">มาล่าสุด</div>
+                              <div className="text-slate-800">{r.lastVisitLabel}</div>
+                              <div className={`text-[11px] ${r.overdue ? "text-amber-700 font-medium" : "text-slate-500"}`}>{r.daysSinceLast > 0 ? `${intTh(r.daysSinceLast)} วันก่อน` : "วันนี้"}</div>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex items-center gap-2">
+                            <span className="text-[10px] uppercase tracking-wide text-slate-400 shrink-0">รายเดือน</span>
+                            <div className="flex gap-1 flex-1 max-w-sm">
+                              {r.months.map((v, i) => (
+                                <div key={i} className="flex-1 min-w-0 text-center" title={`${TH_MONTHS[i + 1]}: ${v} ครั้ง`}>
+                                  <div className={`h-5 rounded flex items-center justify-center text-[10px] tabular-nums ${v > 0 ? (v / monthPeak >= 0.67 ? "bg-emerald-500 text-white" : "bg-emerald-200 text-emerald-900") : "bg-slate-100 text-slate-300"}`}>{v > 0 ? v : ""}</div>
+                                  <div className="text-[9px] text-slate-400 mt-0.5">{i + 1}</div>
                                 </div>
-                              </td>
-                              <td className="py-2 pl-2 whitespace-nowrap">
-                                <div>{r.lastVisitLabel}</div>
-                                <div className={`text-[11px] ${r.overdue ? "text-amber-700 font-medium" : "text-slate-400"}`}>{r.daysSinceLast > 0 ? `${intTh(r.daysSinceLast)} วันก่อน` : "วันนี้"}{r.overdue ? " · เงียบนานกว่าปกติ" : ""}</div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                     {c.rows.length > 15 && (
                       <button type="button" onClick={() => setCorpShowAll((v) => !v)} className="text-xs text-brand hover:underline">
@@ -1590,7 +1596,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           </button>
           {festOpen && (
             <div className="mt-3 space-y-3">
-              <NavStepper eyebrow="ปี" label={`${festYear + 543}`}
+              <NavStepper eyebrow="ปี" label={`พ.ศ. ${festYear + 543}`}
                 onPrev={() => stepFestYear(-1)} onNext={() => stepFestYear(1)} nextDisabled={festYear >= Number(todayBkk().slice(0, 4))} />
               {festBusy ? (
                 <p className="text-sm text-slate-400 text-center py-4">กำลังโหลด…</p>
@@ -1652,7 +1658,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           </button>
           {ybOpen && (
             <div className="mt-3 space-y-4">
-              <NavStepper eyebrow="ปี" label={`${ybYear + 543}`}
+              <NavStepper eyebrow="ปี" label={`พ.ศ. ${ybYear + 543}`}
                 onPrev={() => stepYbYear(-1)} onNext={() => stepYbYear(1)} nextDisabled={ybYear >= Number(todayBkk().slice(0, 4))} />
               {ybBusy ? (
                 <p className="text-sm text-slate-400 text-center py-4">กำลังโหลด…</p>
@@ -1713,7 +1719,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           </button>
           {dbOpen && (
             <div className="mt-3 space-y-4">
-              <NavStepper eyebrow="ปี" label={`${dbYear + 543}`}
+              <NavStepper eyebrow="ปี" label={`พ.ศ. ${dbYear + 543}`}
                 onPrev={() => stepDbYear(-1)} onNext={() => stepDbYear(1)} nextDisabled={dbYear >= Number(todayBkk().slice(0, 4))} />
               {dbBusy ? (
                 <p className="text-sm text-slate-400 text-center py-4">กำลังโหลด…</p>
@@ -2572,7 +2578,7 @@ function MonthlyPreview({ m, branchName, operator, color }: { m: MonthlyAnalytic
 function ClinicaPreview({ c, branchName, operator, color }: { c: ClinicaMonth; branchName: string; operator: string; color: string }) {
   const paidPct = clinicaPaidPct(c);
   return (
-    <CardShell color={color} title="สรุปคลินิกประจำเดือน" subtitle={`${TH_MONTHS[c.month]} ${c.year + 543} · ${branchName}`}>
+    <CardShell color={color} title="สรุปคลินิกประจำเดือน" subtitle={`${TH_MONTHS[c.month]} พ.ศ. ${c.year + 543} · ${branchName}`}>
       <div className="font-bold text-slate-800">{branchName}</div>
       <div className="text-[11px] text-slate-400">สรุปโดย: {operator}</div>
       {c.advice.length > 0 && (

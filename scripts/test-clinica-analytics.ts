@@ -122,7 +122,7 @@ process.env.DATABASE_PATH = TMP;
   ok("week: ยอดบิลรวม 800 · 2 บิล · 2 คนไข้ · 2 วัน", near(w.totalNet, 800) && w.totalBills === 2 && w.totalPatients === 2 && w.dayCount === 2);
   ok("week: เฉลี่ย/วัน = 400 · วันเด่น = 10-07 (500)", near(w.avgPerDay!, 400) && w.bestDate === "2026-10-07");
   ok("week: รายวัน 2 แถว (300, 500) เรียงวันที่", w.days.length === 2 && w.days[0].date === "2026-10-05" && near(w.days[0].net, 300) && near(w.days[1].net, 500));
-  ok("week: label เป็นวันที่มีข้อมูลจริง (5–7 ตุลาคม 2569)", w.label === "5–7 ตุลาคม 2569");
+  ok("week: label เป็นวันที่มีข้อมูลจริง (5–7 ตุลาคม 2569)", w.label === "5–7 ตุลาคม พ.ศ. 2569");
   ok("week: เทียบสัปดาห์ก่อน 200 → ยอด +300% · บิล +100% · คนไข้ +100%", w.prevWeekNet === 200 && near(w.wowNetPct!, 300) && near(w.wowBillsPct!, 100) && near(w.wowPatientsPct!, 100));
   ok("week: topItems เรียงตามยอด (แล็บ 500 มาก่อน)", w.topItems.length === 2 && w.topItems[0].net === 500);
   ok("week: สัปดาห์ที่ไม่มีข้อมูล → ทุกค่าเป็น 0 และ WoW null", (() => {

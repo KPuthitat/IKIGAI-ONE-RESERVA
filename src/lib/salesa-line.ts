@@ -522,7 +522,7 @@ export function salesaCompanyFlex(ov: CompanyOverview, meta: CompanyCardMeta): F
     ] });
   }
   if (ov.annual) {
-    body.push(kv(`เป้าทั้งปี ${ov.annual.year + 543}`, baht(ov.annual.annualTarget), { size: "xs" }));
+    body.push(kv(`เป้าทั้งปี พ.ศ. ${ov.annual.year + 543}`, baht(ov.annual.annualTarget), { size: "xs" }));
     body.push({ type: "text", size: "xxs", wrap: true, contents: [
       { type: "span", text: "YTD ", color: "#999999" },
       { type: "span", text: `${baht(ov.annual.ytdNett)} (${ov.annual.pctOfTarget.toFixed(0)}%)`, color: ov.annual.pctOfTarget >= 100 ? "#0f7a4f" : "#1a1a2e" },

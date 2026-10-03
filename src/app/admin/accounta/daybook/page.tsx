@@ -66,7 +66,7 @@ function SalesTargetCard({ st }: { st: SalesTargetProgress }) {
             <h2 className={`font-bold ${c.title}`}>ยอดขายเทียบเป้าเดือนนี้</h2>
           </div>
           <span className={`shrink-0 rounded-full border ${c.border} bg-white/70 px-2.5 py-0.5 text-[11px] font-medium ${c.foot}`}>
-            {reached ? "ถึงเป้าแล้ว" : `${TH_MON_FULL[mm]} ${yy + 543}`}
+            {reached ? "ถึงเป้าแล้ว" : `${TH_MON_FULL[mm]} พ.ศ. ${yy + 543}`}
           </span>
         </div>
 
@@ -181,7 +181,7 @@ function BreakEvenCard({ be }: { be: BreakEvenAnalysis }) {
             <h2 className={`font-bold ${c.title}`}>จุดคุ้มทุนเดือนนี้</h2>
           </div>
           <span className={`shrink-0 rounded-full border ${c.border} bg-white/70 px-2.5 py-0.5 text-[11px] font-medium ${c.foot}`}>
-            {reached ? "คุ้มทุนแล้ว" : `${TH_MON_FULL[mm]} ${yy + 543}`}
+            {reached ? "คุ้มทุนแล้ว" : `${TH_MON_FULL[mm]} พ.ศ. ${yy + 543}`}
           </span>
         </div>
 

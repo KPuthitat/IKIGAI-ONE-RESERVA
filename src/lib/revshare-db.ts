@@ -471,7 +471,7 @@ export function monthPickerOptions(
     const ym = monthKey(b.y, b.m);
     const sales = round2(listRounds(partnerId, branchId, b.y, b.m).reduce((s, r) => s + r.sales_amount, 0));
     opts.push({
-      ym, year: b.y, month: b.m, label: `${TH_MONTHS_FULL[b.m]} ${b.y + 543}`,
+      ym, year: b.y, month: b.m, label: `${TH_MONTHS_FULL[b.m]} พ.ศ. ${b.y + 543}`,
       sales, settled: i > 0 && blocked.has(ym), isAnchor: i === 0
     });
   }

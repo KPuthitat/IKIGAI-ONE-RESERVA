@@ -48,7 +48,7 @@ function formatBkkDate(iso: string | null, lang: Lang): string {
   const date = bkk.toISOString().slice(0, 10);
   if (lang === "th") {
     const [y, m, dd] = date.split("-");
-    return `${dd}/${m}/${String(Number(y) + 543).slice(2)}`;
+    return `${dd}/${m}/${Number(y) + 543}`;
   }
   return date;
 }

@@ -48,7 +48,7 @@ const KIND_OPTS: Array<{ v: IncKind; label: string }> = [
   { v: "financing", label: "เงินกู้/เงินเข้าอื่น — ไม่นับยอดขาย ไม่มีภาษี" }
 ];
 const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-function monthLabel(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} ${y + 543}`; }
+function monthLabel(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} พ.ศ. ${y + 543}`; }
 
 // Group rows month → day, preserving the query's desc order (owner 2026-06-25:
 // this page is now for reviewing/editing entered rows, แยกเดือน → แยกวัน).

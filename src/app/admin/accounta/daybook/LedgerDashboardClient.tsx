@@ -140,7 +140,7 @@ function isoWeekNo(isoDate: string): number {
 function weekDateRange(start: string, end: string): string {
   const [sy, sm, sd] = start.split("-").map(Number);
   const [ey, em, ed] = end.split("-").map(Number);
-  const beS = sy + 543, beE = ey + 543;
+  const beS = `พ.ศ. ${sy + 543}`, beE = `พ.ศ. ${ey + 543}`;
   if (sy === ey && sm === em) return `${sd} – ${ed} ${TH_MON_FULL[sm]} ${beE}`;
   if (sy === ey) return `${sd} ${TH_MON_FULL[sm]} – ${ed} ${TH_MON_FULL[em]} ${beE}`;
   return `${sd} ${TH_MON_FULL[sm]} ${beS} – ${ed} ${TH_MON_FULL[em]} ${beE}`;
@@ -149,7 +149,7 @@ function weekDateRange(start: string, end: string): string {
 function fmtDayLabel(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const dow = TH_DOW_FULL[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
-  return `วัน${dow}ที่ ${d} ${TH_MON_FULL[m]} ${y + 543}`;
+  return `วัน${dow}ที่ ${d} ${TH_MON_FULL[m]} พ.ศ. ${y + 543}`;
 }
 
 const CAT_STATUS = {
@@ -1391,11 +1391,11 @@ export default function LedgerDashboardClient({
         {period === "month" ? (
           <div className="text-center min-w-[7rem]">
             <div className="text-4xl font-bold text-slate-800 tracking-tight tabular-nums leading-none">{anchor.slice(5, 7)}</div>
-            <div className="text-xs text-slate-500 leading-none mt-0.5">{TH_MON_FULL[Number(anchor.slice(5, 7))]} {Number(anchor.slice(0, 4)) + 543}</div>
+            <div className="text-xs text-slate-500 leading-none mt-0.5">{TH_MON_FULL[Number(anchor.slice(5, 7))]} พ.ศ. {Number(anchor.slice(0, 4)) + 543}</div>
           </div>
         ) : period === "year" ? (
           <div className="text-center min-w-[7rem]">
-            <div className="text-4xl font-bold text-slate-800 tracking-tight tabular-nums leading-none">{Number(anchor.slice(0, 4)) + 543}</div>
+            <div className="text-4xl font-bold text-slate-800 tracking-tight tabular-nums leading-none">พ.ศ. {Number(anchor.slice(0, 4)) + 543}</div>
           </div>
         ) : (
           <div className="text-center">
@@ -1471,7 +1471,7 @@ export default function LedgerDashboardClient({
         const comboPoints: ComboPoint[] = period === "year"
           ? monthly.map((m) => ({
               key: `m${m.month}`, label: String(m.month).padStart(2, "0"),
-              revenue: m.revenue, financing: 0, expense: m.expense, profit: m.profit, tip: `${TH_MON_FULL[m.month]} ${trendYear + 543}`
+              revenue: m.revenue, financing: 0, expense: m.expense, profit: m.profit, tip: `${TH_MON_FULL[m.month]} พ.ศ. ${trendYear + 543}`
             }))
           : enumerateDays(dash.start, dash.end).map((d) => {
               const r = dayRowMap.get(d);
@@ -1481,7 +1481,7 @@ export default function LedgerDashboardClient({
               };
             });
         const chartTitle = period === "year"
-          ? `ภาพรวมรายรับและรายจ่าย · ปี ${trendYear + 543}`
+          ? `ภาพรวมรายรับและรายจ่าย · ปี พ.ศ. ${trendYear + 543}`
           : `ภาพรวมรายรับและรายจ่ายรายวัน · ${dash.label}`;
         return (
           <div className="card space-y-2">
@@ -1616,7 +1616,7 @@ export default function LedgerDashboardClient({
                   <span className="text-slate-600 truncate">
                     {a.name}
                     <span className="text-[10px] text-slate-400 ml-1">{a.type === "bank" ? "ธนาคาร" : "เงินสด"}{a.company_wide ? " · ทั้งบริษัท" : ""}</span>
-                    {a.balance_as_of && <span className="text-[10px] text-slate-300 ml-1">ณ {(() => { const [y, m, d] = a.balance_as_of!.split("-").map(Number); return `${d} ${TH_MON_FULL[m]} ${y + 543}`; })()}</span>}
+                    {a.balance_as_of && <span className="text-[10px] text-slate-300 ml-1">ณ {(() => { const [y, m, d] = a.balance_as_of!.split("-").map(Number); return `${d} ${TH_MON_FULL[m]} พ.ศ. ${y + 543}`; })()}</span>}
                   </span>
                   <span className="font-mono text-slate-800 shrink-0">฿{fmtMoney(a.balance)}</span>
                 </div>

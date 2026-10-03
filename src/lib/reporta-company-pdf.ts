@@ -96,7 +96,7 @@ export function generateReportaCompanyPdf(ov: CompanyOverview, meta: ReportaComp
       // ── Annual target ──
       if (ov.annual) {
         progressBar(
-          `เป้าทั้งปี ${ov.annual.year + 543} รวมบริษัท · ฿${money(ov.annual.annualTarget)}`,
+          `เป้าทั้งปี พ.ศ. ${ov.annual.year + 543} รวมบริษัท · ฿${money(ov.annual.annualTarget)}`,
           `${ov.annual.pctOfTarget.toFixed(0)}% ของเป้า`,
           ov.annual.pctOfTarget,
           `YTD ฿${money(ov.annual.ytdNett)} · คาดสิ้นปี ฿${money(ov.annual.projectedNett)} (${ov.annual.projectedPct.toFixed(0)}% ของเป้า)`,

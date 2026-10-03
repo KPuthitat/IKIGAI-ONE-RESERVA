@@ -111,7 +111,7 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-function monthLabel(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} ${y + 543}`; }
+function monthLabel(ym: string): string { const [y, m] = ym.split("-").map(Number); return `${TH_MON[m]} พ.ศ. ${y + 543}`; }
 // Group expenses month → day, preserving the listing's date-desc order.
 function groupExpenses<T extends { bill_date: string; amount_total: number }>(rows: T[]) {
   const mOrder: string[] = [];

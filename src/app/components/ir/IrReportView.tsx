@@ -1,3 +1,4 @@
+import { thDateBE } from "@/lib/th-month";
 import { nameWithPrefix } from "@/lib/name";
 import {
   severityMeta, statusMeta, categoryLabel, incidentTypeLabel, factorLabel, personRoleLabel
@@ -12,7 +13,7 @@ export function fmtIrDateTime(s: string | null): string {
   if (!s) return "—";
   const d = new Date(s.includes("T") || s.includes(" ") ? s : `${s}T00:00:00`);
   if (isNaN(d.getTime())) return s;
-  return d.toLocaleString("th-TH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return thDateBE(d, { time: true });
 }
 
 export default function IrReportView({ r, showVerdict = true }: { r: IrReportDetail; showVerdict?: boolean }) {

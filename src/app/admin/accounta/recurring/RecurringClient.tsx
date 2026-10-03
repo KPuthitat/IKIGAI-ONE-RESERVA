@@ -26,7 +26,7 @@ const TH_MON = ["", "มกราคม", "กุมภาพันธ์", "ม
 function monthLabel(ym: string | null): string {
   if (!ym) return "ไม่มีกำหนด";
   const [y, m] = ym.split("-").map(Number);
-  return `${TH_MON[m]} ${y + 543}`;
+  return `${TH_MON[m]} พ.ศ. ${y + 543}`;
 }
 
 type Form = {

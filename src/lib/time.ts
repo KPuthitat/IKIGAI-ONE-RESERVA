@@ -86,7 +86,7 @@ export function formatLongDate(d: string, lang: "th" | "en"): string {
   if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return d || "";
   const [y, m, dd] = d.split("-").map(Number);
   if (lang === "th") {
-    return `${dd} ${TH_MONTHS_FULL[m - 1]} ${y + 543}`;
+    return `${dd} ${TH_MONTHS_FULL[m - 1]} พ.ศ. ${y + 543}`;
   }
   return `${dd} ${EN_MONTHS_FULL[m - 1]} ${y}`;
 }

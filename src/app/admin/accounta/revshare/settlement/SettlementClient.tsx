@@ -25,7 +25,7 @@ type Seller = { name: string; company: string | null; address: string | null; ta
 
 function monthKeyLabel(ym: string): string {
   const [y, m] = ym.split("-").map(Number);
-  return `${TH_MONTHS_FULL[m]} ${y + 543}`;
+  return `${TH_MONTHS_FULL[m]} พ.ศ. ${y + 543}`;
 }
 
 type CategorySale = { name: string; sales: number };
@@ -44,7 +44,7 @@ export default function SettlementClient({
   const [selected, setSelected] = useState<Set<string>>(new Set(initial.months));
 
   const r = pv.result;
-  const monthLabel = `${TH_MONTHS_FULL[month]} ${year + 543}`;
+  const monthLabel = `${TH_MONTHS_FULL[month]} พ.ศ. ${year + 543}`;
   const coveredMonths = pv.months.length ? pv.months : [`${year}-${String(month).padStart(2, "0")}`];
   const combined = coveredMonths.length > 1;
   // No abbreviations — full month names joined with "+" (owner 2026-08).

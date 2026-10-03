@@ -71,7 +71,7 @@ function CompanyCardPreview({ ov, companyName, monthLabel, operator, color }: { 
         )}
         {ov.annual && (
           <>
-            <div className="flex justify-between gap-2 text-[12px] text-slate-600"><span>เป้าทั้งปี {ov.annual.year + 543}</span><span>{baht(ov.annual.annualTarget)}</span></div>
+            <div className="flex justify-between gap-2 text-[12px] text-slate-600"><span>เป้าทั้งปี พ.ศ. {ov.annual.year + 543}</span><span>{baht(ov.annual.annualTarget)}</span></div>
             <div className="text-[11px] text-slate-500">YTD <b className={ov.annual.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}>{baht(ov.annual.ytdNett)} ({ov.annual.pctOfTarget.toFixed(0)}%)</b> · คาดสิ้นปี <b className={ov.annual.onTrack ? "text-emerald-600" : "text-amber-600"}>{ov.annual.projectedPct.toFixed(0)}%</b></div>
           </>
         )}

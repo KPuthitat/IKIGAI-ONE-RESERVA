@@ -63,7 +63,7 @@ export default function ShiftCloseFlexPreview({
         "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
         "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"
       ];
-      return `${d} ${months[m - 1]} ${y + 543}`;
+      return `${d} ${months[m - 1]} พ.ศ. ${y + 543}`;
     } catch { return iso; }
   }
 

@@ -1,3 +1,4 @@
+import { thDateBE } from "@/lib/th-month";
 import { NextResponse } from "next/server";
 import { requirePayrollAccess } from "@/lib/auth";
 import {
@@ -30,9 +31,7 @@ export async function GET(req: Request) {
   const note = url.searchParams.get("note")?.slice(0, 300) ?? null;
 
   const doc = buildPayrollSummaryDoc(m, scope);
-  const generatedLabel = new Date().toLocaleString("th-TH", {
-    timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "short"
-  });
+  const generatedLabel = thDateBE(new Date(), { bangkok: true, time: true });
   const slug = scopeToken(scope).replace(/[^a-z0-9]+/gi, "-");
   const filename = `payroll-summary-${slug}-${m}`;
 

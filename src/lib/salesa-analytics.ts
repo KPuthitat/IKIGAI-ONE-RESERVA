@@ -586,7 +586,7 @@ export function monthlyAnalytics(branchId: number, year: number, month: number, 
 
   return {
     year, month, ym: `${year}-${mm}`,
-    label: `${TH_MONTHS_LOCAL[month]} ${year + 543}`,
+    label: `${TH_MONTHS_LOCAL[month]} พ.ศ. ${year + 543}`,
     dayCount: rows.length,
     totalNett, revshareIncome, totalBills, totalPax, totalDiscount,
     // Averages + MoM/YoY % stay on POS (a month-end lump isn't a per-day/per-bill

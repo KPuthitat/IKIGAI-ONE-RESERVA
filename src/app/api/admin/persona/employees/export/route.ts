@@ -1,3 +1,4 @@
+import { thDateBE } from "@/lib/th-month";
 import { NextResponse } from "next/server";
 import { requireAdmin, userCanViewPayroll } from "@/lib/auth";
 import { buildEmployeeDoc, parseScope, scopeToken, renderEmployeeCsv } from "@/lib/employee-export";
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
   const note = url.searchParams.get("note")?.slice(0, 300) ?? null;
 
   const doc = buildEmployeeDoc(scope, fields, userCanViewPayroll(user));
-  const generatedLabel = new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "short" });
+  const generatedLabel = thDateBE(new Date(), { bangkok: true, time: true });
   const filename = `employees-${scopeToken(scope).replace(/[^a-z0-9]+/gi, "-")}`;
 
   if (format === "csv") {

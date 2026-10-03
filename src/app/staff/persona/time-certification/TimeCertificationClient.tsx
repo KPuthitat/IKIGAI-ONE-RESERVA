@@ -430,7 +430,7 @@ export default function TimeCertificationClient({
           <div className="space-y-1.5">
             {flags.map((f) => {
               const [yy, mm, dd] = f.work_date.split("-");
-              const dateLabel = `${dd}/${mm}/${String(Number(yy) + 543).slice(2)}`;
+              const dateLabel = `${dd}/${mm}/${Number(yy) + 543}`;
               return (
                 <div
                   key={f.id}

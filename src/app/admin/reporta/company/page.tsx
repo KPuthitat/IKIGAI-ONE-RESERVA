@@ -112,7 +112,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
           <CompanyReportActions
             year={year} month={month}
             companyName={(db.prepare("SELECT name_th AS name FROM companies WHERE id = ?").get(companyId) as { name: string } | undefined)?.name ?? "บริษัท"}
-            monthLabel={`${TH_MONTHS[month]} ${year + 543}`}
+            monthLabel={`${TH_MONTHS[month]} พ.ศ. ${year + 543}`}
             operator={user.display_name}
             color={getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR}
             overview={ov}
@@ -125,7 +125,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
         <Link href={href(prev.y, prev.m)} className="btn-secondary text-sm px-3 py-1.5" aria-label="เดือนก่อน">‹</Link>
         <div className="text-center min-w-[9rem]">
           <div className="text-[10px] uppercase tracking-[1.5px] text-slate-400">เดือน</div>
-          <div className="font-bold text-slate-800">{TH_MONTHS[month]} {year + 543}</div>
+          <div className="font-bold text-slate-800">{TH_MONTHS[month]} พ.ศ. {year + 543}</div>
         </div>
         {isFuture
           ? <span className="btn-secondary text-sm px-3 py-1.5 opacity-30 cursor-not-allowed">›</span>
@@ -186,7 +186,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
           {ov.annual && (
             <div className="card space-y-1">
               <div className="flex items-baseline justify-between gap-2 text-sm">
-                <span className="text-slate-500">เป้าทั้งปี {ov.annual.year + 543} รวมบริษัท · ฿{baht(ov.annual.annualTarget)}</span>
+                <span className="text-slate-500">เป้าทั้งปี พ.ศ. {ov.annual.year + 543} รวมบริษัท · ฿{baht(ov.annual.annualTarget)}</span>
                 <span className={`font-bold ${ov.annual.pctOfTarget >= 100 ? "text-emerald-600" : "text-slate-700"}`}>{ov.annual.pctOfTarget.toFixed(0)}% ของเป้า</span>
               </div>
               {ov.annual.prorated && <div className="text-[11px] text-slate-400">สาขาที่เพิ่งเปิดปีนี้คิดเป้าตามวันที่เปิดจริง (เต็มปีทุกสาขา ฿{baht(ov.annual.fullYearTarget)})</div>}
@@ -199,7 +199,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
 
           {/* Labour cost (COL) — payroll-view only, cookie-toggled show/hide */}
           {canSeeLabor && (
-            <LaborCostPanel data={labor} monthLabel={`${TH_MONTHS[month]} ${year + 543}`} />
+            <LaborCostPanel data={labor} monthLabel={`${TH_MONTHS[month]} พ.ศ. ${year + 543}`} />
           )}
 
           {/* Per-branch table */}
@@ -297,7 +297,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
           {/* Full-year growth bars per branch (owner 2026-09-21), company-scoped */}
           {bars.branches.length > 0 && (
             <div className="card space-y-3">
-              <div className="text-sm font-bold text-slate-800">เทรนด์การเติบโตทั้งปี {year + 543} — รายเดือนแต่ละสาขา</div>
+              <div className="text-sm font-bold text-slate-800">เทรนด์การเติบโตทั้งปี พ.ศ. {year + 543} — รายเดือนแต่ละสาขา</div>
               {bars.branches.map((b) => {
                 const peak = Math.max(1, ...b.months.map((v) => v ?? 0));
                 return (
@@ -381,7 +381,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
           {fest.rows.length > 0 && (
             <details className="card [&>summary]:cursor-pointer [&>summary]:list-none [&>summary::-webkit-details-marker]:hidden">
               <summary className="flex items-center justify-between gap-2">
-                <span className="text-sm font-bold text-slate-800">วันสำคัญ / เทศกาล {year + 543} — เทียบยอดขายแต่ละสาขา</span>
+                <span className="text-sm font-bold text-slate-800">วันสำคัญ / เทศกาล พ.ศ. {year + 543} — เทียบยอดขายแต่ละสาขา</span>
                 <span className="text-[11px] text-slate-400 shrink-0">แตะเพื่อดู ▾</span>
               </summary>
               <div className="overflow-x-auto mt-3">
@@ -418,7 +418,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
               read as one merged ranking, so each branch has its own list. */}
           {menu.byBranch.length > 0 && (
             <div className="card">
-              <div className="text-sm font-bold text-slate-800 mb-2">ขายดีแยกตามสาขา — {TH_MONTHS[month]} {year + 543}{isCurMonth ? ` (วันที่ 1–${menuDay})` : ""}</div>
+              <div className="text-sm font-bold text-slate-800 mb-2">ขายดีแยกตามสาขา — {TH_MONTHS[month]} พ.ศ. {year + 543}{isCurMonth ? ` (วันที่ 1–${menuDay})` : ""}</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {menu.byBranch.map((b) => (
                   <div key={b.branchId} className="rounded-xl border border-slate-200 p-3">

@@ -14,7 +14,7 @@ const TH_MONTHS = ["", "มกราคม", "กุมภาพันธ์", "
 function dateLabel(ymd: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
   if (!m) return ymd;
-  return `${Number(m[3])} ${TH_MONTHS[Number(m[2])] ?? ""} ${Number(m[1]) + 543}`;
+  return `${Number(m[3])} ${TH_MONTHS[Number(m[2])] ?? ""} พ.ศ. ${Number(m[1]) + 543}`;
 }
 const money2 = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 

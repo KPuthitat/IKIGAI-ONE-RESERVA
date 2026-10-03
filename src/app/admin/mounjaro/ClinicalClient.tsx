@@ -41,7 +41,7 @@ function toBE(d: string | null): string {
   if (isNaN(dt.getTime())) return "—";
   const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
     "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-  return `${dt.getDate()} ${months[dt.getMonth()]} ${dt.getFullYear() + 543}`;
+  return `${dt.getDate()} ${months[dt.getMonth()]} พ.ศ. ${dt.getFullYear() + 543}`;
 }
 
 export default function ClinicalClient({

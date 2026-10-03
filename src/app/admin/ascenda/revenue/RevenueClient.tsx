@@ -21,7 +21,7 @@ function friendlyDate(d: string): { line1: string; line2: string } {
   // shift on a non-ICT device (owner 2026-06-13).
   const dt = new Date(`${d}T00:00:00Z`);
   return {
-    line1: `${day} ${TH_MONTHS[m - 1]} ${(y + 543) % 100}`,
+    line1: `${day} ${TH_MONTHS[m - 1]} พ.ศ. ${y + 543}`,
     line2: TH_DAYS[dt.getUTCDay()]
   };
 }
@@ -126,7 +126,7 @@ export default function RevenueClient({
                     <tr key={`${d}-month`} className="bg-slate-50">
                       <td colSpan={3} className="py-1.5 px-3 text-[11px] font-bold text-slate-600">
                         {TH_MONTHS[Number(thisMonth.split("-")[1]) - 1]}{" "}
-                        {Number(thisMonth.split("-")[0]) + 543}
+                        พ.ศ. {Number(thisMonth.split("-")[0]) + 543}
                         <span className="ml-2 font-normal text-slate-500">
                           ยอดรวม: {fmtMoney(monthly[thisMonth] ?? 0)} บาท
                         </span>

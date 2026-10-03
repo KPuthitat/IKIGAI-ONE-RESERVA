@@ -760,7 +760,7 @@ function formatDateHeader(yyyymmdd: string, lang: "th" | "en"): string {
     "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
     "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"
   ];
-  return `วัน${dowsTh[dow]}ที่ ${d.getUTCDate()} ${monthsTh[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}`;
+  return `วัน${dowsTh[dow]}ที่ ${d.getUTCDate()} ${monthsTh[d.getUTCMonth()]} พ.ศ. ${d.getUTCFullYear() + 543}`;
 }
 
 function formatDateThaiShort(yyyymmdd: string, lang: "th" | "en"): string {
@@ -776,5 +776,5 @@ function formatDateThaiShort(yyyymmdd: string, lang: "th" | "en"): string {
     "มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
     "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"
   ];
-  return `${d.getUTCDate()} ${monthsTh[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}`;
+  return `${d.getUTCDate()} ${monthsTh[d.getUTCMonth()]} พ.ศ. ${d.getUTCFullYear() + 543}`;
 }

@@ -34,7 +34,7 @@ const TH_MONTHS = [
 
 export function monthLabelTh(yearMonth: string): string {
   const [y, m] = yearMonth.split("-").map(Number);
-  return `${TH_MONTHS[m - 1]} ${y + 543}`;
+  return `${TH_MONTHS[m - 1]} พ.ศ. ${y + 543}`;
 }
 
 // ── Scope ────────────────────────────────────────────────────────────

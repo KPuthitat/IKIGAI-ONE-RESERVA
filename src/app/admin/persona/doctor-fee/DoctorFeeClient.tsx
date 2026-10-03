@@ -1,5 +1,6 @@
 "use client";
 
+import { thDateBE } from "@/lib/th-month";
 import { Fragment, useState } from "react";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
@@ -13,7 +14,7 @@ function pct(rate: number): string {
 function fmtDay(date: string): string {
   const d = new Date(`${date}T00:00:00+07:00`);
   // No weekday — same "1 กันยายน 2569" standard as the rounds page (owner 2026-09-13).
-  return d.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" });
+  return thDateBE(d, { bangkok: true });
 }
 function monthBounds(ym: string): { start: string; end: string } {
   const [y, m] = ym.split("-").map(Number);

@@ -10,7 +10,22 @@ const TH_MONTHS = [
 /** "2026-06" → "มิถุนายน 2569". */
 export function thMonthLabel(mk: string): string {
   const [y, m] = mk.split("-").map(Number);
-  return `${TH_MONTHS[(m || 1) - 1] ?? mk} ${(y || 0) + 543}`;
+  return `${TH_MONTHS[(m || 1) - 1] ?? mk} พ.ศ. ${(y || 0) + 543}`;
+}
+
+/** A Date → "3 ตุลาคม พ.ศ. 2569" (owner 2026-10-03: ทั้งระบบเป็น พ.ศ.), with
+ *  " 11:54" when `time`. `bangkok` reads the instant in Asia/Bangkok; otherwise
+ *  the Date's own local fields (for values built from a local wall-clock string). */
+export function thDateBE(d: Date, opts: { time?: boolean; bangkok?: boolean } = {}): string {
+  if (isNaN(d.getTime())) return "—";
+  const t = opts.bangkok ? new Date(d.getTime() + 7 * 3600_000) : d;
+  const day = opts.bangkok ? t.getUTCDate() : t.getDate();
+  const mon = opts.bangkok ? t.getUTCMonth() : t.getMonth();
+  const year = opts.bangkok ? t.getUTCFullYear() : t.getFullYear();
+  const hh = opts.bangkok ? t.getUTCHours() : t.getHours();
+  const mi = opts.bangkok ? t.getUTCMinutes() : t.getMinutes();
+  const s = `${day} ${TH_MONTHS[mon]} พ.ศ. ${year + 543}`;
+  return opts.time ? `${s} ${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}` : s;
 }
 
 /** "2026-06-15" → "วันที่ 15". */
