@@ -1529,7 +1529,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                                 return (
                                   <>
                                     <div className="text-slate-800">
-                                      {phaseClear ? `${r.phase!.label} (${r.phase!.count} จาก ${n} ครั้ง)` : n === 1 ? `${r.phase?.label ?? "—"} (มาครั้งเดียว)` : "กระจายทั้งเดือน"}
+                                      {phaseClear ? `${r.phase!.label} (${r.phase!.count} จาก ${n} ครั้ง)` : n === 1 ? `${r.phase?.label ?? "—"} (มาครั้งเดียว)` : "ช่วงเวลาไม่แน่นอน"}
                                     </div>
                                     {n >= 2 && <div className="text-[11px] text-slate-500">ต้นเดือน {pc.early} · กลางเดือน {pc.mid} · ปลายเดือน {pc.late} ครั้ง</div>}
                                     <div className={`text-[11px] mt-0.5 ${dayClear ? "text-slate-800" : "text-slate-500"}`}>
