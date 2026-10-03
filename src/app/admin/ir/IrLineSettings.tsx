@@ -23,7 +23,7 @@ export default function IrLineSettings({ initialGroupId }: { initialGroupId: str
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setMsg({ kind: "err", text: humanizeApiError(j, "ไม่สำเร็จ") }); return; }
       if (kind === "save") { setSaved(j.lineGroupId ?? ""); setGroupId(j.lineGroupId ?? ""); setMsg({ kind: "ok", text: j.lineGroupId ? "บันทึกแล้ว — รายงานใหม่จะส่งเข้ากลุ่มนี้" : "ปิดการส่งแล้ว" }); }
-      else setMsg({ kind: "ok", text: `ส่งการ์ดทดสอบแล้ว (${j.sent}) — เช็คในกลุ่ม LINE` });
+      else setMsg({ kind: "ok", text: `ส่งรายงานทดสอบแล้ว (${j.sent}) — ตรวจสอบในกลุ่ม LINE` });
     } catch {
       setMsg({ kind: "err", text: "เชื่อมต่อไม่สำเร็จ ลองใหม่อีกครั้ง" });
     } finally {
@@ -57,8 +57,8 @@ export default function IrLineSettings({ initialGroupId }: { initialGroupId: str
               {busy === "save" ? "กำลังบันทึก…" : "บันทึก"}
             </button>
             <button type="button" className="btn btn-secondary text-sm" disabled={busy != null || !saved} onClick={() => call({ test: true }, "test")}
-              title={saved ? "ส่งรายงานล่าสุดของสาขาเป็นการ์ดทดสอบ" : "บันทึก Group ID ก่อน"}>
-              {busy === "test" ? "กำลังส่ง…" : "ส่งการ์ดทดสอบ"}
+              title={saved ? "ส่งรายงานล่าสุดของสาขาเป็นรายงานทดสอบ" : "บันทึก Group ID ก่อน"}>
+              {busy === "test" ? "กำลังส่ง…" : "ส่งรายงานทดสอบ"}
             </button>
           </div>
         </div>

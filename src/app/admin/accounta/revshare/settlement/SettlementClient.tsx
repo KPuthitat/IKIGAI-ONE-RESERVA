@@ -271,7 +271,7 @@ export default function SettlementClient({
                 </div>
               ))}
             </div>
-            <p className="text-[11px] text-slate-400">ยอดขายแยกตามหมวดจาก ANALYTICA (รวม VAT · คนละฐานกับยอดที่ใช้คิดส่วนแบ่ง จึงอาจไม่ตรงกับยอดขายรวมด้านบน) · แนบไปกับการ์ด LINE และ PDF สรุปเดือนด้วย</p>
+            <p className="text-[11px] text-slate-400">ยอดขายแยกตามหมวดจาก ANALYTICA (รวม VAT · คนละฐานกับยอดที่ใช้คิดส่วนแบ่ง จึงอาจไม่ตรงกับยอดขายรวมด้านบน) · แนบไปกับรายงาน LINE และ PDF สรุปเดือนด้วย</p>
           </div>
         );
       })()}

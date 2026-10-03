@@ -603,24 +603,17 @@ export function setMerchantName(branchId: number, name: string | null): void {
   ).run(branchId, clean);
 }
 
-// ── RD branch code (owner 2026-10-02: wrong-branch guard for tax-invoice files) ──
+// ── RD branch code (owner 2026-10-02/03: wrong-branch guard for tax-invoice files) ──
 
+/** The branch's Revenue Department branch code, read from the ONE place it is
+ *  set — บริษัท/สาขา (branches.tax_branch_code, "สาขาภาษี"), owner 2026-10-03:
+ *  "ตั้งค่าตรงนั้นที่เดียว ไม่ใช่มาตั้งในโมดูลย่อยทุกครั้ง". Normalised to the
+ *  5-digit form the tax-invoice export prints ("1" → "00001"); null = unset. */
 export function getRdBranchCode(branchId: number): string | null {
-  const r = getDb().prepare("SELECT rd_branch_code FROM salesa_settings WHERE branch_id = ?")
-    .get(branchId) as { rd_branch_code: string | null } | undefined;
-  return r?.rd_branch_code ?? null;
-}
-
-/** Stores the 5-digit code ("00001"); anything else clears it. A bare "1" is
- *  zero-padded so the owner can type the short form. */
-export function setRdBranchCode(branchId: number, code: string | null): void {
-  const digits = (code ?? "").replace(/\D/g, "");
-  const clean = digits && digits.length <= 5 ? digits.padStart(5, "0") : null;
-  getDb().prepare(
-    `INSERT INTO salesa_settings (branch_id, rd_branch_code, updated_at)
-     VALUES (?, ?, datetime('now'))
-     ON CONFLICT(branch_id) DO UPDATE SET rd_branch_code = excluded.rd_branch_code, updated_at = datetime('now')`
-  ).run(branchId, clean);
+  const r = getDb().prepare("SELECT tax_branch_code FROM branches WHERE id = ?")
+    .get(branchId) as { tax_branch_code: string | null } | undefined;
+  const digits = (r?.tax_branch_code ?? "").replace(/\D/g, "");
+  return digits && digits.length <= 5 ? digits.padStart(5, "0") : null;
 }
 
 // ── Tax invoices (owner 2026-10-02: corporate customers) ────────────────────
@@ -685,8 +678,8 @@ export function taxInvoiceRdCodes(branchId: number): string[] {
 }
 
 /** Remove invoices imported under this branch whose RD branch code is not the
- *  branch's configured one (a file imported into the wrong branch). Needs the
- *  code to be set; returns rows removed. */
+ *  branch's สาขาภาษี (a file imported into the wrong branch). Needs the code to
+ *  be set in บริษัท/สาขา; returns rows removed. */
 export function clearMismatchedTaxInvoices(branchId: number): number {
   const expected = getRdBranchCode(branchId);
   if (!expected) return 0;

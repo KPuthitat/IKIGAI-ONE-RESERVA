@@ -123,7 +123,7 @@ export default function PartnerConfigClient({ partner, tiers, floors, branches }
           </p>
         </div>
         <div className="sm:col-span-2">
-          <label className="label">LINE group ID ของคู่ค้า (สำหรับส่งการ์ดแจ้งเตือน)</label>
+          <label className="label">LINE group ID ของคู่ค้า (สำหรับส่งรายงาน)</label>
           <input className="input font-mono" value={lineGroup} placeholder="เช่น Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" onChange={(e) => setLineGroup(e.target.value)} />
           <p className="text-[11px] text-slate-400 mt-1">เพิ่ม OA “NOKHOOK OS” เข้ากลุ่มคู่ค้าก่อน แล้วเอา group id มาใส่ (เว้นว่าง = ปิดการส่ง)</p>
         </div>

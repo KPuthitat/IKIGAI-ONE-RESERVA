@@ -229,7 +229,7 @@ function PinModal({ title, preview, onConfirm, onClose }: { title: string; previ
         <h3 className="font-bold text-slate-800">{title}</h3>
         {preview && (
           <div>
-            <p className="text-xs text-slate-400 mb-1.5">ตัวอย่างการ์ดที่จะส่งเข้ากลุ่ม LINE</p>
+            <p className="text-xs text-slate-400 mb-1.5">ตัวอย่างรายงานที่จะส่งเข้ากลุ่ม LINE</p>
             <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100">{preview}</div>
           </div>
         )}
@@ -468,7 +468,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
     if (corpOpen) loadCorporate(y);
   };
   const clearTaxMismatched = async () => {
-    if (!confirm("ลบใบกำกับภาษีที่เลขที่สาขาสรรพากรไม่ตรงกับสาขานี้ (ไฟล์ที่นำเข้าผิดสาขา) ?")) return;
+    if (!confirm("ลบใบกำกับภาษีที่สาขาสรรพากรไม่ตรงกับสาขาภาษีของสาขานี้ (ไฟล์ที่นำเข้าผิดสาขา) ?")) return;
     setBusy(true); setMsg(null);
     const r = await fetch("/api/admin/reporta/clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "taxinvoice_mismatched" }) }).then((x) => x.json());
     setBusy(false);
@@ -1558,6 +1558,9 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                       {c.coverage.persons > 0 && <> · บุคคลธรรมดา {intTh(c.coverage.persons)} ราย ({intTh(c.coverage.personInvoices)} ใบ) ไม่แสดงในตาราง</>}
                       {c.coverage.cancelled > 0 && <> · ใบที่ยกเลิก {intTh(c.coverage.cancelled)} ใบ ไม่นับ</>}
                     </p>
+                    {!c.rdCodes.expected && (
+                      <p className="text-[11px] text-amber-700">ยังไม่ได้ตั้ง “สาขาภาษี” ของสาขานี้ที่หน้า <a href="/admin/companies" className="underline">บริษัท / สาขา</a> — ตอนนี้ยึดสาขาสรรพากร {c.rdCodes.seen.join(", ") || "—"} ตามไฟล์แรกที่นำเข้า</p>
+                    )}
                     {c.rdCodes.expected && c.rdCodes.seen.some((s) => s !== c.rdCodes.expected) && (
                       <div className="flex items-center justify-between gap-2 flex-wrap text-xs rounded-lg bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2">
                         <span>พบใบกำกับภาษีจากสาขาสรรพากร {c.rdCodes.seen.filter((s) => s !== c.rdCodes.expected).join(", ")} ปนอยู่ (สาขานี้คือ {c.rdCodes.expected})</span>
