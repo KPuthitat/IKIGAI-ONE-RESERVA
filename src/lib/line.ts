@@ -13,7 +13,7 @@ import {
 import { getChannelByCode, getPlatformChannel } from "./messaging-channels";
 import { decryptSecret } from "./secret-vault";
 import { nameWithPrefix } from "./name";
-import { getReviewConfig, createReviewInvite, recentReviewInviteExists } from "./insigna";
+import { getReviewConfig, createReviewInvite, recentReviewInviteExists, getOrCreateMemberLink, getMemberByHash, hashLineUserId } from "./insigna";
 
 // LINE message kinds we use. Loose typing is intentional — Flex contents are
 // large JSON blobs and the API spec already documents the shape.
@@ -1339,6 +1339,17 @@ export async function pushClockInCard(args: {
  *  decrypted automatically; the legacy column is run through
  *  decryptSecret too so values written after the 2026-05 vault rollout
  *  also work. */
+/** Push messages to one customer through the branch OA they follow. Returns
+ *  the skip reason when the branch has no channel token. */
+export async function pushToCustomer(branchId: number, lineUserId: string, messages: LineMessage[]): Promise<{ ok: boolean; skipped?: string }> {
+  const branch = getDb().prepare("SELECT * FROM branches WHERE id = ?").get(branchId) as Branch | undefined;
+  if (!branch) return { ok: false, skipped: "no_branch" };
+  const token = resolveBranchToken(branch);
+  if (!token) return { ok: false, skipped: "no_token" };
+  const res = await sendLinePush(token, { to: lineUserId, messages });
+  return { ok: res.ok, skipped: res.ok ? undefined : "push_failed" };
+}
+
 function resolveBranchToken(branch: Branch): string | null {
   const ch = getChannelByCode(branch.slug);
   if (ch?.channel_token) return ch.channel_token;
@@ -1675,13 +1686,115 @@ export function isReviewKeyword(text: string): boolean {
  *  null when no @basic-id can be parsed (e.g. a lin.ee short link) — the
  *  admin then knows to paste the @-form OA URL first. */
 export function oaReviewDeepLink(oaUrl: string | null | undefined): string | null {
+  return oaKeywordDeepLink(oaUrl, REVIEW_QR_KEYWORD);
+}
+
+/** The "open the OA with a prefilled message" deep link for any keyword. */
+export function oaKeywordDeepLink(oaUrl: string | null | undefined, keyword: string): string | null {
   // Parse the @basic-id from the LINE add-friend path (…/ti/p/@xxx) or accept
   // a bare "@xxx". Anchoring to the path (not the first '@' anywhere) avoids
   // grabbing a stray '@' from userinfo/query in a malformed URL.
   const s = (oaUrl ?? "").trim();
   const m = s.match(/\/ti\/p\/(@[A-Za-z0-9._-]+)/) || s.match(/^(@[A-Za-z0-9._-]+)$/);
   if (!m) return null;
-  return `https://line.me/R/oaMessage/${m[1]}/?${encodeURIComponent(REVIEW_QR_KEYWORD)}`;
+  return `https://line.me/R/oaMessage/${m[1]}/?${encodeURIComponent(keyword)}`;
+}
+
+// ── INSIGNA membership (owner 2026-10-03) ────────────────────────────────
+// The membership QR opens the branch OA with "สมาชิก". The webhook answers
+// with the member card (existing member) or the sign-up card (new customer);
+// both link to the customer's own token-gated page, so the LINE userId is
+// captured without a LIFF app and the card lives in their chat.
+
+export const MEMBER_QR_KEYWORD = "สมาชิก";
+
+export function isMemberKeyword(text: string): boolean {
+  return /^\s*(สมาชิก|สมัครสมาชิก|บัตรสมาชิก|member|membership)\s*$/i.test(text ?? "");
+}
+
+/** The card pushed when a customer sends the member keyword. `memberCode`
+ *  null = not a member yet → sign-up button; else the member card button. */
+export function memberCardFlex(args: {
+  branchName: string;
+  memberCode: string | null;
+  cardUrl: string;
+  headerColor?: string | null;
+}): LineFlexMessage {
+  const headerColor = args.headerColor || COLOR_INK_700;
+  const isMember = !!args.memberCode;
+  const title = isMember ? "บัตรสมาชิกของคุณ" : "สมัครสมาชิก IKIGAI";
+  const body = isMember
+    ? "แสดงบัตรให้พนักงานสแกนตอนชำระเงิน เพื่อสะสมประวัติการมาใช้บริการและรับสิทธิพิเศษ"
+    : "สมัครฟรีในไม่ถึงนาที เราเก็บเพียงวันเกิดและเพศ ไม่เก็บชื่อ ข้อมูลใช้เพื่อดูแลสมาชิกและมอบสิทธิพิเศษเท่านั้น";
+  const bubble: Record<string, unknown> = {
+    type: "bubble",
+    size: "giga",
+    header: {
+      type: "box", layout: "vertical", backgroundColor: headerColor, paddingAll: "20px",
+      contents: [
+        {
+          type: "box", layout: "horizontal",
+          contents: [
+            { type: "text", text: "IKIGAI", color: COLOR_BRAND_LIGHT, size: "xxs", weight: "bold", flex: 1 },
+            { type: "text", text: "สมาชิก", color: "#cbd5e1", size: "xxs", align: "end", flex: 1 }
+          ]
+        },
+        { type: "text", text: title, color: "#ffffff", size: "lg", weight: "bold", wrap: true, margin: "md" }
+      ]
+    },
+    body: {
+      type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+      contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: COLOR_TEXT_DARK, wrap: true },
+        ...(isMember ? [{
+          type: "box", layout: "vertical", margin: "sm", paddingAll: "14px", backgroundColor: "#f0fdf4", cornerRadius: "12px",
+          contents: [
+            { type: "text", text: "หมายเลขสมาชิก", size: "xs", color: COLOR_LABEL, align: "center" },
+            { type: "text", text: args.memberCode as string, size: "xxl", weight: "bold", align: "center", color: "#166534" }
+          ]
+        }] : []),
+        { type: "text", text: body, size: "sm", color: COLOR_TEXT_DARK, wrap: true }
+      ]
+    },
+    footer: {
+      type: "box", layout: "vertical", paddingAll: "16px", paddingTop: "0px",
+      contents: [
+        {
+          type: "button", style: "primary", color: COLOR_BRAND, height: "sm",
+          action: { type: "uri", label: isMember ? "เปิดบัตรสมาชิก" : "สมัครสมาชิก", uri: args.cardUrl }
+        }
+      ]
+    },
+    styles: {
+      header: { backgroundColor: headerColor },
+      body: { backgroundColor: "#ffffff" },
+      footer: { backgroundColor: "#ffffff", separator: true, separatorColor: COLOR_DIVIDER }
+    }
+  };
+  return {
+    type: "flex",
+    altText: isMember ? `บัตรสมาชิกของคุณ · หมายเลข ${args.memberCode}` : "สมัครสมาชิก IKIGAI — กดเพื่อสมัคร",
+    contents: bubble
+  };
+}
+
+/** Push the member card (or the sign-up card) to a customer of a branch OA.
+ *  Used by the webhook keyword and after a sign-up. */
+export async function notifyMemberCard(
+  branch: Branch, lineUserId: string
+): Promise<{ ok: boolean; skipped?: string }> {
+  const token = resolveBranchToken(branch);
+  if (!token) return { ok: false, skipped: "no_token" };
+  if (!lineUserId) return { ok: false, skipped: "no_line_user_id" };
+  const linkToken = getOrCreateMemberLink(lineUserId, branch.id);
+  const member = getMemberByHash(hashLineUserId(lineUserId));
+  const base = getPublicBaseUrl();
+  const cardUrl = member?.member_code
+    ? `${base}/m?t=${encodeURIComponent(linkToken)}`
+    : `${base}/m/join?t=${encodeURIComponent(linkToken)}`;
+  const flex = memberCardFlex({ branchName: branch.name, memberCode: member?.member_code ?? null, cardUrl, headerColor: branch.brand_color });
+  const res = await sendLinePush(token, { to: lineUserId, messages: [flex] });
+  return { ok: res.ok, skipped: res.ok ? undefined : "push_failed" };
 }
 
 /** Push the review-invite card to a customer who reached the branch OA via

@@ -3522,6 +3522,14 @@ function runMigrations(db: Database.Database): void {
   if (!ssCols.some((c) => c.name === "insigna_reviews_enabled")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN insigna_reviews_enabled INTEGER NOT NULL DEFAULT 0");
   }
+  // INSIGNA member messages (owner 2026-10-03): the birthday greeting and the
+  // "we miss you" text pushed to consenting members. NULL = built-in default.
+  if (!ssCols.some((c) => c.name === "insigna_member_birthday_text")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN insigna_member_birthday_text TEXT");
+  }
+  if (!ssCols.some((c) => c.name === "insigna_member_winback_text")) {
+    db.exec("ALTER TABLE system_settings ADD COLUMN insigna_member_winback_text TEXT");
+  }
   if (!ssCols.some((c) => c.name === "insigna_review_reward_text")) {
     db.exec("ALTER TABLE system_settings ADD COLUMN insigna_review_reward_text TEXT");
   }
@@ -7609,6 +7617,71 @@ function runMigrations(db: Database.Database): void {
   // Now the column exists in every case (fresh CREATE TABLE or ALTER above),
   // so the index is safe to create.
   db.exec("CREATE INDEX IF NOT EXISTS idx_insigna_review_customer ON insigna_review_requests(customer_hash)");
+
+  // ── INSIGNA membership (owner 2026-10-03) ──────────────────────────────
+  // A customer signs up from the branch LINE OA (QR → keyword → sign-up page),
+  // gives the minimum we need for marketing — birthday (day/month/year as
+  // three numbers, never a full date column), gender, a coarse home area,
+  // how they found us, and their marketing consent — and gets a member code
+  // YYMMXXXX (พ.ศ. year, month, 4-digit sequence: 69100001 = the first
+  // sign-up of ตุลาคม 2569). No name is stored anywhere. member_code and
+  // scan_token are pseudonyms (the PII lint allows them); the LINE userId
+  // stays in the operational member_links table outside the wall.
+  {
+    const cc = new Set((db.prepare("PRAGMA table_info(insigna_customers)").all() as Array<{ name: string }>).map((c) => c.name));
+    const add = (col: string, ddl: string) => { if (!cc.has(col)) db.exec(`ALTER TABLE insigna_customers ADD COLUMN ${col} ${ddl}`); };
+    add("member_code", "TEXT");          // 'YYMMXXXX'
+    add("member_since", "TEXT");         // ISO datetime of sign-up
+    add("birth_month", "INTEGER");       // 1-12
+    add("birth_day", "INTEGER");         // 1-31
+    add("home_area", "TEXT");            // coarse: อำเภอ / จังหวัด the customer typed
+    add("consent_at", "TEXT");           // when the privacy notice was accepted
+    add("scan_token", "TEXT");           // random; the member-card QR staff scan at checkout
+    add("signup_branch_id", "INTEGER");  // the branch OA they signed up through
+    // Indexes only once the columns are guaranteed (2026-05-28 lesson).
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_insigna_customers_member_code ON insigna_customers(member_code)");
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_insigna_customers_scan_token ON insigna_customers(scan_token)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_insigna_customers_birth ON insigna_customers(birth_month, birth_day)");
+  }
+  db.exec(`
+    -- Per-month member-code counter: ym 'YYMM' (พ.ศ.) → last sequence issued.
+    CREATE TABLE IF NOT EXISTS insigna_member_seq (
+      ym    TEXT PRIMARY KEY,
+      last  INTEGER NOT NULL DEFAULT 0
+    );
+    -- OPERATIONAL (not insigna_*): the customer's persistent link to their own
+    -- member card (/m?t=…). Holds the raw LINE userId like review_invites does;
+    -- the id is hashed at the call site and only the hash enters INSIGNA.
+    CREATE TABLE IF NOT EXISTS member_links (
+      line_user_id  TEXT PRIMARY KEY,
+      token         TEXT NOT NULL UNIQUE,
+      branch_id     INTEGER REFERENCES branches(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    -- Bill links made at checkout BEFORE the day's receipt file is imported
+    -- (owner 2026-10-03: staff scan the member QR and type the bill number).
+    -- Resolved into insigna_customer_bills by the receipt import / the cron.
+    CREATE TABLE IF NOT EXISTS insigna_pending_bills (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_hash TEXT NOT NULL,
+      branch_id     INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      sale_date     TEXT NOT NULL,
+      bill_no       TEXT NOT NULL,
+      linked_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, sale_date, bill_no)
+    );
+    -- Member messages already pushed (birthday greeting once a year, win-back
+    -- at most every 30 days) so a second click never repeats a message.
+    CREATE TABLE IF NOT EXISTS insigna_member_pushes (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_hash TEXT NOT NULL,
+      kind          TEXT NOT NULL,                 -- 'birthday' | 'winback'
+      sent_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      sent_by       INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_insigna_member_pushes ON insigna_member_pushes(customer_hash, kind, sent_at);
+  `);
 
   // ── FEASIBILITY (project investment feasibility, owner 2026-06-16) ──
   // One row per project. `inputs` holds the whole assumptions/startup/cost

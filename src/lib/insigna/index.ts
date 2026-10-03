@@ -167,6 +167,40 @@ export {
   getReferralStats
 } from "./referrals";
 
+// Membership (owner 2026-10-03): member code YYMMXXXX, sign-up from the
+// branch OA, the member card + QR, checkout bill links that resolve when
+// the receipt file arrives.
+export {
+  ACQUISITION_SOURCES,
+  memberCodePrefix,
+  issueMemberCode,
+  isMemberCode,
+  getMemberByHash,
+  getMemberByCode,
+  getMemberByScan,
+  registerMember,
+  setMemberMarketingConsent,
+  rotateScanToken,
+  getOrCreateMemberLink,
+  resolveMemberLink,
+  lineUserIdsForHashes,
+  deleteMember,
+  addMemberBill,
+  resolvePendingBills,
+  countPendingBills,
+  listMembers,
+  type MemberProfile,
+  type MemberGender,
+  type AcquisitionSource,
+  type RegisterMemberArgs,
+  type ResolvedMemberLink,
+  type PendingBillResult
+} from "./members";
+
+// Member visit analytics (owner 2026-10-03) — the corporate-customer
+// questions asked of members, from the bills tied at checkout.
+export { memberReport, ageBandOf, type MemberReport, type MemberRow } from "./member-analytics";
+
 // Daily rollup (Phase 13). rollupYesterday() is the cron entry;
 // rollupDay(date) is the manual-recompute entry for late-arriving
 // spend imports.

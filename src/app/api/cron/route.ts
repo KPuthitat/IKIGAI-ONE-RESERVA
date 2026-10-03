@@ -54,7 +54,8 @@ import { notifyLeaveEvent } from "@/lib/approval-notify";
 import {
   rollupYesterday as insignaRollupYesterday,
   recomputeAllChurn as insignaRecomputeAllChurn,
-  purgeExpiredReviewInvites
+  purgeExpiredReviewInvites,
+  resolvePendingBills
 } from "@/lib/insigna";
 import {
   buildExpiringLotsForBranch,
@@ -551,6 +552,8 @@ async function runCron(): Promise<NextResponse> {
       if (lastDate !== yesterdayBkk) {
         insignaRollup = insignaRollupYesterday();
         insignaChurn = insignaRecomputeAllChurn();
+        // Checkout member links whose receipt file arrived later (owner 2026-10-03).
+        resolvePendingBills();
       }
     }
   } catch (e) {

@@ -4,6 +4,7 @@ import { isSalesaBranch, upsertDaily, upsertMenu, upsertReceipts, getMerchantNam
 import { parseSalesFile, type SalesFileParse } from "@/lib/salesa-parse";
 import { getDb } from "@/lib/db";
 import { thaiDate } from "@/lib/revshare";
+import { resolvePendingBills } from "@/lib/insigna";
 
 // REPORTA import — staff (admin / หัวหน้างาน with reporta.manage) upload the POS
 // "Close up" (ยอดขาย) and/or "Overview" (เมนู) .xlsx exports. Each file is
@@ -133,6 +134,9 @@ export async function POST(req: Request) {
         const rc = f.parsed.receipt;
         const overwritten = existingKinds(branchId, rc.date).receipt;
         upsertReceipts(branchId, user.id, rc);
+        // Checkout member links made before this file arrived now have their
+        // receipts (owner 2026-10-03) — resolve them for this branch + day.
+        try { resolvePendingBills(branchId, rc.date); } catch (e) { console.warn("[insigna] pending bills:", e); }
         const staff = rc.bills.filter((b) => b.isStaff).length;
         results.push({ filename: f.name, kind: "receipt", date: rc.date, merchant: rc.merchant, note: `ใบเสร็จ ${rc.bills.length} บิล${staff ? ` (พนักงาน ${staff})` : ""}`, overwritten });
       }
