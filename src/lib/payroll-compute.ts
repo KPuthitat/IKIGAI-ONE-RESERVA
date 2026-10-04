@@ -901,61 +901,44 @@ export function computeOtPay(
 }
 
 // ── Work on a weekly rest day (วันหยุดประจำสัปดาห์) — Thai labour law ──
-// Owner 2026-10-04 ("เอาตามกฎหมายแรงงาน รวมถึงโอทีวันหยุด"):
-//   • monthly (FT) staff — the salary already includes the rest day, so each worked
-//     regular hour earns an EXTRA 1× hourly wage (ม.62);
-//   • hourly (PT) staff — not paid for a rest day, so worked regular hours pay 2×
-//     in total (1× base + an extra 1×);
-//   • approved OT hours on a rest day pay 3× the hourly wage for both (ม.63),
-//     replacing the company flat/1.5× OT rate.
-// A "rest day" = a day with NO work shift on the person's roster, but only for
-// someone whose roster is in use that period (a branch that keeps no roster would
-// otherwise pay every worked day as a rest day), and never a วันพิเศษ / วันจ่ายสองเท่า
-// (those keep their own premium). Salaried execs (no time clock) are excluded.
-// The premium needs an APPROVED OT request for that date (the existing flow for
-// working a day off: staff files it, the admin approves it) or an admin-set day, and
-// the approved "until" time caps the worked window — a stray punch on an unrostered
-// day or a forgotten clock-out can never turn into double pay by itself.
-// Applies to days on/after REST_DAY_RULE_FROM so older months are never rewritten.
+// Owner 2026-10-04: a MONTHLY (FT) employee whose roster has no shift that day must
+// ask first (ขอเพิ่มกะ → the admin approves and assigns the shift, e.g. FD-11 with its
+// 1-hour lunch break), then, per Thai labour law:
+//   • each regular hour of that shift earns an EXTRA 1× hourly wage (the salary already
+//     covers the rest day — ม.62);
+//   • approved OT beyond the shift (e.g. staying until 21:00) pays 3× the hourly wage
+//     (ม.63), replacing the company's flat 25 baht / 15 min.
+// A part-timer's extra shift is just a normal shift (no premium), a swap of days off is
+// not extra work, and salaried execs (no time clock) are excluded. The marker is the
+// approved extra-shift request itself, so a stray punch can never become premium pay.
+// The extra rides inside ค่าล่วงเวลา (taxable, not the SSO base) like the double-pay
+// premium. Days before REST_DAY_RULE_FROM are never touched.
 export const REST_DAY_RULE_FROM = "2026-09-01";
 export const REST_DAY_OT_MULT = 3;
 
 export function isRestDayWork(a: {
-  date: string; eligible: boolean;
-  /** Every date the person has a WORK shift on, across ALL branches (+ swaps). */
-  workDates?: Set<string>; holiday: boolean; double: boolean;
-  /** An approved OT request exists for the date, or the admin set the day by hand. */
-  approved: boolean;
+  date: string;
+  /** FT with a time clock (monthly staff who are not salaried execs). */
+  eligible: boolean;
+  /** Dates of this person's APPROVED extra-shift requests (ขอเพิ่มกะ). */
+  restDates?: Set<string>;
+  holiday: boolean; double: boolean;
 }): boolean {
-  if (!a.eligible || a.holiday || a.double || !a.approved) return false;
+  if (!a.eligible || a.holiday || a.double) return false;
   if (a.date < REST_DAY_RULE_FROM) return false;
-  if (!a.workDates || a.workDates.size === 0) return false;   // roster not in use
-  return !a.workDates.has(a.date);
+  return !!a.restDates?.has(a.date);
 }
 
-/** The admin deliberately set this day (clock / schedule / hours / OT typed in) —
- *  counts as approval of rest-day work. A note-only or unpaid-absence row does not. */
-export function adminSetDay(ov: { clock_in?: string | null; clock_out?: string | null; sched_in?: string | null; sched_out?: string | null; worked_min?: number | null; ot_min?: number | null; ot_pay?: number | null } | null | undefined): boolean {
-  return !!ov && (ov.clock_in != null || ov.clock_out != null || ov.sched_in != null || ov.sched_out != null
-    || ov.worked_min != null || ov.ot_min != null || ov.ot_pay != null);
-}
-
-/** user_id → dates with a work shift in [start, end] on ANY branch (incl. confirmed
- *  swaps). The period engine's own roster is branch-scoped, so a helper rostered at
- *  another branch must not read as "no shift" here. */
-export function loadRosterWorkDates(db: Database.Database, start: string, end: string, userId?: number): Map<number, Set<string>> {
+/** user_id → dates of approved extra-shift requests in [start, end]. */
+export function loadRestDayWorkDates(db: Database.Database, start: string, end: string, userId?: number): Map<number, Set<string>> {
   const out = new Map<number, Set<string>>();
-  const add = (u: number, d: string) => { (out.get(u) ?? out.set(u, new Set()).get(u)!).add(d); };
   for (const r of db.prepare(`
-    SELECT ra.user_id, ra.assignment_date FROM roster_assignments ra
-    JOIN shift_codes sc ON sc.id = ra.shift_code_id
-    WHERE ra.assignment_date >= ? AND ra.assignment_date <= ? AND sc.kind = 'work' AND sc.start_time <> sc.end_time
-      ${userId != null ? "AND ra.user_id = ?" : ""}
-  `).all(...([start, end] as unknown[]).concat(userId != null ? [userId] : [])) as Array<{ user_id: number; assignment_date: string }>) add(r.user_id, r.assignment_date);
-  for (const r of db.prepare(`
-    SELECT user_id, work_date FROM shift_swap_overrides WHERE work_date >= ? AND work_date <= ?
+    SELECT user_id, work_date FROM shift_change_requests
+    WHERE status = 'approved' AND kind = 'extra_shift' AND work_date >= ? AND work_date <= ?
       ${userId != null ? "AND user_id = ?" : ""}
-  `).all(...([start, end] as unknown[]).concat(userId != null ? [userId] : [])) as Array<{ user_id: number; work_date: string }>) add(r.user_id, r.work_date);
+  `).all(...([start, end] as unknown[]).concat(userId != null ? [userId] : [])) as Array<{ user_id: number; work_date: string }>) {
+    (out.get(r.user_id) ?? out.set(r.user_id, new Set()).get(r.user_id)!).add(r.work_date);
+  }
   return out;
 }
 
@@ -1144,8 +1127,8 @@ export function computeLineForEmployee(args: {
   // scheduled box ±5-min grace (see applyPtGrace). Omit / leave empty to
   // fall back to raw clock times (legacy behaviour, e.g. no roster).
   scheduledByDate?: Map<string, ScheduledShift[]>;
-  /** Dates with a work shift on any branch — decides "weekly rest day" (see isRestDayWork). */
-  rosterWorkDates?: Set<string>;
+  /** Dates of approved extra-shift requests — FT work on these is rest-day work (see isRestDayWork). */
+  restWorkDates?: Set<string>;
   // Approved OT requests for this employee, keyed by BKK date → the
   // "requested until" HH:MM. Applies to BOTH PT and FT (owner 2026-06-14).
   // OT minutes credited that day = min(actual clock-out, requested_until) −
@@ -1182,7 +1165,7 @@ export function computeLineForEmployee(args: {
   // tracking (never a salaried exec).
   breakSkipDates?: Set<string>;
 }): ComputedLine {
-  const { employee: eIn, shifts: shiftsIn, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, rosterWorkDates, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates, dfAmount = 0, dfBranchPeriod = false, meetingFee: meetingFeeIn = 0, breakSkipDates } = args;
+  const { employee: eIn, shifts: shiftsIn, unpaired, leaveDays, unpaidLeaveDays = 0, cycle, periodStart, periodEnd, settings, holidaySet, doubleSet = new Set<string>(), scheduledByDate, restWorkDates, approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates, dfAmount = 0, dfBranchPeriod = false, meetingFee: meetingFeeIn = 0, breakSkipDates } = args;
   // FT→PT switch (owner 2026-08-31): from pt_started_at's calendar month the
   // employee is treated as PART-TIME (hourly), before it as FULL-TIME (salary) —
   // period-relative so backfilled months still compute correctly. The stored
@@ -1241,10 +1224,10 @@ export function computeLineForEmployee(args: {
   let ptBasePay = 0;
   let ptOtPay = 0;
   let ftOtPay = 0;        // FT also gets OT but no holiday premium
-  // Extra pay for regular hours worked on a weekly rest day (FT +1×, PT the 2nd 1×) —
-  // booked as ค่าล่วงเวลา like the double-pay premium.
+  // Extra pay (+1×) for regular hours an FT worked on an approved rest day — booked as
+  // ค่าล่วงเวลา like the double-pay premium.
   let restDayPremium = 0;
-  const restEligible = e.track_attendance !== 0 && (e.employment_type === "pt" || e.employment_type === "ft");
+  const restEligible = e.employment_type === "ft" && e.track_attendance !== 0;
   const daysSet = new Set<string>();
 
   for (const s of effShifts) {
@@ -1307,12 +1290,11 @@ export function computeLineForEmployee(args: {
       otFromTs = new Date(`${shiftDate}T${reqFrom}:00+07:00`).toISOString();
     }
 
-    // Weekly rest day worked with an approval (see isRestDayWork) — decided up front
-    // because the approved "until" time must also cap the unscheduled window.
+    // Approved rest-day work (see isRestDayWork): the assigned shift defines the
+    // window, so an approved OT "until" time just extends it as on any other day.
     const isRestDay = isRestDayWork({
-      date: shiftDate, eligible: restEligible, workDates: rosterWorkDates,
-      holiday: holidaySet.has(shiftDate), double: doubleSet.has(shiftDate),
-      approved: !!(approvedOtByDate?.has(shiftDate) || approvedEarlyByDate?.has(shiftDate) || adminSetDay(ov))
+      date: shiftDate, eligible: restEligible, restDates: restWorkDates,
+      holiday: holidaySet.has(shiftDate), double: doubleSet.has(shiftDate)
     });
 
     if (sched) {
@@ -1322,14 +1304,8 @@ export function computeLineForEmployee(args: {
       workedMinutes = g.workedMinutes;
     } else {
       // No roster for this day → raw clock minus the threshold break, so OT
-      // is still "actual worked over 8h/day". On an approved rest day an approved
-      // OT "until" time stops the clock there.
-      let windowMin = s.durationMinutes;
-      if (isRestDay && lateApproved) {
-        const cut = Math.round((Date.parse(`${shiftDate}T${reqUntil}:00+07:00`) - Date.parse(s.startTs)) / 60000);
-        if (cut > 0 && cut < windowMin) windowMin = cut;
-      }
-      const db = deductBreak(windowMin, settings);
+      // is still "actual worked over 8h/day".
+      const db = deductBreak(s.durationMinutes, settings);
       workedMinutes = db.workedMinutes;
       deducted = db.deducted;
     }
@@ -1394,13 +1370,7 @@ export function computeLineForEmployee(args: {
         ptBasePay += (dayRegular / 60) * ptRate * mult;
       }
       // ค่าล่วงเวลา override (typed baht) wins over the computed OT pay.
-      if (isRestDay) {
-        // Rest-day work: base already paid 1× above; add the 2nd 1× + 3× OT (law).
-        restDayPremium += (dayRegular / 60) * ptRate;
-        ptOtPay += ov?.ot_pay != null ? ov.ot_pay : (dayOt / 60) * ptRate * REST_DAY_OT_MULT;
-      } else {
-        ptOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ptRate, settings, mult);
-      }
+      ptOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ptRate, settings, mult);
     } else if (e.employment_type === "ft" && e.track_attendance !== 0) {
       // FT: OT only (base is salary), now approval-gated like PT — the
       // roster sched above caps worked at the scheduled end, so OT is the
@@ -1409,7 +1379,7 @@ export function computeLineForEmployee(args: {
       // double-pay day gives 2× OT and one extra day-equivalent of base.
       // Salaried execs (track_attendance=0) get no OT (owner 2026-07-12).
       if (isRestDay) {
-        // Rest-day work (salary already covers the day): extra 1× per regular hour + 3× OT.
+        // Approved rest-day work (salary already covers the day): extra 1× per regular hour + 3× OT.
         restDayPremium += (dayRegular / 60) * ftHourlyEquivalent;
         ftOtPay += ov?.ot_pay != null ? ov.ot_pay : (dayOt / 60) * ftHourlyEquivalent * REST_DAY_OT_MULT;
       } else {
@@ -1994,8 +1964,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     byDate.set(r.work_date, [sh]);
   }
 
-  // Work-shift dates across ALL branches (for the weekly-rest-day rule).
-  const rosterWorkByUser = loadRosterWorkDates(db, period.period_start, period.period_end);
+  // Approved extra-shift (ขอเพิ่มกะ) dates — FT work on them is rest-day work.
+  const restWorkByUser = loadRestDayWorkDates(db, period.period_start, period.period_end);
 
   // Eligible staff by cycle.
   //   weekly  → PT + FT-in-transition (owner 2026-07-12: a just-converted FT is
@@ -2433,7 +2403,7 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
         // Grace + scheduled-break apply in both modes when a roster
         // exists (the rule is independent of where the time came from).
         scheduledByDate: scheduledByUser.get(emp.user_id),
-        rosterWorkDates: rosterWorkByUser.get(emp.user_id),
+        restWorkDates: restWorkByUser.get(emp.user_id),
         approvedOtByDate: approvedOtByUser.get(emp.user_id),
         approvedEarlyByDate: approvedEarlyByUser.get(emp.user_id),
         fieldOverridesByDate: fieldOverridesByUser.get(emp.user_id),
@@ -2881,7 +2851,7 @@ export function recomputeLine(
     employee: rlEmp, shifts, unpaired: auto.unpaired,
     leaveDays: existing.leave_days,
     cycle: period.cycle, periodStart: period.period_start, periodEnd: period.period_end, payDate: period.pay_date,
-    settings, holidaySet, doubleSet, scheduledByDate, rosterWorkDates: loadRosterWorkDates(db, period.period_start, period.period_end, userId).get(userId), approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates,
+    settings, holidaySet, doubleSet, scheduledByDate, restWorkDates: loadRestDayWorkDates(db, period.period_start, period.period_end, userId).get(userId), approvedOtByDate, approvedEarlyByDate, fieldOverridesByDate, leaveDates,
     dfAmount: dfPayRL, dfBranchPeriod: rlDfBranch, breakSkipDates
   });
   // No worked time and no existing line → don't create a phantom 0-baht hourly-helper

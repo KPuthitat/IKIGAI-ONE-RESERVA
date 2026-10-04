@@ -13,7 +13,7 @@ import type Database from "better-sqlite3";
 import {
   applyPtGrace, pickScheduled, deductBreak, splitRegularOt, computeOtPay,
   overlaySwapShifts, branchHourlyRateSelect, keepEntryForBranch, loadDayBranchMap,
-  holidayPremiumApplies, loadPayrollSettings, isRestDayWork, adminSetDay, REST_DAY_OT_MULT,
+  holidayPremiumApplies, loadPayrollSettings, isRestDayWork, loadRestDayWorkDates, REST_DAY_OT_MULT,
   type ScheduledShift
 } from "@/lib/payroll-compute";
 import { resolveSiblingPeriods } from "@/lib/payroll-cycle";
@@ -148,8 +148,10 @@ export function buildLineBreakdown(
   `).get(userId) as { employment_type: "pt" | "ft" | null; hourly_rate: number | null; monthly_salary: number | null; track_attendance: number | null } | undefined;
   const isPt = emp?.employment_type === "pt";
   const isExec = emp?.employment_type === "ft" && emp?.track_attendance === 0;
-  // Weekly-rest-day rule inputs — same eligibility + all-branch work dates as the pay engine.
-  const restEligible = emp?.track_attendance !== 0 && (emp?.employment_type === "pt" || emp?.employment_type === "ft");
+  // Rest-day rule inputs — same eligibility (FT with a time clock) + approved extra-shift
+  // dates as the pay engine.
+  const restEligible = emp?.employment_type === "ft" && emp?.track_attendance !== 0;
+  const restWorkDates = loadRestDayWorkDates(db, period.period_start, period.period_end, userId).get(userId);
 
   // ไม่ต้องลงเวลา (track_attendance = 0): there are no punches, so the ROSTER is the
   // record of the days worked. Pay already follows it (PT: rosterShifts in the pay
@@ -242,9 +244,6 @@ export function buildLineBreakdown(
     scheduledByDate.set(r.assignment_date, list);
   }
   overlaySwapShifts(db, userId, period.period_start, period.period_end, scheduledByDate);
-  // This roster is NOT branch-scoped (all of the user's work shifts + swaps), so its
-  // dates are exactly the "has a work shift" set the pay engine loads across branches.
-  const rosterWorkDates = new Set(scheduledByDate.keys());
 
   const overrideRows = db.prepare(`
     SELECT work_date, clock_in, clock_out,
@@ -285,8 +284,7 @@ export function buildLineBreakdown(
     const isDoubleDay = doubleSet.has(date);
 
     const restDay = isRestDayWork({
-      date, eligible: restEligible, workDates: rosterWorkDates, holiday: holidaySet.has(date), double: isDoubleDay,
-      approved: !!(approvedOtByDate.has(date) || approvedEarlyByDate.has(date) || adminSetDay(ov))
+      date, eligible: restEligible, restDates: restWorkDates, holiday: holidaySet.has(date), double: isDoubleDay
     });
 
     let sched = pickScheduled(scheduledByDate.get(date) ?? [], { startTs: inTs });
@@ -323,14 +321,7 @@ export function buildLineBreakdown(
         lateMin = Math.round(g.lateMinutes);
         earlyMin = Math.round(g.earlyMinutes);
       } else {
-        // Approved rest day: the approved OT "until" time stops the clock there (same
-        // cap as the pay engine).
-        let windowMin = rawMin;
-        if (restDay && lateApproved && reqUntil) {
-          const cut = floorMin(new Date(`${date}T${reqUntil}:00+07:00`).toISOString()) - floorMin(inTs);
-          if (cut > 0 && cut < windowMin) windowMin = cut;
-        }
-        const db2 = deductBreak(windowMin, settings);
+        const db2 = deductBreak(rawMin, settings);
         breakMinutes = Math.round(db2.deducted);
         workedMin = Math.round(db2.workedMinutes);
       }
@@ -346,13 +337,13 @@ export function buildLineBreakdown(
     const regMin = ov?.worked_min != null ? ov.worked_min : split.regular + (split.ot - autoOt);
     const otMin = ov?.ot_min != null ? ov.ot_min : autoOt;
 
-    // Rest day: PT is paid 2× in total (base 1× + extra 1×); FT's salary already covers
-    // the day so only the extra 1× is added (applied in the FT delta below).
-    const mult = isDoubleDay ? 2 : holiday ? 1.5 : (restDay && isPt ? 2 : 1);
+    // Approved rest day (FT only): the salary already covers the day, so only an extra 1×
+    // is added (applied in the FT delta below).
+    const mult = isDoubleDay ? 2 : holiday ? 1.5 : 1;
     const regularPay = (regMin / 60) * rateForPay * mult;
     // Premium = the portion above the normal 1× rate (the extra from ×2/×1.5, or the
-    // rest-day extra 1× for PT and FT alike).
-    const premiumPay = (regMin / 60) * rateForPay * (restDay && !isPt ? 1 : mult - 1);
+    // rest-day extra 1×).
+    const premiumPay = (regMin / 60) * rateForPay * (restDay ? 1 : mult - 1);
     const otPay = isExec ? 0
       : (ov?.ot_pay != null ? ov.ot_pay
         : restDay ? (otMin / 60) * rateForPay * REST_DAY_OT_MULT
