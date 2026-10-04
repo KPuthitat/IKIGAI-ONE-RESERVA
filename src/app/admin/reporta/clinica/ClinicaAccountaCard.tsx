@@ -59,7 +59,7 @@ export default function ClinicaAccountaCard({ stamp }: { stamp: string }) {
       </div>
       {st.enabled ? (
         <p className="text-[11px] text-slate-500">
-          ทุกครั้งที่นำเข้าไฟล์ ระบบสร้างรายรับใน ACCOUNTA ให้อัตโนมัติ — ยอดขายตามใบแจ้งหนี้ · แยกช่องทางตามใบเสร็จ · ส่วนที่ประกัน/บริษัทค้างจ่ายเป็นลูกหนี้รายบิล (เงินเข้าเมื่อยืนยันวันที่ในการ์ด "ได้รับชำระแล้ว")
+          ทุกครั้งที่นำเข้าไฟล์ ระบบสร้างรายรับใน ACCOUNTA ให้อัตโนมัติ — ยอดขายตามใบแจ้งหนี้ · แยกช่องทางตามใบเสร็จ · ส่วนที่ประกัน/บริษัทค้างจ่ายเป็นลูกหนี้รายบิล (เงินเข้าเมื่อยืนยันวันที่ในการ์ด "ได้รับชำระแล้ว") · หน้าปิดกะของสาขานี้ให้น้องๆ นับเงินสดอย่างเดียว ไม่ต้องกรอกยอดขาย/ช่องทาง
           {st.postedDays > 0 && st.firstDate && st.lastDate && <> · ส่งแล้ว {st.postedDays.toLocaleString("th-TH")} วัน ({thaiDate(st.firstDate)} – {thaiDate(st.lastDate)})</>}
           {st.openReceivableCount > 0 && <> · ลูกหนี้คงค้าง {baht(st.openReceivable)} ({st.openReceivableCount.toLocaleString("th-TH")} บิล)</>}
         </p>

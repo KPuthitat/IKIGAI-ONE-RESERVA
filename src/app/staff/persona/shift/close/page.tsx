@@ -18,6 +18,8 @@ import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { nameWithPrefix } from "@/lib/name";
+import { isClinicaAutopost } from "@/lib/clinica-accounta";
+import { clinicaCashExpected } from "@/lib/clinica-db";
 import ShiftCloseForm from "./ShiftCloseForm";
 
 export const dynamic = "force-dynamic";
@@ -87,6 +89,11 @@ export default function ShiftClosePage({
     return `${dd}/${m}`;
   };
 
+  // Clinic whose income is posted from the imported HIS files (owner 2026-10-04): the
+  // close asks only for the cash count (+ checklist); sales and channels are not keyed.
+  const filesOwnIncome = isClinicaAutopost(branch.id);
+  const clinicCash = filesOwnIncome ? clinicaCashExpected(branch.id, selectedDate) : null;
+
   return (
     <div className="space-y-4">
       <div>
@@ -127,12 +134,14 @@ export default function ShiftClosePage({
         closerName={nameWithPrefix(user.title_prefix, user.display_name)}
         requireServiceCharge={branch.require_service_charge === 1}
         requireTodayClosing={branch.require_today_closing === 1}
-        requireDailyRevenue={branch.require_daily_revenue === 1}
+        requireDailyRevenue={!filesOwnIncome && branch.require_daily_revenue === 1}
+        filesOwnIncome={filesOwnIncome}
+        clinicCash={clinicCash}
         // Master income channels — staff fill a mandatory per-channel
         // breakdown that must reconcile to ยอดขายวันนี้ before they can
         // submit (owner 2026-06-21). Only relevant when the branch records
         // daily revenue; the form gates the panel on requireDailyRevenue.
-        incomeChannels={branch.require_daily_revenue === 1 ? listShiftCloseChannels(branch.id) : []}
+        incomeChannels={!filesOwnIncome && branch.require_daily_revenue === 1 ? listShiftCloseChannels(branch.id) : []}
         // Material-purchase quota for today (owner 2026-06-21). null when the
         // branch hasn't enabled it. The form shows today's quota + records how
         // much was ordered, flagging over-quota on the report.

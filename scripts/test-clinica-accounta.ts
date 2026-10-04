@@ -127,6 +127,13 @@ process.env.DATABASE_PATH = TMP;
   ok("isClinicReceivable tells the clinic rows apart", acc.isClinicReceivable(cOpen.id, br) === true && acc.isClinicReceivable(manual, br) === false);
   ok("open receivable list carries the source", acc.listOutstandingReceivables(br).some((r) => r.source === "clinic"));
 
+  // Shift-close cash check: cash the drawer should hold per the receipts of that day.
+  const cdb = await import("../src/lib/clinica-db");
+  const e1 = cdb.clinicaCashExpected(br, "2026-09-01");
+  ok("expected drawer cash = cash receipts of the day (1,000), bank kept apart (865)", near(e1.cash, 1000) && near(e1.nonCash, 865) && e1.receipts === 3);
+  const e0 = cdb.clinicaCashExpected(br, "2026-01-01");
+  ok("a day with no receipt file reports receipts = 0", e0.receipts === 0 && e0.cash === 0);
+
   // Status + switch.
   A.setClinicaAutopost(br, true);
   const st = A.clinicaPostStatus(br);
