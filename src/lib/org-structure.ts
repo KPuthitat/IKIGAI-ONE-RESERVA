@@ -5,7 +5,10 @@
 //   users.supervisor_user_id                                        (per person)
 //   users.department        ฝ่ายบริการ / ครัว / บริหาร / อื่นๆ         (per person)
 //
-// Rules:
+// A person may report to MORE THAN ONE supervisor (owner 2026-10-04): the list lives in
+// user_supervisors; users.supervisor_user_id keeps the first one for older readers.
+//
+// Rules (applied to EACH supervisor):
 //   • a plain employee's supervisor must be a tier-1 member of one of their branches
 //   • a tier-1 member's supervisor must be a tier-2 member of one of their branches
 //   • a tier-2 member may report to another tier-2 member, or nobody (top)
@@ -19,7 +22,16 @@ import { DEPARTMENT_KEYS, departmentLabel, type ChainRank } from "./org-vocab";
 
 const ACTIVE = "u.status NOT IN ('disabled','resigned','terminated') AND u.is_test_account = 0";
 
-export type ChainPerson = { id: number; display_name: string; title_prefix: string | null; nickname_th: string | null; job_title: string | null; department: string | null; supervisor_user_id: number | null; role: string };
+export type ChainPerson = { id: number; display_name: string; title_prefix: string | null; nickname_th: string | null; job_title: string | null; department: string | null; supervisor_user_id: number | null; supervisor_ids: number[]; role: string };
+
+/** A person's supervisors in order (first = primary). Falls back to the single column. */
+export function supervisorIdsOf(userId: number): number[] {
+  const db = getDb();
+  const rows = db.prepare("SELECT supervisor_user_id FROM user_supervisors WHERE user_id = ? ORDER BY sort_order, supervisor_user_id").all(userId) as Array<{ supervisor_user_id: number }>;
+  if (rows.length) return rows.map((r) => r.supervisor_user_id);
+  const one = (db.prepare("SELECT supervisor_user_id FROM users WHERE id = ?").get(userId) as { supervisor_user_id: number | null } | undefined)?.supervisor_user_id;
+  return one != null ? [one] : [];
+}
 
 function branchIdsOf(userId: number): number[] {
   return (getDb().prepare("SELECT branch_id FROM user_branches WHERE user_id = ? ORDER BY branch_id").all(userId) as Array<{ branch_id: number }>).map((r) => r.branch_id);
@@ -35,10 +47,11 @@ function tierUserIds(branchIds: number[], tier: 1 | 2): Set<number> {
 function people(ids: Iterable<number>): ChainPerson[] {
   const list = [...ids];
   if (!list.length) return [];
-  return getDb().prepare(
+  const rows = getDb().prepare(
     `SELECT u.id, u.display_name, u.title_prefix, u.nickname_th, u.job_title, u.department, u.supervisor_user_id, u.role
      FROM users u WHERE u.id IN (${list.map(() => "?").join(",")}) AND ${ACTIVE} ORDER BY u.display_name`
-  ).all(...list) as ChainPerson[];
+  ).all(...list) as Array<Omit<ChainPerson, "supervisor_ids">>;
+  return rows.map((r) => ({ ...r, supervisor_ids: supervisorIdsOf(r.id) }));
 }
 
 /** Where this person sits in the chain, across the branches they belong to. */
@@ -78,7 +91,7 @@ export function supervisorOptionsFor(userId: number): SupervisorOptions {
 
 export type SupervisorError = "self" | "not_allowed" | "cycle" | "not_found";
 
-/** Enforce the tier rule + no cycles before writing users.supervisor_user_id. */
+/** Enforce the tier rule + no cycles before adding ONE supervisor to a person. */
 export function validateSupervisor(userId: number, supervisorId: number | null): SupervisorError | null {
   if (supervisorId == null) return null;
   if (supervisorId === userId) return "self";
@@ -87,16 +100,41 @@ export function validateSupervisor(userId: number, supervisorId: number | null):
   if (!sup) return "not_found";
   const { options } = supervisorOptionsFor(userId);
   if (!options.some((o) => o.id === supervisorId)) return "not_allowed";
-  // Walk up from the proposed supervisor; reaching userId again = cycle.
-  const up = db.prepare("SELECT supervisor_user_id FROM users WHERE id = ?");
-  let cur: number | null = supervisorId;
+  // Walk up from the proposed supervisor through ALL of each person's supervisors;
+  // reaching userId again = cycle.
   const seen = new Set<number>();
-  while (cur != null && !seen.has(cur)) {
+  const stack: number[] = [supervisorId];
+  while (stack.length) {
+    const cur = stack.pop()!;
     if (cur === userId) return "cycle";
+    if (seen.has(cur)) continue;
     seen.add(cur);
-    cur = (up.get(cur) as { supervisor_user_id: number | null } | undefined)?.supervisor_user_id ?? null;
+    for (const nxt of supervisorIdsOf(cur)) stack.push(nxt);
   }
   return null;
+}
+
+/** Validate a whole list (each entry by the tier + cycle rules, no duplicates). First
+ *  error wins. */
+export function validateSupervisors(userId: number, supervisorIds: number[]): SupervisorError | null {
+  const uniq = [...new Set(supervisorIds)];
+  for (const id of uniq) {
+    const err = validateSupervisor(userId, id);
+    if (err) return err;
+  }
+  return null;
+}
+
+/** Store a person's supervisors (replace the list); users.supervisor_user_id mirrors the first. */
+export function setSupervisors(userId: number, supervisorIds: number[]): void {
+  const db = getDb();
+  const uniq = [...new Set(supervisorIds.filter((id) => id !== userId))];
+  db.transaction(() => {
+    db.prepare("DELETE FROM user_supervisors WHERE user_id = ?").run(userId);
+    const ins = db.prepare("INSERT INTO user_supervisors (user_id, supervisor_user_id, sort_order) VALUES (?, ?, ?)");
+    uniq.forEach((sid, i) => ins.run(userId, sid, i));
+    db.prepare("UPDATE users SET supervisor_user_id = ? WHERE id = ?").run(uniq[0] ?? null, userId);
+  })();
 }
 
 export const SUPERVISOR_ERROR_TH: Record<SupervisorError, string> = {
@@ -110,7 +148,7 @@ export const SUPERVISOR_ERROR_TH: Record<SupervisorError, string> = {
 
 export type OrgIssue = { userId: number; name: string; kind: "no_supervisor" | "supervisor_not_head" | "head_without_exec" | "no_department"; text: string };
 export type AutoOrgChart = {
-  placements: OrgPlacementBase[];       // nodeId = userId; parentNodeIds = [supervisor] when on this chart
+  placements: OrgPlacementBase[];       // nodeId = userId; parentNodeIds = every supervisor on this chart
   issues: OrgIssue[];
   counts: Array<{ department: string | null; label: string; count: number }>;
   tier1: number[]; tier2: number[];
@@ -141,16 +179,21 @@ export function buildAutoOrgChart(branchId: number): AutoOrgChart {
   const issues: OrgIssue[] = [];
   const placements: OrgPlacementBase[] = persons.map((p) => {
     const rank = rankAcross(p.id);
-    const sup = p.supervisor_user_id;
     const name = nameWithPrefix(p.title_prefix, p.display_name);
-    let parent: number | null = null;
-    if (sup != null && onChart.has(sup)) {
+    // Every supervisor that sits on this chart and fits the tier rule becomes a parent
+    // (a person may report to several, owner 2026-10-04).
+    const parents: number[] = [];
+    let wrongTier = false;
+    for (const sup of p.supervisor_ids) {
+      if (!onChart.has(sup)) continue;
       const supRank = rankAcross(sup);
       const ok = rank === "staff" ? supRank === "supervisor" : rank === "supervisor" ? supRank === "executive" : supRank === "executive";
-      if (ok) parent = sup;
-      else issues.push({ userId: p.id, name, kind: rank === "supervisor" ? "head_without_exec" : "supervisor_not_head",
+      if (ok) parents.push(sup); else wrongTier = true;
+    }
+    if (wrongTier && parents.length === 0) {
+      issues.push({ userId: p.id, name, kind: rank === "supervisor" ? "head_without_exec" : "supervisor_not_head",
         text: rank === "supervisor" ? `${name} เป็นหัวหน้างาน แต่ผู้บังคับบัญชาที่ตั้งไว้ไม่ใช่ผู้บริหาร (ชั้นที่ 2)` : `${name} ผู้บังคับบัญชาที่ตั้งไว้ไม่ได้อยู่ในชั้นหัวหน้างาน (ชั้นที่ 1) ของสาขานี้` });
-    } else if (rank !== "executive") {
+    } else if (parents.length === 0 && rank !== "executive") {
       issues.push({ userId: p.id, name, kind: rank === "supervisor" ? "head_without_exec" : "no_supervisor",
         text: rank === "supervisor" ? `${name} เป็นหัวหน้างาน แต่ยังไม่ได้ระบุผู้บริหารที่ขึ้นตรง` : `${name} ยังไม่ได้ระบุผู้บังคับบัญชา` });
     }
@@ -158,7 +201,7 @@ export function buildAutoOrgChart(branchId: number): AutoOrgChart {
     return {
       nodeId: p.id, userId: p.id, displayName: p.display_name, titlePrefix: p.title_prefix, nickname: p.nickname_th,
       jobTitle: p.job_title, role: p.role, department: departmentLabel(p.department), sortOrder: sortOrder(p.id),
-      parentNodeIds: parent != null ? [parent] : []
+      parentNodeIds: parents
     };
   });
   // Department headcount (members of this branch only, not borrowed executives).

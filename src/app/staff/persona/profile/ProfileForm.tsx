@@ -83,7 +83,7 @@ export default function ProfileForm({
     emergency_relationship: profile.emergency_relationship ?? "",
     emergency_phone:        profile.emergency_phone ?? "",
     // Admin-only fields
-    supervisor_user_id: profile.supervisor_user_id ?? "",
+    supervisor_user_ids: profile.supervisor_user_ids ?? (profile.supervisor_user_id != null ? [profile.supervisor_user_id] : []),
     department:         profile.department ?? "",
     job_title:          profile.job_title ?? "",
     contract_end_date:  profile.contract_end_date ?? "",
@@ -174,7 +174,7 @@ export default function ProfileForm({
         emergency_phone:        f.emergency_phone || null
       };
       if (adminMode) {
-        body.supervisor_user_id = f.supervisor_user_id ? Number(f.supervisor_user_id) : null;
+        body.supervisor_user_ids = f.supervisor_user_ids;
         body.department         = f.department || null;
         body.job_title          = f.job_title || null;
         body.contract_end_date  = f.contract_end_date || null;
@@ -477,14 +477,23 @@ export default function ProfileForm({
                 onChange={upperHandler("job_title")} />
             </Field>
             <Field label={t("staff.persona.profile.field.supervisor")}>
-              <select className="input"
-                value={f.supervisor_user_id === "" ? "" : String(f.supervisor_user_id)}
-                onChange={(e) => update("supervisor_user_id", e.target.value === "" ? "" : Number(e.target.value))}>
-                <option value="">—</option>
-                {supervisors.filter((s) => s.id !== profile.id).map((s) => (
-                  <option key={s.id} value={s.id}>{nameWithPrefix(s.title_prefix, s.display_name)}</option>
-                ))}
-              </select>
+              {/* More than one supervisor allowed (owner 2026-10-04) — tick every person this one reports to. */}
+              <div className="rounded-lg border border-slate-200 divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                {supervisors.filter((s) => s.id !== profile.id).length === 0 && (
+                  <div className="px-3 py-2 text-xs text-slate-400">— ยังไม่มีผู้ที่เลือกเป็นผู้บังคับบัญชาได้ —</div>
+                )}
+                {supervisors.filter((s) => s.id !== profile.id).map((s) => {
+                  const on = f.supervisor_user_ids.includes(s.id);
+                  return (
+                    <label key={s.id} className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 cursor-pointer hover:bg-slate-50">
+                      <input type="checkbox" checked={on}
+                        onChange={() => update("supervisor_user_ids", on ? f.supervisor_user_ids.filter((x) => x !== s.id) : [...f.supervisor_user_ids, s.id])} />
+                      {nameWithPrefix(s.title_prefix, s.display_name)}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">เลือกได้มากกว่า 1 คน (ขึ้นตรงหลายหัวหน้า){f.supervisor_user_ids.length > 1 ? ` · ตอนนี้เลือก ${f.supervisor_user_ids.length} คน` : ""}</p>
               {supervisorHint && <p className="text-[11px] text-slate-500 mt-1">{supervisorHint}</p>}
             </Field>
             <Field label={t("staff.persona.profile.field.department")}>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { validateSupervisor, SUPERVISOR_ERROR_TH } from "@/lib/org-structure";
+import { validateSupervisors, setSupervisors, SUPERVISOR_ERROR_TH } from "@/lib/org-structure";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
@@ -132,6 +132,8 @@ const Body = z.object({
   emergency_phone:        z.string().max(40).nullable().optional(),
   // Employment
   supervisor_user_id: z.number().int().positive().nullable().optional(),
+  // A person may report to several supervisors (owner 2026-10-04); wins over supervisor_user_id.
+  supervisor_user_ids: z.array(z.number().int().positive()).max(6).optional(),
   job_title:          z.string().max(120).nullable().optional(),
   contract_end_date:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   employment_status:  z.enum(["probation", "permanent"]).nullable().optional(),
@@ -416,11 +418,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   addField("emergency_phone");
   // Chain-of-command rule (owner 2026-10-02): the supervisor must sit in the
   // tier above this person in their branches, and never form a cycle.
-  if ("supervisor_user_id" in data) {
-    const err = validateSupervisor(id, data.supervisor_user_id ?? null);
+  // The list is stored in user_supervisors (users.supervisor_user_id mirrors the first).
+  const supervisorIds: number[] | undefined = data.supervisor_user_ids !== undefined
+    ? data.supervisor_user_ids
+    : ("supervisor_user_id" in data ? (data.supervisor_user_id != null ? [data.supervisor_user_id] : []) : undefined);
+  if (supervisorIds !== undefined) {
+    const err = validateSupervisors(id, supervisorIds);
     if (err) return NextResponse.json({ error: `supervisor_${err}`, message: SUPERVISOR_ERROR_TH[err] }, { status: 400 });
   }
-  addField("supervisor_user_id");
   addField("department");
   addField("job_title");
   addField("contract_end_date");
@@ -459,13 +464,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // it replaces the user's full role set.
   const hasRoleIds = "role_ids" in data && user.role === "super_admin";
 
-  if (fields.length === 0 && data.pin === undefined && !hasRoleIds) {
+  if (fields.length === 0 && data.pin === undefined && !hasRoleIds && supervisorIds === undefined) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });
   }
   if (fields.length > 0) {
     vals.push(id);
     db.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(...vals);
   }
+  if (supervisorIds !== undefined) setSupervisors(id, supervisorIds);
   if (hasRoleIds) {
     setUserRoles(id, data.role_ids ?? [], user.id);
   }
