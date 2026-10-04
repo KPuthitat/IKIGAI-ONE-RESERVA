@@ -11,7 +11,8 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getDb, type Branch, type ShiftChecklistItem } from "@/lib/db";
-import { listShiftCloseChannels, materialPurchaseQuota, ledgerDashboard } from "@/lib/accounta-db";
+import { listShiftCloseChannels, ledgerDashboard } from "@/lib/accounta-db";
+import { materialQuotaFor } from "@/lib/material-budget";
 import { parseChecklistOptions } from "@/lib/checklist-options";
 import { todayBkk } from "@/lib/time";
 import { getLang } from "@/lib/lang-server";
@@ -135,7 +136,7 @@ export default function ShiftClosePage({
         // Material-purchase quota for today (owner 2026-06-21). null when the
         // branch hasn't enabled it. The form shows today's quota + records how
         // much was ordered, flagging over-quota on the report.
-        materialQuota={(() => { const md = ledgerDashboard(branch.id, "month", selectedDate); return materialPurchaseQuota(branch.id, selectedDate, md.forecast, md.salesRevenue); })()}
+        materialQuota={(() => { const md = ledgerDashboard(branch.id, "month", selectedDate); return materialQuotaFor(branch.id, selectedDate, md.salesRevenue, md.forecast); })()}
         previousData={previousData}
         // Per-branch headline label + order + in-red-box knobs.
         // The form forwards these into the live FlexPreview so the

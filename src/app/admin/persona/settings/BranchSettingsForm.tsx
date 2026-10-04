@@ -140,7 +140,6 @@ export default function BranchSettingsForm({
   // Y = max material %, weekday = the one weekly buying day. Strings for the
   // numeric inputs so the field can be cleared while typing.
   const [matQuotaOn, setMatQuotaOn] = useState<boolean>(materialQuotaEnabled);
-  const [matTarget, setMatTarget] = useState<string>(String(materialTargetSales || ""));
   const [matPct, setMatPct] = useState<string>(String(materialBudgetPct || ""));
   const [matPct2, setMatPct2] = useState<string>(materialBudgetPct2 == null ? "" : String(materialBudgetPct2));
   const [matWeekday, setMatWeekday] = useState<number>(materialPurchaseWeekday);
@@ -195,7 +194,6 @@ export default function BranchSettingsForm({
     tClosingReq === requireTodayClosing &&
     dailyRevReq === requireDailyRevenue &&
     matQuotaOn === materialQuotaEnabled &&
-    matTarget === String(materialTargetSales || "") &&
     matPct === String(materialBudgetPct || "") &&
     matPct2 === (materialBudgetPct2 == null ? "" : String(materialBudgetPct2)) &&
     matWeekday === materialPurchaseWeekday &&
@@ -237,7 +235,6 @@ export default function BranchSettingsForm({
           require_today_closing: tClosingReq,
           require_daily_revenue: dailyRevReq,
           material_quota_enabled: matQuotaOn,
-          material_target_sales: Number(matTarget.replace(/,/g, "")) || 0,
           material_budget_pct: Number(matPct) || 0,
           material_budget_pct2: matPct2.trim() === "" ? null : (Number(matPct2) || null),
           material_purchase_weekday: matWeekday,
@@ -727,9 +724,11 @@ export default function BranchSettingsForm({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="label !text-xs">ยอดขายเป้าหมาย/เดือน (X)</label>
-                    <input type="number" inputMode="decimal" min={0} className="input"
-                      value={matTarget} placeholder="เช่น 600000"
-                      onChange={(e) => setMatTarget(e.target.value)} />
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+                      ตั้งที่ ANALYTICA เท่านั้น (รายเดือนได้) —{" "}
+                      <a href="/admin/reporta/settings" className="text-brand underline">ไปตั้งเป้า</a>
+                      {materialTargetSales > 0 && <span className="block text-[11px] text-slate-400 mt-0.5">ค่าสำรองเดิม {materialTargetSales.toLocaleString("th-TH")} บาท ใช้เฉพาะเดือนที่ยังไม่ได้ตั้งเป้าใน ANALYTICA</span>}
+                    </div>
                   </div>
                   <div>
                     <label className="label !text-xs">%COG เพดาน (Y)</label>
@@ -755,12 +754,8 @@ export default function BranchSettingsForm({
                   </select>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  งบวัตถุดิบทั้งเดือน = X × Y% ={" "}
-                  <b className="text-slate-700">
-                    ฿{((Number(matTarget.replace(/,/g, "")) || 0) * (Number(matPct) || 0) / 100)
-                      .toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                  </b>
-                  {" "}· โควตาต่อวันสั่งของ = (งบ − ที่ซื้อไปแล้วเดือนนี้) ÷ จำนวนวัน{["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"][matWeekday]}ที่เหลือ
+                  งบวัตถุดิบทั้งเดือน = ยอดขายฐาน × Y% โดยยอดขายฐานคือค่าที่ต่ำกว่าระหว่าง “เป้าของเดือนนั้นใน ANALYTICA” กับ “ยอดขายสะสม + ยอดคาดการณ์ของวันที่เหลือ” ·
+                  โควตา = งบที่เหลือ × (ยอดคาดการณ์ของช่วงที่ครอบคลุม ÷ ยอดคาดการณ์ของวันที่เหลือทั้งเดือน) · วัน{["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"][matWeekday]}ซื้อครอบคลุม 7 วันถัดไป วันอื่นซื้อเสริมสำหรับพรุ่งนี้
                 </p>
               </div>
             )}

@@ -1,12 +1,15 @@
 import { getDb } from "@/lib/db";
+import { getMonthlyTargetFor } from "@/lib/salesa-db";
 
 // Monthly sales-vs-target progress (owner 2026-07-11). A single source of
 // truth for "ยอดขายเดือนนี้คิดเป็นกี่ % ของเป้าที่ตั้งไว้", reused by the
 // ACCOUNTA บัญชีรายรับรายจ่าย page and the shift-close LINE card.
 //
-// The target is the EXISTING monthly sales target — branches.material_target_sales
-// (X, baht/month, set in persona branch settings). Progress = ยอดขายสะสม
-// ทั้งเดือน ÷ X. Per-branch: each branch has its own X.
+// The target is the ANALYTICA monthly target for that month (owner 2026-10-04:
+// ตั้งเป้าที่เดียว) — the month's own override, else the branch default set in
+// ANALYTICA settings. Only when ANALYTICA has none does it fall back to the old
+// PERSONA field branches.material_target_sales, so a branch that never set a
+// target in ANALYTICA keeps its bar. Progress = ยอดขายสะสมทั้งเดือน ÷ target.
 //
 // The month-to-date sales figure: callers on the ACCOUNTA page pass the
 // ledger's salesRevenue (via `monthSalesOverride`) so the bar matches the
@@ -22,8 +25,10 @@ import { getDb } from "@/lib/db";
 export type SalesTargetProgress = {
   /** True when the branch has a monthly sales target set (X > 0). */
   hasTarget: boolean;
-  /** X — monthly sales target in baht (branches.material_target_sales). */
+  /** The month's sales target in baht (ANALYTICA, else the legacy PERSONA field). */
   monthlyTarget: number;
+  /** Where monthlyTarget came from. */
+  targetSource: "analytica" | "persona" | "none";
   /** Sum of branch_daily_revenue for `date`'s month up to and incl. today. */
   monthToDateSales: number;
   /** monthToDateSales ÷ monthlyTarget × 100, one decimal. Can exceed 100. */
@@ -33,6 +38,19 @@ export type SalesTargetProgress = {
 };
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/** The effective monthly sales target for a branch + month ("YYYY-MM"):
+ *  ANALYTICA's (month override → branch default), else the legacy PERSONA
+ *  material_target_sales, else none. The one place every ACCOUNTA / shift-close
+ *  consumer reads the target from. */
+export function effectiveMonthlyTarget(branchId: number, ym: string): { target: number; source: "analytica" | "persona" | "none" } {
+  const y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7));
+  const a = y && m ? getMonthlyTargetFor(branchId, y, m) : null;
+  if (a != null && a > 0) return { target: a, source: "analytica" };
+  const b = getDb().prepare("SELECT material_target_sales AS x FROM branches WHERE id = ?").get(branchId) as { x: number } | undefined;
+  const legacy = Math.max(0, Number(b?.x) || 0);
+  return legacy > 0 ? { target: legacy, source: "persona" } : { target: 0, source: "none" };
+}
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Month-to-date sales progress against the branch's monthly sales target.
@@ -45,10 +63,7 @@ export function salesTargetProgress(
   monthSalesOverride?: number | null
 ): SalesTargetProgress {
   const db = getDb();
-  const b = db
-    .prepare("SELECT material_target_sales AS x FROM branches WHERE id = ?")
-    .get(branchId) as { x: number } | undefined;
-  const monthlyTarget = Math.max(0, Number(b?.x) || 0);
+  const { target: monthlyTarget, source: targetSource } = effectiveMonthlyTarget(branchId, date.slice(0, 7));
 
   let monthToDateSales: number;
   if (monthSalesOverride != null) {
@@ -68,6 +83,7 @@ export function salesTargetProgress(
   return {
     hasTarget: monthlyTarget > 0,
     monthlyTarget,
+    targetSource,
     monthToDateSales,
     monthPct,
     date

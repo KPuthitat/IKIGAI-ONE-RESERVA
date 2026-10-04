@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, materialPurchaseQuota, postDueRecurringExpenses, vendorLastDescriptions, vendorLastBills, breakEvenAnalysis, type LedgerPeriod, type BreakEvenAnalysis } from "@/lib/accounta-db";
+import { ledgerDashboard, listExpensesInRange, monthlyTrend, accountaPayables, listCashAccounts, cashAccountsTotal, listIncomeChannels, listCategories, listExpenses, listVendors, listPaymentMethods, postDueRecurringExpenses, vendorLastDescriptions, vendorLastBills, breakEvenAnalysis, type LedgerPeriod, type BreakEvenAnalysis } from "@/lib/accounta-db";
+import { materialQuotaFor } from "@/lib/material-budget";
 import { salesTargetProgress, type SalesTargetProgress } from "@/lib/sales-target";
 import { financialAnalysisEnabled } from "@/lib/financial-analysis";
 import { fmtMoney } from "@/lib/format";
@@ -315,7 +316,7 @@ export default function DaybookPage({
   const monthDash = (period === "month" && anchor.slice(0, 7) === quotaToday_.slice(0, 7))
     ? dash
     : ledgerDashboard(branchId, "month", quotaToday_);
-  const materialQuota = materialPurchaseQuota(branchId, quotaToday_, monthDash.forecast, monthDash.salesRevenue);
+  const materialQuota = materialQuotaFor(branchId, quotaToday_, monthDash.salesRevenue, monthDash.forecast);
 
   // ยอดขายเทียบเป้าเดือนนี้ (owner 2026-07-11) — ยอดขายสะสมทั้งเดือนเทียบเป้า
   // ยอดขายรายเดือนของสาขา. ใช้ยอดขายจาก ledger (monthDash.salesRevenue) ตัวเดียว
@@ -370,6 +371,7 @@ export default function DaybookPage({
         draftExpenses={draftExpenses} expenseVendors={expenseVendors}
         paymentMethods={paymentMethods}
         materialQuota={materialQuota}
+        breakEvenSales={breakEven.hasData ? breakEven.requiredBreakEven : null}
         projectedMonthlySales={salesTarget.monthlyTarget}
         aiEnabled={financialAnalysisEnabled()}
         payCycleWeekday={payCycleWeekday} />
