@@ -3719,6 +3719,19 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_org_edges_branch ON org_chart_edges (branch_id);
     CREATE INDEX IF NOT EXISTS idx_org_edges_parent ON org_chart_edges (parent_node_id);
   `);
+  // One employee can report to MORE THAN ONE supervisor (owner 2026-10-04). The list
+  // lives here; users.supervisor_user_id stays as the first/primary one so older readers
+  // keep working. Backfilled once from the single column (INSERT OR IGNORE → idempotent).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_supervisors (
+      user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      supervisor_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      sort_order         INTEGER NOT NULL DEFAULT 0,
+      created_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, supervisor_user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_supervisors_sup ON user_supervisors (supervisor_user_id);
+  `);
   if (orgIsV1) {
     // Convert legacy reports_to_user_id → node→node edges. Node ids were
     // preserved above, and v1 had one node per user per branch, so each
@@ -4918,6 +4931,13 @@ function runMigrations(db: Database.Database): void {
   userCol("emergency_phone",        "TEXT");
   // Employment
   userCol("supervisor_user_id", "INTEGER REFERENCES users(id)");
+  // Backfill the multi-supervisor list from the single column (owner 2026-10-04) — here, after
+  // the column is guaranteed to exist; INSERT OR IGNORE keeps it idempotent.
+  db.exec(`
+    INSERT OR IGNORE INTO user_supervisors (user_id, supervisor_user_id, sort_order)
+      SELECT id, supervisor_user_id, 0 FROM users
+       WHERE supervisor_user_id IS NOT NULL AND supervisor_user_id <> id
+  `);
   userCol("job_title",          "TEXT");  // free-text เช่น "พนักงานทั่วไปภายในร้าน"
   userCol("contract_end_date",  "TEXT");  // YYYY-MM-DD
   userCol("employment_status",  "TEXT");  // probation / permanent
@@ -9445,6 +9465,8 @@ export type EmployeeProfile = {
   emergency_phone: string | null;
   // Employment
   supervisor_user_id: number | null;
+  /** All supervisors (user_supervisors); supervisor_user_id is the first. Filled by the profile page. */
+  supervisor_user_ids?: number[];
   job_title: string | null;
   hire_date: string | null;
   contract_end_date: string | null;

@@ -5,7 +5,7 @@ import { getDb, type EmployeeProfile } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import ProfileForm from "@/app/staff/persona/profile/ProfileForm";
-import { supervisorOptionsFor } from "@/lib/org-structure";
+import { supervisorOptionsFor, supervisorIdsOf } from "@/lib/org-structure";
 import { nameWithPrefix } from "@/lib/name";
 import ImpersonateButton from "./ImpersonateButton";
 
@@ -74,10 +74,13 @@ export default function AdminEmployeeProfilePage({
   const supOpts = supervisorOptionsFor(id);
   // Keep the currently stored supervisor visible even if the chain changed
   // since (the save will be refused until it's fixed — the hint says why).
-  const current = row.supervisor_user_id != null && !supOpts.options.some((o) => o.id === row.supervisor_user_id)
-    ? (db.prepare("SELECT id, display_name, title_prefix FROM users WHERE id = ?").get(row.supervisor_user_id) as { id: number; display_name: string; title_prefix: string | null } | undefined)
-    : undefined;
-  const supervisors = current ? [current, ...supOpts.options] : supOpts.options;
+  const supervisorIds = supervisorIdsOf(id);
+  const stale = supervisorIds.filter((sid) => !supOpts.options.some((o) => o.id === sid));
+  const staleRows = stale.length
+    ? (db.prepare(`SELECT id, display_name, title_prefix FROM users WHERE id IN (${stale.map(() => "?").join(",")})`).all(...stale) as Array<{ id: number; display_name: string; title_prefix: string | null }>)
+    : [];
+  const current = staleRows.length > 0;
+  const supervisors = [...staleRows, ...supOpts.options];
 
   // "ยังไม่ได้กรอก" check — the full profile fields (first_name_th
   // etc.) sit on users alongside the on-boarding display_name. A
@@ -127,7 +130,7 @@ export default function AdminEmployeeProfilePage({
         </div>
       )}
 
-      <ProfileForm mode="admin" profile={row} supervisors={supervisors}
+      <ProfileForm mode="admin" profile={{ ...row, supervisor_user_ids: supervisorIds }} supervisors={supervisors}
         supervisorHint={current ? `${supOpts.hint} · ผู้บังคับบัญชาที่บันทึกไว้ไม่ตรงกฎนี้แล้ว กรุณาเลือกใหม่` : supOpts.hint} />
     </div>
   );

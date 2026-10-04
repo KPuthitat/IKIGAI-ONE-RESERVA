@@ -108,6 +108,26 @@ process.env.DATABASE_PATH = TMP;
   ok("after dropping HeadService from tier 1, Staff1's stored supervisor is flagged", org.buildAutoOrgChart(branch).issues.some((i) => i.userId === s1 && i.kind === "supervisor_not_head"));
   ok("…and Staff1 can no longer pick HeadService", org.validateSupervisor(s1, headS) === "not_allowed");
 
+  // ── More than one supervisor (owner 2026-10-04) ──
+  tiers.setBranchTierMembers(branch, 1, [headS, headK]);
+  org.setSupervisors(s1, [headS, headK]);
+  ok("a person can have two supervisors, in order", org.supervisorIdsOf(s1).join() === [headS, headK].join());
+  ok("users.supervisor_user_id mirrors the first one", (db.prepare("SELECT supervisor_user_id v FROM users WHERE id=?").get(s1) as { v: number }).v === headS);
+  ok("both are valid for a plain employee", org.validateSupervisors(s1, [headS, headK]) === null);
+  ok("a non-head in the list is refused", org.validateSupervisors(s1, [headS, execA]) === "not_allowed");
+  ok("self in the list is refused", org.validateSupervisors(s1, [s1]) === "self");
+  const multi = org.buildAutoOrgChart(branch);
+  ok("the chart gives Staff1 BOTH heads as parents", multi.placements.find((p) => p.nodeId === s1)!.parentNodeIds.slice().sort().join() === [headS, headK].slice().sort().join());
+  const forestMulti = buildOrgForest(multi.placements);
+  const under = (headId: number) => forestMulti.flatMap(function walk(n: typeof forestMulti[number]): number[] { return [n.nodeId, ...n.children.flatMap(walk)]; }).length > 0
+    && JSON.stringify(forestMulti).includes(`"nodeId":${s1}`);
+  ok("Staff1 appears under each head in the drawn tree", under(headS) && (JSON.stringify(forestMulti).match(new RegExp(`"nodeId":${s1}[,}]`, "g")) ?? []).length >= 2);
+  ok("no 'no supervisor' issue for a multi-supervised person", !multi.issues.some((i) => i.userId === s1));
+  // cycle through the second supervisor: HeadK reporting to Staff1 would loop (HeadK → Staff1 → HeadK)
+  ok("a cycle through ANY supervisor is refused", org.validateSupervisor(headK, s1) !== null);
+  org.setSupervisors(s1, []);
+  ok("clearing the list clears the column too", org.supervisorIdsOf(s1).length === 0 && (db.prepare("SELECT supervisor_user_id v FROM users WHERE id=?").get(s1) as { v: number | null }).v === null);
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

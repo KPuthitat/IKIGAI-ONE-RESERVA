@@ -363,7 +363,14 @@ function OrgNode({ node, editable, onEdit }: { node: OrgTreeNode; editable: bool
       <div className={`inline-block align-top rounded-xl border px-3 py-2 bg-white shadow-sm text-left border-slate-200 ${editable ? "cursor-pointer hover:border-brand" : ""}`}
         onClick={editable ? () => onEdit(node.nodeId) : undefined}
         role={editable ? "button" : undefined}>
-        <div className="font-semibold text-slate-800 text-sm whitespace-nowrap">{personName(node)}</div>
+        {editable ? (
+          <div className="font-semibold text-slate-800 text-sm whitespace-nowrap">{personName(node)}</div>
+        ) : (
+          // Derived chart (owner 2026-10-04): click the name → that person's profile settings,
+          // where supervisor(s) and ฝ่าย are set.
+          <Link href={`/admin/persona/employees/${node.userId}`} title="เปิดโปรไฟล์ / ตั้งค่าพนักงาน"
+            className="font-semibold text-slate-800 text-sm whitespace-nowrap hover:text-brand hover:underline">{personName(node)}</Link>
+        )}
         {node.jobTitle && <div className="text-[11px] text-slate-500 whitespace-nowrap">{node.jobTitle}</div>}
         <div className="flex items-center gap-1 mt-1">
           {node.department && (

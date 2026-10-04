@@ -8,7 +8,7 @@ import { createInvite } from "@/lib/invites";
 import { decryptSecret } from "@/lib/secret-vault";
 import { notifyHireWelcome } from "@/lib/recruita-notify";
 import { recordReferralOnHire } from "@/lib/referral";
-import { validateSupervisor } from "@/lib/org-structure";
+import { validateSupervisor, setSupervisors } from "@/lib/org-structure";
 
 // POST /api/recruita/applications/[id]/hire
 //
@@ -232,8 +232,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       // tier-1 head of the hire's branch. A pick that doesn't fit is dropped
       // (the org chart then flags "ยังไม่ได้ระบุผู้บังคับบัญชา") rather than
       // failing the whole hire.
-      if (d.supervisor_user_id != null && validateSupervisor(newUserId, d.supervisor_user_id) != null) {
-        db.prepare("UPDATE users SET supervisor_user_id = NULL WHERE id = ?").run(newUserId);
+      if (d.supervisor_user_id != null) {
+        if (validateSupervisor(newUserId, d.supervisor_user_id) != null) {
+          db.prepare("UPDATE users SET supervisor_user_id = NULL WHERE id = ?").run(newUserId);
+        } else {
+          setSupervisors(newUserId, [d.supervisor_user_id]);   // also fills user_supervisors
+        }
       }
 
       // Update the application
