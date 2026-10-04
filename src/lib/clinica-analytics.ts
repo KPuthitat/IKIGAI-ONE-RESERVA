@@ -530,11 +530,25 @@ export type ClinicaTopSpenders = {
   groups: TopSpenderGroup[];                    // by group net desc
 };
 
-export function clinicaTopSpenders(branchId: number, opts: { scope?: "all" | "year"; year?: number; limit?: number } = {}): ClinicaTopSpenders {
+/** Patients whose last bill is older than this many months are left out of the
+ *  ranking (owner 2026-10-04: หายไปเกิน 12 เดือน ไม่ต้องแสดง). */
+export const TOP_SPENDER_LAPSE_MONTHS = 12;
+
+function monthsBeforeIso(iso: string, months: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const day = d.getUTCDate();
+  d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - months);
+  d.setUTCDate(Math.min(day, daysInMonth(d.getUTCFullYear(), d.getUTCMonth() + 1)));
+  return d.toISOString().slice(0, 10);
+}
+
+export function clinicaTopSpenders(branchId: number, opts: { scope?: "all" | "year"; year?: number; limit?: number; today?: string } = {}): ClinicaTopSpenders {
   const db = getDb();
   const scope = opts.scope ?? "all";
   const limit = Math.min(50, Math.max(1, opts.limit ?? 10));
-  const year = opts.year ?? Number(new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 4));
+  const todayIso = opts.today ?? new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+  const year = opts.year ?? Number(todayIso.slice(0, 4));
+  const lapseCutoff = monthsBeforeIso(todayIso, TOP_SPENDER_LAPSE_MONTHS);
   const start = scope === "year" ? `${year}-01-01` : "0000-01-01";
   const end = scope === "year" ? `${year}-12-31` : "9999-12-31";
   const cov = db.prepare(
@@ -552,19 +566,19 @@ export function clinicaTopSpenders(branchId: number, opts: { scope?: "all" | "ye
             MIN(NULLIF(bill_date,'')) firstDate, MAX(bill_date) lastDate
        FROM clinica_bills
       WHERE branch_id=? AND bill_date BETWEEN ? AND ? AND COALESCE(NULLIF(payer_group,''),'(ไม่ระบุ)') = ? AND NULLIF(hn,'') IS NOT NULL
-      GROUP BY hn ORDER BY net DESC, bills DESC, hn LIMIT ?`
+      GROUP BY hn HAVING MAX(bill_date) >= ?
+      ORDER BY net DESC, bills DESC, hn LIMIT ?`
   );
   const billStmt = db.prepare(
     `SELECT bill_date date, ROUND(SUM(net),2) total FROM clinica_bills
       WHERE branch_id=? AND bill_date BETWEEN ? AND ? AND COALESCE(NULLIF(payer_group,''),'(ไม่ระบุ)') = ? AND hn = ? AND bill_date <> ''
       GROUP BY bill_date ORDER BY bill_date`
   );
-  const todayIso = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
   const covered = monthsCovered(scope === "year" ? year : Number(todayIso.slice(0, 4)), cov.f, todayIso);
   const holidays = holidaysAround(scope === "year" ? year : Number(todayIso.slice(0, 4)));
   const groups: TopSpenderGroup[] = groupRows.map((g) => ({
     group: g.grp, net: g.net, paid: g.paid, due: g.due, bills: g.bills, patients: g.patients,
-    top: (topStmt.all(branchId, start, end, g.grp, limit) as Array<Omit<TopSpender, "rank" | "pattern">>).map((r, i) => {
+    top: (topStmt.all(branchId, start, end, g.grp, lapseCutoff, limit) as Array<Omit<TopSpender, "rank" | "pattern">>).map((r, i) => {
       // Visit pattern from this patient's bills in the group (same-day bills = one visit).
       const days = billStmt.all(branchId, start, end, g.grp, r.hn) as Array<{ date: string; total: number }>;
       const pattern = days.length ? visitPattern(days, { year: scope === "year" ? year : Number(todayIso.slice(0, 4)), todayIso, monthsCovered: covered, holidays }) : null;
