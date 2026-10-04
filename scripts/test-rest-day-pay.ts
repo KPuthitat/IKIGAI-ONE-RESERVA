@@ -156,6 +156,33 @@ const base = {
   db.prepare("UPDATE shift_change_requests SET status='approved' WHERE user_id=? AND work_date=?").run(gateU, d2);
   okv("an APPROVED request opens the clock for that date only", hasApprovedShiftRequestOn(gateU, d2) === true && hasApprovedShiftRequestOn(gateU, "2026-09-21") === false);
 
+  // Admin records the request ON BEHALF of an employee (a day worked without ever filing one).
+  console.log("\nadmin records the extra shift on behalf:");
+  const { recordExtraShiftOnBehalf } = await import("../src/lib/shift-requests");
+  const adminU = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status) VALUES ('adm','x','Adm','admin','active')").run().lastInsertRowid);
+  const onb = mk("onb", "ft", "monthly_salary", 12000);
+  db.prepare("INSERT INTO user_branches (user_id,branch_id) VALUES (?,?)").run(onb, br);
+  const D14 = "2026-09-14";
+  for (const [t, d] of [["in", "10:48"], ["out", "21:00"]] as const) db.prepare("INSERT INTO time_entries (user_id,type,ts,branch_id) VALUES (?,?,?,?)").run(onb, t, iso(D14, d), br);
+  db.prepare("INSERT INTO ot_requests (user_id,branch_id,work_date,requested_until,status) VALUES (?,?,?,?, 'approved')").run(onb, br, D14, "21:00");
+  const posA = Number(db.prepare("INSERT INTO roster_positions (branch_id,title) VALUES (?,?)").run(br, "Onb").lastInsertRowid);
+  const flagOf = () => buildLineBreakdown(db, period, onb)!.days.find((d) => d.date === D14)?.pairs[0]?.restDay;
+  okv("before: no request → not rest-day work", flagOf() === false);
+  const bad = recordExtraShiftOnBehalf({ branchId: br, adminId: adminU, userId: onb, workDate: D14, positionId: posA, shiftCodeId: 999999, note: "x y z" });
+  okv("an invalid shift is refused", bad.ok === false && bad.error === "invalid_slot");
+  const stranger = recordExtraShiftOnBehalf({ branchId: br, adminId: adminU, userId: 999999, workDate: D14, positionId: posA, shiftCodeId: sh, note: "x y z" });
+  okv("a person outside the branch is refused", stranger.ok === false && stranger.error === "user_not_in_branch");
+  const r = recordExtraShiftOnBehalf({ branchId: br, adminId: adminU, userId: onb, workDate: D14, positionId: posA, shiftCodeId: sh, note: "ทำงานวันหยุดตามที่ตกลง ไม่ได้ส่งคำขอ" });
+  okv("recorded: approved request with a ref no", r.ok === true && /^SC202609-\d+$/.test(r.ok ? r.refNo : ""));
+  okv("the shift is on the roster", (db.prepare("SELECT COUNT(*) n FROM roster_assignments WHERE user_id=? AND assignment_date=? AND shift_code_id=?").get(onb, D14, sh) as { n: number }).n === 1);
+  okv("after: the day is rest-day work", flagOf() === true);
+  const again = recordExtraShiftOnBehalf({ branchId: br, adminId: adminU, userId: onb, workDate: D14, positionId: posA, shiftCodeId: sh, note: "x y z" });
+  okv("recording it twice is refused", again.ok === false && again.error === "already_approved");
+  const other = mk("onb2", "ft", "monthly_salary", 12000);
+  db.prepare("INSERT INTO user_branches (user_id,branch_id) VALUES (?,?)").run(other, br);
+  const taken = recordExtraShiftOnBehalf({ branchId: br, adminId: adminU, userId: other, workDate: D14, positionId: posA, shiftCodeId: sh, note: "x y z" });
+  okv("a position already filled that day is refused", taken.ok === false && taken.error === "slot_taken");
+
   console.log(`\n${fail === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${pass} passed, ${fail} failed`);
   cleanup();
   process.exit(fail === 0 ? 0 : 1);

@@ -12,6 +12,8 @@ import { sendLinePush } from "./line";
 import { getPlatformChannel, isChannelReady } from "./messaging-channels";
 import { notifyHrShiftRequest } from "./approval-notify";
 import { nameWithPrefix } from "./name";
+import { upsertAssignment, recordPublish, occupiedPositionIdsOnDate, userPositionOnDate } from "./roster";
+import { recomputeLine } from "./payroll-compute";
 
 export type ShiftRequestKind = "extra_shift" | "swap";
 export type ShiftRequestStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -217,6 +219,58 @@ export function hasApprovedShiftRequestOn(userId: number, workDate: string): boo
   return !!getDb().prepare(
     "SELECT 1 FROM shift_change_requests WHERE user_id = ? AND work_date = ? AND status = 'approved' LIMIT 1"
   ).get(userId, workDate);
+}
+
+export type OnBehalfResult =
+  | { ok: true; id: number; refNo: string; recomputedPeriods: number[] }
+  | { ok: false; error: "user_not_in_branch" | "invalid_slot" | "already_approved" | "slot_taken" };
+
+/** An admin records an extra-shift request FOR an employee (owner 2026-10-04): created
+ *  already APPROVED, the shift written to the roster (unless the person already has a
+ *  shift that day), and every DRAFT payroll line covering the date recomputed so a
+ *  monthly employee gets the rest-day pay. The caller has already checked the admin's PIN. */
+export function recordExtraShiftOnBehalf(a: {
+  branchId: number; adminId: number; userId: number; workDate: string;
+  positionId: number; shiftCodeId: number; note: string;
+}): OnBehalfResult {
+  const db = getDb();
+  if (!db.prepare("SELECT 1 FROM user_branches WHERE user_id = ? AND branch_id = ?").get(a.userId, a.branchId)) {
+    return { ok: false, error: "user_not_in_branch" };
+  }
+  const pos = db.prepare("SELECT id FROM roster_positions WHERE id = ? AND branch_id = ? AND active = 1").get(a.positionId, a.branchId);
+  const sc = db.prepare("SELECT id FROM shift_codes WHERE id = ? AND branch_id = ? AND active = 1 AND kind = 'work'").get(a.shiftCodeId, a.branchId);
+  if (!pos || !sc) return { ok: false, error: "invalid_slot" };
+  if (db.prepare("SELECT 1 FROM shift_change_requests WHERE user_id = ? AND work_date = ? AND kind = 'extra_shift' AND status = 'approved'").get(a.userId, a.workDate)) {
+    return { ok: false, error: "already_approved" };
+  }
+  const alreadyRostered = userPositionOnDate(a.branchId, a.userId, a.workDate) != null;
+  if (!alreadyRostered && occupiedPositionIdsOnDate(a.branchId, a.workDate).includes(a.positionId)) {
+    return { ok: false, error: "slot_taken" };
+  }
+  const ym = a.workDate.slice(0, 7).replace("-", "");
+  let id = 0;
+  db.transaction(() => {
+    const info = db.prepare(`
+      INSERT INTO shift_change_requests
+        (user_id, branch_id, kind, work_date, off_date, note, position_id, shift_code_id,
+         status, decided_by, decided_at, decision_note, created_at)
+      VALUES (?, ?, 'extra_shift', ?, NULL, ?, ?, ?, 'approved', ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+    `).run(a.userId, a.branchId, a.workDate, a.note, a.positionId, a.shiftCodeId, a.adminId, "แอดมินบันทึกแทนพนักงาน");
+    id = Number(info.lastInsertRowid);
+    db.prepare("UPDATE shift_change_requests SET ref_no = ? WHERE id = ?").run(`SC${ym}-${id}`, id);
+    if (!alreadyRostered) {
+      upsertAssignment({ branchId: a.branchId, date: a.workDate, positionId: a.positionId, userId: a.userId, shiftCodeId: a.shiftCodeId, actingUserId: a.adminId });
+    }
+  })();
+  recordPublish(a.branchId, a.workDate.slice(0, 7), "edit", a.adminId, null);
+  const recomputed: number[] = [];
+  for (const p of db.prepare(
+    "SELECT id FROM payroll_periods WHERE status = 'draft' AND period_start <= ? AND period_end >= ?"
+  ).all(a.workDate, a.workDate) as Array<{ id: number }>) {
+    try { recomputeLine(db, p.id, a.userId); recomputed.push(p.id); }
+    catch { /* no line for this person in that period / not draft — skip */ }
+  }
+  return { ok: true, id, refNo: `SC${ym}-${id}`, recomputedPeriods: recomputed };
 }
 
 export function shiftRequestKindLabel(kind: ShiftRequestKind): string {

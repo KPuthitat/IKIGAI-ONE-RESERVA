@@ -5,6 +5,7 @@ import {
   listPositions, listShiftCodes, getRegularPositionId,
   occupiedPositionIdsOnDate, userPositionOnDate, defaultWorkShiftCodeId
 } from "@/lib/roster";
+import { getDb } from "@/lib/db";
 import ShiftRequestsAdminClient, { type RosterCtx } from "./ShiftRequestsAdminClient";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,16 @@ export default function ShiftRequestsAdminPage() {
     };
   }
 
+  // Staff the admin can record a request for (owner 2026-10-04: "เพิ่มแทนพนักงาน").
+  const staff = (getDb().prepare(`
+    SELECT u.id, u.display_name, u.title_prefix, u.employment_type
+    FROM users u JOIN user_branches ub ON ub.user_id = u.id
+    WHERE ub.branch_id = ? AND u.role IN ('staff','admin') AND u.is_test_account = 0
+      AND u.status NOT IN ('disabled','resigned','terminated')
+    ORDER BY u.display_name COLLATE NOCASE
+  `).all(branchId) as Array<{ id: number; display_name: string; title_prefix: string | null; employment_type: string | null }>)
+    .map((u) => ({ ...u, regularPositionId: getRegularPositionId(branchId, u.id) }));
+
   return (
     <div className="space-y-4">
       <div>
@@ -55,6 +66,7 @@ export default function ShiftRequestsAdminPage() {
         shiftCodes={shiftCodes}
         defaultShiftCodeId={defaultShiftCodeId}
         rosterCtx={rosterCtx}
+        staff={staff}
       />
     </div>
   );
