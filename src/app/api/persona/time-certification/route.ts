@@ -3,7 +3,10 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { notifyExecGroupTimeCertRequest, notifyMissingPunchOffence } from "@/lib/time-cert-notify";
-import { createWarning, countWarningsByCategory } from "@/lib/discipline";
+import { createWarning, countWarningsByCategory, createMissingOutWarning, recentMissingOutWarnings } from "@/lib/discipline";
+import { missingOutSeverity } from "@/lib/discipline-text";
+import bcrypt from "bcryptjs";
+import { rateLimit } from "@/lib/rate-limit";
 import { resolveClockBranchId } from "@/lib/roster";
 import { recomputeLine } from "@/lib/payroll-compute";
 
@@ -39,7 +42,13 @@ const MissingBody = z.object({
   entry_type: z.enum(["in", "out"]),
   work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   proposed_ts: z.string().datetime(),
-  reason: z.string().trim().min(3).max(500)
+  reason: z.string().trim().min(3).max(500),
+  // Forgot clock-OUT: the person acknowledges the warning that this lapse records
+  // by entering their PIN (owner 2026-10-04). Required for entry_type 'out'.
+  ack_pin: z.string().regex(/^\d{4}$/).optional(),
+  // The severity the person was shown and acknowledged — the server refuses if the
+  // record it would make is different (e.g. another warning was added meanwhile).
+  ack_severity: z.enum(["verbal", "written_1", "written_2"]).optional()
 });
 
 function bkkDate(iso: string): string {
@@ -77,6 +86,12 @@ export async function POST(req: Request) {
     }
     const opposite = entry_type === "out" ? "in" : "out";
     const oppEntry = dayEntries.find((e) => e.type === opposite);
+
+    // Forgot clock-OUT needs the person's PIN as the acknowledgement of the warning
+    // it records; the PIN itself is checked once the request is known to be valid.
+    if (entry_type === "out" && !parsed.data.ack_pin) {
+      return NextResponse.json({ error: "ack_required" }, { status: 400 });
+    }
 
     // ── B1) Forgot clock-IN → self-certify with IMMEDIATE effect ──────
     // A forgotten clock-IN pays nothing on its own — the day only counts once a
@@ -194,6 +209,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "no_opposite_punch" }, { status: 409 });
     }
     const branchId = oppEntry.branch_id ?? user.activeBranchId ?? null;
+    if (branchId == null) {
+      return NextResponse.json({ error: "no_branch" }, { status: 409 });
+    }
     // No duplicate pending missing-request for the same day+type.
     const dup = db.prepare(`
       SELECT id FROM time_certifications
@@ -203,34 +221,47 @@ export async function POST(req: Request) {
     if (dup) {
       return NextResponse.json({ error: "already_pending", existingId: dup.id }, { status: 409 });
     }
-    const result = db.prepare(`
-      INSERT INTO time_certifications
-        (entry_id, requested_by, reason, proposed_ts, original_ts,
-         kind, entry_type, work_date, branch_id, status, created_at)
-      VALUES (NULL, ?, ?, ?, NULL, 'missing', ?, ?, ?, 'pending', ?)
-    `).run(user.id, reason, proposed_ts, entry_type, work_date, branchId, nowIso);
-    logPersonaAction(user.id, "time_certification.request_missing", Number(result.lastInsertRowid));
-    // Auto-record a (verbal) disciplinary note for the missing punch so HR
-    // tracking is automatic (owner 2026-06-14). Quiet — no LINE notify. Wrapped
-    // so a discipline-insert failure never blocks the certification itself.
-    if (branchId != null) {
-      try {
-        createWarning({
-          branchId,
-          userId: user.id,
-          issuedByUserId: user.id,
-          severity: "verbal",
-          title: "ลืมลงเวลาออกงาน (บันทึกอัตโนมัติ)",
-          body: `ระบบบันทึกอัตโนมัติเมื่อพนักงานยื่นรับรองเวลาออกงานที่ลืมลงของวันที่ ${work_date}`,
-          reasonCategory: "ลงเวลา"
-        });
-      } catch (e) {
-        console.warn("[time-cert] auto-discipline failed", e);
-      }
+
+    // The request is valid → now the acknowledgement: PIN, and the warning the
+    // person was shown must still be the one that would be recorded.
+    const ackPin = parsed.data.ack_pin!;
+    const rl = rateLimit(`certack:${user.id}`, 8, 60_000);
+    if (!rl.ok) return NextResponse.json({ error: "rate_limited", retryAfterSec: Math.ceil(rl.retryAfterMs / 1000) }, { status: 429 });
+    const pinRow = db.prepare("SELECT pin_hash FROM users WHERE id = ?").get(user.id) as { pin_hash: string | null } | undefined;
+    if (!pinRow?.pin_hash) return NextResponse.json({ error: "no_pin_set" }, { status: 400 });
+    if (!bcrypt.compareSync(ackPin, pinRow.pin_hash)) return NextResponse.json({ error: "wrong_pin" }, { status: 400 });
+    const alreadyRecorded = !!db.prepare(
+      "SELECT 1 FROM disciplinary_warnings WHERE user_id = ? AND reason_category = 'ลงเวลา' AND effective_date = ? AND voided_at IS NULL AND (title LIKE '%ไม่ลงเวลาออกงาน%' OR title LIKE '%ลืมลงเวลาออกงาน%') LIMIT 1"
+    ).get(user.id, work_date);
+    if (!alreadyRecorded && parsed.data.ack_severity !== missingOutSeverity(recentMissingOutWarnings(user.id))) {
+      return NextResponse.json({ error: "warning_changed" }, { status: 409 });
     }
+
+    // The cert and the acknowledged warning are written together: either both exist
+    // (today's clock-in unblocked AND the lapse on record) or neither does.
+    let certRowId = 0;
+    let warning: { severity: string; priorCount: number } | null = null;
+    try {
+      db.transaction(() => {
+        const result = db.prepare(`
+          INSERT INTO time_certifications
+            (entry_id, requested_by, reason, proposed_ts, original_ts,
+             kind, entry_type, work_date, branch_id, status, created_at)
+          VALUES (NULL, ?, ?, ?, NULL, 'missing', ?, ?, ?, 'pending', ?)
+        `).run(user.id, reason, proposed_ts, entry_type, work_date, branchId, nowIso);
+        certRowId = Number(result.lastInsertRowid);
+        const w = createMissingOutWarning({ branchId, userId: user.id, workDate: work_date });
+        warning = { severity: w.severity, priorCount: w.priorCount };
+      })();
+    } catch (e) {
+      console.error("[time-cert] missing-out save failed", e);
+      return NextResponse.json({ error: "save_failed" }, { status: 500 });
+    }
+    logPersonaAction(user.id, "time_certification.request_missing", certRowId);
+    const result = { lastInsertRowid: certRowId };
     void notifyExecGroupTimeCertRequest(Number(result.lastInsertRowid))
       .catch((e) => console.warn("[time-cert] exec-group submit notify failed", e));
-    return NextResponse.json({ ok: true, id: result.lastInsertRowid });
+    return NextResponse.json({ ok: true, id: result.lastInsertRowid, warning });
   }
 
   // ── A) Correction of an existing entry ───────────────────────────────

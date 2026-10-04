@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { useLang } from "@/lib/LangProvider";
+import { missingOutWarningText, missingOutSeverity } from "@/lib/discipline-text";
 
 type EntryRow = {
   id: number;
@@ -78,13 +79,16 @@ export default function TimeCertificationClient({
   certs,
   pendingEntryIds,
   initialMissing = null,
-  flags = []
+  flags = [],
+  priorTimeclockCount = 0
 }: {
   entries: EntryRow[];
   certs: CertRow[];
   pendingEntryIds: number[];
   initialMissing?: { entryType: "in" | "out"; date: string } | null;
   flags?: FlagRow[];
+  /** "ลงเวลา" notes in the last 12 months that still count — sets the warning step. */
+  priorTimeclockCount?: number;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -100,6 +104,12 @@ export default function TimeCertificationClient({
   // Set when a forgot-clock-IN was self-certified with immediate effect, so we
   // can nudge the staff straight back to the clock to punch out.
   const [immediateOk, setImmediateOk] = useState(false);
+  // Forgot clock-OUT: after the warning is acknowledged the next clock-in is open
+  // again, so send them back to the clock.
+  const [ackedOut, setAckedOut] = useState(false);
+  // รับทราบ checkbox + PIN for the forgot-clock-OUT warning (owner 2026-10-04).
+  const [ackChecked, setAckChecked] = useState(false);
+  const [ackPin, setAckPin] = useState("");
   // Forgot-to-punch flow: file a request to ADD a clock-in/out that was
   // never recorded (owner 2026-06-08). Distinct from `form` (correct an
   // existing punch).
@@ -198,6 +208,10 @@ export default function TimeCertificationClient({
       setMsg({ kind: "err", text: t("staff.persona.timeCert.reasonTooShort") });
       return;
     }
+    if (info.missing === "out") {
+      if (!ackChecked) { setMsg({ kind: "err", text: "ติ๊ก “รับทราบ” ก่อนส่ง" }); return; }
+      if (!/^\d{4}$/.test(ackPin)) { setMsg({ kind: "err", text: "ใส่ PIN 4 หลักเพื่อยืนยันการรับทราบ" }); return; }
+    }
     setBusy(true);
     try {
       const res = await fetch(apiUrl("/api/persona/time-certification"), {
@@ -208,7 +222,8 @@ export default function TimeCertificationClient({
           entry_type: info.missing,
           work_date: missingForm.date,
           proposed_ts: dateTimeToIso(missingForm.date, missingForm.time),
-          reason: missingForm.reason.trim()
+          reason: missingForm.reason.trim(),
+          ...(info.missing === "out" ? { ack_pin: ackPin, ack_severity: missingOutSeverity(priorTimeclockCount) } : {})
         })
       });
       const j = await res.json().catch(() => ({}));
@@ -222,6 +237,18 @@ export default function TimeCertificationClient({
             ? t("staff.persona.timeCert.alreadyPending")
             : j.error === "date_mismatch"
             ? "วันที่และเวลาที่กรอกไม่ตรงกัน"
+            : j.error === "wrong_pin"
+            ? "PIN ไม่ถูกต้อง"
+            : j.error === "warning_changed"
+            ? "ข้อความเตือนมีการเปลี่ยนแปลง — โหลดหน้านี้ใหม่ แล้วอ่านและรับทราบอีกครั้ง"
+            : j.error === "save_failed"
+            ? "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง"
+            : j.error === "ack_required"
+            ? "ต้องรับทราบหนังสือเตือนก่อนส่ง"
+            : j.error === "no_pin_set"
+            ? "ยังไม่ได้ตั้ง PIN — ตั้ง PIN ที่หน้าโปรไฟล์ก่อน"
+            : j.error === "rate_limited"
+            ? "ลองบ่อยเกินไป รอสักครู่แล้วลองใหม่"
             : t("common.error");
         setMsg({ kind: "err", text: m });
         return;
@@ -230,9 +257,14 @@ export default function TimeCertificationClient({
         // Forgot clock-IN → recorded live. Send them back to clock OUT.
         setImmediateOk(true);
         setMsg({ kind: "ok", text: "บันทึกเวลาเข้าแล้ว กลับไปกดออกงานได้เลย" });
+      } else if (info.missing === "out") {
+        // Warning recorded + acknowledged → today's clock-in is unblocked.
+        setAckedOut(true);
+        setMsg({ kind: "ok", text: "รับทราบแล้ว กลับไปกดเข้างานได้เลย — แอดมินจะตรวจเวลาออกที่แจ้งอีกครั้ง" });
       } else {
         setMsg({ kind: "ok", text: t("staff.persona.timeCert.submitted") });
       }
+      setAckChecked(false); setAckPin("");
       setMissingForm(null);
       router.refresh();
     } catch {
@@ -304,6 +336,15 @@ export default function TimeCertificationClient({
         </div>
       )}
 
+      {ackedOut && (
+        <div className="text-center">
+          <a href="/staff/persona"
+            className="inline-block text-sm font-bold bg-brand hover:bg-amber-700 text-white px-5 py-2.5 rounded-full">
+            กลับไปหน้าลงเวลา → กดเข้างาน
+          </a>
+        </div>
+      )}
+
       {immediateOk && (
         <div className="text-center">
           <a href="/staff/persona"
@@ -348,7 +389,7 @@ export default function TimeCertificationClient({
                   <p className="text-[11px] text-slate-500 leading-relaxed mt-1.5">
                     {dayInfo.missing === "in"
                       ? "รับรองเวลาเข้าแล้วมีผลทันที กลับไปกดออกงานได้เลย — ระบบบันทึกไว้เป็นประวัติการลงเวลาที่ไม่เหมาะสม"
-                      : "เมื่อแอดมินอนุมัติ ระบบจะบันทึกเวลาและคำนวณเงินเดือนให้อัตโนมัติ"}
+                      : "ใส่เวลาออกจริง เหตุผล แล้วรับทราบหนังสือเตือนด้านล่าง จึงจะกดเข้างานวันนี้ได้ — เมื่อแอดมินอนุมัติเวลาออก ระบบจะคำนวณเงินเดือนให้"}
                   </p>
                 </>
               ) : (
@@ -365,7 +406,7 @@ export default function TimeCertificationClient({
                   className="input"
                   max={BKK_TODAY}
                   value={missingForm.date}
-                  onChange={(e) => setMissingForm({ ...missingForm, date: e.target.value })}
+                  onChange={(e) => { setMissingForm({ ...missingForm, date: e.target.value }); setAckChecked(false); setAckPin(""); }}
                 />
               </div>
               <div>
@@ -391,10 +432,29 @@ export default function TimeCertificationClient({
                 onChange={(e) => setMissingForm({ ...missingForm, reason: e.target.value })}
               />
             </div>
+            {dayInfo.missing === "out" && (() => {
+              const w = missingOutWarningText(priorTimeclockCount, missingForm.date);
+              return (
+                <div className={`rounded-lg border p-3 space-y-2 ${w.isWritten ? "border-rose-300 bg-rose-50" : "border-amber-300 bg-amber-50"}`}>
+                  <div className={`text-[11px] font-bold ${w.isWritten ? "text-rose-700" : "text-amber-800"}`}>{w.severityLabel}</div>
+                  <div className="text-sm font-bold text-slate-800">{w.title}</div>
+                  <p className="text-xs text-slate-700 leading-relaxed">{w.body}</p>
+                  <label className="flex items-start gap-2 text-xs text-slate-800">
+                    <input type="checkbox" className="mt-0.5" checked={ackChecked} onChange={(e) => setAckChecked(e.target.checked)} />
+                    <span>ข้าพเจ้ารับทราบข้อความข้างต้น</span>
+                  </label>
+                  <div>
+                    <label className="label">PIN 4 หลักของคุณ (ยืนยันการรับทราบ)</label>
+                    <input type="password" inputMode="numeric" autoComplete="off" maxLength={4} className="input w-28 tracking-widest text-center"
+                      value={ackPin} onChange={(e) => setAckPin(e.target.value.replace(/\D/g, "").slice(0, 4))} />
+                  </div>
+                </div>
+              );
+            })()}
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setMissingForm(null)}
+                onClick={() => { setMissingForm(null); setAckChecked(false); setAckPin(""); }}
                 disabled={busy}
                 className="btn-secondary flex-1 text-sm"
               >
@@ -414,7 +474,7 @@ export default function TimeCertificationClient({
         })() : (
           <p className="text-[11px] text-slate-400 leading-relaxed">
             ลืมกดเข้า? รับรองเวลาเข้าได้เลย ระบบบันทึกทันทีแล้วกลับไปกดออกงานต่อได้ —
-            ส่วนการลืมกดออก ระบบจะบันทึกเมื่อแอดมินอนุมัติ ทุกครั้งจะถูกบันทึกเป็นประวัติการลงเวลาที่ไม่เหมาะสม
+            ส่วนการลืมกดออก ต้องรับทราบหนังสือเตือนด้วย PIN จึงจะกดเข้างานวันถัดไปได้ และแอดมินจะอนุมัติเวลาออก — ทุกครั้งจะถูกบันทึกเป็นประวัติการลงเวลาที่ไม่เหมาะสม
           </p>
         )}
       </div>

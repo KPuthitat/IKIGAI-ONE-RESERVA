@@ -18,6 +18,8 @@ type WarningRow = {
   issued_at: string;
   acknowledged_at: string | null;
   acknowledged_method: "pin_explicit" | "auto_on_leave" | null;
+  voided_at: string | null;
+  void_reason: string | null;
 };
 
 const SEVERITY_LABEL: Record<WarningRow["severity"], string> = {
@@ -35,6 +37,20 @@ export default function DisciplineClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // Void a warning (e.g. the app was down): kept on record, not counted, hidden from staff.
+  async function voidWarning(w: WarningRow) {
+    const reason = window.prompt(`ยกเลิกคำเตือน "${w.title}" ของ ${w.recipient}?\nระบุเหตุผล (เช่น ระบบขัดข้อง)`);
+    if (!reason || reason.trim().length < 3) return;
+    setBusy(true);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/discipline/${w.id}/void`), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: reason.trim() })
+      });
+      if (!res.ok) { setErr("ยกเลิกไม่สำเร็จ ลองใหม่อีกครั้ง"); return; }
+      router.refresh();
+    } catch { setErr("เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง"); }
+    finally { setBusy(false); }
+  }
   const { t } = useLang();
   const [pending, startTransition] = useTransition();
   const [creating, setCreating] = useState(false);
@@ -282,7 +298,7 @@ export default function DisciplineClient({
         ) : (
           <ul className="space-y-2">
             {warnings.map((w) => (
-              <li key={w.id} className="border border-slate-200 rounded-lg p-3">
+              <li key={w.id} className={`border border-slate-200 rounded-lg p-3 ${w.voided_at ? "opacity-60" : ""}`}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     {w.ref_no && (
@@ -296,8 +312,15 @@ export default function DisciplineClient({
                       {t("admin.persona.discipline.issuedBy", { name: w.issued_by })}
                       · {formatBkkDateTime(w.issued_at)}
                     </div>
+                    {w.voided_at && (
+                      <div className="text-[11px] text-slate-500 mt-1">ยกเลิกแล้ว · {w.void_reason}</div>
+                    )}
                   </div>
-                  <div>
+                  <div className="flex flex-col items-end gap-1">
+                    {!w.voided_at && (
+                      <button type="button" onClick={() => voidWarning(w)} disabled={busy}
+                        className="text-[10px] text-slate-400 hover:text-rose-600">ยกเลิกคำเตือนนี้</button>
+                    )}
                     {w.acknowledged_at ? (
                       <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
                         w.acknowledged_method === "pin_explicit"

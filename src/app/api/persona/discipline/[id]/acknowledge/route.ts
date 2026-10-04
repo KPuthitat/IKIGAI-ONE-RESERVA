@@ -39,7 +39,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const d = parsed.data;
 
   const w = getWarning(id);
-  if (!w) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!w || w.voided_at) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (w.user_id !== user.id) {
     return NextResponse.json({ error: "not_recipient" }, { status: 403 });
   }

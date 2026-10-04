@@ -25,6 +25,7 @@
     "test:clinica-db": "node --import tsx scripts/test-clinica-db.ts",
     "test:clinica-receivables": "node --import tsx scripts/test-clinica-receivables.ts",
     "test:clinica-accounta": "node --import tsx scripts/test-clinica-accounta.ts",
+    "test:missing-out-ack": "node --import tsx scripts/test-missing-out-ack.ts",
     "test:clinica-analytics": "node --import tsx scripts/test-clinica-analytics.ts",
     "test:inventa-waste": "node --import tsx scripts/test-inventa-waste.ts",
     "test:insigna-reviews": "node --import tsx scripts/test-insigna-reviews.ts",

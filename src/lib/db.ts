@@ -5019,6 +5019,13 @@ function runMigrations(db: Database.Database): void {
   if (!dwNames.has("validity_months")) {
     db.exec("ALTER TABLE disciplinary_warnings ADD COLUMN validity_months INTEGER");
   }
+  // Admin can VOID a warning (owner 2026-10-04 — e.g. the app was down when someone
+  // could not clock out). A voided warning stays on record but no longer counts
+  // toward escalation, and the staff no longer sees it.
+  // Each column is checked on its own so a half-applied migration heals on the next boot.
+  if (!dwNames.has("voided_at")) db.exec("ALTER TABLE disciplinary_warnings ADD COLUMN voided_at TEXT");
+  if (!dwNames.has("voided_by")) db.exec("ALTER TABLE disciplinary_warnings ADD COLUMN voided_by INTEGER REFERENCES users(id)");
+  if (!dwNames.has("void_reason")) db.exec("ALTER TABLE disciplinary_warnings ADD COLUMN void_reason TEXT");
 
   // ─────────────────────────────────────────────────────────────
   // TC-A (Account management + RBAC) — 2026-05-14
@@ -9293,6 +9300,10 @@ export type DisciplinaryWarning = {
    *  escalating subsequent offenses. NULL = no expiry (legacy default).
    *  Set by admin at issue time; common values: 3, 6, 12, 24. */
   validity_months: number | null;
+  /** Set when an admin voided the warning (kept on record, not counted). */
+  voided_at: string | null;
+  voided_by: number | null;
+  void_reason: string | null;
 };
 
 export type ShiftCode = {
