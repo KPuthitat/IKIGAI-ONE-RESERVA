@@ -291,6 +291,20 @@ export function clinicaChannelMix(branchId: number, startIso: string, endIso: st
   return out.sort((a, b) => order[a.kind] - order[b.kind] || b.amount - a.amount);
 }
 
+/** Cash the drawer should hold for a day according to the imported RECEIPTS (cash
+ *  channel only) — what the shift-close cash count is compared with for a clinic that
+ *  posts its income from the HIS files. `receipts` = 0 means no receipt file covers that
+ *  day yet. */
+export function clinicaCashExpected(branchId: number, date: string): { cash: number; nonCash: number; receipts: number } {
+  const rows = getDb().prepare(
+    "SELECT channel, ROUND(SUM(paid),2) paid, COUNT(DISTINCT receipt_no) n FROM clinica_receipts WHERE branch_id = ? AND receipt_date = ? GROUP BY channel"
+  ).all(branchId, date) as Array<{ channel: string; paid: number; n: number }>;
+  let cash = 0, nonCash = 0;
+  for (const r of rows) { if (receiptChannelKind(r.channel) === "cash") cash += r.paid; else nonCash += r.paid; }
+  const receipts = (getDb().prepare("SELECT COUNT(DISTINCT receipt_no) n FROM clinica_receipts WHERE branch_id = ? AND receipt_date = ?").get(branchId, date) as { n: number }).n;
+  return { cash: r2(cash), nonCash: r2(nonCash), receipts };
+}
+
 /** Replace every visit in the file's date range, then insert the file's visits. */
 export function importOpd(branchId: number, p: ClinicaOpdParse): ClinicaImportResult {
   const db = getDb();

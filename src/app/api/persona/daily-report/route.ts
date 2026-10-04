@@ -1,3 +1,4 @@
+import { isClinicaAutopost } from "@/lib/clinica-accounta";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
@@ -344,7 +345,11 @@ export async function POST(req: Request) {
     // ASCENDA daily revenue (2026-05-27). Same fire-and-forget shape
     // as SVC — a hiccup here can't block the shift_close submission,
     // admin can backfill from /admin/ascenda/revenue.
-    if (d.daily_revenue != null) {
+    // A clinic branch whose income is posted from the HIS files (owner 2026-10-04) does
+    // not take sales / channels from the close form — the files own them, and writing
+    // here too would double the day. The close keeps only the cash count + checklist.
+    const filesOwnIncome = isClinicaAutopost(branch.id);
+    if (d.daily_revenue != null && !filesOwnIncome) {
       try {
         const rev = upsertBranchDailyRevenue({
           branchId: branch.id,
@@ -371,7 +376,9 @@ export async function POST(req: Request) {
       const chans = (d.channel_amounts ?? [])
         .filter((c) => c.amount > 0)
         .map((c) => ({ channel: c.channel, amount: c.amount, isOutstanding: !!c.is_credit }));
-      if (chans.length > 0) {
+      if (filesOwnIncome) {
+        // income comes from the imported files — nothing to mirror from the close
+      } else if (chans.length > 0) {
         replaceShiftCloseIncome(branch.id, report_date, user.id, chans);
       } else if (d.daily_revenue != null) {
         replaceShiftCloseIncome(branch.id, report_date, user.id, [{ channel: null, amount: d.daily_revenue }]);

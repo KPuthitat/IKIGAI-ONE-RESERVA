@@ -74,6 +74,8 @@ export default function ShiftCloseForm({
   requireServiceCharge = false,
   requireTodayClosing = true,
   requireDailyRevenue = true,
+  filesOwnIncome = false,
+  clinicCash = null,
   incomeChannels = [],
   materialQuota = null,
   previousData = null,
@@ -114,6 +116,11 @@ export default function ShiftCloseForm({
    *  shift-close LINE Flex report. Optional — admin can backfill via
    *  /admin/ascenda/revenue if staff don't have the number at close. */
   requireDailyRevenue?: boolean;
+  /** Clinic whose income is posted from the imported HIS files (owner 2026-10-04): the
+   *  sales / channel entry is hidden and the close asks for the cash count only. */
+  filesOwnIncome?: boolean;
+  /** Cash the drawer should hold per the imported receipts for the report date. */
+  clinicCash?: { cash: number; nonCash: number; receipts: number } | null;
   /** Parsed `data` JSON to pre-fill the form — the report being edited
    *  (back-date/edit flow 2026-06-22) or the most recent superseded report
    *  (admin-unlock flow). */
@@ -565,6 +572,23 @@ export default function ShiftCloseForm({
             <p className="text-[10px] text-slate-400 mt-1">
               {t("staff.persona.shift.close.field.svcAmountHint")}
             </p>
+          </div>
+        )}
+
+        {/* Clinic that posts income from the HIS files (owner 2026-10-04): nothing to key for
+            sales / channels — show what the drawer should hold so the cash count can be checked. */}
+        {filesOwnIncome && (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 space-y-1 text-sm">
+            <div className="font-bold text-sky-800">ยอดขายและช่องทางรับเงิน ระบบดึงจากไฟล์ HIS ให้อัตโนมัติ</div>
+            <p className="text-[11px] text-sky-700">ไม่ต้องกรอกยอดขายหรือแยกช่องทาง — กรอกเฉพาะเงินสดที่นับได้ในลิ้นชักและเช็กลิสต์</p>
+            {clinicCash && clinicCash.receipts > 0 ? (
+              <div className="flex justify-between border-t border-sky-200 pt-1 mt-1">
+                <span className="text-slate-700">เงินสดที่ควรมีตามใบเสร็จวันนี้ ({clinicCash.receipts} ใบ)</span>
+                <b className="font-mono text-slate-900">฿{fmtThb(clinicCash.cash)}</b>
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-500 border-t border-sky-200 pt-1 mt-1">ยังไม่ได้นำเข้าไฟล์ใบเสร็จของวันนี้ จึงยังเทียบเงินสดไม่ได้</p>
+            )}
           </div>
         )}
 
