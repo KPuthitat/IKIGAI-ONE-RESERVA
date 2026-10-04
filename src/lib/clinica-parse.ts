@@ -229,6 +229,29 @@ function parseOpdRows(rows: Sheet): ClinicaOpdParse {
   };
 }
 
+const TH_MON_ABBR: Record<string, number> = {
+  "ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6,
+  "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12
+};
+
+/** The window the HIS wrote into the export's file name, e.g.
+ *  "รายงานบัญชีลูกหนี้01_ม.ค._2569 ถึง 3_ต.ค._2569.xlsx" → 2026-01-01 .. 2026-10-03.
+ *  A single date gives start = end. null when the name carries no date. */
+export function filenameWindow(name: string): { start: string; end: string } | null {
+  const re = /(\d{1,2})[_\s]*(ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)[_\s]*(\d{4})/g;
+  const dates: string[] = [];
+  for (const m of String(name ?? "").normalize("NFC").matchAll(re)) {
+    let y = Number(m[3]); if (y > 2400) y -= 543;
+    const mo = TH_MON_ABBR[m[2]], d = Number(m[1]);
+    const iso = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const t = new Date(`${iso}T00:00:00Z`);
+    if (!Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === iso) dates.push(iso);
+  }
+  if (!dates.length) return null;
+  const a = dates[0], b = dates[dates.length - 1];
+  return a <= b ? { start: a, end: b } : { start: b, end: a };
+}
+
 // ── Outstanding report ──────────────────────────────────────────────────────
 // The HIS "Invoice Report" filtered to unpaid bills only has the SAME layout as
 // the full report, so it is told apart by content: every bill in it still owes

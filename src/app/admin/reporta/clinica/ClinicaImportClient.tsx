@@ -33,39 +33,50 @@ export default function ClinicaImportClient({ onImported }: { onImported?: (targ
     setMsg(null);
   }
 
+  // One request per file: a whole year of Invoice lines is ~14MB, and sending the
+  // three exports together would also have to fit the server's total body limit.
+  // Files are independent (the import is order-insensitive), and a failure names
+  // the file that failed so the others are not lost.
   async function upload() {
     if (!files.length || busy) return;
     setBusy(true); setMsg(null);
-    try {
-      const fd = new FormData();
-      for (const f of files) fd.append("file", f);
-      const res = await fetch(apiUrl("/api/admin/reporta/clinica-import"), { method: "POST", body: fd });
-      const j = await res.json().catch(() => ({}));
-      if (res.ok && j.ok) {
-        const imported = (j.imported ?? []) as Result[];
-        // Just "นำเข้าสำเร็จ", like the restaurant POS import (owner 2026-09-27).
-        // Which file is missing is NOT a property of this one upload — Invoice may
-        // already be in the system from an earlier import — so completeness is
-        // shown per day in the month list below, from the actual data, not guessed
-        // from this batch ("ยอดขายก็ขึ้นแล้ว ว่าไม่นำเข้าได้ไง").
-        // A paid receivable is the one thing a person must still act on, so it is the
-        // only extra the message carries.
-        const found = imported.reduce((n, r) => n + (r.settlements ?? 0), 0);
-        setMsg({ kind: "ok", text: found > 0 ? `นำเข้าสำเร็จ · พบบิลค้างที่ได้รับชำระแล้ว ${found} บิล รอยืนยันวันที่รับเงิน` : "นำเข้าสำเร็จ" });
-        setFiles([]);
-        // Latest imported date → let the host jump its month browser to that data
-        // (owner 2026-09-27: after import, เด้งไปเดือนที่นำเข้า).
-        const target = imported.map((r) => r.rangeEnd).filter(Boolean).sort().pop();
-        router.refresh();      // refresh server components (e.g. the imported-range hint)
-        onImported?.(target);  // let an inline host (ReportaClient) jump + re-fetch
-      } else {
-        setMsg({ kind: "err", text: j.message ?? j.error ?? "นำเข้าไม่สำเร็จ" });
+    const imported: Result[] = [];
+    const failed: File[] = [];
+    let firstErr = "";
+    for (const f of files) {
+      try {
+        const fd = new FormData();
+        fd.append("file", f);
+        const res = await fetch(apiUrl("/api/admin/reporta/clinica-import"), { method: "POST", body: fd });
+        const j = await res.json().catch(() => ({}));
+        if (res.ok && j.ok) { imported.push(...((j.imported ?? []) as Result[])); continue; }
+        failed.push(f);
+        if (!firstErr) {
+          firstErr = j.message ?? (res.status === 413 ? `${f.name}: ไฟล์ใหญ่เกินที่เซิร์ฟเวอร์รับได้ (ขีดจำกัด nginx)`
+            : res.status === 502 || res.status === 504 ? `${f.name}: เซิร์ฟเวอร์ตอบช้าเกินไป ลองนำเข้าทีละไฟล์`
+            : `${f.name}: นำเข้าไม่สำเร็จ (รหัส ${res.status})`);
+        }
+      } catch {
+        failed.push(f);
+        if (!firstErr) firstErr = `${f.name}: เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง`;
       }
-    } catch {
-      setMsg({ kind: "err", text: "เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง" });
-    } finally {
-      setBusy(false);
     }
+    if (imported.length > 0) {
+      router.refresh();      // refresh server components (e.g. the imported-range hint)
+      // Latest imported date → let the host jump its month browser to that data
+      // (owner 2026-09-27: after import, เด้งไปเดือนที่นำเข้า).
+      onImported?.(imported.map((r) => r.rangeEnd).filter(Boolean).sort().pop());
+    }
+    setFiles(failed);        // keep only what still needs a retry
+    if (failed.length === 0) {
+      // A paid receivable is the one thing a person must still act on, so it is the
+      // only extra the message carries (otherwise just "นำเข้าสำเร็จ", like the POS import).
+      const found = imported.reduce((n, r) => n + (r.settlements ?? 0), 0);
+      setMsg({ kind: "ok", text: found > 0 ? `นำเข้าสำเร็จ · พบบิลค้างที่ได้รับชำระแล้ว ${found} บิล รอยืนยันวันที่รับเงิน` : "นำเข้าสำเร็จ" });
+    } else {
+      setMsg({ kind: "err", text: imported.length > 0 ? `นำเข้าสำเร็จ ${imported.length} ไฟล์ · ไม่สำเร็จ ${failed.length} ไฟล์ — ${firstErr}` : firstErr });
+    }
+    setBusy(false);
   }
 
   return (
