@@ -73,7 +73,11 @@ export default function PayslipDayLog({
                     {d.date.slice(5)}
                   </td>
                   <td className="py-1 pr-2 whitespace-nowrap tabular-nums text-slate-700">
-                    {worked.length > 0 ? clock : <span className="text-slate-400">{status ?? "—"}</span>}
+                    {worked.length > 0 ? clock : (() => {
+                      // ไม่ต้องลงเวลา: no punches, so show the rostered window instead of a bare status.
+                      const sp = d.pairs.find((p) => p.statusLabel === "ตามตารางกะ" && p.schedIn && p.schedOut);
+                      return sp ? `${sp.schedIn}–${sp.schedOut}` : <span className="text-slate-400">{status ?? "—"}</span>;
+                    })()}
                   </td>
                   <td className="py-1 pr-2 text-right tabular-nums text-slate-700">
                     {d.effectiveMinutes > 0 ? fmtMin(d.effectiveMinutes, lang) : "—"}
@@ -108,6 +112,7 @@ export default function PayslipDayLog({
                           หักค่าจ้างวันขาดงาน −฿{fmtMoney(d.absenceDeduction)}
                         </span>
                       )}
+                      {worked.length === 0 && status === "ตามตารางกะ" && <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-700">ตามตารางกะ</span>}
                       {worked.length > 0 && status && <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">{status}</span>}
                       {worked.length > 0 && d.pairs[0]?.branch && <span className="text-[9px] text-slate-400">{d.pairs[0].branch}</span>}
                       {isAdmin && d.edited && <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700">แก้ไข</span>}

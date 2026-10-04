@@ -32,6 +32,7 @@
     "test:insigna-members": "node --import tsx scripts/test-insigna-members.ts",
     "test:material-quota": "node --import tsx scripts/test-material-quota.ts",
     "test:company-cost": "node --import tsx scripts/test-company-cost.ts",
+    "test:payroll-breakdown-noclock": "node --import tsx scripts/test-payroll-breakdown-noclock.ts",
     "test:payroll": "node --import tsx scripts/test-payroll.ts",
     "test:payroll-summary": "node --import tsx scripts/test-payroll-summary-doc.ts",
     "test:referral": "node --import tsx scripts/test-referral.ts",
