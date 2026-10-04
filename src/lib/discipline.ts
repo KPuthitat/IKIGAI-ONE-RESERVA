@@ -10,6 +10,7 @@
 
 import { getDb } from "./db";
 import type { DisciplinaryWarning } from "./db";
+import { missingOutWarningText } from "./discipline-text";
 
 export function generateWarningRef(): string {
   const db = getDb();
@@ -43,14 +44,20 @@ export function createWarning(args: {
   reasonCategory?: string | null;
   effectiveDate?: string | null;
   validityMonths?: number | null;
+  /** Record the recipient's PIN acknowledgement in the same step (the person
+   *  acknowledged on the spot, e.g. in the missing-clock-out form). */
+  acknowledged?: boolean;
 }): number {
   const db = getDb();
   const refNo = generateWarningRef();
+  // Acknowledged-on-the-spot rows are written acknowledged in the INSERT itself, so
+  // there is no window where the row exists as pending.
   const r = db.prepare(`
     INSERT INTO disciplinary_warnings
       (branch_id, user_id, issued_by_user_id, severity, title, body,
-       reason_category, effective_date, ref_no, validity_months)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       reason_category, effective_date, ref_no, validity_months,
+       acknowledged_at, acknowledged_method)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${args.acknowledged ? "CURRENT_TIMESTAMP" : "NULL"}, ${args.acknowledged ? "'pin_explicit'" : "NULL"})
   `).run(
     args.branchId, args.userId, args.issuedByUserId, args.severity,
     args.title, args.body,
@@ -62,12 +69,53 @@ export function createWarning(args: {
 
 /** How many warnings this user has in a given reason category (e.g. "ลงเวลา").
  *  Used to decide when to send the verbal-warning LINE nudge (owner 2026-06-25:
- *  notify on the Nth offence). */
+ *  notify on the Nth offence). Voided warnings do not count. */
 export function countWarningsByCategory(userId: number, category: string): number {
   const r = getDb().prepare(
-    "SELECT COUNT(*) AS n FROM disciplinary_warnings WHERE user_id = ? AND reason_category = ?"
+    "SELECT COUNT(*) AS n FROM disciplinary_warnings WHERE user_id = ? AND reason_category = ? AND voided_at IS NULL"
   ).get(userId, category) as { n: number };
   return r.n;
+}
+
+const MISSING_OUT_TITLE = "(title LIKE '%ไม่ลงเวลาออกงาน%' OR title LIKE '%ลืมลงเวลาออกงาน%')";
+
+/** Forgot-clock-OUT warnings in the last 12 months that still count (not voided) —
+ *  what the missing-clock-out ladder escalates on. Forgot-IN notes and other
+ *  admin-issued ones are a different offence and do not step this ladder. */
+export function recentMissingOutWarnings(userId: number): number {
+  const since = new Date(Date.now() - 365 * 86400_000).toISOString().slice(0, 19).replace("T", " ");
+  return (getDb().prepare(
+    `SELECT COUNT(*) AS n FROM disciplinary_warnings
+      WHERE user_id = ? AND reason_category = 'ลงเวลา' AND ${MISSING_OUT_TITLE} AND voided_at IS NULL AND issued_at >= ?`
+  ).get(userId, since) as { n: number }).n;
+}
+
+/** Record the warning for a forgotten clock-out, already acknowledged by the
+ *  person (PIN checked by the caller). Severity follows the stepped ladder. One
+ *  lapse = one warning: re-filing the same work date (e.g. after the admin rejected
+ *  the time) reuses the existing record instead of stepping the ladder again. */
+export function createMissingOutWarning(args: { branchId: number; userId: number; workDate: string }): { id: number; severity: string; priorCount: number; reused: boolean } {
+  const existing = getDb().prepare(
+    `SELECT id, severity FROM disciplinary_warnings
+      WHERE user_id = ? AND reason_category = 'ลงเวลา' AND ${MISSING_OUT_TITLE} AND effective_date = ? AND voided_at IS NULL
+      ORDER BY id DESC LIMIT 1`
+  ).get(args.userId, args.workDate) as { id: number; severity: string } | undefined;
+  if (existing) return { id: existing.id, severity: existing.severity, priorCount: Math.max(0, recentMissingOutWarnings(args.userId) - 1), reused: true };
+  const prior = recentMissingOutWarnings(args.userId);
+  const w = missingOutWarningText(prior, args.workDate);
+  const id = createWarning({
+    branchId: args.branchId, userId: args.userId, issuedByUserId: args.userId,
+    severity: w.severity, title: w.title, body: w.body, reasonCategory: "ลงเวลา",
+    effectiveDate: args.workDate, validityMonths: 12, acknowledged: true
+  });
+  return { id, severity: w.severity, priorCount: prior, reused: false };
+}
+
+/** Admin voids a warning: kept on record, ignored by the ladder and hidden from the staff. */
+export function voidWarning(id: number, adminId: number, reason: string): boolean {
+  return getDb().prepare(
+    "UPDATE disciplinary_warnings SET voided_at = CURRENT_TIMESTAMP, voided_by = ?, void_reason = ? WHERE id = ? AND voided_at IS NULL"
+  ).run(adminId, reason.trim(), id).changes > 0;
 }
 
 export type WarningWithUsers = DisciplinaryWarning & {
@@ -112,7 +160,7 @@ export function listWarningsForUser(userId: number, status: "all" | "pending" | 
     FROM disciplinary_warnings w
     JOIN users u ON u.id = w.user_id
     JOIN users iu ON iu.id = w.issued_by_user_id
-    WHERE w.user_id = ?${extraWhere}
+    WHERE w.user_id = ? AND w.voided_at IS NULL${extraWhere}
     ORDER BY w.issued_at DESC
   `).all(userId) as WarningWithUsers[];
 }

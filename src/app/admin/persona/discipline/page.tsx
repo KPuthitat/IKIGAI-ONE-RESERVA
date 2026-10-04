@@ -55,7 +55,9 @@ export default function AdminDisciplinePage() {
           issued_by: nameWithPrefix(w.issued_by_prefix, w.issued_by_name),
           issued_at: w.issued_at,
           acknowledged_at: w.acknowledged_at,
-          acknowledged_method: w.acknowledged_method
+          acknowledged_method: w.acknowledged_method,
+          voided_at: w.voided_at,
+          void_reason: w.void_reason
         }))}
       />
     </div>

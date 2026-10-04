@@ -27,7 +27,7 @@ export default function StaffDisciplineDetailPage({ params }: { params: { id: st
   if (!Number.isInteger(id) || id <= 0) notFound();
 
   const w = getWarning(id);
-  if (!w) notFound();
+  if (!w || w.voided_at) notFound();   // a voided warning is no longer shown to the staff
   if (w.user_id !== user.id) {
     // Different user trying to read — bounce to their own list.
     redirect("/staff/persona/discipline");

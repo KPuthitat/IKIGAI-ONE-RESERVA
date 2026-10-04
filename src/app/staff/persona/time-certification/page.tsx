@@ -11,6 +11,7 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { listAttendanceFlagsForUser } from "@/lib/attendance-flags";
+import { recentMissingOutWarnings } from "@/lib/discipline";
 import TimeCertificationClient from "./TimeCertificationClient";
 
 export const dynamic = "force-dynamic";
@@ -101,6 +102,7 @@ export default function StaffTimeCertificationPage({
         pendingEntryIds={[...pendingByEntry.keys()]}
         initialMissing={initialMissing}
         flags={flags}
+        priorTimeclockCount={recentMissingOutWarnings(user.id)}
       />
     </div>
   );
