@@ -1211,6 +1211,7 @@ type BreakdownDay = {
     earlyMin: number;
     holiday: boolean;
     double: boolean;
+    restDay?: boolean;
     publicHoliday: boolean;
     holidayChoice: "defer" | "use" | null;
     branch: string | null;
@@ -1346,6 +1347,7 @@ function LineEditModal({
   const [ftMonthly, setFtMonthly] = useState(false);
   const [salaryBase, setSalaryBase] = useState(0);
   const [doublePremium, setDoublePremium] = useState(0);
+  const [restDayPremium, setRestDayPremium] = useState(0);
   const [actualOt, setActualOt] = useState(0);
   const [actualTotal, setActualTotal] = useState(0);
   const [breakdownLoading, setBreakdownLoading] = useState(true);
@@ -1378,6 +1380,7 @@ function LineEditModal({
       setFtMonthly(!!j.ftMonthly);
       setSalaryBase(Number(j.salaryBase) || 0);
       setDoublePremium(Number(j.doublePremium) || 0);
+      setRestDayPremium(Number(j.restDayPremium) || 0);
       setActualOt(Number(j.actualOt) || 0);
       setActualTotal(Number(j.actualTotal) || 0);
       setBreakdownErr(null);
@@ -2037,7 +2040,7 @@ function LineEditModal({
                               {/* Tags row — กะ on worked days; status rows
                                   (วันหยุด/ลา/ขาดงาน) show their label in the next
                                   column. Uniform pill size (owner 2026-06-18). */}
-                              {(((!p.statusLabel || p.statusLabel === ROSTER_LABEL) && day.shift) || day.edited || p.holiday || p.double || p.walkOff || ((!p.statusLabel || p.statusLabel === ROSTER_LABEL) && p.branch)) && (
+                              {(((!p.statusLabel || p.statusLabel === ROSTER_LABEL) && day.shift) || day.edited || p.holiday || p.double || p.restDay || p.walkOff || ((!p.statusLabel || p.statusLabel === ROSTER_LABEL) && p.branch)) && (
                                 <div className="flex flex-wrap items-center gap-1">
                                   {(!p.statusLabel || p.statusLabel === ROSTER_LABEL) && day.shift && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded font-sans font-bold min-w-[2.5rem] text-center"
@@ -2065,6 +2068,11 @@ function LineEditModal({
                                   )}
                                   {p.double && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-sans font-bold">จ่ายสองเท่า ×2</span>
+                                  )}
+                                  {p.restDay && (
+                                    // ทำงานวันหยุดประจำสัปดาห์ (กฎหมายแรงงาน): พนักงานรายเดือน +1 เท่า · รายชั่วโมง 2 เท่า · OT 3 เท่า.
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 font-sans font-bold"
+                                      title="ทำงานในวันหยุดประจำสัปดาห์ (ไม่มีกะในตาราง): พนักงานรายเดือนได้เพิ่ม 1 เท่าของค่าจ้างต่อชั่วโมง · รายชั่วโมงได้ 2 เท่า · OT ในวันหยุด 3 เท่า">ทำงานวันหยุด</span>
                                   )}
                                 </div>
                               )}
@@ -2210,7 +2218,7 @@ function LineEditModal({
                 </span>
                 {actualOt > 0 && (
                   <span className="text-slate-600">
-                    ล่วงเวลา{doublePremium > 0 ? " (รวมค่าตอบแทนสองเท่า " + fmtMoney(doublePremium) + ")" : ""}: <b className="text-slate-800">+{fmtMoney(actualOt)}</b>
+                    ล่วงเวลา{doublePremium > 0 ? " (รวมค่าตอบแทนสองเท่า " + fmtMoney(doublePremium) + ")" : ""}{restDayPremium > 0 ? " (รวมค่าทำงานวันหยุดส่วนเพิ่ม " + fmtMoney(restDayPremium) + ")" : ""}: <b className="text-slate-800">+{fmtMoney(actualOt)}</b>
                   </span>
                 )}
                 <span className="text-slate-600">

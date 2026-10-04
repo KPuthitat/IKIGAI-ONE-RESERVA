@@ -38,6 +38,7 @@ type BreakDay = {
   pay: number;
   holiday: boolean;
   double: boolean;
+  restDay?: boolean;
   statusLabel: string | null;
   shift: { code: string; name: string | null } | null;
   branch?: string | null;   // which branch this day was worked at (cross-branch)
@@ -247,7 +248,7 @@ function DayTable({ days, baseTotal, otTotal, multiBranch }: { days: BreakDay[];
           {days.map((d) => {
             // เบี้ยวันจ่ายสองเท่าถูกจัดเป็นค่าล่วงเวลา (owner 2026-09-05) — แยกออกจาก
             // ฐานรายวันไปรวมกับ OT. เบี้ยวันพิเศษ ×1.5 ยังอยู่ในฐาน.
-            const dblPrem = d.double ? d.premiumPay : 0;
+            const dblPrem = (d.double || d.restDay) ? d.premiumPay : 0;   // เบี้ยวันหยุดประจำสัปดาห์ (ส่วนเพิ่ม 1 เท่า) ก็รวมในค่าล่วงเวลา
             const otShown = Math.round((d.otPay + dblPrem) * 100) / 100;
             const dayBase = Math.round((d.pay - otShown) * 100) / 100;
             const times = d.pairs.filter((p) => p.workIn || p.workOut)
@@ -266,6 +267,7 @@ function DayTable({ days, baseTotal, otTotal, multiBranch }: { days: BreakDay[];
                         )}
                         {d.double && <span className="text-[10px] px-1 rounded bg-rose-100 text-rose-700">×2</span>}
                         {d.holiday && !d.double && <span className="text-[10px] px-1 rounded bg-amber-100 text-amber-700">×1.5</span>}
+                        {d.restDay && !d.double && <span className="text-[10px] px-1 rounded bg-sky-100 text-sky-700" title="ทำงานวันหยุดประจำสัปดาห์: 2 เท่า, OT 3 เท่า">วันหยุด ×2</span>}
                       </span>
                     )}
                 </td>

@@ -63,10 +63,12 @@ export default function PayslipDayLog({
                 : (d.pairs[0]?.statusLabel ?? "—");
               const isDouble = d.pairs.some((p) => p.double);
               const isSpecial = d.pairs.some((p) => p.holiday);
+              const isRest = d.pairs.some((p) => p.restDay);
               const status = d.pairs.find((p) => p.statusLabel)?.statusLabel ?? null;
               // ค่าล่วงเวลาต่อวัน = OT + เบี้ยวันจ่ายสองเท่า (owner 2026-09-05).
               // เบี้ยวันพิเศษ ×1.5 อยู่ในฐาน จึงไม่รวมที่นี่.
-              const otAmt = Math.round((d.otPay + (isDouble ? d.premiumPay : 0)) * 100) / 100;
+              // ค่าทำงานวันหยุดส่วนเพิ่ม (เบี้ย) ก็รวมในค่าล่วงเวลาเช่นกัน.
+              const otAmt = Math.round((d.otPay + (isDouble || isRest ? d.premiumPay : 0)) * 100) / 100;
               return (
                 <tr key={d.date} className="border-b border-slate-100 last:border-0">
                   <td className="py-1 pr-2 whitespace-nowrap tabular-nums text-slate-600">
@@ -100,6 +102,11 @@ export default function PayslipDayLog({
                       {isDouble && (
                         <span className="text-[9px] px-1 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">
                           จ่ายสองเท่า{d.premiumPay > 0 ? ` (เบี้ย ฿${fmtMoney(d.premiumPay)} รวมในค่าล่วงเวลา)` : ""}
+                        </span>
+                      )}
+                      {isRest && !isDouble && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-sky-100 text-sky-700">
+                          ทำงานวันหยุด{d.premiumPay > 0 ? ` (ส่วนเพิ่ม ฿${fmtMoney(d.premiumPay)} รวมในค่าล่วงเวลา)` : ""}
                         </span>
                       )}
                       {isSpecial && !isDouble && (

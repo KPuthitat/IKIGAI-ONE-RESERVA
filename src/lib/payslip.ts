@@ -70,6 +70,7 @@ export type PayslipView = {
   // premium total that rides in other_additions.
   dayLog: BreakdownDay[];
   doublePremium: number;
+  restDayPremium: number;
   ftMonthly: boolean;
 };
 
@@ -139,6 +140,7 @@ export function buildPayslipView(
     payslipBranchName,
     dayLog: breakdown?.days ?? [],
     doublePremium: breakdown?.doublePremium ?? 0,
+    restDayPremium: breakdown?.restDayPremium ?? 0,
     ftMonthly: breakdown?.ftMonthly ?? false
   };
 }
