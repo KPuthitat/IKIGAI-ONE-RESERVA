@@ -12,6 +12,10 @@ import ConfirmModal from "@/app/components/ConfirmModal";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import { nameWithPrefix } from "@/lib/name";
 
+// statusLabel the server gives a no-clock (ไม่ต้องลงเวลา) employee's rostered day —
+// keep in sync with ROSTER_LABEL in src/lib/payroll-breakdown.ts (server-only module).
+const ROSTER_LABEL = "ตามตารางกะ";
+
 export type PeriodDetail = {
   id: number;
   cycle: "weekly" | "monthly";
@@ -1903,7 +1907,7 @@ function LineEditModal({
                   "แสดงทุกวันในรอบ" toggle is no longer needed. */}
               {breakdownDays && (
                 <span className="text-[10px] text-slate-400">
-                  มาทำงาน {breakdownDays.filter((d) => d.pairs.some((p) => p.workIn)).length} วัน
+                  มาทำงาน {breakdownDays.filter((d) => d.pairs.some((p) => p.workIn || p.statusLabel === ROSTER_LABEL)).length} วัน
                   {" · "}ทั้งรอบ {breakdownDays.length} วัน
                 </span>
               )}
@@ -2033,9 +2037,9 @@ function LineEditModal({
                               {/* Tags row — กะ on worked days; status rows
                                   (วันหยุด/ลา/ขาดงาน) show their label in the next
                                   column. Uniform pill size (owner 2026-06-18). */}
-                              {((!p.statusLabel && day.shift) || day.edited || p.holiday || p.double || p.walkOff || (!p.statusLabel && p.branch)) && (
+                              {(((!p.statusLabel || p.statusLabel === ROSTER_LABEL) && day.shift) || day.edited || p.holiday || p.double || p.walkOff || ((!p.statusLabel || p.statusLabel === ROSTER_LABEL) && p.branch)) && (
                                 <div className="flex flex-wrap items-center gap-1">
-                                  {!p.statusLabel && day.shift && (
+                                  {(!p.statusLabel || p.statusLabel === ROSTER_LABEL) && day.shift && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded font-sans font-bold min-w-[2.5rem] text-center"
                                       style={{ backgroundColor: day.shift.color || "#e2e8f0", color: "#1a1a2e" }}
                                       title={day.shift.name ?? day.shift.code}>
@@ -2044,7 +2048,7 @@ function LineEditModal({
                                   )}
                                   {/* สาขาที่ลงเวลาวันนั้น (owner 2026-07-28) — so a
                                       multi-branch PT's hours are traceable per day. */}
-                                  {!p.statusLabel && p.branch && (
+                                  {(!p.statusLabel || p.statusLabel === ROSTER_LABEL) && p.branch && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-sans">
                                       {p.branch}
                                     </span>
@@ -2074,6 +2078,8 @@ function LineEditModal({
                                 ? "bg-rose-100 text-rose-700"
                                 : p.statusLabel === "วันหยุด"
                                 ? "bg-slate-100 text-slate-600"
+                                : p.statusLabel === ROSTER_LABEL
+                                ? "bg-emerald-50 text-emerald-700"
                                 : "bg-sky-100 text-sky-700"
                             }`}>{p.statusLabel}</span>
                           ) : (
@@ -2143,7 +2149,12 @@ function LineEditModal({
                         {showMoney && (
                           <td className="px-2 py-1.5 text-right font-mono">
                             {ftMonthly ? (
-                              p.statusLabel ? (
+                              p.statusLabel === ROSTER_LABEL ? (
+                                // ไม่ต้องลงเวลา: กะตามตาราง — ในเงินเดือนแล้ว (+ ส่วนเพิ่มถ้าเป็นวันจ่ายสองเท่า).
+                                p.pay > 0
+                                  ? <span className="text-emerald-600">+{fmtMoney(p.pay)}</span>
+                                  : <span className="text-[10px] font-sans text-slate-400">อยู่ในเงินเดือน</span>
+                              ) : p.statusLabel ? (
                                 (day.override?.unpaid_absence && p.statusLabel === "ขาดงาน") ? (
                                   // ยืนยันหักค่าจ้างแล้ว — ขาดงานโดยไม่ได้รับค่าจ้าง.
                                   <span className="text-[10px] font-sans font-semibold text-rose-600">ขาดงาน — ไม่ได้รับค่าจ้าง</span>

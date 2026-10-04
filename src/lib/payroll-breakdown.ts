@@ -67,6 +67,9 @@ type FieldOv = {
 
 type ShiftTag = { code: string; name: string | null; color: string | null };
 
+/** statusLabel of a no-clock employee's rostered day (shown instead of ขาดงาน). */
+export const ROSTER_LABEL = "ตามตารางกะ";
+
 export type BreakdownDay = {
   date: string;
   pairs: DayPair[];
@@ -138,6 +141,11 @@ export function buildLineBreakdown(
   `).get(userId) as { employment_type: "pt" | "ft" | null; hourly_rate: number | null; monthly_salary: number | null; track_attendance: number | null } | undefined;
   const isPt = emp?.employment_type === "pt";
   const isExec = emp?.employment_type === "ft" && emp?.track_attendance === 0;
+  // ไม่ต้องลงเวลา (track_attendance = 0): there are no punches, so the ROSTER is the
+  // record of the days worked. Pay already follows it (PT: rosterShifts in the pay
+  // engine; salaried exec: flat salary) — the table must show those shifts instead of
+  // reading every unpunched day as ขาดงาน (owner 2026-10-04).
+  const noClock = emp?.track_attendance === 0 && (emp?.employment_type === "pt" || emp?.employment_type === "ft");
 
   const settings = loadPayrollSettings(db, period.branch_id);
   const ptRate = emp?.hourly_rate ?? settings.pt_default_hourly_rate;
@@ -356,6 +364,33 @@ export function buildLineBreakdown(
     };
   }
 
+  /** A no-clock employee's rostered shift as a day row: scheduled window, scheduled
+   *  break deducted, hours × rate (PT) — same grace/break maths the pay engine runs
+   *  on rosterShifts. Never OT (no punches to extend a window). */
+  function buildRosterPair(date: string, sc: ScheduledShift): DayPair {
+    const g = applyPtGrace({ startTs: sc.startTs, endTs: sc.endTs }, sc, null, null);
+    const breakMinutes = Math.round(g.breakMinutes);
+    const workedMin = Math.round(g.workedMinutes);
+    const holiday = isPt && holidaySet.has(date);
+    const isDoubleDay = doubleSet.has(date);
+    const mult = isDoubleDay ? 2 : holiday ? 1.5 : 1;
+    const bId = effBranchId(date, null);
+    return {
+      date, workIn: null, workOut: null,
+      durationMinutes: Math.max(0, floorMin(sc.endTs) - floorMin(sc.startTs)),
+      schedIn: bkkHHMM(sc.startTs), schedOut: bkkHHMM(sc.endTs),
+      breakMinutes, effectiveMinutes: workedMin, otMinutes: 0, otPay: 0,
+      premiumPay: round2((workedMin / 60) * rateForPay * (mult - 1)),
+      pay: round2((workedMin / 60) * rateForPay * mult),
+      edited: false, lateMin: 0, earlyMin: 0,
+      otFrom: null, walkOff: false, note: null,
+      holiday, double: isDoubleDay,
+      publicHoliday: publicHolidaySet.has(date), holidayChoice: holidayChoiceByDate.get(date) ?? null,
+      branch: bId != null ? (branchNameById.get(bId) ?? null) : null, branch_id: bId,
+      statusLabel: ROSTER_LABEL
+    };
+  }
+
   function buildOverridePair(date: string, clockIn: string, clockOut: string): DayPair {
     const inTs = new Date(`${date}T${clockIn}:00+07:00`).toISOString();
     const endDate = clockOut < clockIn ? addDayYmd(date) : date;
@@ -482,6 +517,16 @@ export function buildLineBreakdown(
       // Clock-less override (e.g. a walk-off/note saved on a no-punch day) — still
       // surface its walk-off flag + evidence note so the record is visible.
       const ov = fieldOvByDate.get(date);
+      // A no-clock employee's rostered day stays a worked day unless the admin
+      // confirmed it as an unpaid absence.
+      const rostered = noClock && !ov?.unpaid_absence && !leaveByDate.has(date) && !dayOffSet.has(date)
+        ? scheduledByDate.get(date) : undefined;
+      if (rostered?.length) {
+        for (const sc of rostered) {
+          pushPair({ ...buildRosterPair(date, sc), edited: true, walkOff: ov?.walk_off === 1, note: ov?.note || null });
+        }
+        continue;
+      }
       day.pairs.push({
         date, workIn: null, workOut: null, durationMinutes: 0,
         schedIn: null, schedOut: null, breakMinutes: 0,
@@ -497,6 +542,13 @@ export function buildLineBreakdown(
   for (let d = period.period_start; d <= period.period_end; d = addDayYmd(d)) {
     if (days.has(d)) continue;
     if (workedElsewhereDates.has(d)) continue;
+    // No-clock employee with a rostered work shift (and not on approved leave / a
+    // day off): the shift IS the day worked.
+    const rostered = noClock && !leaveByDate.has(d) && !dayOffSet.has(d) ? scheduledByDate.get(d) : undefined;
+    if (rostered?.length) {
+      for (const sc of rostered) pushPair(buildRosterPair(d, sc));
+      continue;
+    }
     const label = leaveByDate.get(d)
       ?? ((dayOffSet.has(d) || publicHolidaySet.has(d) || !shiftByDate.has(d)) ? "วันหยุด" : "ขาดงาน");
     const day = ensureDay(d);
