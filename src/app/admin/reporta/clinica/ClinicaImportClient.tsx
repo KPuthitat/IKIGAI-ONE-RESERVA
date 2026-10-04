@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
-type Result = { filename: string; kind: "invoice" | "opd"; rangeStart: string; rangeEnd: string };
+type Result = { filename: string; kind: "invoice" | "outstanding" | "receipt" | "opd"; rangeStart: string; rangeEnd: string; settlements?: number };
 
 // Same drag-and-drop drop zone as the restaurant POS import (owner 2026-09-27:
 // "กรอบให้นำเข้าไฟล์สองระบบให้เหมือนกัน") — only the labels + the endpoint differ.
@@ -48,7 +48,10 @@ export default function ClinicaImportClient({ onImported }: { onImported?: (targ
         // already be in the system from an earlier import — so completeness is
         // shown per day in the month list below, from the actual data, not guessed
         // from this batch ("ยอดขายก็ขึ้นแล้ว ว่าไม่นำเข้าได้ไง").
-        setMsg({ kind: "ok", text: "นำเข้าสำเร็จ" });
+        // A paid receivable is the one thing a person must still act on, so it is the
+        // only extra the message carries.
+        const found = imported.reduce((n, r) => n + (r.settlements ?? 0), 0);
+        setMsg({ kind: "ok", text: found > 0 ? `นำเข้าสำเร็จ · พบบิลค้างที่ได้รับชำระแล้ว ${found} บิล รอยืนยันวันที่รับเงิน` : "นำเข้าสำเร็จ" });
         setFiles([]);
         // Latest imported date → let the host jump its month browser to that data
         // (owner 2026-09-27: after import, เด้งไปเดือนที่นำเข้า).
@@ -69,7 +72,7 @@ export default function ClinicaImportClient({ onImported }: { onImported?: (targ
     <div className="card space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h2 className="font-bold text-slate-800">นำเข้าไฟล์จาก APSX (HIS)</h2>
-        <span className="text-[11px] text-slate-400">รองรับ .xlsx · Invoice / OPD Report · นำเข้าเป็นช่วงวันแล้วเขียนทับได้</span>
+        <span className="text-[11px] text-slate-400">รองรับ .xlsx · Invoice / ใบเสร็จ / ค้างชำระ / OPD · นำเข้าเป็นช่วงวันแล้วเขียนทับได้</span>
       </div>
       <input ref={fileRef} type="file" accept=".xlsx" multiple className="hidden"
         onChange={(e) => addFiles(e.target.files)} />
@@ -88,7 +91,7 @@ export default function ClinicaImportClient({ onImported }: { onImported?: (targ
           </svg>
         </div>
         <div className="text-sm font-semibold text-slate-700">ลากไฟล์มาวางที่นี่ หรือ <span className="text-emerald-600 underline">เลือกไฟล์</span></div>
-        <div className="mt-1 text-xs text-slate-400">ไฟล์ <b>Invoice Report</b> · <b>OPD Report</b> (.xlsx) — ระบบแยกประเภทและวันที่ให้เอง เลือกทั้ง 2 ไฟล์พร้อมกันได้ · นำเข้าเป็นช่วงวันแล้วเขียนทับได้</div>
+        <div className="mt-1 text-xs text-slate-400">ไฟล์ <b>Invoice</b> · <b>ใบเสร็จ</b> · <b>ใบแจ้งหนี้ค้างชำระ</b> · <b>OPD</b> (.xlsx) — ระบบแยกประเภทและวันที่ให้เอง เลือกพร้อมกันได้ทุกไฟล์ · แนะนำนำเข้าทั้งปีทุกวัน (ไฟล์ค้างชำระไม่ลบบิลที่จ่ายแล้ว)</div>
       </div>
 
       {files.length > 0 && (

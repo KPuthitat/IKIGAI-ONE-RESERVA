@@ -8,10 +8,15 @@
 // span — re-export a window that still reaches that day to clear it.)
 
 import { getDb } from "./db";
-import type { ClinicaInvoiceParse, ClinicaOpdParse } from "./clinica-parse";
+import { todayBkk } from "./time";
+import type { ClinicaInvoiceParse, ClinicaOpdParse, ClinicaOutstandingParse, ClinicaReceiptParse } from "./clinica-parse";
+import { receiptChannelKind, receiptChannelLabel } from "./clinica-shared";
 
 export type ClinicaImportResult = {
-  kind: "invoice" | "opd";
+  kind: "invoice" | "outstanding" | "receipt" | "opd";
+  receipts?: number;
+  /** Late payments of receivables this import noticed (awaiting confirmation). */
+  settlements?: number;
   rangeStart: string;
   rangeEnd: string;
   bills?: number;
@@ -24,8 +29,10 @@ export type ClinicaImportResult = {
 /** Replace every bill in the file's date range, then insert the file's bills +
  *  items. A per-bill_no delete also covers a re-import whose bill lies outside
  *  the deleted range (e.g. an unparseable date). */
-export function importInvoice(branchId: number, p: ClinicaInvoiceParse): ClinicaImportResult {
+export function importInvoice(branchId: number, p: ClinicaInvoiceParse, opts: { today?: string } = {}): ClinicaImportResult {
   const db = getDb();
+  const today = opts.today ?? todayBkk();
+  const before = openBills(branchId);
   const delRange = db.prepare("DELETE FROM clinica_bills WHERE branch_id = ? AND bill_date BETWEEN ? AND ?");
   const delOne = db.prepare("DELETE FROM clinica_bills WHERE branch_id = ? AND bill_no = ?");
   const insBill = db.prepare(
@@ -37,6 +44,7 @@ export function importInvoice(branchId: number, p: ClinicaInvoiceParse): Clinica
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
   let items = 0;
+  let settlements = 0;
   db.transaction(() => {
     if (p.rangeStart && p.rangeEnd) delRange.run(branchId, p.rangeStart, p.rangeEnd);
     for (const b of p.bills) {
@@ -50,8 +58,233 @@ export function importInvoice(branchId: number, p: ClinicaInvoiceParse): Clinica
         items++;
       }
     }
+    settlements = detectSettlements(branchId, before, "invoice", today);
   })();
-  return { kind: "invoice", rangeStart: p.rangeStart, rangeEnd: p.rangeEnd, bills: p.bills.length, items, totalNet: p.totalNet, totalDue: p.totalDue };
+  return { kind: "invoice", rangeStart: p.rangeStart, rangeEnd: p.rangeEnd, bills: p.bills.length, items, settlements, totalNet: p.totalNet, totalDue: p.totalDue };
+}
+
+
+// ── Receivable settlement detection (owner 2026-10-04) ───────────────────────
+// Insurer / billed-company bills stay open for weeks and are paid later, but the
+// HIS back-dates the receipt to the service day — so a receipt's date cannot say
+// when the money really arrived. Instead every import compares the bills that
+// were OPEN before it with what the file now says: an outstanding amount that
+// dropped means someone paid. The import day is the default settlement date; a
+// person confirms (or edits) it before it counts anywhere. A bill that merely
+// disappears from a full Invoice import is a void, not a payment → ignored.
+
+type OpenBill = { billNo: string; billDate: string; payerGroup: string; net: number; due: number };
+
+function openBills(branchId: number): Map<string, OpenBill> {
+  const m = new Map<string, OpenBill>();
+  for (const r of getDb().prepare(
+    "SELECT bill_no, bill_date, COALESCE(payer_group,'') payer_group, net, due FROM clinica_bills WHERE branch_id = ? AND due > 0.005"
+  ).all(branchId) as Array<{ bill_no: string; bill_date: string; payer_group: string; net: number; due: number }>) {
+    m.set(r.bill_no, { billNo: r.bill_no, billDate: r.bill_date, payerGroup: r.payer_group, net: r.net, due: r.due });
+  }
+  return m;
+}
+
+/** Compare the bills open BEFORE an import with the current table; record a
+ *  pending settlement for each outstanding drop. A drop that comes with an equal
+ *  drop in the bill's net is an adjustment (credit note), not a payment. A bill
+ *  paid on the very day it was issued is same-day cash, never a receivable. */
+function detectSettlements(branchId: number, before: Map<string, OpenBill>, source: "invoice" | "outstanding", today: string): number {
+  if (before.size === 0) return 0;
+  const db = getDb();
+  const get = db.prepare("SELECT net, due FROM clinica_bills WHERE branch_id = ? AND bill_no = ?");
+  const recorded = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM clinica_settlements WHERE branch_id = ? AND bill_no = ? AND status <> 'dismissed'");
+  const ins = db.prepare(
+    `INSERT INTO clinica_settlements (branch_id, bill_no, bill_date, payer_group, amount, detected_on, settled_date, source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  let n = 0;
+  for (const b of before.values()) {
+    const now = get.get(branchId, b.billNo) as { net: number; due: number } | undefined;
+    if (!now) continue;
+    let amount = r2(b.due - now.due - Math.max(0, b.net - now.net));
+    if (amount <= 0.005 || b.billDate === today) continue;
+    // Never record more than the bill has actually been paid in total: an older
+    // export that re-opens a paid bill, followed by a fresh import that closes it
+    // again, must not count the same money twice.
+    const room = r2((now.net - now.due) - (recorded.get(branchId, b.billNo) as { s: number }).s);
+    amount = Math.min(amount, room);
+    if (amount <= 0.005) continue;
+    ins.run(branchId, b.billNo, b.billDate, b.payerGroup, amount, today, today, source);
+    n++;
+  }
+  return n;
+}
+
+/** Snapshot import of the outstanding-only Invoice Report. NEVER range-replaces:
+ *  the span holds paid bills this file does not list. Bills it lists are inserted
+ *  (if new) or have their outstanding amount lowered (never raised, so a stale
+ *  export cannot re-open a paid bill). An open bill dated inside the file's span
+ *  but absent from it has been paid in full. The span is only what the listed
+ *  bills cover, so a paid bill older than the oldest still-open one is not caught
+ *  here — the next full Invoice import (authoritative) records it. */
+export function importOutstanding(branchId: number, p: ClinicaOutstandingParse, opts: { today?: string } = {}): ClinicaImportResult {
+  const db = getDb();
+  const today = opts.today ?? todayBkk();
+  const before = openBills(branchId);
+  const exists = db.prepare("SELECT id, due FROM clinica_bills WHERE branch_id = ? AND bill_no = ?");
+  const lower = db.prepare("UPDATE clinica_bills SET due = ?, paid = ROUND(net - ?, 2) WHERE id = ?");
+  const insBill = db.prepare(
+    `INSERT INTO clinica_bills (branch_id, bill_no, bill_date, bill_time, hn, payer_group, staff, gross, bill_discount, net, paid, due)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const insItem = db.prepare(
+    `INSERT INTO clinica_bill_items (bill_id, code, name, qty, unit, line_gross, line_discount, line_net)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const closeBill = db.prepare("UPDATE clinica_bills SET paid = ROUND(paid + due, 2), due = 0 WHERE branch_id = ? AND bill_no = ?");
+  const inFile = new Set(p.bills.map((b) => b.billNo));
+  let items = 0;
+  let settlements = 0;
+  db.transaction(() => {
+    for (const b of p.bills) {
+      const row = exists.get(branchId, b.billNo) as { id: number; due: number } | undefined;
+      if (row) {
+        if (b.due < row.due - 0.005) lower.run(b.due, b.due, row.id);
+        continue;
+      }
+      const billId = Number(insBill.run(
+        branchId, b.billNo, b.date, b.time, b.hn, b.payerGroup, b.staff, b.gross, b.billDiscount, b.net, b.paid, b.due
+      ).lastInsertRowid);
+      for (const it of b.items) {
+        insItem.run(billId, it.code, it.name, it.qty, it.unit, it.lineGross, it.lineDiscount, it.lineNet);
+        items++;
+      }
+    }
+    // Open before, dated inside the file's span, not listed any more → paid.
+    if (p.rangeStart && p.rangeEnd) {
+      for (const b of before.values()) {
+        if (inFile.has(b.billNo) || !b.billDate || b.billDate < p.rangeStart || b.billDate > p.rangeEnd) continue;
+        closeBill.run(branchId, b.billNo);
+      }
+    }
+    settlements = detectSettlements(branchId, before, "outstanding", today);
+  })();
+  return { kind: "outstanding", rangeStart: p.rangeStart, rangeEnd: p.rangeEnd, bills: p.bills.length, items, settlements, totalNet: p.totalNet, totalDue: p.totalDue };
+}
+
+/** Replace every receipt payment line in the file's date range, then insert the
+ *  file's. A re-import of the same window overwrites; other days are untouched. */
+export function importReceipt(branchId: number, p: ClinicaReceiptParse): ClinicaImportResult {
+  const db = getDb();
+  const delRange = db.prepare("DELETE FROM clinica_receipts WHERE branch_id = ? AND receipt_date BETWEEN ? AND ?");
+  const delOne = db.prepare("DELETE FROM clinica_receipts WHERE branch_id = ? AND receipt_no = ?");
+  const ins = db.prepare(
+    `INSERT INTO clinica_receipts (branch_id, receipt_no, installment, bill_no, receipt_date, receipt_time, hn, payer_group, channel, paid, fee, outstanding)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  db.transaction(() => {
+    if (p.rangeStart && p.rangeEnd) delRange.run(branchId, p.rangeStart, p.rangeEnd);
+    for (const r of p.receipts) {
+      delOne.run(branchId, r.receiptNo);
+      const used = new Set<number>();
+      for (const pay of r.payments) {
+        let inst = pay.installment;
+        while (used.has(inst)) inst++;      // keep UNIQUE(receipt, installment) even if the export repeats a number
+        used.add(inst);
+        ins.run(branchId, r.receiptNo, inst, r.billNo, r.date, r.time, r.hn, r.payerGroup, pay.channel, pay.paid, pay.fee, pay.outstanding);
+      }
+    }
+  })();
+  return { kind: "receipt", rangeStart: p.rangeStart, rangeEnd: p.rangeEnd, receipts: p.receipts.length };
+}
+
+export type ClinicaSettlement = {
+  id: number; billNo: string; billDate: string; payerGroup: string; amount: number;
+  detectedOn: string; settledDate: string; channel: string; status: "pending" | "confirmed" | "dismissed";
+  /** Suggested landing channel when none is set yet (last one used for this payer group). */
+  suggestedChannel: string;
+};
+
+type SettlementRow = { id: number; bill_no: string; bill_date: string; payer_group: string | null; amount: number; detected_on: string; settled_date: string; channel: string | null; status: "pending" | "confirmed" | "dismissed" };
+
+/** Channels money can land in, from the receipts already imported: every channel
+ *  that has taken money, cash first. 'อื่นๆ' receivable lines carry no money. */
+export function clinicaCashChannels(branchId: number): string[] {
+  const rows = getDb().prepare(
+    `SELECT channel, COUNT(*) n FROM clinica_receipts WHERE branch_id = ? AND paid > 0 GROUP BY channel ORDER BY n DESC`
+  ).all(branchId) as Array<{ channel: string; n: number }>;
+  const out = rows.map((r) => r.channel);
+  const ordered = out.filter((c) => receiptChannelKind(c) === "cash").concat(out.filter((c) => receiptChannelKind(c) !== "cash"));
+  return ordered.length ? ordered : ["เงินสด (เงินสด)"];
+}
+
+export function listSettlements(branchId: number, status: "pending" | "confirmed" | "dismissed" = "pending", limit = 200): ClinicaSettlement[] {
+  const db = getDb();
+  const channels = clinicaCashChannels(branchId);
+  const bankDefault = channels.find((c) => receiptChannelKind(c) === "bank") ?? channels[0];
+  const lastFor = db.prepare(
+    `SELECT channel FROM clinica_settlements WHERE branch_id = ? AND payer_group = ? AND status = 'confirmed' AND COALESCE(channel,'') <> '' ORDER BY confirmed_at DESC, id DESC LIMIT 1`
+  );
+  const rows = db.prepare(
+    `SELECT id, bill_no, bill_date, payer_group, amount, detected_on, settled_date, channel, status
+       FROM clinica_settlements WHERE branch_id = ? AND status = ? ORDER BY settled_date DESC, id DESC LIMIT ?`
+  ).all(branchId, status, limit) as SettlementRow[];
+  return rows.map((r) => {
+    const grp = r.payer_group ?? "";
+    const last = grp ? (lastFor.get(branchId, grp) as { channel: string } | undefined)?.channel : undefined;
+    return {
+      id: r.id, billNo: r.bill_no, billDate: r.bill_date, payerGroup: grp, amount: r.amount,
+      detectedOn: r.detected_on, settledDate: r.settled_date, channel: r.channel ?? "", status: r.status,
+      // Insurers/companies pay by transfer; cash is a poor default for a late payment.
+      suggestedChannel: last ?? bankDefault
+    };
+  });
+}
+
+export type SettlementAction =
+  | { action: "confirm"; settledDate: string; channel: string }
+  | { action: "dismiss" };
+
+/** Confirm (with the real date + landing channel) or dismiss a pending
+ *  settlement. Only a pending row of THIS branch can change. */
+export function resolveSettlement(branchId: number, id: number, userId: number | null, a: SettlementAction): { ok: boolean; error?: string } {
+  const db = getDb();
+  const row = db.prepare("SELECT status FROM clinica_settlements WHERE id = ? AND branch_id = ?").get(id, branchId) as { status: string } | undefined;
+  if (!row) return { ok: false, error: "not_found" };
+  if (row.status !== "pending") return { ok: false, error: "not_pending" };
+  if (a.action === "dismiss") {
+    db.prepare("UPDATE clinica_settlements SET status='dismissed', confirmed_by=?, confirmed_at=CURRENT_TIMESTAMP WHERE id=?").run(userId, id);
+    return { ok: true };
+  }
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(a.settledDate) ? new Date(`${a.settledDate}T00:00:00Z`) : null;
+  if (!d || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== a.settledDate) return { ok: false, error: "bad_date" };
+  const channel = (a.channel ?? "").trim().slice(0, 120);
+  if (!channel) return { ok: false, error: "no_channel" };
+  db.prepare(
+    "UPDATE clinica_settlements SET status='confirmed', settled_date=?, channel=?, confirmed_by=?, confirmed_at=CURRENT_TIMESTAMP WHERE id=?"
+  ).run(a.settledDate, channel, userId, id);
+  return { ok: true };
+}
+
+export function pendingSettlementCount(branchId: number): number {
+  return (getDb().prepare("SELECT COUNT(*) n FROM clinica_settlements WHERE branch_id = ? AND status = 'pending'").get(branchId) as { n: number }).n;
+}
+
+/** Cash-in by channel for a period from the RECEIPT file: what was taken through
+ *  each channel on receipts dated in the period. The part of a receipt booked as
+ *  receivable (insurer share, ยอดค้างชำระ) is reported on its own row — it is not
+ *  money in yet. */
+export type ChannelMixRow = { channel: string; label: string; kind: "cash" | "bank" | "receivable"; amount: number; count: number };
+export function clinicaChannelMix(branchId: number, startIso: string, endIso: string): ChannelMixRow[] {
+  const rows = getDb().prepare(
+    `SELECT channel, ROUND(SUM(paid),2) paid, ROUND(SUM(outstanding),2) outst,
+            SUM(CASE WHEN ABS(paid) > 0.005 THEN 1 ELSE 0 END) np, SUM(CASE WHEN ABS(outstanding) > 0.005 THEN 1 ELSE 0 END) no
+       FROM clinica_receipts WHERE branch_id = ? AND receipt_date BETWEEN ? AND ? GROUP BY channel`
+  ).all(branchId, startIso, endIso) as Array<{ channel: string; paid: number; outst: number; np: number; no: number }>;
+  const out: ChannelMixRow[] = [];
+  for (const r of rows) {
+    const label = receiptChannelLabel(r.channel);
+    if (Math.abs(r.paid) >= 0.005) out.push({ channel: r.channel, label, kind: receiptChannelKind(r.channel) === "cash" ? "cash" : "bank", amount: r.paid, count: r.np });
+    if (Math.abs(r.outst) >= 0.005) out.push({ channel: r.channel, label, kind: "receivable", amount: r.outst, count: r.no });
+  }
+  const order = { cash: 0, bank: 1, receivable: 2 } as const;
+  return out.sort((a, b) => order[a.kind] - order[b.kind] || b.amount - a.amount);
 }
 
 /** Replace every visit in the file's date range, then insert the file's visits. */

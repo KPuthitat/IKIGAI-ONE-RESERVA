@@ -8,6 +8,7 @@ import { hourSpan, hoursLabel, type HoursWindow } from "@/lib/hours";
 // clinica-analytics is never pulled in) — the single source of truth for the
 // shape, re-exported for the rest of the client tree.
 import type { ClinicaMonth } from "@/lib/clinica-analytics";
+import ClinicaSettlements from "./clinica/ClinicaSettlements";
 export type { ClinicaMonth };
 
 // The คลินิก section of ANALYTICA (owner 2026-09-26). Headline is ยอดบิลรวม,
@@ -338,19 +339,26 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
           its bills/patients + ✓Invoice/✓OPD chips; "missing" is read from the data,
           so a day that already has bills never reads as missing Invoice. */}
       {c.monthDays.length > 0 && (() => {
-        const inc = c.monthDays.filter((d) => !(d.hasInvoice && d.hasOpd));
+        // The receipt chip only applies from the first day a Receipt Report covers,
+        // so months imported before receipts existed are not flagged.
+        const wantRec = (d: { date: string }) => c.receiptsFrom != null && d.date >= c.receiptsFrom;
+        const needRec = c.monthDays.some(wantRec);
+        const inc = c.monthDays.filter((d) => !(d.hasInvoice && d.hasOpd && (!wantRec(d) || d.hasReceipt)));
         const missInv = c.monthDays.filter((d) => !d.hasInvoice).length;
         const missOpd = c.monthDays.filter((d) => !d.hasOpd).length;
+        const missRec = c.monthDays.filter((d) => wantRec(d) && !d.hasReceipt).length;
         return (
           <div className="card space-y-2">
             {inc.length === 0 ? (
-              <div className="text-xs text-emerald-600">✓ ทุกวันที่มีข้อมูลในเดือนนี้ ลงไฟล์ครบทั้ง 2 ชนิดแล้ว (Invoice + OPD)</div>
+              <div className="text-xs text-emerald-600">✓ ทุกวันที่มีข้อมูลในเดือนนี้ ลงไฟล์ครบแล้ว ({needRec ? "Invoice + ใบเสร็จ + OPD" : "Invoice + OPD"})</div>
             ) : (
               <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
                 มี <b>{inc.length}</b> วันที่ลงไฟล์ไม่ครบ —
                 {missInv > 0 && <> ขาด Invoice {missInv} วัน</>}
                 {missInv > 0 && missOpd > 0 && <> · </>}
                 {missOpd > 0 && <> ขาด OPD {missOpd} วัน</>}
+                {missRec > 0 && (missInv > 0 || missOpd > 0) && <> · </>}
+                {missRec > 0 && <> ขาดใบเสร็จ {missRec} วัน</>}
               </div>
             )}
             <button type="button" onClick={() => setShowAllDays((v) => !v)}
@@ -367,6 +375,7 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
                       <div className="text-xs text-slate-500">{d.hasInvoice ? `${intTh(d.bills)} บิล · ${intTh(d.patients)} คน` : "ยังไม่มีบิล"}</div>
                       <div className="flex flex-wrap gap-1 mt-1">
                         <FileChip label="Invoice" present={d.hasInvoice} />
+                        {wantRec(d) && <FileChip label="ใบเสร็จ" present={d.hasReceipt} />}
                         <FileChip label="OPD" present={d.hasOpd} />
                       </div>
                     </div>
@@ -445,6 +454,36 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
           <p className="text-[10px] text-slate-400">แต่ละแท่ง = ยอดบิลรวมของวันนั้น (แตะเพื่อดูยอด/จำนวนบิล)</p>
         </div>
       )}
+
+      {/* Late payments of receivables, waiting for the real date + channel */}
+      <ClinicaSettlements pending={c.pendingSettlements} stamp={`${c.arTotal}:${c.billCount}:${c.due}`} />
+
+      {/* Cash-in by channel, from the Receipt Report */}
+      {c.channelMix.length > 0 && (() => {
+        const taken = c.channelMix.filter((m) => m.kind !== "receivable");
+        const toAr = c.channelMix.filter((m) => m.kind === "receivable");
+        const maxMix = Math.max(1, ...c.channelMix.map((m) => m.amount));
+        return (
+          <div className="card space-y-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 className="font-bold text-slate-800 text-sm">ช่องทางรับเงิน (ตามใบเสร็จเดือนนี้)</h3>
+              <span className="text-sm font-bold text-emerald-600">{baht(taken.reduce((s, m) => s + m.amount, 0))}</span>
+            </div>
+            <div className="space-y-1.5">
+              {c.channelMix.map((m) => (
+                <div key={m.channel}>
+                  <div className="flex items-baseline justify-between gap-2 text-[11px]">
+                    <span className="text-slate-600 truncate">{m.kind === "receivable" ? `ค้างรับ · ${m.label}` : m.label}</span>
+                    <span className={`tabular-nums whitespace-nowrap ${m.kind === "receivable" ? "text-rose-600" : "text-slate-700"}`}>{bahtC(m.amount, m.count)}</span>
+                  </div>
+                  <Bar value={m.amount} max={maxMix} tone={m.kind === "receivable" ? "bg-rose-300" : m.kind === "cash" ? "bg-emerald-400" : "bg-sky-400"} />
+                </div>
+              ))}
+            </div>
+            {toAr.length > 0 && <p className="text-[10px] text-slate-400">ค้างรับ = ส่วนที่ประกัน/บริษัทจ่ายทีหลัง ยังไม่ใช่เงินเข้า</p>}
+          </div>
+        );
+      })()}
 
       {/* AR aging + payer owing */}
       {c.arTotal > 0 && (
