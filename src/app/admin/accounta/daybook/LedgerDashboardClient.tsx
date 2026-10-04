@@ -126,6 +126,7 @@ function shiftAnchor(anchor: string, period: LedgerPeriod, dir: 1 | -1): string 
 
 const TH_DOW_FULL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 const TH_MON_FULL = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+const thShort = (iso: string) => { const [, m, d] = iso.split("-").map(Number); return `${d} ${TH_MON_FULL[m]}`; };
 // ISO-8601 week number (Mon-start) of a YYYY-MM-DD date — for "สัปดาห์ที่ x".
 function isoWeekNo(isoDate: string): number {
   const [y, m, d] = isoDate.split("-").map(Number);
@@ -1033,7 +1034,7 @@ function FinancialAnalysisCard({
 export default function LedgerDashboardClient({
   dash, expenses, period, anchor, monthly, trendYear, payables, cashAccounts, cashTotal,
   branchId, companyId, branchName, incomeChannels, expenseCategories, draftExpenses, expenseVendors,
-  paymentMethods, materialQuota, projectedMonthlySales, aiEnabled, payCycleWeekday
+  paymentMethods, materialQuota, breakEvenSales = null, projectedMonthlySales, aiEnabled, payCycleWeekday
 }: {
   dash: Dash; expenses: LedgerExpenseRow[]; period: LedgerPeriod; anchor: string;
   monthly: MonthlyRow[]; trendYear: number; payables: Payables;
@@ -1047,13 +1048,19 @@ export default function LedgerDashboardClient({
   // Material-purchase quota for today — mirrors the shift-close card. null when
   // the branch has the feature off.
   materialQuota: {
-    targetSales: number; forecastSales: number | null; xUsed: number; isFirstDay: boolean;
+    targetSales: number; targetSource: "analytica" | "persona" | "none";
+    forecastSales: number | null; xUsed: number; xBasis: "target" | "forecast"; isFirstDay: boolean;
     budgetPct: number; goalPct: number | null; weekday: number; weekdayLabel: string;
     monthBudget: number; spentThisMonth: number; remainingBudget: number;
     daysInMonth: number; todayDate: number; daysLeft: number;
     todayIsPurchaseDay: boolean; quotaToday: number; quotaHigh: number; quotaLow: number;
+    method: "forecast" | "even"; windowFrom: string | null; windowTo: string | null; windowDays: number;
+    windowForecast: number; remainingForecast: number; quotaNextHigh: number; quotaNextLow: number;
+    nextDate: string | null; nextForecast: number | null; nextClosed: boolean;
     salesToDate: number; projectedMaterial: number; reqSalesCeil: number; reqSalesGoal: number;
   } | null;
+  // จุดคุ้มทุนของเดือน (ยอดขายที่ต้องทำให้ได้) — ใช้เตือนเมื่อยอดคาดการณ์ต่ำกว่า. null = ยังคำนวณไม่ได้.
+  breakEvenSales?: number | null;
   // ยอดขายคาดการณ์ทั้งเดือน (= branches.material_target_sales). 0 = สาขายังไม่ตั้งเป้า
   // → ซ่อน % เทียบยอดคาดในการ์ดรายจ่ายแยกหมวด (owner 2026-07-14).
   projectedMonthlySales: number;
@@ -1314,9 +1321,9 @@ export default function LedgerDashboardClient({
               {/* Hero — today's allowance (a range when a goal %COG is set) */}
               <div className="mt-3 flex items-baseline gap-2 flex-wrap">
                 {q.goalPct != null ? (
-                  <span className="text-3xl sm:text-4xl font-extrabold tracking-tight text-emerald-700">฿{fmtMoney(q.quotaLow)}<span className="text-slate-400 font-bold"> – </span>฿{fmtMoney(q.quotaHigh)}</span>
+                  <span className="text-3xl sm:text-4xl font-extrabold tracking-tight text-emerald-700">{fmtMoney(q.quotaLow)} บาท<span className="text-slate-400 font-bold"> – </span>{fmtMoney(q.quotaHigh)} บาท</span>
                 ) : (
-                  <span className="text-4xl font-extrabold tracking-tight text-emerald-700">฿{fmtMoney(q.quotaToday)}</span>
+                  <span className="text-4xl font-extrabold tracking-tight text-emerald-700">{fmtMoney(q.quotaToday)} บาท</span>
                 )}
                 <span className="text-xs text-slate-500">
                   สั่งซื้อได้วันนี้ ·{" "}
@@ -1327,18 +1334,60 @@ export default function LedgerDashboardClient({
                 </span>
               </div>
 
+              {/* Coverage window (owner 2026-10-04): the allowance follows forecast sales —
+                  a purchase day covers the next 7 days, any other day tops up for tomorrow. */}
+              <div className="mt-2 space-y-0.5 text-[11px] text-slate-600">
+                {q.method === "forecast" ? (
+                  <>
+                    {q.windowFrom && (
+                      <div>
+                        {q.todayIsPurchaseDay ? "ครอบคลุม" : "ซื้อเสริมสำหรับ"}{" "}
+                        <b>{q.windowFrom === q.windowTo ? thShort(q.windowFrom) : `${thShort(q.windowFrom)} – ${thShort(q.windowTo as string)}`}</b>
+                        {" "}· คาดขาย <b>{fmtMoney(q.windowForecast)} บาท</b>
+                      </div>
+                    )}
+                    {q.todayIsPurchaseDay && q.nextDate && (
+                      <div className="text-slate-500">
+                        พรุ่งนี้ ({thShort(q.nextDate)}){q.nextClosed ? " ปิดทำการ" : ` คาดขาย ${fmtMoney(q.nextForecast ?? 0)} บาท → ใช้ได้ประมาณ ${fmtMoney(q.quotaNextHigh)} บาท`}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-slate-500">ยังไม่มีสถิติยอดขายย้อนหลังพอ จึงเฉลี่ยงบที่เหลือตามจำนวนวัน</div>
+                )}
+              </div>
+
               {/* Progress — spend vs monthly budget (the artwork that carries the numbers) */}
               <div className="mt-3">
                 <div className="mb-1 flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500">ใช้ไปแล้ว <span className={over ? "font-semibold text-rose-600" : "font-semibold text-slate-700"}>฿{fmtMoney(q.spentThisMonth)}</span></span>
-                  <span className="text-slate-500">งบเดือนนี้ ฿{fmtMoney(q.monthBudget)}</span>
+                  <span className="text-slate-500">ใช้ไปแล้ว <span className={over ? "font-semibold text-rose-600" : "font-semibold text-slate-700"}>{fmtMoney(q.spentThisMonth)} บาท</span></span>
+                  <span className="text-slate-500">งบเดือนนี้ {fmtMoney(q.monthBudget)} บาท</span>
                 </div>
                 <div className="h-2.5 overflow-hidden rounded-full bg-emerald-100">
                   <div className={`h-full rounded-full ${over ? "bg-rose-400" : "bg-emerald-500"}`} style={{ width: `${usedPct}%` }} />
                 </div>
                 <div className="mt-1 text-right text-[11px] font-medium text-emerald-800">
-                  เหลือทั้งเดือน ฿{fmtMoney(q.remainingBudget)}
+                  เหลือทั้งเดือน {fmtMoney(q.remainingBudget)} บาท
                 </div>
+                <div className="text-right text-[11px] text-slate-500">
+                  {q.method !== "forecast"
+                    ? (q.targetSales > 0 ? `ฐานงบ: เป้า ${fmtMoney(q.targetSales)} บาท` : "")
+                    : q.xBasis === "forecast"
+                      ? (q.targetSales > 0
+                          ? `ฐานงบ: ยอดคาดการณ์ ${fmtMoney(q.xUsed)} บาท (ต่ำกว่าเป้า ${fmtMoney(q.targetSales)} บาท)`
+                          : `ฐานงบ: ยอดคาดการณ์ ${fmtMoney(q.xUsed)} บาท (ยังไม่ได้ตั้งเป้า)`)
+                      : `ฐานงบ: เป้า ${fmtMoney(q.xUsed)} บาท (ยอดคาดการณ์ ${fmtMoney(q.forecastSales ?? 0)} บาท ถึงเป้า)`}
+                </div>
+                {q.targetSource === "persona" && (
+                  <div className="text-right text-[11px] text-amber-700">
+                    เป้านี้มาจากตั้งค่าสาขาเดิม · <a href="/admin/reporta/settings" className="underline">ตั้งเป้ารายเดือนที่ ANALYTICA</a>
+                  </div>
+                )}
+                {breakEvenSales != null && q.forecastSales != null && q.forecastSales < breakEvenSales && (
+                  <div className="mt-1 rounded-lg bg-rose-50 border border-rose-200 px-2.5 py-1.5 text-[11px] text-rose-700">
+                    ⚠ ยอดคาดการณ์เดือนนี้ {fmtMoney(q.forecastSales)} บาท ต่ำกว่าจุดคุ้มทุน {fmtMoney(breakEvenSales)} บาท — ควรคุมการสั่งซื้อและต้นทุนคงที่
+                  </div>
+                )}
               </div>
 
               {/* Sales target — how much to sell/day from today to hold %COG on track */}
@@ -1349,9 +1398,9 @@ export default function LedgerDashboardClient({
                 <div className="text-[11px] leading-relaxed text-slate-600">
                   ตั้งแต่วันนี้ต้องขายให้ได้{" "}
                   {q.goalPct != null ? (
-                    <><span className="font-semibold text-emerald-800">฿{fmtMoney(q.reqSalesCeil)}–฿{fmtMoney(q.reqSalesGoal)}</span>/วัน เพื่อคุม COG {q.budgetPct}%→{q.goalPct}%</>
+                    <><span className="font-semibold text-emerald-800">{fmtMoney(q.reqSalesCeil)} บาท–{fmtMoney(q.reqSalesGoal)} บาท</span>/วัน เพื่อคุม COG {q.budgetPct}%→{q.goalPct}%</>
                   ) : (
-                    <><span className="font-semibold text-emerald-800">฿{fmtMoney(q.reqSalesCeil)}</span>/วัน เพื่อคุม COG ≤{q.budgetPct}%</>
+                    <><span className="font-semibold text-emerald-800">{fmtMoney(q.reqSalesCeil)} บาท</span>/วัน เพื่อคุม COG ≤{q.budgetPct}%</>
                   )}
                   <span className="text-slate-400"> · อิงอัตราซื้อวัตถุดิบจริง</span>
                 </div>

@@ -6,9 +6,9 @@ import { todayBkk } from "@/lib/time";
 import { rateLimit } from "@/lib/rate-limit";
 import {
   ledgerDashboard, monthlyTrend, accountaPayables, cashAccountsTotal,
-  materialPurchaseQuota
 } from "@/lib/accounta-db";
 import { salesTargetProgress } from "@/lib/sales-target";
+import { materialQuotaFor } from "@/lib/material-budget";
 import {
   streamFinancialAnalysis, financialAnalysisEnabled, FinAnalysisError,
   type FinancialSnapshot
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     const monthDash = (period === "month" && anchor.slice(0, 7) === quotaToday.slice(0, 7))
       ? dash
       : ledgerDashboard(branchId, "month", quotaToday);
-    const materialQuota = materialPurchaseQuota(branchId, quotaToday, monthDash.forecast, monthDash.salesRevenue);
+    const materialQuota = materialQuotaFor(branchId, quotaToday, monthDash.salesRevenue, monthDash.forecast);
     const salesTarget = salesTargetProgress(branchId, quotaToday, monthDash.salesRevenue);
     const payables = accountaPayables(branchId);
     const cashTotal = cashAccountsTotal(branchId);

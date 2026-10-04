@@ -27,6 +27,11 @@ type ChecklistItem = {
 };
 
 /** Format a number as "12,345.67" baht for display. */
+function shortThai(iso: string): string {
+  const M = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+  const [, m, d] = iso.split("-").map(Number);
+  return `${d} ${M[m]}`;
+}
 function fmtThb(n: number): string {
   return (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -59,6 +64,9 @@ type MaterialQuotaView = {
   weekdayLabel: string; xUsed: number; budgetPct: number;
   monthBudget: number; spentThisMonth: number; remainingBudget: number;
   daysLeft: number; daysInMonth: number; todayIsPurchaseDay: boolean; quotaToday: number;
+  // Sales-weighted quota (owner 2026-10-04).
+  xBasis?: "target" | "forecast"; method?: "forecast" | "even";
+  windowFrom?: string | null; windowTo?: string | null; windowForecast?: number;
 };
 
 export default function ShiftCloseForm({
@@ -664,28 +672,32 @@ export default function ShiftCloseForm({
         const under = diff < -0.005;
         const status = over
           ? { tone: "bg-rose-50 border-rose-200 text-rose-700",
-              text: `เกินโควตา ฿${fmtThb(diff)} (สั่ง ฿${fmtThb(ordered)} / โควตา ฿${fmtThb(quota)})` }
+              text: `เกินโควตา ${fmtThb(diff)} บาท (สั่ง ${fmtThb(ordered)} บาท / โควตา ${fmtThb(quota)} บาท)` }
           : under
           ? { tone: "bg-amber-50 border-amber-200 text-amber-700",
-              text: `ต่ำกว่าโควตา ฿${fmtThb(-diff)} — ยังสั่งได้อีก ฿${fmtThb(-diff)} (สั่ง ฿${fmtThb(ordered)} / โควตา ฿${fmtThb(quota)})` }
+              text: `ต่ำกว่าโควตา ${fmtThb(-diff)} บาท — ยังสั่งได้อีก ${fmtThb(-diff)} บาท (สั่ง ${fmtThb(ordered)} บาท / โควตา ${fmtThb(quota)} บาท)` }
           : { tone: "bg-emerald-50 border-emerald-200 text-emerald-700",
-              text: `✓ พอดีโควตา ฿${fmtThb(quota)}` };
+              text: `✓ พอดีโควตา ${fmtThb(quota)} บาท` };
         return (
           <div className="card space-y-3">
             <h2 className="font-bold text-slate-800">โควตาสั่งซื้อวัตถุดิบวันนี้</h2>
             <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-center">
               <div className="text-[11px] text-slate-500">
                 โควตาที่สั่งได้วันนี้
-                {materialQuota.todayIsPurchaseDay
-                  ? ` · วัน${materialQuota.weekdayLabel} (วันสั่งหลัก = ค่าที่มากกว่า ระหว่าง งบเดือน ÷ ${materialQuota.daysInMonth} วัน กับ งบที่เหลือ ÷ วันที่เหลือ)`
-                  : " · วันปกติ (งบที่เหลือ ÷ วันที่เหลือ)"}
+                {materialQuota.todayIsPurchaseDay ? ` · วัน${materialQuota.weekdayLabel} (วันสั่งหลัก)` : " · วันปกติ (ซื้อเสริม)"}
               </div>
-              <div className="text-2xl font-bold text-emerald-700">฿{fmtThb(quota)}</div>
+              <div className="text-2xl font-bold text-emerald-700">{fmtThb(quota)} บาท</div>
+              {materialQuota.method === "forecast" && materialQuota.windowFrom ? (
+                <div className="text-[11px] text-slate-600 mt-1">
+                  {materialQuota.todayIsPurchaseDay ? "ครอบคลุม" : "สำหรับ"} {shortThai(materialQuota.windowFrom)}
+                  {materialQuota.windowTo && materialQuota.windowTo !== materialQuota.windowFrom ? ` – ${shortThai(materialQuota.windowTo)}` : ""}
+                  {" "}· คาดขาย {fmtThb(materialQuota.windowForecast ?? 0)} บาท
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-500 mt-1">ยังไม่มีสถิติยอดขายย้อนหลังพอ จึงเฉลี่ยงบที่เหลือตามจำนวนวัน</div>
+              )}
               <div className="text-[11px] text-slate-500 mt-1">
-                งบเดือนนี้ ฿{fmtThb(materialQuota.monthBudget)} (ยอดคาดการณ์ ฿{fmtThb(materialQuota.xUsed)} × {materialQuota.budgetPct}%) · ซื้อไปแล้ว ฿{fmtThb(materialQuota.spentThisMonth)}
-                {materialQuota.todayIsPurchaseDay
-                  ? ""
-                  : ` · เฉลี่ยจากงบที่เหลืออีก ${materialQuota.daysLeft} วัน`}
+                งบเดือนนี้ {fmtThb(materialQuota.monthBudget)} บาท ({materialQuota.xBasis === "forecast" ? "ยอดคาดการณ์" : "เป้า"} {fmtThb(materialQuota.xUsed)} × {materialQuota.budgetPct}%) · ซื้อไปแล้ว {fmtThb(materialQuota.spentThisMonth)} บาท · คงเหลือ {fmtThb(materialQuota.remainingBudget)} บาท
               </div>
             </div>
             <div>

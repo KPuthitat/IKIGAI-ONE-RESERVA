@@ -29,6 +29,7 @@
     "test:insigna-migration": "node --import tsx scripts/test-insigna-migration.ts",
     "test:insigna-bills": "node --import tsx scripts/test-insigna-bills.ts",
     "test:insigna-members": "node --import tsx scripts/test-insigna-members.ts",
+    "test:material-quota": "node --import tsx scripts/test-material-quota.ts",
     "test:company-cost": "node --import tsx scripts/test-company-cost.ts",
     "test:payroll": "node --import tsx scripts/test-payroll.ts",
     "test:payroll-summary": "node --import tsx scripts/test-payroll-summary-doc.ts",

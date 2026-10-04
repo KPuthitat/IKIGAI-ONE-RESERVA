@@ -2550,9 +2550,11 @@ export function deleteCashAccount(id: number, branchId: number): boolean {
 // still left in the month. GD = the "ต้นทุนสินค้า/วัตถุดิบ" category (code GD).
 
 export type MaterialQuota = {
-  targetSales: number;        // configured เป้ายอดขาย X — used on day 1 of the month
-  forecastSales: number | null; // run-rate ประมาณการยอดขายทั้งเดือน — X on day 2+
-  xUsed: number;              // the X actually applied today (target on day 1, else forecast)
+  targetSales: number;        // the month's sales target (ANALYTICA, else legacy PERSONA)
+  targetSource: "analytica" | "persona" | "none";
+  forecastSales: number | null; // projected month sales: MTD + forecast of the remaining days (falls back to the run-rate)
+  xUsed: number;              // the sales base the budget is built on
+  xBasis: "target" | "forecast";   // which one won: the LOWER of target and forecast (owner 2026-10-04)
   isFirstDay: boolean;
   budgetPct: number;          // Y — %COG ceiling (max)
   goalPct: number | null;     // Y2 — %COG goal (tighter); null = no range
@@ -2562,9 +2564,19 @@ export type MaterialQuota = {
   remainingBudget: number;    // monthBudget − spent (ceiling)
   daysInMonth: number; todayDate: number; daysLeft: number;
   todayIsPurchaseDay: boolean;
-  quotaToday: number;         // ceiling allowance today (backward-compatible field = quotaHigh)
+  quotaToday: number;         // ceiling allowance for the coverage window (= quotaHigh)
   quotaHigh: number;          // allowance at the ceiling %COG
   quotaLow: number;           // allowance at the goal %COG (= quotaHigh when no goal set)
+  // Sales-weighted allowance (owner 2026-10-04): remaining budget × (forecast sales of the
+  // coverage window ÷ forecast sales of ALL remaining days). Purchase day covers the next 7
+  // days; any other day tops up for tomorrow only.
+  method: "forecast" | "even";     // "even" = no sales history yet → remaining ÷ days-left (old rule)
+  windowFrom: string | null; windowTo: string | null; windowDays: number;
+  windowForecast: number;     // forecast sales of the coverage window
+  remainingForecast: number;  // forecast sales of every remaining day of the month
+  quotaNextHigh: number;      // tomorrow-only allowance (ceiling)
+  quotaNextLow: number;       // tomorrow-only allowance (goal)
+  nextDate: string | null; nextForecast: number | null; nextClosed: boolean;
   // "From today, how much must we SELL per day to hold %COG within [goal, ceiling]?"
   // Based on the ACTUAL material run-rate (owner 2026-07-10).
   salesToDate: number;        // month-to-date sales
@@ -2573,19 +2585,30 @@ export type MaterialQuota = {
   reqSalesGoal: number;       // sales/day (from today) to reach the tighter goal %COG
 };
 
+/** Forecast inputs for the sales-weighted quota (built by material-budget.ts,
+ *  which owns the forecast import so accounta-db stays free of import cycles). */
+export type MaterialPlan = {
+  target: number;
+  targetSource: "analytica" | "persona" | "none";
+  hasForecast: boolean;
+  /** Forecast sales per remaining day (tomorrow → month end; today too when no sales are in yet). */
+  days: Array<{ date: string; dow: number; predicted: number; closed: boolean }>;
+};
+
 const TH_WEEKDAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 
-/** Material-purchase quota for `date` (owner 2026-07-10, taught logic):
- *   • X = เป้ายอดขาย on day 1 of the month (configured material_target_sales),
- *     otherwise the run-rate ประมาณการยอดขายทั้งเดือน passed in `forecastSales`
- *     (falls back to the target when no sales yet).
- *   • โควตาทั้งเดือน = X × Y% (Y = material_budget_pct).
- *   • On the fixed purchase weekday (NAMA = Monday): quota = โควตาทั้งเดือน ÷
- *     (จำนวนวันจันทร์ในเดือนนั้น) — because Sat/Sun sell a lot, restock on Monday.
- *   • Any other day: quota = (โควตาทั้งเดือน − ที่ใช้ไปแล้ว) ÷ (วันคงเหลือในเดือน),
- *     where วันคงเหลือ = daysInMonth − todayDate (per the owner's example). */
+/** Material-purchase quota for `date` (owner 2026-07-10, rebuilt 2026-10-04):
+ *   • Sales base X = the LOWER of the month's target (ANALYTICA) and the projected
+ *     month sales (sales so far + forecast of the remaining days from the weekday
+ *     averages) — so a month tracking below target never over-buys. With no
+ *     forecast yet it falls back to the old rule (target on day 1, else the run-rate).
+ *   • โควตาทั้งเดือน = X × Y% ; เหลือ R = โควตาทั้งเดือน − ที่ซื้อไปแล้ว (GD ที่ยืนยัน).
+ *   • Allowance for a coverage window = R × (forecast sales of the window ÷ forecast
+ *     sales of all remaining days) — budget follows expected sales, not days.
+ *     Purchase weekday: window = the next 7 days. Other days: tomorrow only.
+ *   • No forecast available: R ÷ days-left (the previous even spread). */
 export function materialPurchaseQuota(
-  branchId: number, date: string, forecastSales?: number | null, salesToDate?: number | null
+  branchId: number, date: string, forecastSales?: number | null, salesToDate?: number | null, plan?: MaterialPlan | null
 ): MaterialQuota | null {
   const db = getDb();
   const b = db.prepare(
@@ -2603,30 +2626,60 @@ export function materialPurchaseQuota(
   const [yy, mm, dd] = date.split("-").map(Number);
   const daysInMonth = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
   const isFirstDay = dd === 1;
+  const sold = Number(salesToDate) || 0;
+  const target = plan ? plan.target : Math.max(0, Number(b.x) || 0);
+  const targetSource = plan ? plan.targetSource : (target > 0 ? "persona" as const : "none" as const);
+
+  const days = plan?.days ?? [];
+  const remainingForecast = round2(days.reduce((s, d) => s + d.predicted, 0));
+  const useForecast = !!plan && plan.hasForecast && remainingForecast > 0;
+  const projectedSales = round2(sold + remainingForecast);
+
+  // The sales base. Forecast-driven: the lower of target and projection. Otherwise the
+  // legacy rule (target on day 1, else the run-rate month forecast, else the target).
   const fc = Number(forecastSales) || 0;
-  const xUsed = round2(isFirstDay || fc <= 0 ? b.x : fc);
+  let xUsed: number, xBasis: "target" | "forecast";
+  if (useForecast) {
+    if (target > 0 && target <= projectedSales) { xUsed = round2(target); xBasis = "target"; }
+    else { xUsed = projectedSales; xBasis = "forecast"; }
+  } else {
+    const legacyForecast = isFirstDay || fc <= 0;
+    xUsed = round2(legacyForecast ? target : fc);
+    xBasis = legacyForecast ? "target" : "forecast";
+  }
 
   const todayIsPurchaseDay = new Date(Date.UTC(yy, mm - 1, dd)).getUTCDay() === b.wd;
   const daysLeft = daysInMonth - dd;   // owner's example: (30 − 10) = 20
 
-  // Today's allowance at a given %COG: purchase weekday takes MAX(flat rate =
-  // budget ÷ days-in-month, remaining ÷ days-left); other days use remaining ÷ days-left.
-  const dayQuota = (budget: number): number => {
-    const remaining = round2(budget - spent);
-    const spread = daysLeft > 0 ? Math.max(0, round2(remaining / daysLeft)) : Math.max(0, remaining);
-    if (!todayIsPurchaseDay) return spread;
-    return Math.max(round2(budget / daysInMonth), spread);
-  };
+  // Coverage window: purchase day → the next 7 days; otherwise tomorrow only.
+  const addIso = (iso: string, n: number) => new Date(new Date(`${iso}T00:00:00Z`).getTime() + n * 86_400_000).toISOString().slice(0, 10);
+  const tomorrow = addIso(date, 1);
+  const winEnd = todayIsPurchaseDay ? addIso(date, 7) : tomorrow;
+  const winDays = days.filter((d) => d.date >= tomorrow && d.date <= winEnd);
+  const windowForecast = round2(winDays.reduce((s, d) => s + d.predicted, 0));
+  const nextDay = days.find((d) => d.date === tomorrow) ?? null;
 
-  const ceilPct = b.y;
+  const budgetCeil = round2(xUsed * (b.y / 100));
   const goalPct = (b.y2 != null && b.y2 > 0 && b.y2 < b.y) ? b.y2 : null;   // goal must be tighter
-  const monthBudget = round2(xUsed * (ceilPct / 100));          // ceiling budget
-  const quotaHigh = dayQuota(monthBudget);
-  const quotaLow = goalPct != null ? dayQuota(round2(xUsed * (goalPct / 100))) : quotaHigh;
+  const budgetGoal = goalPct != null ? round2(xUsed * (goalPct / 100)) : budgetCeil;
+
+  // Allowance at a given monthly budget.
+  const allowance = (budget: number, share: number, fallbackDays: number): number => {
+    const remaining = round2(budget - spent);
+    if (remaining <= 0) return 0;
+    if (useForecast) return Math.max(0, round2(remaining * (share / remainingForecast)));
+    // No forecast: the old even spread (purchase day = max(flat rate, spread)).
+    const spread = daysLeft > 0 ? Math.max(0, round2(remaining / daysLeft)) : Math.max(0, remaining);
+    const perDay = fallbackDays > 1 ? Math.max(round2(budget / daysInMonth), spread) : spread;
+    return perDay;
+  };
+  const quotaHigh = allowance(budgetCeil, windowForecast, todayIsPurchaseDay ? 7 : 1);
+  const quotaLow = goalPct != null ? allowance(budgetGoal, windowForecast, todayIsPurchaseDay ? 7 : 1) : quotaHigh;
+  const quotaNextHigh = allowance(budgetCeil, nextDay?.predicted ?? 0, 1);
+  const quotaNextLow = goalPct != null ? allowance(budgetGoal, nextDay?.predicted ?? 0, 1) : quotaNextHigh;
 
   // Sales/day needed from today to hold %COG within target, using the ACTUAL
   // material-spend run-rate as the projected month material cost.
-  const sold = Number(salesToDate) || 0;
   const projectedMaterial = dd > 0 ? round2((spent / dd) * daysInMonth) : spent;
   const daysLeftIncl = Math.max(1, daysInMonth - dd + 1);       // from today to month-end, inclusive
   const reqSales = (cog: number): number => {
@@ -2635,14 +2688,21 @@ export function materialPurchaseQuota(
   };
 
   return {
-    targetSales: round2(b.x), forecastSales: fc > 0 ? round2(fc) : null, xUsed, isFirstDay,
-    budgetPct: ceilPct, goalPct,
+    targetSales: round2(target), targetSource,
+    forecastSales: useForecast ? projectedSales : (fc > 0 ? round2(fc) : null),
+    xUsed, xBasis, isFirstDay,
+    budgetPct: b.y, goalPct,
     weekday: b.wd, weekdayLabel: TH_WEEKDAYS[b.wd] ?? "",
-    monthBudget, spentThisMonth: spent, remainingBudget: round2(monthBudget - spent),
+    monthBudget: budgetCeil, spentThisMonth: spent, remainingBudget: round2(budgetCeil - spent),
     daysInMonth, todayDate: dd, daysLeft, todayIsPurchaseDay,
     quotaToday: quotaHigh, quotaHigh, quotaLow,
+    method: useForecast ? "forecast" : "even",
+    windowFrom: winDays.length ? winDays[0].date : null, windowTo: winDays.length ? winDays[winDays.length - 1].date : null,
+    windowDays: winDays.length, windowForecast, remainingForecast,
+    quotaNextHigh, quotaNextLow,
+    nextDate: nextDay?.date ?? null, nextForecast: nextDay ? nextDay.predicted : null, nextClosed: !!nextDay?.closed,
     salesToDate: round2(sold), projectedMaterial,
-    reqSalesCeil: reqSales(ceilPct), reqSalesGoal: goalPct != null ? reqSales(goalPct) : reqSales(ceilPct)
+    reqSalesCeil: reqSales(b.y), reqSalesGoal: goalPct != null ? reqSales(goalPct) : reqSales(b.y)
   };
 }
 
