@@ -42,6 +42,15 @@ function buf(header: string[], rows: (string | number)[][], sheetName: string): 
   ok("an unseen channel (card/QR) is bank-like cash-in, never a receivable", S.receiptChannelKind("บัตรเครดิต (VISA)") === "bank" && S.receiptChannelKind("QR (พร้อมเพย์)") === "bank");
   ok("channel label strips the wrapper", S.receiptChannelLabel("ธนาคาร (ธนาคารกสิกรไทย KSHOP)") === "ธนาคารกสิกรไทย KSHOP" && S.receiptChannelLabel("เงินสด (เงินสด)") === "เงินสด");
 
+  // ── Window read from the export's file name ──
+  const w1 = P.filenameWindow("รายงานบัญชีลูกหนี้01_ม.ค._2569 ถึง 3_ต.ค._2569.xlsx");
+  ok("filename window: 01 ม.ค. 2569 ถึง 3 ต.ค. 2569", w1?.start === "2026-01-01" && w1?.end === "2026-10-03");
+  const w2 = P.filenameWindow("รายงานใบเสร็จ_01_ม.ค._2569 ถึง 31_ม.ค._2569.xlsx");
+  ok("filename window: a month", w2?.start === "2026-01-01" && w2?.end === "2026-01-31");
+  const w3 = P.filenameWindow("รายงานใบแจ้งหนี้03_ต.ค._2569.xlsx");
+  ok("filename window: a single day → start = end", w3?.start === "2026-10-03" && w3?.end === "2026-10-03");
+  ok("filename window: no date → null; impossible date ignored", P.filenameWindow("export.xlsx") === null && P.filenameWindow("x31_ก.พ._2569.xlsx") === null);
+
   // ── Receipt parser ──
   const rh = ["เลขที่ใบเสร็จ", "เอกสารอ้างอิง", "วัน", "เวลา", "รหัสลูกค้า", "กลุ่มลูกค้า", "รหัส", "รายการ", "รวมสุทธิ", "ช่องทางชำระ", "งวดที่", "ยอดชำระ", "ค่าธรรมเนียมบัตร", "ยอดค้างชำระ"];
   const rrows: (string | number)[][] = [
@@ -139,6 +148,16 @@ function buf(header: string[], rows: (string | number)[][], sheetName: string): 
   ok("snapshot: E absent inside span → settled in full (800), due 0", so.settlements === 1 && near((db.prepare("SELECT amount FROM clinica_settlements WHERE bill_no='E'").get() as { amount: number }).amount, 800) && near(q1("SELECT due n FROM clinica_bills WHERE bill_no='E'"), 0));
   ok("snapshot: E paid recomputed to net", near(q1("SELECT paid n FROM clinica_bills WHERE bill_no='E'"), 800));
   ok("snapshot: still-open F untouched", near(q1("SELECT due n FROM clinica_bills WHERE bill_no='F'"), 600));
+
+  // The oldest open bill is paid: without a window the snapshot's span starts at the
+  // oldest LISTED bill so it is missed; with the window from the file name it is caught.
+  cdb.importInvoice(branch, invParse([bill("OLD", "2026-01-05", 900, 900)]), { today: "2026-10-09" });
+  cdb.importOutstanding(branch, outParse([bill("F", "2026-09-20", 600, 600)]), { today: "2026-10-09" });
+  ok("no window: bill older than the oldest listed one stays open (documented limit)", near(q1("SELECT due n FROM clinica_bills WHERE bill_no='OLD'"), 900));
+  cdb.importOutstanding(branch, outParse([bill("F", "2026-09-20", 600, 600)]), { today: "2026-10-09", window: { start: "2026-01-01", end: "2026-10-09" } });
+  ok("with the file-name window the old paid bill is closed and recorded", near(q1("SELECT due n FROM clinica_bills WHERE bill_no='OLD'"), 0) && near(q1("SELECT COALESCE(SUM(amount),0) n FROM clinica_settlements WHERE bill_no='OLD'"), 900));
+  cdb.importOutstanding(branch, outParse([bill("F", "2026-09-20", 600, 600)]), { today: "2026-10-09", window: { start: "2026-10-01", end: "2026-10-09" } });
+  ok("a window that does not cover the listed bills is ignored", near(q1("SELECT due n FROM clinica_bills WHERE bill_no='F'"), 600));
 
   // Stale snapshot (old export) must not re-open E.
   cdb.importOutstanding(branch, outParse([bill("E", "2026-09-10", 800, 800), bill("F", "2026-09-20", 600, 600)]), { today: "2026-10-10" });

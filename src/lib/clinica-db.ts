@@ -120,10 +120,12 @@ function detectSettlements(branchId: number, before: Map<string, OpenBill>, sour
  *  the span holds paid bills this file does not list. Bills it lists are inserted
  *  (if new) or have their outstanding amount lowered (never raised, so a stale
  *  export cannot re-open a paid bill). An open bill dated inside the file's span
- *  but absent from it has been paid in full. The span is only what the listed
- *  bills cover, so a paid bill older than the oldest still-open one is not caught
- *  here — the next full Invoice import (authoritative) records it. */
-export function importOutstanding(branchId: number, p: ClinicaOutstandingParse, opts: { today?: string } = {}): ClinicaImportResult {
+ *  but absent from it has been paid in full. The span is the window the export
+ *  was asked for (read from its file name, accepted only if it covers the listed
+ *  bills); without one it is just what the listed bills cover, so a paid bill
+ *  older than the oldest still-open one is not caught until a full Invoice import
+ *  (authoritative) covers it. */
+export function importOutstanding(branchId: number, p: ClinicaOutstandingParse, opts: { today?: string; window?: { start: string; end: string } | null } = {}): ClinicaImportResult {
   const db = getDb();
   const today = opts.today ?? todayBkk();
   const before = openBills(branchId);
@@ -157,9 +159,11 @@ export function importOutstanding(branchId: number, p: ClinicaOutstandingParse, 
       }
     }
     // Open before, dated inside the file's span, not listed any more → paid.
-    if (p.rangeStart && p.rangeEnd) {
+    const w = opts.window && p.rangeStart && opts.window.start <= p.rangeStart && opts.window.end >= p.rangeEnd ? opts.window : null;
+    const spanStart = w?.start ?? p.rangeStart, spanEnd = w?.end ?? p.rangeEnd;
+    if (spanStart && spanEnd) {
       for (const b of before.values()) {
-        if (inFile.has(b.billNo) || !b.billDate || b.billDate < p.rangeStart || b.billDate > p.rangeEnd) continue;
+        if (inFile.has(b.billNo) || !b.billDate || b.billDate < spanStart || b.billDate > spanEnd) continue;
         closeBill.run(branchId, b.billNo);
       }
     }

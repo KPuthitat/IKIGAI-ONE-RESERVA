@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { parseClinicaFile, type ClinicaFileParse } from "@/lib/clinica-parse";
+import { filenameWindow, parseClinicaFile, type ClinicaFileParse } from "@/lib/clinica-parse";
 import { importInvoice, importOpd, importOutstanding, importReceipt, type ClinicaImportResult } from "@/lib/clinica-db";
 
 // CLINICA import — a reporta.manage user uploads the AT HOME CLINIC HIS exports
@@ -12,6 +12,8 @@ import { importInvoice, importOpd, importOutstanding, importReceipt, type Clinic
 // Owner 2026-09-26; receipts + outstanding snapshot 2026-10-04.
 
 export const dynamic = "force-dynamic";
+
+const MAX_FILE_BYTES = 30 * 1024 * 1024;
 
 export async function POST(req: Request) {
   const user = requirePermission("reporta.manage");
@@ -28,8 +30,9 @@ export async function POST(req: Request) {
   // Parse + validate everything before writing anything.
   const parsed: Array<{ name: string; p: ClinicaFileParse }> = [];
   for (const file of files) {
-    if (file.size > 12 * 1024 * 1024) {
-      return NextResponse.json({ error: "file_too_large", message: `ไฟล์ใหญ่เกิน 12MB: ${file.name}` }, { status: 400 });
+    // A whole year of Invoice lines is ~14MB; parsing it takes ~2s / ~250MB.
+    if (file.size > MAX_FILE_BYTES) {
+      return NextResponse.json({ error: "file_too_large", message: `ไฟล์ใหญ่เกิน ${MAX_FILE_BYTES / 1024 / 1024}MB: ${file.name}` }, { status: 400 });
     }
     try {
       parsed.push({ name: file.name, p: parseClinicaFile(Buffer.from(await file.arrayBuffer())) });
@@ -58,7 +61,7 @@ export async function POST(req: Request) {
     getDb().transaction(() => {
       for (const { name, p } of parsed) {
         const r = p.kind === "invoice" ? importInvoice(branchId, p)
-          : p.kind === "outstanding" ? importOutstanding(branchId, p)
+          : p.kind === "outstanding" ? importOutstanding(branchId, p, { window: filenameWindow(name) })
           : p.kind === "receipt" ? importReceipt(branchId, p)
           : importOpd(branchId, p);
         results.push({ filename: name, ...r });
