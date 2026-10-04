@@ -9,6 +9,7 @@ import { hourSpan, hoursLabel, type HoursWindow } from "@/lib/hours";
 // shape, re-exported for the rest of the client tree.
 import type { ClinicaMonth } from "@/lib/clinica-analytics";
 import ClinicaSettlements from "./clinica/ClinicaSettlements";
+import ClinicaAccountaCard from "./clinica/ClinicaAccountaCard";
 export type { ClinicaMonth };
 
 // The คลินิก section of ANALYTICA (owner 2026-09-26). Headline is ยอดบิลรวม,
@@ -454,6 +455,8 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
           <p className="text-[10px] text-slate-400">แต่ละแท่ง = ยอดบิลรวมของวันนั้น (แตะเพื่อดูยอด/จำนวนบิล)</p>
         </div>
       )}
+
+      <ClinicaAccountaCard stamp={`${c.arTotal}:${c.billCount}:${c.pendingSettlements}`} />
 
       {/* Late payments of receivables, waiting for the real date + channel */}
       <ClinicaSettlements pending={c.pendingSettlements} stamp={`${c.arTotal}:${c.billCount}:${c.due}`} />

@@ -8,7 +8,7 @@ import { formatLongDate } from "@/lib/time";
 import { humanizeApiError } from "@/lib/error-messages";
 import { useConfirm } from "@/app/components/useConfirm";
 
-type Row = { id: number; income_date: string; channel: string | null; amount: number; note: string | null };
+type Row = { id: number; income_date: string; channel: string | null; amount: number; note: string | null; source?: string };
 type Entity = { channel: string; amount: number; count: number };
 
 export default function ReceivablesClient({
@@ -87,10 +87,16 @@ export default function ReceivablesClient({
                     <td className="py-1.5 px-2 text-slate-700">{r.channel || "—"}</td>
                     <td className="py-1.5 px-2 text-right font-mono text-amber-700">฿{fmtMoney(r.amount)}</td>
                     <td className="py-1.5 px-2 text-right whitespace-nowrap">
-                      <button type="button" onClick={() => settle(r)} disabled={busyId === r.id}
-                        className="text-[11px] px-2 py-1 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
-                        ✓ รับชำระแล้ว
-                      </button>
+                      {r.source === "clinic" ? (
+                        // Clinic receivables are settled by confirming the payment in
+                        // ANALYTICA › คลินิก (that date feeds the re-post).
+                        <span className="text-[10px] text-slate-400" title={r.note ?? undefined}>ยืนยันที่ ANALYTICA › คลินิก</span>
+                      ) : (
+                        <button type="button" onClick={() => settle(r)} disabled={busyId === r.id}
+                          className="text-[11px] px-2 py-1 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
+                          ✓ รับชำระแล้ว
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

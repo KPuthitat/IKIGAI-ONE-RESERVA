@@ -8094,6 +8094,18 @@ function runMigrations(db: Database.Database): void {
   if (!incCols.some((c) => c.name === "is_revenue")) {
     db.exec("ALTER TABLE accounta_income ADD COLUMN is_revenue INTEGER NOT NULL DEFAULT 1");
   }
+  // ref (owner 2026-10-04): traceability key for rows an importer owns
+  // (source='clinic': 'cash:<date>:<channel>', '<bill>#open', '<bill>#s<settlement id>')
+  // so a row can be tied back to its bill. NULL for manual / shift-close rows.
+  if (!incCols.some((c) => c.name === "ref")) {
+    db.exec("ALTER TABLE accounta_income ADD COLUMN ref TEXT");
+  }
+  // Per-branch switch (owner 2026-10-04): a clinic branch whose ACCOUNTA income is
+  // posted from the imported HIS files instead of the shift-close report.
+  const brCols = db.prepare("PRAGMA table_info(branches)").all() as Array<{ name: string }>;
+  if (!brCols.some((c) => c.name === "clinica_autopost")) {
+    db.exec("ALTER TABLE branches ADD COLUMN clinica_autopost INTEGER NOT NULL DEFAULT 0");
+  }
   // One-time fix for loans bulk-imported before these flags existed (owner
   // 2026-06-27/28): financing inflows on these exact channels are never taxable
   // sales, so flip is_vat + is_revenue to 0. Idempotent (no-op once set).

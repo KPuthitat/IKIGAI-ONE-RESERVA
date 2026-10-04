@@ -49,6 +49,8 @@ export default function ClinicaSettlements({ pending, stamp }: { pending: number
         if (j.error === "not_pending") void load();
         return;
       }
+      const ok = await res.json().catch(() => ({})) as { accounta?: { error?: string } };
+      if (ok.accounta?.error) setErr("บันทึกแล้ว แต่ส่งยอดเข้า ACCOUNTA ไม่สำเร็จ — กด \"ส่งใหม่ทั้งหมด\" ในการ์ดส่งยอดเข้า ACCOUNTA");
       setItems((prev) => (prev ?? []).filter((x) => x.id !== it.id));
     } catch { setErr("เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง"); }
     finally { setBusy(null); }
