@@ -25,7 +25,7 @@ function maskAccount(acc: string | null): string {
 export default function PayslipDocument({
   lang, view, audience = "admin"
 }: { lang: Lang; view: PayslipView; audience?: "admin" | "staff" }) {
-  const { period, line, profile, svcSummary, svcRow, payslipBranchName, dayLog, doublePremium } = view;
+  const { period, line, profile, svcSummary, svcRow, payslipBranchName, dayLog, doublePremium, restDayPremium } = view;
   const isAdmin = audience === "admin";
 
   const isPt = line.employment_type === "pt";
@@ -117,6 +117,11 @@ export default function PayslipDocument({
         {line.ot_pay > 0 && <Money label={t(lang, "admin.persona.payroll.col.otPay")} value={line.ot_pay} />}
         {/* ค่าล่วงเวลารวมค่าตอบแทนวันจ่ายสองเท่าแล้ว (owner 2026-09-05) — อธิบายที่มา
             ของส่วนนี้เพื่อให้พนักงานเห็นว่ามาจากวันไหน. */}
+        {restDayPremium > 0 && (
+          <div className="-mt-1 mb-1.5 text-[11px] text-slate-500">
+            รวมค่าทำงานวันหยุดส่วนเพิ่ม ฿{fmtMoney(restDayPremium)} (ตามกฎหมายแรงงาน: ทำงานวันหยุดประจำสัปดาห์ รายเดือนได้เพิ่ม 1 เท่า รายชั่วโมงได้ 2 เท่า, OT วันหยุด 3 เท่า)
+          </div>
+        )}
         {doublePremium > 0 && (
           <div className="-mt-1 mb-1.5 text-[11px] text-slate-500">
             รวมค่าตอบแทนวันจ่ายสองเท่า ฿{fmtMoney(doublePremium)}
