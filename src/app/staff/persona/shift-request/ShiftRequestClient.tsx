@@ -89,6 +89,9 @@ export default function ShiftRequestClient({
             <option value="extra_shift">ขอเพิ่มกะ (ทำงานเพิ่มอีกวัน)</option>
             <option value="swap">ขอสลับวันหยุด (หยุดวันหนึ่ง ทำงานชดเชยอีกวัน)</option>
           </select>
+          {kind === "extra_shift" && (
+            <p className="text-[11px] text-slate-500 mt-1">พนักงานเงินเดือนที่ขอทำงานในวันหยุด ต้องได้รับอนุมัติก่อนมาทำงาน — เมื่ออนุมัติแล้วจะได้ค่าทำงานวันหยุดตามกฎหมายแรงงาน</p>
+          )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
