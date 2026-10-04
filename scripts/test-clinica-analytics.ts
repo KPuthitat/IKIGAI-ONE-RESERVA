@@ -235,6 +235,7 @@ process.env.DATABASE_PATH = TMP;
   ok("weekHours: อาทิตย์เปิดแต่ไม่พัก (ไม่อยู่ใน lunch weekdays)", wk[6].dow === 0 && !wk[6].closed && wk[6].open === "11:00" && wk[6].breakStart === null);
 
   // Top spenders per payer group (owner 2026-10-03).
+  const TOP_TODAY = "2026-10-04";
   {
     const b2 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('clinic-top','TOP')").run().lastInsertRowid);
     const mk = (billNo: string, date: string, hn: string, payer: string, net: number, paid: number, due: number): ClinicaInvoiceParse["bills"][number] =>
@@ -248,16 +249,30 @@ process.env.DATABASE_PATH = TMP;
       mk("BL15", "2026-06-01", "HN-A", "ประกันกลุ่ม บริษัท ข", 700, 700, 0),
       mk("BL16", "2026-09-30", "", "เงินสด", 300, 300, 0)   // no HN → counted in the group, never ranked
     ]));
-    const all = ca.clinicaTopSpenders(b2, { scope: "all", year: 2026 });
+    const all = ca.clinicaTopSpenders(b2, { scope: "all", year: 2026, today: TOP_TODAY });
     ok("top: coverage + totals over everything imported (7 bills, 4 patients)", all.scope === "all" && all.from === "2025-12-01" && all.to === "2026-09-30" && all.bills === 7 && all.patients === 4 && near(all.net, 12000));
     ok("top: groups by net desc — บริษัท ก 5,500 · เงินสด 5,800 first", all.groups[0].group === "เงินสด" && near(all.groups[0].net, 5800) && all.groups[1].group === "ประกันกลุ่ม บริษัท ก" && near(all.groups[1].net, 5500) && near(all.groups[1].due, 4000));
     const cash = all.groups[0];
     ok("top: เงินสด ranks HN-A (3,000 over 2 bills) above HN-B (2,500); blank HN not ranked", cash.top.length === 2 && cash.top[0].hn === "HN-A" && near(cash.top[0].net, 3000) && cash.top[0].bills === 2 && cash.top[0].firstDate === "2025-12-01" && cash.top[0].lastDate === "2026-02-01" && cash.top[1].hn === "HN-B" && cash.patients === 2);
     ok("top: HN-A appears separately under บริษัท ข (per-group ranking)", all.groups.find((g) => g.group === "ประกันกลุ่ม บริษัท ข")?.top[0].hn === "HN-A");
-    const yr = ca.clinicaTopSpenders(b2, { scope: "year", year: 2026 });
+    const yr = ca.clinicaTopSpenders(b2, { scope: "year", year: 2026, today: TOP_TODAY });
     ok("top: this-year scope drops the 2025 bill (HN-A cash falls to 2,000 so HN-B 2,500 leads; coverage from Feb)", yr.from === "2026-02-01" && yr.bills === 6 && yr.groups.find((g) => g.group === "เงินสด")?.top[0].hn === "HN-B" && yr.groups.find((g) => g.group === "เงินสด")?.top[1].net === 2000);
-    ok("top: each ranked patient carries a visit pattern (HN-A cash: 2 visits, last 2026-02-01, same-day merge)", (() => { const a = ca.clinicaTopSpenders(b2, { scope: "year", year: 2026 }).groups.find((g) => g.group === "เงินสด")!.top; const hnB = a.find((t) => t.hn === "HN-B")!.pattern; return !!hnB && hnB.visitsYear === 1 && hnB.lastVisit === "2026-03-01" && hnB.months[2] === 1 && hnB.cadence === "มาครั้งเดียว"; })());
-    ok("top: limit caps the ranking", ca.clinicaTopSpenders(b2, { scope: "all", limit: 1 }).groups[0].top.length === 1);
+    ok("top: each ranked patient carries a visit pattern (HN-A cash: 2 visits, last 2026-02-01, same-day merge)", (() => { const a = ca.clinicaTopSpenders(b2, { scope: "year", year: 2026, today: TOP_TODAY }).groups.find((g) => g.group === "เงินสด")!.top; const hnB = a.find((t) => t.hn === "HN-B")!.pattern; return !!hnB && hnB.visitsYear === 1 && hnB.lastVisit === "2026-03-01" && hnB.months[2] === 1 && hnB.cadence === "มาครั้งเดียว"; })());
+    ok("top: limit caps the ranking", ca.clinicaTopSpenders(b2, { scope: "all", limit: 1, today: TOP_TODAY }).groups[0].top.length === 1);
+    // Lapsed patients (no bill for over 12 months) drop out of the ranking (owner 2026-10-04).
+    {
+      const b3 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('clinic-top-lapse','TOPL')").run().lastInsertRowid);
+      cdb.importInvoice(b3, invParse("2024-01-01", "2026-09-30", [
+        mk("BL20", "2024-06-01", "HN-OLD", "เงินสด", 90000, 90000, 0),    // biggest spender, gone since 2024
+        mk("BL21", "2025-10-03", "HN-JUST-LAPSED", "เงินสด", 50000, 50000, 0),   // one day past 12 months
+        mk("BL22", "2025-10-04", "HN-EDGE", "เงินสด", 40000, 40000, 0),          // exactly 12 months → still shown
+        mk("BL23", "2026-09-01", "HN-ACTIVE", "เงินสด", 1000, 1000, 0)
+      ]));
+      const t = ca.clinicaTopSpenders(b3, { scope: "all", today: TOP_TODAY }).groups[0].top;
+      ok("top: lapsed > 12 months hidden — only HN-EDGE and HN-ACTIVE remain, ranks renumbered", t.length === 2 && t[0].hn === "HN-EDGE" && t[0].rank === 1 && t[1].hn === "HN-ACTIVE" && t[1].rank === 2);
+      ok("top: lapsed patient never takes a slot when the limit is tight (limit 1 → HN-EDGE)", ca.clinicaTopSpenders(b3, { scope: "all", limit: 1, today: TOP_TODAY }).groups[0].top[0].hn === "HN-EDGE");
+      ok("top: a later 'today' pushes HN-EDGE out too", (() => { const x = ca.clinicaTopSpenders(b3, { scope: "all", today: "2026-10-05" }).groups[0].top; return x.length === 1 && x[0].hn === "HN-ACTIVE"; })());
+    }
     ok("top: a branch without bills → empty", ca.clinicaTopSpenders(999).groups.length === 0 && ca.clinicaTopSpenders(999).bills === 0);
   }
 
