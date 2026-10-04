@@ -19,6 +19,8 @@ export type RosterCtx = {
   offDatePositionId: number | null;
 };
 
+type StaffOpt = { id: number; display_name: string; title_prefix: string | null; employment_type: string | null; regularPositionId: number | null };
+
 const KIND_TH: Record<string, string> = { extra_shift: "ขอเพิ่มกะ", swap: "ขอสลับวันหยุด" };
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -28,7 +30,7 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
 };
 
 export default function ShiftRequestsAdminClient({
-  pending, history, positions, shiftCodes, defaultShiftCodeId, rosterCtx
+  pending, history, positions, shiftCodes, defaultShiftCodeId, rosterCtx, staff
 }: {
   pending: Row[];
   history: HistoryRow[];
@@ -36,6 +38,7 @@ export default function ShiftRequestsAdminClient({
   shiftCodes: ShiftCodeOpt[];
   defaultShiftCodeId: number | null;
   rosterCtx: Record<number, RosterCtx>;
+  staff: StaffOpt[];
 }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -63,6 +66,7 @@ export default function ShiftRequestsAdminClient({
 
   return (
     <div className="space-y-6">
+      <OnBehalfCard staff={staff} positions={positions} shiftCodes={shiftCodes} defaultShiftCodeId={defaultShiftCodeId} />
       <div className="space-y-2">
         <h2 className="text-sm font-bold text-slate-700">รออนุมัติ</h2>
         {pending.length === 0 ? (
@@ -319,6 +323,117 @@ function AssignModal({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// Record an extra-shift request FOR an employee, already approved + on the roster
+// (owner 2026-10-04) — e.g. a day worked on a day off that was never requested. A
+// monthly employee then gets the rest-day pay; draft payroll is refreshed.
+function OnBehalfCard({ staff, positions, shiftCodes, defaultShiftCodeId }: {
+  staff: StaffOpt[]; positions: Position[]; shiftCodes: ShiftCodeOpt[]; defaultShiftCodeId: number | null;
+}) {
+  const router = useRouter();
+  const works = shiftCodes.filter((s) => s.kind === "work");
+  const [open, setOpen] = useState(false);
+  const [userId, setUserId] = useState<number | "">("");
+  const [date, setDate] = useState("");
+  const [shiftId, setShiftId] = useState<number | "">(defaultShiftCodeId ?? "");
+  const [posId, setPosId] = useState<number | "">("");
+  const [note, setNote] = useState("");
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const emp = staff.find((s) => s.id === userId);
+  function pickUser(id: number | "") {
+    setUserId(id);
+    const u = staff.find((s) => s.id === id);
+    if (u?.regularPositionId) setPosId(u.regularPositionId);
+  }
+  async function save() {
+    if (userId === "" || !date || shiftId === "" || posId === "") { setMsg({ kind: "err", text: "เลือกพนักงาน วันที่ กะ และตำแหน่งให้ครบ" }); return; }
+    if (note.trim().length < 3) { setMsg({ kind: "err", text: "ใส่เหตุผล เช่น ทำงานวันหยุดตามที่ตกลงไว้ ไม่ได้ส่งคำขอ" }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch(apiUrl("/api/admin/persona/shift-request/on-behalf"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, work_date: date, position_id: posId, shift_code_id: shiftId, pin, note: note.trim() })
+      });
+      const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; ref_no?: string; recomputedPeriods?: number[] };
+      if (!res.ok || !j.ok) {
+        const m = j.error === "bad_pin" ? "PIN ไม่ถูกต้อง" : j.error === "slot_taken" ? "ตำแหน่งนี้มีคนอยู่แล้วในวันนั้น เลือกตำแหน่งอื่น"
+          : j.error === "already_approved" ? "วันนั้นมีคำขอเพิ่มกะที่อนุมัติแล้ว" : j.error === "user_not_in_branch" ? "พนักงานไม่อยู่ในสาขานี้" : "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง";
+        setMsg({ kind: "err", text: m }); return;
+      }
+      setMsg({ kind: "ok", text: `บันทึกแล้ว (${j.ref_no})${(j.recomputedPeriods?.length ?? 0) > 0 ? " · คำนวณรอบเงินเดือนที่ยังเป็นร่างใหม่ให้แล้ว" : ""}` });
+      setUserId(""); setDate(""); setNote(""); setPin("");
+      router.refresh();
+    } catch { setMsg({ kind: "err", text: "เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง" }); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="card space-y-3">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between text-left">
+        <span className="text-sm font-bold text-slate-700">+ บันทึกคำขอเพิ่มกะแทนพนักงาน</span>
+        <span className="text-slate-400 text-sm">{open ? "ซ่อน ▲" : "เปิด ▼"}</span>
+      </button>
+      {open && (
+        <div className="space-y-3">
+          <p className="text-[11px] text-slate-500">
+            ใช้เมื่อพนักงานมาทำงานในวันที่ไม่มีกะ แต่ไม่ได้ส่งคำขอในระบบ — ระบบสร้างคำขอที่อนุมัติแล้ว จัดกะลงตาราง และคำนวณรอบเงินเดือนที่ยังเป็นร่างใหม่ให้
+            (พนักงานเงินเดือนได้ค่าทำงานวันหยุดตามกฎหมาย · ย้อนหลังได้ · ต้องใส่ PIN)
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">พนักงาน</label>
+              <select className="input" value={userId} onChange={(e) => pickUser(e.target.value ? Number(e.target.value) : "")}>
+                <option value="">— เลือก —</option>
+                {staff.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {nameWithPrefix(s.title_prefix, s.display_name)} · {s.employment_type === "pt" ? "พาร์ทไทม์" : s.employment_type === "ft" ? "ประจำ" : "—"}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">วันที่ทำงาน</label>
+              <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">กะ</label>
+              <select className="input" value={shiftId} onChange={(e) => setShiftId(e.target.value ? Number(e.target.value) : "")}>
+                <option value="">— เลือก —</option>
+                {works.map((s) => <option key={s.id} value={s.id}>{s.code}{s.name ? ` (${s.name})` : ""}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">ตำแหน่ง</label>
+              <select className="input" value={posId} onChange={(e) => setPosId(e.target.value ? Number(e.target.value) : "")}>
+                <option value="">— เลือก —</option>
+                {positions.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+              </select>
+            </div>
+          </div>
+          {emp?.employment_type === "pt" && (
+            <p className="text-[11px] text-amber-700">พนักงานพาร์ทไทม์: คิดค่าตอบแทนเป็นกะปกติ ไม่มีส่วนเพิ่มวันหยุด</p>
+          )}
+          <div>
+            <label className="label">เหตุผล (เก็บไว้ในคำขอ)</label>
+            <input className="input" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น ทำงานวันหยุดตามที่ตกลงไว้ แต่ไม่ได้ส่งคำขอในระบบ" />
+          </div>
+          <div className="flex items-end gap-3 flex-wrap">
+            <div>
+              <label className="label">PIN แอดมิน</label>
+              <input type="password" inputMode="numeric" autoComplete="off" className="input w-28 tracking-widest text-center" value={pin} onChange={(e) => setPin(e.target.value)} />
+            </div>
+            <button type="button" onClick={save} disabled={busy} className="btn-primary text-sm disabled:opacity-50">{busy ? "กำลังบันทึก…" : "บันทึกและอนุมัติ"}</button>
+          </div>
+          {msg && <p className={`text-sm ${msg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{msg.text}</p>}
+        </div>
+      )}
     </div>
   );
 }
