@@ -725,8 +725,8 @@ function ClockAction({
         else if (data.error === "already_clocked_in") setErrorMsg("วันนี้ลงเวลาเข้างานไปแล้วครับ");
         else if (data.error === "no_shift_today") setErrorMsg(
           data.supervisorName
-            ? `วันนี้คุณไม่มีกะงาน — กรุณาติดต่อหัวหน้างาน (${data.supervisorName}) ก่อนเข้างานครับ`
-            : "วันนี้คุณไม่มีกะงาน — กรุณาติดต่อหัวหน้างานก่อนเข้างานครับ"
+            ? `วันนี้คุณไม่มีกะงาน — ถ้าต้องการมาทำงาน ให้ส่ง "ขอเพิ่มกะ" และรอการอนุมัติจากหัวหน้างาน (${data.supervisorName}) ก่อนครับ`
+            : "วันนี้คุณไม่มีกะงาน — ถ้าต้องการมาทำงาน ให้ส่ง \"ขอเพิ่มกะ\" และรอการอนุมัติจากหัวหน้างานก่อนครับ"
         );
         else if (data.error === "prior_day_missing_out") {
           // Yesterday's clock-out is missing → take them straight to certify it. The

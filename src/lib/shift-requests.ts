@@ -211,6 +211,14 @@ export function cancelShiftRequest(userId: number, id: number): boolean {
   return true;
 }
 
+/** True when the user has an APPROVED extra-shift / swap request for the date — the
+ *  approval that lets them clock in on a day with no roster shift. */
+export function hasApprovedShiftRequestOn(userId: number, workDate: string): boolean {
+  return !!getDb().prepare(
+    "SELECT 1 FROM shift_change_requests WHERE user_id = ? AND work_date = ? AND status = 'approved' LIMIT 1"
+  ).get(userId, workDate);
+}
+
 export function shiftRequestKindLabel(kind: ShiftRequestKind): string {
   return KIND_TH[kind];
 }

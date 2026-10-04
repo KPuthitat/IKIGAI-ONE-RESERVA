@@ -346,7 +346,7 @@ export function buildLineBreakdown(
     const premiumPay = (regMin / 60) * rateForPay * (restDay ? 1 : mult - 1);
     const otPay = isExec ? 0
       : (ov?.ot_pay != null ? ov.ot_pay
-        : restDay ? (otMin / 60) * rateForPay * REST_DAY_OT_MULT
+        : restDay ? computeOtPay(otMin, rateForPay, settings, REST_DAY_OT_MULT)
         : computeOtPay(otMin, rateForPay, settings, mult));
 
     const hasFieldOv = !!ov && (
