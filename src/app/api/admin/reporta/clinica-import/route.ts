@@ -3,6 +3,7 @@ import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { filenameWindow, parseClinicaFile, type ClinicaFileParse } from "@/lib/clinica-parse";
 import { importInvoice, importOpd, importOutstanding, importReceipt, type ClinicaImportResult } from "@/lib/clinica-db";
+import { autopostClinicaIfEnabled } from "@/lib/clinica-accounta";
 
 // CLINICA import — a reporta.manage user uploads the AT HOME CLINIC HIS exports
 // (Invoice, Receipt, OPD reports, plus the outstanding-only Invoice snapshot).
@@ -71,5 +72,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "save_failed", message: `บันทึกไม่สำเร็จ: ${(e as Error).message}` }, { status: 422 });
   }
 
-  return NextResponse.json({ ok: true, imported: results });
+  // Branch switched to "post to ACCOUNTA from the files": rebuild the branch's rows.
+  // The whole history, not just the file's span — a receipt or outstanding snapshot
+  // also changes bills dated before its own range (it is cheap: a few thousand rows).
+  // A failure here is reported (the import UI shows it) but never undoes the import.
+  const accounta = results.some((r) => r.kind !== "opd")
+    ? autopostClinicaIfEnabled(branchId, user.id)
+    : { posted: null };
+
+  return NextResponse.json({ ok: true, imported: results, accounta });
 }

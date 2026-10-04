@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import {
-  listOutstandingReceivables, receivablesByEntity, receivablesTotal, settleReceivable
+  listOutstandingReceivables, receivablesByEntity, receivablesTotal, settleReceivable, isClinicReceivable
 } from "@/lib/accounta-db";
 
 // ลูกหนี้ค้างชำระ (owner 2026-06-22) — per active branch.
@@ -41,6 +41,9 @@ export async function POST(req: Request) {
   const date = parsed.data.settled_date ?? bkkToday();
   if (date > bkkToday()) {
     return NextResponse.json({ error: "future_date", message: "วันรับชำระเป็นอนาคตไม่ได้" }, { status: 400 });
+  }
+  if (isClinicReceivable(parsed.data.id, branchId)) {
+    return NextResponse.json({ error: "clinic_row", message: "ลูกหนี้ของคลินิก ยืนยันการรับชำระที่ ANALYTICA › คลินิก (ได้รับชำระแล้ว · รอยืนยัน)" }, { status: 409 });
   }
   const ok = settleReceivable(parsed.data.id, branchId, date);
   if (!ok) return NextResponse.json({ error: "not_found_or_settled" }, { status: 409 });

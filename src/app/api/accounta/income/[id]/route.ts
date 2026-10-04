@@ -31,6 +31,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (existing.source === "shift_close") {
     return NextResponse.json({ error: "auto_row_readonly", message: "ยอดนี้ดึงจากรายงานปิดกะอัตโนมัติ แก้ไขได้ที่ยอดขายรายวัน" }, { status: 409 });
   }
+  // Clinic rows are rebuilt from the imported HIS files on every import.
+  if (existing.source === "clinic") {
+    return NextResponse.json({ error: "auto_row_readonly", message: "ยอดนี้มาจากไฟล์ของคลินิก (ANALYTICA › คลินิก) แก้ที่ต้นทางแล้วนำเข้าใหม่" }, { status: 409 });
+  }
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
@@ -65,6 +69,9 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
         { status: 403 }
       );
     }
+  }
+  if (existing.source === "clinic") {
+    return NextResponse.json({ error: "auto_row_readonly", message: "ยอดนี้มาจากไฟล์ของคลินิก (ANALYTICA › คลินิก) ลบไม่ได้ — ปิดการส่งยอดอัตโนมัติถ้าไม่ต้องการ" }, { status: 409 });
   }
   const ok = deleteIncome(id);
   if (!ok) return NextResponse.json({ error: "not_found" }, { status: 404 });

@@ -43,13 +43,18 @@ export default function ClinicaImportClient({ onImported }: { onImported?: (targ
     const imported: Result[] = [];
     const failed: File[] = [];
     let firstErr = "";
+    let accountaErr = "";
     for (const f of files) {
       try {
         const fd = new FormData();
         fd.append("file", f);
         const res = await fetch(apiUrl("/api/admin/reporta/clinica-import"), { method: "POST", body: fd });
         const j = await res.json().catch(() => ({}));
-        if (res.ok && j.ok) { imported.push(...((j.imported ?? []) as Result[])); continue; }
+        if (res.ok && j.ok) {
+          imported.push(...((j.imported ?? []) as Result[]));
+          if (j.accounta?.error) accountaErr = String(j.accounta.error);
+          continue;
+        }
         failed.push(f);
         if (!firstErr) {
           firstErr = j.message ?? (res.status === 413 ? `${f.name}: ไฟล์ใหญ่เกินที่เซิร์ฟเวอร์รับได้ (ขีดจำกัด nginx)`
@@ -72,7 +77,9 @@ export default function ClinicaImportClient({ onImported }: { onImported?: (targ
       // A paid receivable is the one thing a person must still act on, so it is the
       // only extra the message carries (otherwise just "นำเข้าสำเร็จ", like the POS import).
       const found = imported.reduce((n, r) => n + (r.settlements ?? 0), 0);
-      setMsg({ kind: "ok", text: found > 0 ? `นำเข้าสำเร็จ · พบบิลค้างที่ได้รับชำระแล้ว ${found} บิล รอยืนยันวันที่รับเงิน` : "นำเข้าสำเร็จ" });
+      if (accountaErr) {
+        setMsg({ kind: "warn", text: `นำเข้าสำเร็จ แต่ส่งยอดเข้า ACCOUNTA ไม่สำเร็จ (${accountaErr}) — กด "ส่งใหม่ทั้งหมด" ในการ์ดส่งยอดเข้า ACCOUNTA` });
+      } else setMsg({ kind: "ok", text: found > 0 ? `นำเข้าสำเร็จ · พบบิลค้างที่ได้รับชำระแล้ว ${found} บิล รอยืนยันวันที่รับเงิน` : "นำเข้าสำเร็จ" });
     } else {
       setMsg({ kind: "err", text: imported.length > 0 ? `นำเข้าสำเร็จ ${imported.length} ไฟล์ · ไม่สำเร็จ ${failed.length} ไฟล์ — ${firstErr}` : firstErr });
     }

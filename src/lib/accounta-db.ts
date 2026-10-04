@@ -361,6 +361,9 @@ export function replaceShiftCloseIncome(
   rows: Array<{ channel: string | null; amount: number; isOutstanding?: boolean }>
 ): void {
   const db = getDb();
+  // A day the clinic HIS files already cover (source='clinic') is owned by that
+  // import — a shift-close mirror on top would double the sales (owner 2026-10-04).
+  if (db.prepare("SELECT 1 FROM accounta_income WHERE branch_id = ? AND income_date = ? AND source = 'clinic' LIMIT 1").get(branchId, date)) return;
   const company = db.prepare("SELECT company_id FROM branches WHERE id = ?")
     .get(branchId) as { company_id: number | null } | undefined;
   const companyId = company?.company_id ?? null;
@@ -454,13 +457,13 @@ export function incomeSummary(month: string, branchId?: number | null, companyId
 // owed). Outstanding balance = is_outstanding=1 AND settled_date IS NULL.
 
 export type ReceivableRow = {
-  id: number; income_date: string; channel: string | null; amount: number; note: string | null;
+  id: number; income_date: string; channel: string | null; amount: number; note: string | null; source: string;
 };
 
 /** Open receivables for a branch (oldest first). */
 export function listOutstandingReceivables(branchId: number): ReceivableRow[] {
   return getDb().prepare(
-    `SELECT id, income_date, channel, amount, note FROM accounta_income
+    `SELECT id, income_date, channel, amount, note, source FROM accounta_income
       WHERE branch_id = ? AND is_outstanding = 1 AND settled_date IS NULL
       ORDER BY income_date ASC, id ASC`
   ).all(branchId) as ReceivableRow[];
@@ -485,11 +488,18 @@ export function receivablesTotal(branchId: number): number {
   return round2(r.t);
 }
 
+/** True when the open receivable belongs to the clinic import (settled in ANALYTICA, not here). */
+export function isClinicReceivable(id: number, branchId: number): boolean {
+  return !!getDb().prepare("SELECT 1 FROM accounta_income WHERE id = ? AND branch_id = ? AND source = 'clinic'").get(id, branchId);
+}
+
 /** Mark a receivable collected (รับชำระแล้ว) — records the cash-in date.
  *  is_outstanding stays as the credit-sale marker so accrual history is intact. */
 export function settleReceivable(id: number, branchId: number, settledDate: string): boolean {
   return getDb().prepare(
-    "UPDATE accounta_income SET settled_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND branch_id = ? AND is_outstanding = 1 AND settled_date IS NULL"
+    // source='clinic' rows are settled by confirming the payment in ANALYTICA's clinic
+    // section (the confirmed date feeds the re-post) — never from here.
+    "UPDATE accounta_income SET settled_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND branch_id = ? AND is_outstanding = 1 AND settled_date IS NULL AND source <> 'clinic'"
   ).run(settledDate, id, branchId).changes > 0;
 }
 
