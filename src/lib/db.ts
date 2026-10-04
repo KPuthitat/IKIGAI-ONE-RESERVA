@@ -7604,6 +7604,53 @@ function runMigrations(db: Database.Database): void {
       UNIQUE (branch_id, visit_no, dx_code)
     );
     CREATE INDEX IF NOT EXISTS idx_clinica_visits_date ON clinica_visits(branch_id, visit_date);
+
+    -- Receipt Report (owner 2026-10-04): how each bill was paid (cash / bank /
+    -- receivable), one row per receipt payment line. Range-replace by receipt date,
+    -- like invoices. Receipt dates can be back-dated to the service day, so these
+    -- rows say WHAT was paid and through which channel — not when late money arrived.
+    CREATE TABLE IF NOT EXISTS clinica_receipts (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id     INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      receipt_no    TEXT NOT NULL,
+      installment   INTEGER NOT NULL DEFAULT 1,
+      bill_no       TEXT NOT NULL DEFAULT '',   -- เอกสารอ้างอิง (BL invoice this receipt settles)
+      receipt_date  TEXT NOT NULL DEFAULT '',
+      receipt_time  TEXT,
+      hn            TEXT,
+      payer_group   TEXT,
+      channel       TEXT NOT NULL DEFAULT '',   -- ช่องทางชำระ as printed, e.g. 'เงินสด (เงินสด)'
+      paid          REAL NOT NULL DEFAULT 0,
+      fee           REAL NOT NULL DEFAULT 0,
+      outstanding   REAL NOT NULL DEFAULT 0,    -- > 0 when the line books a receivable (insurer share)
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, receipt_no, installment)
+    );
+    CREATE INDEX IF NOT EXISTS idx_clinica_receipts_date ON clinica_receipts(branch_id, receipt_date);
+    CREATE INDEX IF NOT EXISTS idx_clinica_receipts_bill ON clinica_receipts(branch_id, bill_no);
+
+    -- Late payments of receivables, detected when an import shows a bill's
+    -- outstanding amount dropped (or the bill left the outstanding report).
+    -- settled_date defaults to the import day and is confirmed/edited by a person;
+    -- only confirmed rows feed cash-in downstream.
+    CREATE TABLE IF NOT EXISTS clinica_settlements (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id     INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      bill_no       TEXT NOT NULL,
+      bill_date     TEXT NOT NULL DEFAULT '',
+      payer_group   TEXT,
+      amount        REAL NOT NULL,
+      detected_on   TEXT NOT NULL,              -- ISO day the import noticed it
+      settled_date  TEXT NOT NULL,              -- ISO day the money arrived (editable)
+      channel       TEXT,                       -- where it landed (set on confirm)
+      status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','dismissed')),
+      source        TEXT NOT NULL DEFAULT 'invoice',
+      confirmed_by  INTEGER REFERENCES users(id),
+      confirmed_at  TEXT,
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_clinica_settle_branch ON clinica_settlements(branch_id, status, settled_date);
+    CREATE INDEX IF NOT EXISTS idx_clinica_settle_bill ON clinica_settlements(branch_id, bill_no);
   `);
 
   // Idempotent add for DBs that created insigna_review_requests before the

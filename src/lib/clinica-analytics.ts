@@ -6,6 +6,7 @@
 
 import { getDb } from "./db";
 import { clinicaPaidPct } from "./clinica-shared";
+import { clinicaChannelMix, pendingSettlementCount, type ChannelMixRow } from "./clinica-db";
 import { mondayOf, roundLabel, thaiDate } from "./revshare";
 import { eventNotesForDay, eventNotesForRange, type EventNoteDay } from "./event-notes";
 import { visitPattern, monthsCovered, type VisitPattern } from "./visit-pattern";
@@ -34,7 +35,7 @@ export type NamedNet = { name: string; net: number; qty: number };
 export type NamedCount = { name: string; count: number };
 export type HourCount = { hour: number; count: number };
 export type DailyPoint = { date: string; net: number; count: number };
-export type ClinicaDay = { date: string; net: number; bills: number; patients: number; hasInvoice: boolean; hasOpd: boolean };
+export type ClinicaDay = { date: string; net: number; bills: number; patients: number; hasInvoice: boolean; hasOpd: boolean; hasReceipt: boolean };
 export type AgeBand = { label: string; count: number };
 export type Demographics = { male: number; female: number; other: number; ageBands: AgeBand[]; withAge: number };
 export type ClinicaTarget = { target: number; pct: number; projected: number; projectedPct: number; onTrack: boolean; isCurrent: boolean };
@@ -50,7 +51,10 @@ export type ClinicaMonth = {
   // patient mix (new vs returning), daily trend, demographics, target
   newPatients: number; returningPatients: number;
   daily: DailyPoint[];
-  monthDays: ClinicaDay[];          // per-day rows for the in-month file list (Invoice/OPD completeness)
+  monthDays: ClinicaDay[];          // per-day rows for the in-month file list (Invoice/Receipt/OPD completeness)
+  receiptsFrom: string | null;      // first day any Receipt Report covers (the per-day receipt chip applies from here on)
+  channelMix: ChannelMixRow[];      // receipts dated in the month, by payment channel (cash / bank / receivable)
+  pendingSettlements: number;       // paid receivables awaiting a confirmed date + channel
   demographics: Demographics;
   target: ClinicaTarget | null;
   // payer mix (this month)
@@ -348,11 +352,20 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
        WHERE branch_id=? AND visit_date BETWEEN ? AND ? AND visit_date<>''`
   ).all(branchId, start, end) as Array<{ d: string }>).map((r) => r.d);
   const dayMap = new Map<string, ClinicaDay>();
-  for (const r of dayAgg) dayMap.set(r.date, { date: r.date, net: r.net, bills: r.bills, patients: r.pts, hasInvoice: true, hasOpd: false });
+  for (const r of dayAgg) dayMap.set(r.date, { date: r.date, net: r.net, bills: r.bills, patients: r.pts, hasInvoice: true, hasOpd: false, hasReceipt: false });
   for (const d of opdDates) {
-    const e = dayMap.get(d) ?? { date: d, net: 0, bills: 0, patients: 0, hasInvoice: false, hasOpd: false };
+    const e = dayMap.get(d) ?? { date: d, net: 0, bills: 0, patients: 0, hasInvoice: false, hasOpd: false, hasReceipt: false };
     e.hasOpd = true; dayMap.set(d, e);
   }
+  const receiptDates = (db.prepare(
+    `SELECT DISTINCT receipt_date d FROM clinica_receipts
+       WHERE branch_id=? AND receipt_date BETWEEN ? AND ? AND receipt_date<>''`
+  ).all(branchId, start, end) as Array<{ d: string }>).map((r) => r.d);
+  for (const d of receiptDates) {
+    const e = dayMap.get(d) ?? { date: d, net: 0, bills: 0, patients: 0, hasInvoice: false, hasOpd: false, hasReceipt: false };
+    e.hasReceipt = true; dayMap.set(d, e);
+  }
+  const receiptsFrom = (db.prepare("SELECT MIN(NULLIF(receipt_date,'')) d FROM clinica_receipts WHERE branch_id=?").get(branchId) as { d: string | null }).d;
   const monthDays = [...dayMap.values()].sort((a, b) => a.date.localeCompare(b.date));
 
   // Demographics from OPD visits — one row per patient (hn) so a patient counts once.
@@ -373,7 +386,9 @@ export function clinicaMonth(branchId: number, year: number, month: number, asOf
     paid: round2(kpi.paid), due: round2(kpi.due),
     prevBillNet, billNetMomPct: relPct(kpi.net, prevBillNet),
     lastYearBillNet, billNetYoyPct: relPct(kpi.net, lastYearBillNet),
-    newPatients, returningPatients, daily, monthDays, demographics, target,
+    newPatients, returningPatients, daily, monthDays, receiptsFrom,
+    channelMix: clinicaChannelMix(branchId, start, end), pendingSettlements: pendingSettlementCount(branchId),
+    demographics, target,
     payers, arTotal, arByPayer, arAging: agingRounded,
     categories, topItems,
     visitCount: visits.v, visitPatientCount: visits.pts,
