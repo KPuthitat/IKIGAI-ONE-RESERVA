@@ -1,7 +1,7 @@
 // Work on a weekly rest day — Thai labour law (owner 2026-10-04). A monthly (FT)
 // employee asks first (ขอเพิ่มกะ), the admin approves + assigns the shift (e.g. FD-11
 // 11:00–20:00 with a 1h lunch break); each regular hour then earns an EXTRA 1× hourly
-// wage and approved OT beyond the shift pays 3×. Part-timers' extra shifts, swaps and
+// wage and approved OT beyond the shift pays 3× the COMPANY OT rate (100/h → 300/h). Part-timers' extra shifts, swaps and
 // salaried execs get nothing extra. Run:  node --import tsx scripts/test-rest-day-pay.ts
 
 import fs from "node:fs";
@@ -68,7 +68,7 @@ const base = {
     eq("base stays the salary", L.base_pay, 12000);
     eq("regular hours = the shift's 8h (early arrival not counted)", L.regular_minutes, 480);
     eq("OT = exactly 1h (20:00 → 21:00)", L.ot_minutes, 60);
-    eq("ค่าล่วงเวลา = extra 1× 8h×50 = 400 + OT 1h × 50 × 3 = 150 → 550", L.ot_pay, 550);
+    eq("ค่าล่วงเวลา = extra 1× 8h×50 = 400 + OT 1h at 3 × the company 100/h = 300 → 700", L.ot_pay, 700);
   }
 
   console.log("\nthe same hours WITHOUT an approved extra-shift request (company OT rate applies):");
@@ -83,12 +83,14 @@ const base = {
     eq("extra 1× = 8h × 125 = 1,000", L.ot_pay, 1000);
   }
 
-  console.log("\nthe law's 3× OT vs the company's flat rate (2h OT):");
+  console.log("\nOT on a rest day = 3× the company OT rule (2h OT):");
   {
     const until22 = new Map([[REST, "22:00"]]);
     const L = computeLineForEmployee({ ...base, employee: ft(30000), shifts: [shiftOn(REST, "11:00", "22:00")], approvedOtByDate: until22 });
     eq("OT minutes 120", L.ot_minutes, 120);
-    eq("ค่าล่วงเวลา = 1,000 + 2h × 125 × 3 = 1,750", L.ot_pay, 1750);
+    eq("ค่าล่วงเวลา = 1,000 + 2h × 100 × 3 = 600 → 1,600 (company rate, not the salary's hourly)", L.ot_pay, 1600);
+    const legal = computeLineForEmployee({ ...base, settings: { ...SETTINGS, ot_mode: "legal" }, employee: ft(30000), shifts: [shiftOn(REST, "11:00", "22:00")], approvedOtByDate: until22 });
+    eq("legal OT mode: 1.5 × hourly × 3 × 2h = 1,125 → 2,125", legal.ot_pay, 1000 + 1125);
   }
 
   console.log("\nguards:");
@@ -135,12 +137,24 @@ const base = {
   const fd = f.days.find((d) => d.date === REST)!, pd = p.days.find((d) => d.date === REST)!;
   okv("FT: the day is flagged rest-day work", fd.pairs[0].restDay === true);
   eq("FT: regular 8h, OT 1h", fd.effectiveMinutes + fd.otMinutes, 540);
-  eq("FT: OT pay = 1h × 50 × 3 = 150", fd.otPay, 150);
+  eq("FT: OT pay = 1h × 100 × 3 = 300", fd.otPay, 300);
   eq("FT: premium (extra 1×) = 400", fd.premiumPay, 400);
-  eq("FT: day total = 550", fd.pay, 550);
+  eq("FT: day total = 400 + 300 = 700", fd.pay, 700);
   eq("FT: restDayPremium total = 400", f.restDayPremium, 400);
   okv("PT: not flagged (an extra shift is a normal shift)", pd.pairs[0].restDay === false);
   eq("PT: no rest-day premium", p.restDayPremium, 0);
+
+  // Clock-in gate: only an APPROVED shift request opens the clock on a day with no roster shift.
+  const { hasApprovedShiftRequestOn } = await import("../src/lib/shift-requests");
+  const gateU = mk("gate", "ft", "monthly_salary", 12000);
+  const d2 = "2026-09-20";
+  okv("no request → clock stays closed", hasApprovedShiftRequestOn(gateU, d2) === false);
+  db.prepare("INSERT INTO shift_change_requests (user_id,branch_id,kind,work_date,status) VALUES (?,?, 'extra_shift', ?, 'pending')").run(gateU, br, d2);
+  okv("a PENDING request does not open the clock", hasApprovedShiftRequestOn(gateU, d2) === false);
+  db.prepare("INSERT INTO ot_requests (user_id,branch_id,work_date,requested_until,status) VALUES (?,?,?,?, 'pending')").run(gateU, br, d2, "21:00");
+  okv("an OT request alone does not open it either", hasApprovedShiftRequestOn(gateU, d2) === false);
+  db.prepare("UPDATE shift_change_requests SET status='approved' WHERE user_id=? AND work_date=?").run(gateU, d2);
+  okv("an APPROVED request opens the clock for that date only", hasApprovedShiftRequestOn(gateU, d2) === true && hasApprovedShiftRequestOn(gateU, "2026-09-21") === false);
 
   console.log(`\n${fail === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${pass} passed, ${fail} failed`);
   cleanup();

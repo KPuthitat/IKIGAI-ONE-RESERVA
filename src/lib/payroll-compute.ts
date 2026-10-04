@@ -906,8 +906,8 @@ export function computeOtPay(
 // 1-hour lunch break), then, per Thai labour law:
 //   • each regular hour of that shift earns an EXTRA 1× hourly wage (the salary already
 //     covers the rest day — ม.62);
-//   • approved OT beyond the shift (e.g. staying until 21:00) pays 3× the hourly wage
-//     (ม.63), replacing the company's flat 25 baht / 15 min.
+//   • approved OT beyond the shift (e.g. staying until 21:00) pays 3× the COMPANY OT
+//     rule (ม.63 minimum 3×) — flat 25 baht / 15 min × 3 = 300 / hour (owner 2026-10-04).
 // A part-timer's extra shift is just a normal shift (no premium), a swap of days off is
 // not extra work, and salaried execs (no time clock) are excluded. The marker is the
 // approved extra-shift request itself, so a stray punch can never become premium pay.
@@ -1379,9 +1379,9 @@ export function computeLineForEmployee(args: {
       // double-pay day gives 2× OT and one extra day-equivalent of base.
       // Salaried execs (track_attendance=0) get no OT (owner 2026-07-12).
       if (isRestDay) {
-        // Approved rest-day work (salary already covers the day): extra 1× per regular hour + 3× OT.
+        // Approved rest-day work (salary already covers the day): extra 1× per regular hour + OT at 3× the company OT rate.
         restDayPremium += (dayRegular / 60) * ftHourlyEquivalent;
-        ftOtPay += ov?.ot_pay != null ? ov.ot_pay : (dayOt / 60) * ftHourlyEquivalent * REST_DAY_OT_MULT;
+        ftOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ftHourlyEquivalent, settings, REST_DAY_OT_MULT);
       } else {
         ftOtPay += ov?.ot_pay != null ? ov.ot_pay : computeOtPay(dayOt, ftHourlyEquivalent, settings, isDouble ? 2 : 1);
       }

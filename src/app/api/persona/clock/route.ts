@@ -20,6 +20,7 @@ import { nowBkkMinutes } from "@/lib/time";
 import { svcWorkedMinutesForUserDate, FOOD_CLAWBACK_MIN_MINUTES } from "@/lib/service-charge";
 import { earnOnClockIn as earnMealpassOnClockIn, grantDrinkCoupon as grantMealpassDrinkCoupon } from "@/lib/mealpass";
 import { hasApprovedEarlyLeave } from "@/lib/early-leave";
+import { hasApprovedShiftRequestOn } from "@/lib/shift-requests";
 
 const Body = z.object({
   pin: z.string().regex(/^\d{4}$/),
@@ -337,14 +338,13 @@ export async function POST(req: Request) {
   // Only gates a brand-new clock-in — clock-out and the 5-min self-correction
   // (existing != null) pass through so someone already at work can finish.
   if (action === "in" && !existing) {
-    // Called in on a day off / holiday (owner 2026-08-03): if the staff filed an
-    // OT request for today that isn't rejected, let them clock in even without a
-    // rostered work shift. Pay for the day is still gated on the admin APPROVING
-    // that OT request; geofence/QR still apply, so this isn't a backdoor.
-    const holidayOt = db.prepare(
-      `SELECT 1 FROM ot_requests WHERE user_id = ? AND work_date = ? AND status != 'rejected' LIMIT 1`
-    ).get(user.id, todayBkk);
-    if (!holidayOt && !userHasWorkShiftOn(user.id, clockBranchId, todayBkk)) {
+    // Working a day off / holiday (owner 2026-10-04): the person must have been
+    // APPROVED first — an approved shift request (ขอเพิ่มกะ / สลับวันหยุด) for today.
+    // Approving it normally also puts the shift on the roster; this covers an
+    // approval recorded without the roster being touched. A pending (or rejected)
+    // request, or just an OT request, no longer opens the clock.
+    const approvedToday = hasApprovedShiftRequestOn(user.id, todayBkk);
+    if (!approvedToday && !userHasWorkShiftOn(user.id, clockBranchId, todayBkk)) {
       const sup = db.prepare(`
         SELECT m.display_name AS name
         FROM users u JOIN users m ON m.id = u.reports_to_user_id
