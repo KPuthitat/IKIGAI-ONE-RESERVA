@@ -6,6 +6,7 @@ import { computePayrollPeriod, VISIBLE_PAYROLL_LINE_FILTER } from "@/lib/payroll
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postPayrollToAccounta, removePayrollFromAccounta } from "@/lib/accounta-db";
 import { notifyPayrollPeriodPaid } from "@/lib/payout-notify";
+import { listPendingOtForPeriod } from "@/lib/payroll-pending-ot";
 
 // PATCH /api/admin/persona/payroll/periods/[id] — recompute, finalize, mark paid, unpay, update notes
 // DELETE /api/admin/persona/payroll/periods/[id] — delete (only if draft)
@@ -16,7 +17,8 @@ const PatchBody = z.object({
   pay_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   paid_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),  // backdated paid date
   pin: z.string().optional(),                                    // for finalize + unpay
-  reason: z.string().max(500).optional()                         // for unpay
+  reason: z.string().max(500).optional(),                        // for unpay
+  ack_pending_ot: z.boolean().optional()                         // mark_paid: admin saw the pending-OT warning
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -129,6 +131,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // a superadmin unlocks via PIN.
     if (period.status !== "finalized") {
       return NextResponse.json({ error: "must_be_finalized_to_pay" }, { status: 400 });
+    }
+    // OT still waiting for a decision would be left out of the paid amount.
+    // Soft stop: the admin must acknowledge it (the confirm dialog lists them).
+    const pendingOt = listPendingOtForPeriod(db, id);
+    if (pendingOt.length > 0 && !d.ack_pending_ot) {
+      return NextResponse.json(
+        {
+          error: "pending_ot",
+          pending: pendingOt,
+          message: `ยังมี OT ค้างรออนุมัติ ${pendingOt.length} รายการ — ถ้าจ่ายตอนนี้ OT เหล่านี้จะไม่ถูกรวมในยอดที่จ่าย`
+        },
+        { status: 409 }
+      );
     }
     // Allow backdating: admin may specify paid_at to record historical
     // payments. Default = now (UTC ISO).

@@ -6,6 +6,7 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { VISIBLE_PAYROLL_LINE_FILTER } from "@/lib/payroll-compute";
+import { listPendingOtForPeriod } from "@/lib/payroll-pending-ot";
 import PeriodDetailClient, { type PeriodDetail, type PayrollLineRow } from "./PeriodDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -222,6 +223,8 @@ export default function PeriodDetailPage({
        AND o.user_id IN (SELECT user_id FROM payroll_lines WHERE period_id = ?)
   `).get(period.computed_at, period.period_start, period.period_end, id) as { n: number }).n : 0;
 
+  const pendingOt = period.status === "paid" ? [] : listPendingOtForPeriod(db, id);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
@@ -249,6 +252,7 @@ export default function PeriodDetailPage({
         userPinSet={pinSet}
         staleSnapshotCount={staleCount}
         otApprovedAfterCompute={otApprovedAfterCompute}
+        pendingOt={pendingOt}
       />
     </div>
   );

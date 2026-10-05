@@ -133,7 +133,7 @@ export type UnlockEntry = {
 
 export default function PeriodDetailClient({
   lang, period, lines, addableStaff, missingStaff, unlockHistory, userPinSet, staleSnapshotCount,
-  otApprovedAfterCompute = 0
+  otApprovedAfterCompute = 0, pendingOt = []
 }: {
   lang: Lang;
   period: PeriodDetail;
@@ -144,6 +144,9 @@ export default function PeriodDetailClient({
   userPinSet: boolean;
   staleSnapshotCount: number;
   otApprovedAfterCompute?: number;
+  // OT requests in this round still waiting for approval — they are left out of
+  // the paid amount, so warn before closing/paying (owner 2026-10-05).
+  pendingOt?: Array<{ user_id: number; name: string; work_date: string; kind: "late" | "early" | "both" }>;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -183,6 +186,26 @@ export default function PeriodDetailClient({
     </p>
   ) : null;
 
+  const pendingOtWarn = pendingOt.length > 0 ? (
+    <div className="text-xs bg-rose-50 border border-rose-300 text-rose-900 rounded-lg px-3 py-2 space-y-1">
+      <p className="font-semibold">
+        ⚠ มี OT ค้างรออนุมัติ {pendingOt.length} รายการ — ถ้าจ่ายตอนนี้ OT เหล่านี้จะ<b>ไม่ถูกรวม</b>ในยอดที่จ่าย
+      </p>
+      <ul className="list-disc pl-5">
+        {pendingOt.slice(0, 8).map((o) => (
+          <li key={`${o.user_id}-${o.work_date}`}>
+            {o.name} · {formatBkkDate(o.work_date, lang)}{o.kind === "early" ? " (เข้าก่อนเวลา)" : o.kind === "both" ? " (เข้าก่อน+ออกหลังเวลา)" : ""}
+          </li>
+        ))}
+        {pendingOt.length > 8 && <li>และอีก {pendingOt.length - 8} รายการ</li>}
+      </ul>
+      <p>
+        <Link href="/admin/persona/ot-approvals" className="underline font-medium">ไปหน้าอนุมัติ OT →</Link>
+        {" "}อนุมัติ/ปฏิเสธให้เสร็จ แล้วกด “คำนวณใหม่” ก่อนจ่าย
+      </p>
+    </div>
+  ) : null;
+
   async function performAction(
     action: "recompute" | "finalize" | "unfinalize" | "mark_paid" | "repost_accounta" | "post_accounta" | "unpost_accounta",
     pin?: string
@@ -191,7 +214,7 @@ export default function PeriodDetailClient({
     setMsg(null);
     try {
       const body: Record<string, unknown> = { action };
-      if (action === "mark_paid") body.paid_at = paidAt;
+      if (action === "mark_paid") { body.paid_at = paidAt; if (pendingOt.length > 0) body.ack_pending_ot = true; }
       if (action === "finalize" && pin) body.pin = pin;
       const res = await fetch(apiUrl(`/api/admin/persona/payroll/periods/${period.id}`), {
         method: "PATCH",
@@ -598,6 +621,8 @@ export default function PeriodDetailClient({
           value={fmtMoney(totals.net)} accent="emerald" />
       </div>
 
+      {(isDraft || isFinalized) && pendingOtWarn}
+
       {/* Stale-snapshot banner — admin changed employee data after compute */}
       {isDraft && staleSnapshotCount > 0 && (
         <div className="card border-l-4 border-amber-400 bg-amber-50/60 flex items-start justify-between gap-3 flex-wrap">
@@ -927,7 +952,7 @@ export default function PeriodDetailClient({
       {pinFinalizeOpen && (
         <PinPromptModal
           title={t(lang, "admin.persona.payroll.confirmFinalizeTitle")}
-          description={<div className="space-y-2">{recomputeWarn}<p className="text-xs text-slate-600">{t(lang, "admin.persona.payroll.confirmFinalize")}</p></div>}
+          description={<div className="space-y-2">{pendingOtWarn}{recomputeWarn}<p className="text-xs text-slate-600">{t(lang, "admin.persona.payroll.confirmFinalize")}</p></div>}
           submitLabel={t(lang, "admin.persona.payroll.action.finalize")}
           onClose={() => setPinFinalizeOpen(false)}
           onSubmit={async (pin) => {
@@ -953,6 +978,7 @@ export default function PeriodDetailClient({
         title={t(lang, "admin.persona.payroll.confirmPayTitle")}
         body={
           <div className="space-y-3">
+            {pendingOtWarn}
             {recomputeWarn}
             <p>{t(lang, "admin.persona.payroll.confirmPay")}</p>
             <div>
