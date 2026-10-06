@@ -5,6 +5,7 @@
 // (procedure groups later). Everything is branch-scoped.
 
 import { getDb } from "./db";
+import { payrollStatusEligibleSql } from "./payroll-eligibility";
 import type { DfParsedLine } from "./df-invoice-parse";
 
 function round2(n: number): number {
@@ -343,8 +344,8 @@ export function rosterHoursByDoctor(branchId: number, start: string, end: string
        AND ra.user_id IN (
          SELECT id FROM users
          WHERE (clinical_role = 'doctor' OR df_started_at IS NOT NULL)
-           AND status NOT IN ('disabled','resigned','terminated'))`
-  ).all(branchId, start, end) as Array<{ d: string; uid: number; st: string; et: string; bs: string | null; be: string | null }>;
+           AND ${payrollStatusEligibleSql("users", "?")})`
+  ).all(branchId, start, end, start) as Array<{ d: string; uid: number; st: string; et: string; bs: string | null; be: string | null }>;
   // Collect the max shift hours per (uid, date) first, then total per uid.
   const perDay = new Map<number, Map<string, number>>();
   for (const r of rows) {
@@ -396,8 +397,8 @@ function doctorsByDate(branchId: number, start: string, end: string): Map<string
        AND ra.user_id IN (
          SELECT id FROM users
          WHERE (clinical_role = 'doctor' OR df_started_at IS NOT NULL)
-           AND status NOT IN ('disabled','resigned','terminated'))`
-  ).all(branchId, start, end) as Array<{ d: string; uid: number }>;
+           AND ${payrollStatusEligibleSql("users", "?")})`
+  ).all(branchId, start, end, start) as Array<{ d: string; uid: number }>;
   const m = new Map<string, number[]>();
   for (const r of rows) {
     const a = m.get(r.d) ?? [];
