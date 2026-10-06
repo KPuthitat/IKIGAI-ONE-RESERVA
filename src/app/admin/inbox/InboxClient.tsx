@@ -70,6 +70,37 @@ export default function InboxClient({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  // Branch filter (owner 2026-10-06): a viewer who can see several branches can
+  // narrow the list to one. null = every branch. Remembered per browser.
+  const [branchFilter, setBranchFilter] = useState<number | "none" | null>(null);
+  useEffect(() => {
+    // Read after mount so the server-rendered HTML and the first client render match.
+    try {
+      const v = window.localStorage.getItem("inboxBranchFilter");
+      setBranchFilter(v === "none" ? "none" : v && /^\d+$/.test(v) ? Number(v) : null);
+    } catch { /* ignore */ }
+  }, []);
+  const pickBranch = (b: number | "none" | null) => {
+    setBranchFilter(b);
+    try { window.localStorage.setItem("inboxBranchFilter", b == null ? "" : String(b)); } catch { /* ignore */ }
+  };
+  // Branches present in the loaded conversations, with each one's unread count.
+  const branchChips = useMemo(() => {
+    const m = new Map<number | "none", { key: number | "none"; name: string; unread: number }>();
+    for (const c of conversations) {
+      const key = c.branch_id ?? "none";
+      const cur = m.get(key) ?? { key, name: c.branch_name ?? "ไม่ระบุสาขา", unread: 0 };
+      if (c.unread) cur.unread++;
+      m.set(key, cur);
+    }
+    return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name, "th"));
+  }, [conversations]);
+  // A saved filter whose branch has no chats (or the viewer lost) must not hide everything.
+  const activeBranch = branchFilter != null && branchChips.some((b) => b.key === branchFilter) ? branchFilter : null;
+  const visibleConversations = useMemo(
+    () => activeBranch == null ? conversations : conversations.filter((c) => (c.branch_id ?? "none") === activeBranch),
+    [conversations, activeBranch]
+  );
 
   const selected = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
@@ -220,14 +251,31 @@ export default function InboxClient({
         </button>
       </div>
 
+      {branchChips.length > 1 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-xs text-slate-500">สาขา</span>
+          <button type="button" onClick={() => pickBranch(null)}
+            className={`text-xs px-3 py-1 rounded-full border ${activeBranch == null ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+            ทุกสาขา
+          </button>
+          {branchChips.map((b) => (
+            <button key={String(b.key)} type="button" onClick={() => pickBranch(b.key)}
+              className={`text-xs px-3 py-1 rounded-full border ${activeBranch === b.key ? "bg-brand text-white border-brand" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+              {b.name}
+              {b.unread > 0 && <span className={`ml-1.5 rounded-full px-1.5 text-[10px] font-bold ${activeBranch === b.key ? "bg-white/25" : "bg-amber-500 text-white"}`}>{b.unread}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="grid md:grid-cols-[320px_1fr] gap-4">
         {/* Conversation list — hidden on phones once a thread is open. */}
         <div className={`${selected ? "hidden md:block" : "block"} rounded-2xl border border-slate-200 bg-white overflow-hidden`}>
-          {conversations.length === 0 ? (
+          {visibleConversations.length === 0 ? (
             <div className="p-6 text-center text-sm text-slate-400">ยังไม่มีข้อความจากลูกค้า</div>
           ) : (
             <ul className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
-              {conversations.map((c) => (
+              {visibleConversations.map((c) => (
                 <li key={c.id}>
                   <button type="button" onClick={() => openConversation(c.id)}
                     className={`w-full text-left px-3 py-2.5 hover:bg-slate-50 flex items-start gap-2 ${selectedId === c.id ? "bg-brand/5" : ""}`}>

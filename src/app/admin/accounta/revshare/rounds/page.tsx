@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { isRevshareBranch, getPartner, getTiers, listRounds } from "@/lib/revshare-db";
+import { isRevshareBranch, getPartner, getTiers, listRounds, listRoundsRange } from "@/lib/revshare-db";
+import { projectMonthSales } from "@/lib/revshare-forecast";
 import { drinkWelfareByWeek } from "@/lib/partner-drink-orders";
 import RoundsClient from "./RoundsClient";
 
@@ -35,6 +36,26 @@ export default function RevshareRoundsPage({ searchParams }: { searchParams: { p
   const month = Number(searchParams.month) || now.m;
   const sellerName = (getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string }).name;
 
+  // Whole-month estimate — only for the CURRENT month (a past month is complete,
+  // a future one has no run-rate). Display-only: never sent in a card or report.
+  let monthForecast: ReturnType<typeof projectMonthSales> = null;
+  if (year === now.y && month === now.m) {
+    const mm = String(month).padStart(2, "0");
+    const dim = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const lookbackStart = new Date(Date.UTC(year, month - 1, 1) - 56 * 86400000).toISOString().slice(0, 10);
+    let closed: number[] = [];
+    try {
+      const raw = (getDb().prepare("SELECT closed_weekdays FROM branches WHERE id = ?").get(branchId) as { closed_weekdays: string | null }).closed_weekdays;
+      const a = JSON.parse(raw ?? "[]");
+      if (Array.isArray(a)) closed = a.filter((x) => Number.isInteger(x) && x >= 0 && x <= 6);
+    } catch { closed = []; }
+    monthForecast = projectMonthSales({
+      year, month, closedWeekdays: closed,
+      history: listRoundsRange(partner.id, branchId, lookbackStart, `${year}-${mm}-${String(dim).padStart(2, "0")}`)
+        .map((r) => ({ date: r.period_start, sales: r.sales_amount }))
+    });
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -54,6 +75,7 @@ export default function RevshareRoundsPage({ searchParams }: { searchParams: { p
         operatorName={user.display_name}
         sellerName={sellerName}
         drinkWelfare={partner.drink_welfare ? drinkWelfareByWeek(getDb(), partner.id, year, month) : null}
+        monthForecast={monthForecast}
       />
     </div>
   );
