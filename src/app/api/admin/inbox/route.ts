@@ -7,7 +7,8 @@ import {
   markRead,
   sendReply,
   unreadCount,
-  inboxScopeFor
+  inboxScopeFor,
+  narrowScopeToBranch
 } from "@/lib/inbox";
 
 // Unified customer-chat inbox — back office (owner 2026-09-26). Staff read and
@@ -53,10 +54,20 @@ export function GET(req: Request) {
 
   if (!hasAccess) return NextResponse.json({ ok: true, conversations: [], unread: 0 });
   const status = sp.get("status") === "all" ? "all" : "open";
+  // Per-branch page (owner 2026-10-06): ?branch=<id> narrows the list to ONE
+  // branch, but never beyond the viewer's own scope — a branch outside it reads
+  // as an empty list.
+  const branchRaw = sp.get("branch");
+  let listScope = scope;
+  if (branchRaw != null) {
+    const b = Number(branchRaw);
+    if (!Number.isInteger(b) || b <= 0) return NextResponse.json({ error: "bad_branch" }, { status: 400 });
+    listScope = narrowScopeToBranch(scope, b);
+  }
   return NextResponse.json({
     ok: true,
-    conversations: listConversations({ branchIds: scope, status }),
-    unread: unreadCount(scope)
+    conversations: listConversations({ branchIds: listScope, status }),
+    unread: unreadCount(listScope)
   });
 }
 

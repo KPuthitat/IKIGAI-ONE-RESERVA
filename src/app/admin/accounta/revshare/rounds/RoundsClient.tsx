@@ -460,31 +460,74 @@ export default function RoundsClient({
           // the invoice, or any card/report sent to the partner.
           const f = monthForecast;
           const v = salesVat(f.total, vatRate, salesBaseIncludesVat(partner.sales_base));
+          const actualPct = f.total > 0 ? Math.round((f.actual / f.total) * 100) : 0;
+          const perDay = f.remainingDays > 0 ? f.remainingEstimate / f.remainingDays : 0;
           return (
-            <div className="mt-3 rounded-lg border border-dashed border-sky-300 bg-sky-50/60 p-3 text-sm space-y-1">
-              <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                <span className="font-bold text-slate-800">ยอดคาดการณ์ทั้งเดือน (ประมาณการ)</span>
-                <span className="font-mono font-bold text-sky-700">฿{fmtMoney(v.base)} <span className="text-[11px] font-normal text-slate-500">ก่อนภาษี</span></span>
+            <section className="mt-4 rounded-xl border border-sky-200 bg-sky-50/50 p-4 space-y-3" aria-label="ประมาณการยอดขายรวมทั้งเดือน">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-slate-800">ประมาณการยอดขายรวมทั้งเดือน</h3>
+                    <span className="rounded-full bg-sky-100 text-sky-700 text-[10px] font-semibold px-2 py-0.5">ประมาณการ</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">{TH_MONTHS_FULL[month]} พ.ศ. {year + 543}</p>
+                </div>
+                <div className="text-right">
+                  <div className="font-mono text-2xl font-bold text-sky-700 leading-tight">฿{fmtMoney(v.base)}</div>
+                  <div className="text-[11px] text-slate-500">ก่อนภาษีมูลค่าเพิ่ม</div>
+                </div>
               </div>
-              <div className="flex justify-between text-slate-600">
-                <span>ยอดจริงที่นำเข้า{f.lastDate ? ` ถึง ${roundLabel(f.lastDate, f.lastDate)}` : ""} ({f.actualDays} วัน)</span>
-                <span className="font-mono">฿{fmtMoney(f.actual)}</span>
+
+              <div>
+                <div className="h-2.5 w-full rounded-full bg-sky-100 overflow-hidden" role="img" aria-label={`ยอดขายที่นำเข้าแล้วร้อยละ ${actualPct} ของยอดประมาณการ`}>
+                  <div className="h-full rounded-full bg-sky-600" style={{ width: `${Math.min(100, Math.max(0, actualPct))}%` }} />
+                </div>
+                <div className="mt-1.5 grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <div className="flex items-center gap-1.5 text-slate-500"><span className="inline-block h-2 w-2 rounded-sm bg-sky-600" />ยอดขายที่นำเข้าแล้ว ({actualPct}%)</div>
+                    <div className="font-mono text-sm font-semibold text-slate-800 mt-0.5">฿{fmtMoney(f.actual)}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="flex items-center justify-end gap-1.5 text-slate-500"><span className="inline-block h-2 w-2 rounded-sm bg-sky-200" />ประมาณการส่วนที่เหลือ ({100 - actualPct}%)</div>
+                    <div className="font-mono text-sm font-semibold text-slate-800 mt-0.5">฿{fmtMoney(f.remainingEstimate)}</div>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between text-slate-600">
-                <span>คาดการณ์อีก {f.remainingDays} วันเปิดร้านที่เหลือ</span>
-                <span className="font-mono">฿{fmtMoney(f.remainingEstimate)}</span>
-              </div>
+
+              <dl className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-lg bg-white/70 border border-sky-100 px-2 py-2">
+                  <dt className="text-[11px] text-slate-500">นำเข้าข้อมูลแล้ว</dt>
+                  <dd className="text-sm font-semibold text-slate-800">{f.actualDays} วัน</dd>
+                </div>
+                <div className="rounded-lg bg-white/70 border border-sky-100 px-2 py-2">
+                  <dt className="text-[11px] text-slate-500">วันทำการที่เหลือ</dt>
+                  <dd className="text-sm font-semibold text-slate-800">{f.remainingDays} วัน</dd>
+                </div>
+                <div className="rounded-lg bg-white/70 border border-sky-100 px-2 py-2">
+                  <dt className="text-[11px] text-slate-500">เฉลี่ยต่อวันทำการ (ประมาณการ)</dt>
+                  <dd className="text-sm font-semibold text-slate-800 font-mono">฿{fmtMoney(perDay)}</dd>
+                </div>
+              </dl>
+
               {vatRate > 0 && (
-                <div className="flex justify-between text-slate-500 border-t border-sky-200 pt-1">
-                  <span>รวมภาษีมูลค่าเพิ่ม {Math.round(vatRate * 100)}%</span>
-                  <span className="font-mono">฿{fmtMoney(v.total)}</span>
+                <div className="flex items-center justify-between text-sm border-t border-sky-200 pt-2">
+                  <span className="text-slate-600">ยอดประมาณการรวมภาษีมูลค่าเพิ่ม {Math.round(vatRate * 100)}%</span>
+                  <span className="font-mono font-semibold text-slate-800">฿{fmtMoney(v.total)}</span>
                 </div>
               )}
-              <p className="text-[11px] text-slate-400">
-                เฉลี่ยตามวันในสัปดาห์จาก {f.basisDays} วันที่นำเข้าย้อนหลัง (ประมาณ 8 สัปดาห์){f.method === "overall" ? " · บางวันในสัปดาห์ยังไม่มีข้อมูล ใช้ค่าเฉลี่ยรวมแทน" : ""} · ไม่ข้ามวันที่ร้านปิดประจำสัปดาห์ · ไม่ปรับตามวันหยุด/สภาพอากาศ ·
-                <b> เป็นตัวเลขดูประกอบ ไม่ถูกนำไปคิดส่วนแบ่ง ใบวางบิล หรือส่งในรายงาน/เข้ากลุ่มคู่ค้า</b>
+
+              <details className="text-[11px] text-slate-500">
+                <summary className="cursor-pointer select-none text-sky-700 hover:underline">วิธีคำนวณและข้อจำกัด</summary>
+                <ul className="mt-1.5 list-disc pl-5 space-y-0.5">
+                  <li>ประมาณการจากค่าเฉลี่ยยอดขายของแต่ละวันในสัปดาห์ จากข้อมูลที่นำเข้าย้อนหลังประมาณ 8 สัปดาห์ ({f.basisDays} วัน){f.method === "overall" ? " โดยวันใดของสัปดาห์ที่ยังไม่มีข้อมูล ใช้ค่าเฉลี่ยรวมทุกวันแทน" : ""}</li>
+                  <li>ไม่นับวันที่ร้านปิดประจำสัปดาห์{f.lastDate ? ` และนับต่อจากวันที่ข้อมูลล่าสุด (${roundLabel(f.lastDate, f.lastDate)})` : ""}</li>
+                  <li>ไม่ได้ปรับตามวันหยุดนักขัตฤกษ์ กิจกรรมพิเศษ หรือสภาพอากาศ</li>
+                </ul>
+              </details>
+              <p className="text-[11px] text-slate-500">
+                ข้อมูลส่วนนี้ใช้ประกอบการพิจารณาภายในเท่านั้น ไม่นำไปคำนวณส่วนแบ่ง ใบวางบิล และไม่ส่งในรายงานหรือกลุ่มของคู่ค้า
               </p>
-            </div>
+            </section>
           );
         })()}
         <p className="text-[11px] text-slate-400">

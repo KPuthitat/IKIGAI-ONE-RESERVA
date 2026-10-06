@@ -57,10 +57,13 @@ function convName(c: Conversation): string {
 
 export default function InboxClient({
   initialConversations,
-  hasAccess
+  hasAccess,
+  branch = null
 }: {
   initialConversations: Conversation[];
   hasAccess: boolean;
+  /** Set on the per-branch page: the list, polling and header are scoped to this branch. */
+  branch?: { id: number; name: string } | null;
 }) {
   const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -121,12 +124,12 @@ export default function InboxClient({
 
   const refreshList = useCallback(async () => {
     try {
-      const res = await fetch(apiUrl(`/api/admin/inbox?status=${showAll ? "all" : "open"}`), { cache: "no-store" });
+      const res = await fetch(apiUrl(`/api/admin/inbox?status=${showAll ? "all" : "open"}${branch ? `&branch=${branch.id}` : ""}`), { cache: "no-store" });
       if (!res.ok) return;
       const j = await res.json();
       if (j.ok) setConversations(j.conversations as Conversation[]);
     } catch { /* offline — keep what we have */ }
-  }, [showAll]);
+  }, [showAll, branch]);
 
   const loadThread = useCallback(async (id: number, opts: { markLocalRead?: boolean } = {}) => {
     try {
@@ -227,7 +230,10 @@ export default function InboxClient({
       <div className="flex items-start gap-3">
         <OwlMascot size={44} mood="smile" showCoffee={false} />
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-slate-800">กล่องข้อความลูกค้า</h1>
+          {branch && (
+            <Link href="/admin/inbox" className="text-xs text-slate-500 hover:text-brand">← กล่องข้อความทุกสาขา</Link>
+          )}
+          <h1 className="text-2xl font-bold text-slate-800">กล่องข้อความลูกค้า{branch ? ` · ${branch.name}` : ""}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             รวมแชทจาก LINE OA และ Facebook Messenger ไว้ที่เดียว — น้องฮูกช่วยเก็บไว้ให้ พี่กดตอบได้เลยครับ
             {" "}<Link href="/admin/inbox/facebook" className="text-brand hover:underline">เชื่อม Facebook</Link>
@@ -251,7 +257,7 @@ export default function InboxClient({
         </button>
       </div>
 
-      {branchChips.length > 1 && (
+      {!branch && branchChips.length > 1 && (
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-xs text-slate-500">สาขา</span>
           <button type="button" onClick={() => pickBranch(null)}
@@ -265,6 +271,11 @@ export default function InboxClient({
               {b.unread > 0 && <span className={`ml-1.5 rounded-full px-1.5 text-[10px] font-bold ${activeBranch === b.key ? "bg-white/25" : "bg-amber-500 text-white"}`}>{b.unread}</span>}
             </button>
           ))}
+          {typeof activeBranch === "number" && (
+            <Link href={`/admin/inbox/branch/${activeBranch}`} className="ml-1 text-xs text-brand hover:underline">
+              เปิดหน้าเฉพาะสาขานี้ →
+            </Link>
+          )}
         </div>
       )}
 

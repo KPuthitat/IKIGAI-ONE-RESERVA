@@ -76,6 +76,10 @@ process.env.DATABASE_PATH = TMP;
 
   // Empty scope = a viewer with NO admin-branches → sees nothing, never "all".
   ok("getThread with empty scope → not found", inbox.getThread(nama.id, []).conversation === null);
+  ok("per-branch page: super_admin may pick any branch", JSON.stringify(inbox.narrowScopeToBranch(null, B)) === JSON.stringify([B]));
+  ok("per-branch page: a branch admin may pick a branch in their scope", JSON.stringify(inbox.narrowScopeToBranch([A, B], A)) === JSON.stringify([A]));
+  ok("per-branch page: a branch outside the viewer's scope reads as empty", inbox.narrowScopeToBranch([A], B).length === 0 && inbox.listConversations({ branchIds: inbox.narrowScopeToBranch([A], B) }).length === 0);
+  ok("per-branch page: the list holds only that branch's chats", inbox.listConversations({ branchIds: inbox.narrowScopeToBranch(null, A) }).every((c) => c.branch_id === A));
   ok("listConversations with empty scope → none", inbox.listConversations({ branchIds: [] }).length === 0);
   ok("unreadCount with empty scope → 0", inbox.unreadCount([]) === 0);
   ok("sendReply with empty scope → 'no_conversation'", (await inbox.sendReply(nama.id, staff, "x", [])) === "no_conversation");
