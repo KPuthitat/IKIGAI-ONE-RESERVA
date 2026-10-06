@@ -9,6 +9,7 @@ import { fmtMoney } from "@/lib/format";
 import { roundLabel, mondayOf, TH_MONTHS_FULL, salesBaseIncludesVat, salesVat, partnerShopName, type Tier, type SalesBase } from "@/lib/revshare";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import { useConfirm } from "@/app/components/useConfirm";
+import type { MonthSalesForecast } from "@/lib/revshare-forecast";
 import { DailyCardPreview, WeeklyCardPreview, DrinkWelfareCardPreview, SendPreviewModal } from "./CardPreviews";
 
 // Calendar-day span (inclusive) between two ISO dates — mirrors the notify
@@ -34,8 +35,8 @@ const BASE_LABEL: Record<SalesBase, string> = { gross: "Gross (ก่อนส�
 const PIN_ERRORS = new Set(["wrong_pin", "pin_invalid", "no_pin", "user_not_found"]);
 
 export default function RoundsClient({
-  partner, rounds: initialRounds, year, month, operatorName, sellerName, drinkWelfare
-}: { partner: Partner; tiers: Tier[]; rounds: Round[]; year: number; month: number; operatorName: string; sellerName: string; drinkWelfare: DrinkWelfareData | null }) {
+  partner, rounds: initialRounds, year, month, operatorName, sellerName, drinkWelfare, monthForecast
+}: { partner: Partner; tiers: Tier[]; rounds: Round[]; year: number; month: number; operatorName: string; sellerName: string; drinkWelfare: DrinkWelfareData | null; monthForecast: MonthSalesForecast | null }) {
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [rounds, setRounds] = useState<Round[]>(initialRounds);
@@ -451,6 +452,38 @@ export default function RoundsClient({
               <div className="flex justify-between"><span className="text-slate-500">ยอดก่อนภาษี</span><span className="font-mono">฿{fmtMoney(v.base)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">ภาษีมูลค่าเพิ่ม {Math.round(vatRate * 100)}%</span><span className="font-mono">฿{fmtMoney(v.vat)}</span></div>
               <div className="flex justify-between border-t border-slate-200 pt-1 font-bold"><span>ยอดรวม</span><span className="font-mono text-brand">฿{fmtMoney(v.total)}</span></div>
+            </div>
+          );
+        })()}
+        {monthForecast && monthForecast.remainingDays > 0 && (() => {
+          // Display-only estimate (owner 2026-10-06): not part of the settlement,
+          // the invoice, or any card/report sent to the partner.
+          const f = monthForecast;
+          const v = salesVat(f.total, vatRate, salesBaseIncludesVat(partner.sales_base));
+          return (
+            <div className="mt-3 rounded-lg border border-dashed border-sky-300 bg-sky-50/60 p-3 text-sm space-y-1">
+              <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                <span className="font-bold text-slate-800">ยอดคาดการณ์ทั้งเดือน (ประมาณการ)</span>
+                <span className="font-mono font-bold text-sky-700">฿{fmtMoney(v.base)} <span className="text-[11px] font-normal text-slate-500">ก่อนภาษี</span></span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>ยอดจริงที่นำเข้า{f.lastDate ? ` ถึง ${roundLabel(f.lastDate, f.lastDate)}` : ""} ({f.actualDays} วัน)</span>
+                <span className="font-mono">฿{fmtMoney(f.actual)}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>คาดการณ์อีก {f.remainingDays} วันเปิดร้านที่เหลือ</span>
+                <span className="font-mono">฿{fmtMoney(f.remainingEstimate)}</span>
+              </div>
+              {vatRate > 0 && (
+                <div className="flex justify-between text-slate-500 border-t border-sky-200 pt-1">
+                  <span>รวมภาษีมูลค่าเพิ่ม {Math.round(vatRate * 100)}%</span>
+                  <span className="font-mono">฿{fmtMoney(v.total)}</span>
+                </div>
+              )}
+              <p className="text-[11px] text-slate-400">
+                เฉลี่ยตามวันในสัปดาห์จาก {f.basisDays} วันที่นำเข้าย้อนหลัง (ประมาณ 8 สัปดาห์){f.method === "overall" ? " · บางวันในสัปดาห์ยังไม่มีข้อมูล ใช้ค่าเฉลี่ยรวมแทน" : ""} · ไม่ข้ามวันที่ร้านปิดประจำสัปดาห์ · ไม่ปรับตามวันหยุด/สภาพอากาศ ·
+                <b> เป็นตัวเลขดูประกอบ ไม่ถูกนำไปคิดส่วนแบ่ง ใบวางบิล หรือส่งในรายงาน/เข้ากลุ่มคู่ค้า</b>
+              </p>
             </div>
           );
         })()}

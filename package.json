@@ -27,6 +27,7 @@
     "test:clinica-accounta": "node --import tsx scripts/test-clinica-accounta.ts",
     "test:missing-out-ack": "node --import tsx scripts/test-missing-out-ack.ts",
     "test:payroll-resigned": "node --import tsx scripts/test-payroll-resigned-in-period.ts",
+    "test:revshare-forecast": "node --import tsx scripts/test-revshare-forecast.ts",
     "test:payroll-pending-ot": "node --import tsx scripts/test-payroll-pending-ot.ts",
     "test:clinica-analytics": "node --import tsx scripts/test-clinica-analytics.ts",
     "test:inventa-waste": "node --import tsx scripts/test-inventa-waste.ts",
