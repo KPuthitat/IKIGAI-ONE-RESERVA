@@ -25,6 +25,13 @@ export function inboxScopeFor(user: SessionUser): { scope: number[] | null; hasA
   return { scope: user.adminBranchIds, hasAccess: user.adminBranchIds.length > 0 };
 }
 
+/** Narrow a viewer's branch scope to ONE requested branch (the per-branch inbox
+ *  page). Never wider than the viewer's own scope: a branch outside it yields []
+ *  (an empty list), a super_admin (scope null) may pick any branch. */
+export function narrowScopeToBranch(scope: number[] | null, branchId: number): number[] {
+  return scope == null || scope.includes(branchId) ? [branchId] : [];
+}
+
 /** Resolve a channel code to its LINE send token — new messaging_channels table
  *  first, then the legacy per-branch token on branches.slug (mirrors the
  *  webhook's resolveChannel so replies work for every OA the webhook accepts). */
