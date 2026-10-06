@@ -5,7 +5,7 @@ import { requirePayrollAccess, getSessionUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
-import { VISIBLE_PAYROLL_LINE_FILTER } from "@/lib/payroll-compute";
+import { VISIBLE_PAYROLL_LINE_FILTER, payrollStatusEligibleSql } from "@/lib/payroll-compute";
 import { listPendingOtForPeriod } from "@/lib/payroll-pending-ot";
 import PeriodDetailClient, { type PeriodDetail, type PayrollLineRow } from "./PeriodDetailClient";
 
@@ -125,7 +125,7 @@ export default function PeriodDetailPage({
     FROM users u
     WHERE u.role IN ('staff', 'admin')
       AND u.is_test_account = 0
-      AND u.status NOT IN ('disabled', 'resigned', 'terminated')
+      AND ${payrollStatusEligibleSql("u", "(SELECT period_start FROM p)")}
       AND u.employment_type = CASE WHEN (SELECT cycle FROM p) = 'monthly' THEN 'ft' ELSE 'pt' END
       AND NOT (u.employment_type = 'ft' AND COALESCE(u.monthly_salary, 0) = 0)
       -- A future hire (starts AFTER this round ended) never belongs in a past

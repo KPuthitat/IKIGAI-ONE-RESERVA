@@ -20,6 +20,7 @@ import { getDb, type Branch } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { nameWithPrefix } from "@/lib/name";
+import { payrollStatusEligibleSql } from "@/lib/payroll-eligibility";
 import {
   computeMonthlyAttendanceStats,
   type MonthlyAttendanceStats
@@ -72,9 +73,9 @@ export default function MonthlyTimesheetPage({
     FROM users u
     JOIN user_branches ub ON ub.user_id = u.id
     WHERE ub.branch_id = ? AND u.role IN ('staff','admin')
-      AND u.status NOT IN ('disabled', 'resigned', 'terminated') AND u.is_test_account = 0
+      AND ${payrollStatusEligibleSql("u", "?")} AND u.is_test_account = 0
     ORDER BY u.display_name COLLATE NOCASE
-  `).all(branch.id) as EmployeeRow[];
+  `).all(branch.id, `${month}-01`) as EmployeeRow[];
 
   // Phase P4 (2026-05-21) — richer per-user stats. The engine owns all
   // of: worked hours, late/early-out counts, leaves by type, restricted-

@@ -10,6 +10,7 @@
 // branch-week; model mirrors the revshare settlement lifecycle.
 
 import { getDb } from "./db";
+import { payrollStatusEligibleSql } from "./payroll-eligibility";
 import { nameWithPrefix } from "./name";
 import { computeDoctorFees, dfWeeklyStartMonday, eligibleDoctors, rosterHoursByDoctor } from "./df-db";
 import { postDfRoundToAccounta, removeDfRoundFromAccounta } from "./accounta-db";
@@ -212,9 +213,9 @@ function doctorsByDateWithNames(branchId: number, start: string, end: string): M
      WHERE ra.branch_id = ? AND ra.assignment_date >= ? AND ra.assignment_date <= ?
        AND sc.kind = 'work'
        AND (u.clinical_role = 'doctor' OR u.df_started_at IS NOT NULL)
-       AND u.status NOT IN ('disabled','resigned','terminated')
+       AND ${payrollStatusEligibleSql("u", "?")}
      ORDER BY u.display_name`
-  ).all(branchId, start, end) as Array<{ d: string; uid: number; name: string; prefix: string | null }>;
+  ).all(branchId, start, end, start) as Array<{ d: string; uid: number; name: string; prefix: string | null }>;
   const m = new Map<string, Array<{ user_id: number; name: string }>>();
   for (const r of rows) {
     const a = m.get(r.d) ?? [];

@@ -24,6 +24,8 @@
 // All amounts in THB. Time in minutes. Dates in Bangkok local.
 
 import type Database from "better-sqlite3";
+import { payrollStatusEligibleSql } from "./payroll-eligibility";
+export { payrollStatusEligibleSql };
 import { sumRedeemedDrinksForUser } from "./partner-drink-orders";
 import { sumCrossCompanyChargesForUser } from "./mealpass-payroll";
 import { isDfBranch, computeDoctorFees, dfPayrollEnd } from "./df-db";
@@ -2068,9 +2070,10 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     FROM users
     WHERE role IN ('staff', 'admin') AND employment_type IS NOT NULL
       AND is_test_account = 0
-      -- Only currently-employed staff — never pay a disabled/resigned/terminated
-      -- account (owner 2026-07-18: เลิกจ้างแล้วยังโผล่ในรอบ).
-      AND status NOT IN ('disabled', 'resigned', 'terminated')
+      -- Never pay a disabled account; a resigned/terminated one only while their
+      -- last working day is on/after this round's start (owner 2026-07-18: เลิกจ้าง
+      -- แล้วยังโผล่ในรอบ · 2026-10-06: ลาออกต้นเดือนต้องยังอยู่ในรอบเดือนนั้น).
+      AND ${payrollStatusEligibleSql("users", "@pstart")}
       -- Hired on/before the period ended — a future hire doesn't belong in a
       -- past round (owner 2026-07-18: เข้างาน 1 ก.ค. หลุดเข้ารอบ มิ.ย.).
       AND (hire_date IS NULL OR hire_date <= @pend)
@@ -2086,8 +2089,8 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
     ORDER BY CASE WHEN employment_type = 'ft' THEN 0 WHEN employment_type = 'pt' THEN 1 ELSE 2 END,
              display_name
   `;
-  const staffParams: Record<string, unknown> = { pend: period.period_end, pmonth: periodMonth };
-  if (period.branch_id != null) { staffParams.bid = period.branch_id; staffParams.pstart = period.period_start; }
+  const staffParams: Record<string, unknown> = { pend: period.period_end, pmonth: periodMonth, pstart: period.period_start };
+  if (period.branch_id != null) staffParams.bid = period.branch_id;
   if (period.branch_id != null && periodCompanyId != null) staffParams.pcompany = periodCompanyId;
   const staffRaw = db.prepare(staffSql).all(staffParams) as Array<StaffRawRow>;
   const staff: EmployeePayrollSnapshot[] = staffRaw.map((r) => ({
@@ -2518,8 +2521,8 @@ export function recomputeLine(
       FROM users
       WHERE id = ? AND role IN ('staff', 'admin') AND employment_type IS NOT NULL
         AND is_test_account = 0
-        AND status NOT IN ('disabled', 'resigned', 'terminated')
-    `).get(userId) as {
+        AND ${payrollStatusEligibleSql("users", "?")}
+    `).get(userId, period.period_start) as {
       display_name: string; employee_code: string | null;
       employment_type: "pt" | "ft" | null; hourly_rate: number | null;
       monthly_salary: number | null; pay_cycle: "weekly" | "monthly" | null;
