@@ -193,7 +193,7 @@ process.env.DATABASE_PATH = TMP;
   ok("hours: ไม่ตั้ง → ใช้ช่วงบิล · label ถูกต้อง", (() => {
     const s = hourSpan(null, 16, 21);
     return !!s && s.hours[0] === 16 && s.hours[s.hours.length - 1] === 21
-      && hoursLabel({ open: "11:00", close: "21:00", breakStart: "14:00", breakEnd: "16:00", breakWeekdayOnly: true }) === "11:00–21:00 · พัก 14:00–16:00 (จ–ศ)";
+      && hoursLabel({ open: "11:00", close: "21:00", breakStart: "14:00", breakEnd: "16:00", breakWeekdayOnly: true }) === "11:00–21:00 · พัก 14:00–16:00 (จันทร์–ศุกร์)";
   })());
   const sdb = await import("../src/lib/salesa-db");
   // Everything comes from RESERVA (branches): open/close, lunch break, closed days (owner 2026-10-02).
@@ -203,7 +203,7 @@ process.env.DATABASE_PATH = TMP;
     return !!h && h.open === "11:00" && h.close === "21:00" && h.breakStart === null && h.breakWeekdayOnly === false;
   })());
   db.prepare("UPDATE branches SET lunch_break_start='14:00', lunch_break_end='16:00', lunch_break_weekdays='[1,2,3,4,5]' WHERE id=?").run(branch);
-  ok("hours: พักกลางวันของ RESERVA 14–16 จ–ศ → breakWeekdayOnly", (() => {
+  ok("hours: พักกลางวันของ RESERVA 14–16 จันทร์–ศุกร์ → breakWeekdayOnly", (() => {
     const h = sdb.getBranchHours(branch);
     return !!h && h.breakStart === "14:00" && h.breakEnd === "16:00" && h.breakWeekdayOnly === true;
   })());

@@ -44,13 +44,13 @@ export function hourSpan(h: HoursWindow | null | undefined, dataMin: number | nu
 
 const DAY_ABBR = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
-/** Short "09:00–21:00 · พัก 14:00–16:00 (จ–ศ)" caption. A break on some other
+/** Short "09:00–21:00 · พัก 14:00–16:00 (จันทร์–ศุกร์)" caption. A break on some other
  *  subset of days lists them ("(จ,อ,พ,พฤ,ศ,ส)"); an every-day break has no suffix. */
 export function hoursLabel(h: HoursWindow | null | undefined): string | null {
   if (!h) return null;
   let s = `${h.open}–${h.close}`;
   if (h.breakStart && h.breakEnd) {
-    const suffix = h.breakWeekdayOnly ? " (จ–ศ)"
+    const suffix = h.breakWeekdayOnly ? " (จันทร์–ศุกร์)"
       : h.breakDays && h.breakDays.length > 0 && h.breakDays.length < 7 ? ` (${[1, 2, 3, 4, 5, 6, 0].filter((d) => h.breakDays!.includes(d)).map((d) => DAY_ABBR[d]).join(",")})`
       : "";
     s += ` · พัก ${h.breakStart}–${h.breakEnd}${suffix}`;

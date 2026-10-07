@@ -969,7 +969,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
               <div>
                 <div className="text-[11px] text-slate-500">ต้นทุนแรงงาน</div>
                 <div className="text-lg font-bold text-rose-600 tabular-nums">{baht(todayCol.laborCost)}</div>
-                <div className="text-[10px] text-slate-400">บาท/วัน</div>
+                <div className="text-[10px] text-slate-400">บาทต่อวัน</div>
               </div>
               <div>
                 <div className="text-[11px] text-slate-500">COL% ของยอดขาย</div>
@@ -978,7 +978,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
               </div>
             </div>
             <p className="text-[10px] text-slate-400">
-              คิดจากกะที่ลงตารางวันนี้ × ค่าจ้าง (พาร์ทไทม์ ชม.กะ × รายชม. · ประจำ เงินเดือน÷30 ต่อวัน) · นับรวมคนที่ไม่ต้องลงเวลา · เฉพาะพนักงานจริง (ไม่รวมบัญชีทดสอบ/ลาออก)
+              คิดจากกะที่ลงตารางวันนี้ × ค่าจ้าง (พาร์ทไทม์ ชั่วโมงกะ × อัตรารายชั่วโมง · พนักงานประจำ เงินเดือน÷30 ต่อวัน) · นับรวมคนที่ไม่ต้องลงเวลา · เฉพาะพนักงานจริง (ไม่รวมบัญชีทดสอบ/ลาออก)
             </p>
           </div>
         )}
@@ -1007,7 +1007,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                     </div>
                     <div className="text-lg font-bold text-emerald-700">{baht(b.expected)}</div>
                     <div className="text-[11px] text-slate-500">
-                      คาดยอดวันที่เหลือ · เฉลี่ย {baht(b.avgPerDay)}/วัน
+                      คาดยอดวันที่เหลือ · เฉลี่ยวันละ {baht(b.avgPerDay)}
                     </div>
                   </div>
                 ))}
@@ -1513,7 +1513,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                             <div>
                               <div className="text-[10px] uppercase tracking-wide text-slate-400">ความถี่</div>
                               <div className="text-slate-800">{r.cadence}</div>
-                              {r.avgGapDays != null && <div className="text-[11px] text-slate-500">ห่างกันครั้งละ ~{intTh(r.avgGapDays)} วัน</div>}
+                              {r.avgGapDays != null && <div className="text-[11px] text-slate-500">ห่างกันครั้งละประมาณ {intTh(r.avgGapDays)} วัน</div>}
                             </div>
                             <div>
                               <div className="text-[10px] uppercase tracking-wide text-slate-400">มักมาเมื่อไหร่</div>
@@ -1727,7 +1727,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           <button type="button" onClick={toggleDailyBars} className="w-full flex items-center justify-between gap-2 text-left">
             <div>
               <h2 className="font-bold text-slate-800">ยอดขายรายวัน — ทั้งปี</h2>
-              <p className="text-xs text-slate-500 mt-0.5">กราฟแท่งยอดขายสุทธิรายวันของแต่ละสาขา หนึ่งแท่งต่อหนึ่งวัน (ทั้งปี ~365 แท่ง)</p>
+              <p className="text-xs text-slate-500 mt-0.5">กราฟแท่งยอดขายสุทธิรายวันของแต่ละสาขา หนึ่งแท่งต่อหนึ่งวัน (ทั้งปีประมาณ 365 แท่ง)</p>
             </div>
             <span className="text-slate-400 text-sm shrink-0">{dbOpen ? "▲ ซ่อน" : "▼ ดู"}</span>
           </button>
@@ -1777,7 +1777,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                             <div className="text-sm font-semibold text-slate-800">{b.branchName}</div>
                             <div className="text-xs text-slate-500 flex flex-wrap gap-x-2 gap-y-0.5">
                               <span>รวม <span className="font-medium text-slate-700">{baht(b.total)}</span></span>
-                              {b.avgPerDay != null && <span>· เฉลี่ย/วันขาย {baht(b.avgPerDay)}</span>}
+                              {b.avgPerDay != null && <span>· เฉลี่ยต่อวันที่ขาย {baht(b.avgPerDay)}</span>}
                               {hi != null && <span className="text-emerald-600 font-medium">· สูงสุด {dayLabels[b.peakIdx as number]} ({baht(hi)})</span>}
                               {showLow && <span className="text-rose-500 font-medium">· ต่ำสุด {dayLabels[b.lowIdx as number]} ({baht(lo as number)})</span>}
                             </div>
@@ -1885,7 +1885,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
             <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-900">
               คาดการณ์ยอดสิ้นเดือน <b>{baht(projected)}</b> · งบแรงงาน {laborPct}% = <b>{baht(budgetMonth)}</b>
               <div className="mt-1">รับพนักงานได้ประมาณ <b className="text-emerald-700 text-lg">{roster.toFixed(1)} คน</b> <span className="text-emerald-700/70">(ค่าตอบแทน {intTh(perHeadCost)}/คน)</span></div>
-              <div className="text-[11px] text-emerald-700/70 mt-0.5">เฉลี่ยต่อวันเดือนนี้ {baht(mtdAvg)} → ~{headsForSales(mtdAvg).toFixed(1)} คน/วัน (ค่ากลาง)</div>
+              <div className="text-[11px] text-emerald-700/70 mt-0.5">เฉลี่ยต่อวันเดือนนี้ {baht(mtdAvg)} → ประมาณ {headsForSales(mtdAvg).toFixed(1)} คนต่อวัน (ค่ากลาง)</div>
             </div>
 
             {wk.length > 0 && (
@@ -2049,10 +2049,10 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                 <h2 className="font-bold text-slate-800">จังหวะยอดขาย (เงินเดือน / สุดสัปดาห์)</h2>
                 <div className="space-y-1 text-sm">
                   {insights.rhythm.paydayLiftPct != null && (
-                    <div>ช่วงเงินเดือนออก (กลาง/สิ้นเดือน) ยอดเฉลี่ย/วัน <b>{baht(insights.rhythm.paydayAvgNett ?? 0)}</b> · เทียบวันอื่น <PctChip pct={insights.rhythm.paydayLiftPct} /></div>
+                    <div>ช่วงเงินเดือนออก (กลาง/สิ้นเดือน) ยอดเฉลี่ยต่อวัน <b>{baht(insights.rhythm.paydayAvgNett ?? 0)}</b> · เทียบวันอื่น <PctChip pct={insights.rhythm.paydayLiftPct} /></div>
                   )}
                   {insights.rhythm.weekendLiftPct != null && (
-                    <div>เสาร์–อาทิตย์ ยอดเฉลี่ย/วัน <b>{baht(insights.rhythm.weekendAvgNett ?? 0)}</b> · เทียบวันธรรมดา <PctChip pct={insights.rhythm.weekendLiftPct} /></div>
+                    <div>เสาร์–อาทิตย์ ยอดเฉลี่ยต่อวัน <b>{baht(insights.rhythm.weekendAvgNett ?? 0)}</b> · เทียบวันธรรมดา <PctChip pct={insights.rhythm.weekendLiftPct} /></div>
                   )}
                 </div>
                 <div className="text-xs text-slate-500 rounded-lg bg-slate-50 p-2.5">→ ตั้งเวลาโปร/แคมเปญให้ตรงจังหวะเงินสะพัด · วันธรรมดาที่ยอดต่ำจัดโปรกระตุ้น</div>
@@ -2088,16 +2088,16 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                     <div>
                       <div className="text-sm font-bold text-slate-700">แยกวันธรรมดา vs วันหยุด</div>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        ค่าเฉลี่ยต่อวัน (ยอด · บิล/ชม.) เพื่อให้ 5 วันธรรมดาเทียบกับวันหยุดได้ยุติธรรม · วันหยุดนักขัตฤกษ์นับเป็นวันหยุด
+                        ค่าเฉลี่ยต่อวัน (ยอดขาย · จำนวนบิลต่อชั่วโมง) เพื่อให้ 5 วันธรรมดาเทียบกับวันหยุดได้ยุติธรรม · วันหยุดนักขัตฤกษ์นับเป็นวันหยุด
                         {insights.hourlyDayType.holidayDays > 0 ? ` (${insights.hourlyDayType.holidayDays} วันในช่วงนี้)` : ""}
                       </p>
                     </div>
                     <div className="grid lg:grid-cols-2 gap-4">
-                      {([["วันธรรมดา (จ–ศ)", insights.hourlyDayType.weekday], ["วันหยุด (ส–อา + นักขัตฤกษ์)", insights.hourlyDayType.weekend]] as const).map(([label, t]) => (
+                      {([["วันธรรมดา (จันทร์–ศุกร์)", insights.hourlyDayType.weekday], ["วันหยุด (เสาร์–อาทิตย์ และวันหยุดนักขัตฤกษ์)", insights.hourlyDayType.weekend]] as const).map(([label, t]) => (
                         <div key={label} className="rounded-xl border border-slate-200 p-3 space-y-1.5">
                           <div className="flex items-baseline justify-between gap-2">
                             <div className="text-xs font-bold text-slate-600">{label}</div>
-                            <div className="text-[11px] text-slate-400">{t.days} วัน{t.avgBillsPerDay != null ? ` · เฉลี่ย ${intTh(Math.round(t.avgBillsPerDay))} บิล/วัน` : ""}</div>
+                            <div className="text-[11px] text-slate-400">{t.days} วัน{t.avgBillsPerDay != null ? ` · เฉลี่ย ${intTh(Math.round(t.avgBillsPerDay))} บิลต่อวัน` : ""}</div>
                           </div>
                           {t.days === 0
                             ? <div className="text-xs text-slate-400">ยังไม่มีใบเสร็จของวันประเภทนี้ในช่วงนี้</div>
@@ -2195,8 +2195,8 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
 
             {plan.hasBaseline && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <Kpi label="ต้องได้เฉลี่ย/วัน" value={baht(plan.requiredPerDay)} accent />
-                <Kpi label="คาดการณ์ตามปกติ/วัน" value={baht(plan.baselinePerDay)} />
+                <Kpi label="ต้องได้เฉลี่ยต่อวัน" value={baht(plan.requiredPerDay)} accent />
+                <Kpi label="คาดการณ์ตามปกติต่อวัน" value={baht(plan.baselinePerDay)} />
                 <Kpi label="ส่วนต่างที่ต้องเพิ่ม" value={plan.gap > 0 ? `+${baht(plan.gap)}` : "บรรลุแล้ว"} />
                 <Kpi label="เทียบยอดปกติ" value={plan.liftPct != null ? `${plan.liftPct > 0 ? "+" : ""}${plan.liftPct.toFixed(0)}%` : "—"} />
               </div>
@@ -2257,7 +2257,7 @@ function FileChip({ label, present }: { label: string; present?: boolean }) {
 
 function HourBars({ hours, peak, hoursWindow, perDay = false, quiet = false }: {
   hours: Array<{ hour: number; bills: number; nett: number }>; peak: number | null; hoursWindow?: HoursWindow | null;
-  perDay?: boolean;   // values are per-day averages → "บิล/วัน" with one decimal
+  perDay?: boolean;   // values are per-day averages → "บิลต่อวัน" with one decimal
   quiet?: boolean;    // no footer advice / hours label (caller prints its own)
 }) {
   if (!hours.length) return <div className="text-xs text-slate-400">ยังไม่มีข้อมูลใบเสร็จ</div>;
@@ -2278,7 +2278,7 @@ function HourBars({ hours, peak, hoursWindow, perDay = false, quiet = false }: {
           <div className="flex-1 h-4 rounded bg-slate-100 overflow-hidden">
             <div className={`h-full ${h.hour === peak ? "bg-emerald-500" : "bg-emerald-300"}`} style={{ width: `${Math.max(3, (h.nett / max) * 100)}%` }} />
           </div>
-          <span className="w-36 text-right text-xs text-slate-700 shrink-0">{h.brk && h.nett === 0 ? <span className="text-slate-400">พักเที่ยง</span> : <>{baht(h.nett)} · {perDay ? `${h.bills.toFixed(1)} บิล/วัน` : `${intTh(h.bills)} บิล`}</>}</span>
+          <span className="w-36 text-right text-xs text-slate-700 shrink-0">{h.brk && h.nett === 0 ? <span className="text-slate-400">พักเที่ยง</span> : <>{baht(h.nett)} · {perDay ? `${h.bills.toFixed(1)} บิลต่อวัน` : `${intTh(h.bills)} บิล`}</>}</span>
         </div>
       ))}
       {!quiet && peak != null && <div className="text-xs text-slate-500 pt-1">ช่วงพีค <b className="text-emerald-600">{String(peak).padStart(2, "0")}:00</b> — จัดกำลังคน/เตรียมของให้พร้อม · ช่วงร้างจัด Happy Hour กระตุ้น</div>}
@@ -2557,7 +2557,7 @@ function ForecastPreview({ days, branchName, operator, color }: { days: number; 
               <div key={r.date} className="py-0.5">
                 <div className="flex justify-between text-sm">
                   <span className="font-semibold text-slate-700">{r.dowLabel} {Number(r.date.slice(8, 10))}</span>
-                  <span className={r.closed ? "text-rose-500" : "font-bold text-slate-900"}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `~${baht(r.predictedNett)} บาท` : "—")}</span>
+                  <span className={r.closed ? "text-rose-500" : "font-bold text-slate-900"}>{r.closed ? "ปิดทำการ" : (r.predictedNett != null ? `ประมาณ ${baht(r.predictedNett)} บาท` : "—")}</span>
                 </div>
                 {badge && <div className="text-[10px] text-amber-700">{badge}</div>}
                 {r.eventNotes.slice(0, 3).map((n, i) => <div key={i} className="text-[10px] text-violet-700">📌 {n}</div>)}
@@ -2677,7 +2677,7 @@ function PushPreview({ plan, branchName, operator, color }: { plan: SalesPushPla
       <div className="text-[11px] text-slate-400">บรีฟโดย: {operator}</div>
       {sepline}
       <PRow label="เป้าหมาย" value={`${baht(plan.targetBaht)} บาท · ${plan.days} วัน`} bold tone="green" />
-      <PRow label="ต้องได้เฉลี่ย/วัน" value={`${baht(plan.requiredPerDay)} บาท`} />
+      <PRow label="ต้องได้เฉลี่ยต่อวัน" value={`${baht(plan.requiredPerDay)} บาท`} />
       {plan.hasBaseline && (
         <PRow label="คาดการณ์ตามปกติ"
           value={`${baht(plan.baselineProjected)} บาท${plan.liftPct != null ? ` (${plan.liftPct > 0 ? "+" : ""}${plan.liftPct.toFixed(0)}%)` : ""}`}

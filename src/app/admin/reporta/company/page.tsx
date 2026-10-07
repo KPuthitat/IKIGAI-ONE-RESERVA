@@ -351,7 +351,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
                               : <span className="text-[11px] text-slate-300">ยังไม่มีประวัติ</span>}
                           </div>
                           {b.expectedNett != null && (
-                            <div className="text-[11px] text-slate-500">คาดยอด ~{baht(b.expectedNett)} บาท (ปกติ {baht(b.baselineDaily ?? 0)} บาท/วัน)</div>
+                            <div className="text-[11px] text-slate-500">คาดยอดประมาณ {baht(b.expectedNett)} บาท (ปกติ {baht(b.baselineDaily ?? 0)} บาทต่อวัน)</div>
                           )}
                           {b.basis !== "none" && b.sampleCount > 0 && (
                             <div className="text-[10px] text-slate-400">
