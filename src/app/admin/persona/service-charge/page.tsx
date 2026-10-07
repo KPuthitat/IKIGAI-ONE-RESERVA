@@ -32,6 +32,7 @@ import {
   computeMonthlySvcSummary,
   computeBranchSvcPayout,
   isSharedSvcMonth,
+  svcPayoutIsCompanyWide,
   listDailyForMonth,
   isManualSvcMonth,
   getSvcBatch,
@@ -81,8 +82,8 @@ export default function AdminServiceChargePage({
   // When the month is on "คำนวณรวมทั้งบริษัท", the actual payout + ACCOUNTA posting
   // uses the combined-pool amounts attributed to THIS branch (owner 2026-08-20), so
   // the payout preview must reflect that — not the plain per-branch total below.
-  const combinedMode = branch.company_id != null && !isManualSvcMonth(month)
-    && isSharedSvcMonth(branch.company_id, month);
+  const combinedMode = branch.company_id != null && svcPayoutIsCompanyWide(branch.company_id, month);
+  const sharedPool = branch.company_id != null && !isManualSvcMonth(month) && isSharedSvcMonth(branch.company_id, month);
   const branchPayout = combinedMode ? computeBranchSvcPayout(branch.id, month) : null;
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const payoutPreviewNet = branchPayout ? round2(branchPayout.reduce((s, r) => s + r.net, 0)) : summary.totalNetPayout;
@@ -267,8 +268,11 @@ export default function AdminServiceChargePage({
           company-wide numbers attributed to this branch (owner 2026-08-20). */}
       {combinedMode && (
         <div className="card border-brand/40 bg-brand/5 text-xs text-slate-700">
-          เดือนนี้เปิด <b>คำนวณเซอร์วิสชาร์จรวมทั้งบริษัท</b> — ยอดทำจ่าย/ลงบัญชีของสาขานี้
-          อิงตัวเลข<b>รวมทั้งบริษัท</b> (ส่วนที่ปันมาให้สาขานี้) ตารางด้านล่างแสดงตัวเลขรายสาขาไว้อ้างอิง
+          {sharedPool
+            ? <>เดือนนี้เปิด <b>คำนวณเซอร์วิสชาร์จรวมทั้งบริษัท</b> — ยอดทำจ่าย/ลงบัญชีของสาขานี้
+                อิงตัวเลข<b>รวมทั้งบริษัท</b> (ส่วนที่ปันมาให้สาขานี้) ตารางด้านล่างแสดงตัวเลขรายสาขาไว้อ้างอิง</>
+            : <>เกณฑ์รับเซอร์วิสชาร์จ (ขาด/ลา/สาย) พิจารณาระดับ<b>ทั้งบริษัท</b> — ยอดทำจ่าย/ลงบัญชีของสาขานี้
+                อิงตัวเลข<b>รวมทั้งบริษัท</b> ตารางด้านล่างแสดงตัวเลขรายสาขาไว้อ้างอิง</>}
           · ดูรายคนแบบเต็มได้ที่{" "}
           <Link href={`/admin/persona/service-charge/company?month=${month}`} className="text-brand underline font-medium">
             หน้ารวมทั้งบริษัท
@@ -282,7 +286,7 @@ export default function AdminServiceChargePage({
       {canManagePayout && summary.rows.length > 0 && (
         combinedMode ? (
           <div className="card text-sm text-slate-600">
-            เดือนนี้เปิด <b>รวมกอง (รวมทั้งบริษัท)</b> — ปิดยอด / ทำจ่าย / ลงบัญชี ทำที่{" "}
+            {sharedPool ? <>เดือนนี้เปิด <b>รวมกอง (รวมทั้งบริษัท)</b></> : <>เซอร์วิสชาร์จเดือนนี้พิจารณาเกณฑ์ <b>ขาด/ลา/สาย ทั้งบริษัท</b></>} — ปิดยอด / ทำจ่าย / ลงบัญชี ทำที่{" "}
             <Link href={`/admin/persona/service-charge/company?month=${month}`} className="text-brand font-medium hover:underline">
               หน้ารวมทั้งบริษัท
             </Link>{" "}ที่เดียว

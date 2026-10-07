@@ -239,3 +239,42 @@ export function computeSvcAttendance(opts: {
   }
   return out;
 }
+
+// ── "พิจารณาเกณฑ์แล้ว" confirmation before a company month is closed ──────────
+
+export type SvcCriteriaReview = { reviewedAt: string; reviewedByName: string | null };
+
+export function getSvcCriteriaReview(companyId: number, yearMonth: string): SvcCriteriaReview | null {
+  const r = getDb().prepare(`
+    SELECT c.reviewed_at AS at, u.display_name AS name
+      FROM svc_criteria_reviews c LEFT JOIN users u ON u.id = c.reviewed_by_user_id
+     WHERE c.company_id = ? AND c.year_month = ?
+  `).get(companyId, yearMonth) as { at: string; name: string | null } | undefined;
+  return r ? { reviewedAt: r.at, reviewedByName: r.name } : null;
+}
+
+export function setSvcCriteriaReview(companyId: number, yearMonth: string, byUserId: number): void {
+  getDb().prepare(`
+    INSERT INTO svc_criteria_reviews (company_id, year_month, reviewed_by_user_id, reviewed_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(company_id, year_month) DO UPDATE SET reviewed_by_user_id = excluded.reviewed_by_user_id, reviewed_at = excluded.reviewed_at
+  `).run(companyId, yearMonth, byUserId, new Date().toISOString());
+}
+
+export function clearSvcCriteriaReview(companyId: number, yearMonth: string): void {
+  getDb().prepare("DELETE FROM svc_criteria_reviews WHERE company_id = ? AND year_month = ?").run(companyId, yearMonth);
+}
+
+/** Leave requests still waiting for a decision that touch the month — they may be
+ *  counted as ขาด until decided, so the admin is told before closing. */
+export function pendingLeaveCountForMonth(branchIds: number[], yearMonth: string): number {
+  if (branchIds.length === 0) return 0;
+  const [yy, mm] = yearMonth.split("-").map(Number);
+  const from = `${yearMonth}-01`;
+  const to = `${yearMonth}-${String(new Date(Date.UTC(yy, mm, 0)).getUTCDate()).padStart(2, "0")}`;
+  const ph = branchIds.map(() => "?").join(",");
+  return (getDb().prepare(`
+    SELECT COUNT(*) AS n FROM leave_requests
+     WHERE status = 'pending' AND NOT (date_to < ? OR date_from > ?)
+       AND user_id IN (SELECT user_id FROM user_branches WHERE branch_id IN (${ph}))
+  `).get(from, to, ...branchIds) as { n: number }).n;
+}

@@ -4,7 +4,7 @@ import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postSvcToAccounta, removeSvcFromAccounta } from "@/lib/accounta-db";
-import { isManualSvcMonth, isSharedSvcMonth, setSvcBatchPayDates, isValidIsoDay } from "@/lib/service-charge";
+import { isManualSvcMonth, svcPayoutIsCompanyWide, isSharedSvcMonth, setSvcBatchPayDates, isValidIsoDay } from "@/lib/service-charge";
 import { notifySvcBranchPaid } from "@/lib/payout-notify";
 
 // PATCH /api/admin/persona/service-charge/payout — 3-step flow mirroring payroll
@@ -67,10 +67,12 @@ export async function PATCH(req: Request) {
   // ที่เดียว — กันทำรายการซ้ำรายสาขา (owner 2026-09-03).
   const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
     .get(branchId) as { company_id: number | null } | undefined)?.company_id ?? null;
-  if (companyId && isSharedSvcMonth(companyId, d.yearMonth)) {
+  if (companyId && svcPayoutIsCompanyWide(companyId, d.yearMonth)) {
     return NextResponse.json({
       error: "managed_company_wide",
-      message: "เดือนนี้รวมกองทั้งบริษัท — ปิดยอด/จ่าย/ลงบัญชีที่หน้ารวมทั้งบริษัท"
+      message: isSharedSvcMonth(companyId, d.yearMonth)
+        ? "เดือนนี้รวมกองทั้งบริษัท — ปิดยอด/จ่าย/ลงบัญชีที่หน้ารวมทั้งบริษัท"
+        : "ปิดยอด/จ่าย/ลงบัญชีทำได้เฉพาะที่หน้ารวมทั้งบริษัท (เพื่อพิจารณาเกณฑ์ ขาด/ลา/สาย ของทั้งบริษัทก่อน)"
     }, { status: 400 });
   }
 

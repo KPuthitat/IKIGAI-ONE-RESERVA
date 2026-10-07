@@ -18,6 +18,7 @@ import {
   companySvcPayoutState,
   isSharedSvcMonth,
   isManualSvcMonth,
+  svcPayoutIsCompanyWide,
   listSvcLineReviews,
   listManualMeetingFees,
   SVC_STAFF_SHARE_RATIO,
@@ -29,7 +30,7 @@ import SvcGrossOverrideEditor from "./SvcGrossOverrideEditor";
 import CompanySvcCalcModal from "./CompanySvcCalcModal";
 import SvcForfeitExemptButton from "../SvcForfeitExemptButton";
 import SvcAttendancePanel, { type PanelRow } from "./SvcAttendancePanel";
-import { svcAttendanceApplies } from "@/lib/svc-attendance";
+import { svcAttendanceApplies, getSvcCriteriaReview, pendingLeaveCountForMonth } from "@/lib/svc-attendance";
 import SvcReviewButton from "../SvcReviewButton";
 import SvcMeetingFeeEditor from "../SvcMeetingFeeEditor";
 import SvcDeductionEditor from "../SvcDeductionEditor";
@@ -87,7 +88,7 @@ export default function CompanyServiceChargePage({
   // Company-wide payout (close/pay/post to ACCOUNTA, split per branch) — only in
   // shared "รวมกอง" mode (owner 2026-09-03). In that mode the per-branch page hides
   // its own payout buttons, so the month is settled here once.
-  const payoutState = shared && !manual && canManagePayout
+  const payoutState = svcPayoutIsCompanyWide(branchRow.company_id, month) && canManagePayout
     ? companySvcPayoutState(branchRow.company_id, month) : null;
   // Manual gross override is editable only while the company month is still draft.
   const canEditGross = !!payoutState && payoutState.status === "draft";
@@ -124,6 +125,18 @@ export default function CompanyServiceChargePage({
     const st = companySvcPayoutState(branchRow.company_id, month).status;
     return st !== "draft";
   })();
+
+  // What the "พิจารณาเกณฑ์แล้วหรือยัง" confirmation shows before the month is closed.
+  const criteria = attendanceOn ? {
+    people: attendanceRows.length,
+    full: attendanceRows.filter((r) => r.monthExempted || r.tier === "full").length,
+    half: attendanceRows.filter((r) => !r.monthExempted && r.tier === "half").length,
+    none: attendanceRows.filter((r) => !r.monthExempted && r.tier === "none").length,
+    waivedEvents: attendanceRows.reduce((n, r) => n + r.waived, 0),
+    unreviewedLines: summary.rows.length - reviewedCount,
+    pendingLeaves: pendingLeaveCountForMonth(summary.branches.map((b) => b.branchId), month)
+  } : null;
+  const criteriaReview = attendanceOn ? getSvcCriteriaReview(branchRow.company_id, month) : null;
 
   // 12-month picker
   const monthOptions: string[] = [];
@@ -216,6 +229,8 @@ export default function CompanyServiceChargePage({
           incomplete={payoutState.incomplete}
           payDates={payoutState.payDates}
           hasMeetingFee={payoutState.hasMeetingFee}
+          criteria={criteria}
+          criteriaReview={criteriaReview}
         />
       )}
 
