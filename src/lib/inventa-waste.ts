@@ -26,7 +26,7 @@ const REASON_BY_CODE = new Map(WASTE_REASONS.map((r) => [r.code, r]));
 // Common Thai units; the form also allows a typed-in unit ("อื่นๆ").
 export const WASTE_UNITS: string[] = [
   "ชิ้น", "อัน", "ใบ", "กล่อง", "แพ็ค", "ห่อ", "ถุง", "ขวด", "กระป๋อง", "ซอง",
-  "หลอด", "ชุด", "คู่", "โหล", "แผง", "ลัง", "กก.", "กรัม", "ขีด", "ลิตร", "มล."
+  "หลอด", "ชุด", "คู่", "โหล", "แผง", "ลัง", "กิโลกรัม", "กรัม", "ขีด", "ลิตร", "มิลลิลิตร"
 ];
 
 export function wasteReasonLabel(code: string, lang: "th" | "en"): string {
