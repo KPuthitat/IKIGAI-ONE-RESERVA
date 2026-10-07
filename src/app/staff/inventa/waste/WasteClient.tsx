@@ -74,6 +74,21 @@ export default function WasteClient({
     setPhoto(data);
   }
 
+  // Ad-hoc items recorded before (newest first, one per name) — offered as suggestions.
+  const pastAdhoc = (() => {
+    const seen = new Map<string, WasteRow>();
+    for (const r of rows) if (r.item_id == null && !seen.has(r.item_name)) seen.set(r.item_name, r);
+    return [...seen.values()];
+  })();
+  function onAdhocName(v: string) {
+    setAdhocName(v);
+    const prev = pastAdhoc.find((p) => p.item_name === v);
+    if (prev) {
+      if (!adhocUnit.trim() && prev.unit) setAdhocUnit(prev.unit);
+      if (!adhocCost && prev.unit_cost > 0) setAdhocCost(String(prev.unit_cost));
+    }
+  }
+
   const selectedItem = items.find((i) => i.id === itemId) || null;
   const qtyNum = Number(qty);
   // The unit shown next to จำนวน: the stock item's, or the ad-hoc one.
@@ -116,24 +131,37 @@ export default function WasteClient({
       <div className="card space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="block">
-            <div className="label flex items-center justify-between">
-              <span>{t("inv.waste.field.item")}</span>
-              <button type="button" className="text-[11px] text-brand hover:underline"
-                onClick={() => setMode(mode === "list" ? "adhoc" : "list")}>
-                {mode === "list" ? t("inv.waste.addAdhocItem") : t("inv.waste.pickFromList")}
-              </button>
+            <div className="label">{t("inv.waste.field.item")}</div>
+            {/* Two clear choices (owner 2026-10-07): a stock item, or one that is not in stock. */}
+            <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden mb-1.5 text-xs" role="tablist">
+              {(["list", "adhoc"] as const).map((m) => (
+                <button key={m} type="button" role="tab" aria-selected={mode === m}
+                  onClick={() => setMode(m)}
+                  className={`px-3 py-1.5 ${mode === m ? "bg-brand text-white font-semibold" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
+                  {m === "list" ? t("inv.waste.pickFromList") : t("inv.waste.addAdhocItem")}
+                </button>
+              ))}
             </div>
             {mode === "list" ? (
               <select className="input" value={itemId}
-                onChange={(e) => setItemId(e.target.value === "" ? "" : Number(e.target.value))}>
+                onChange={(e) => {
+                  if (e.target.value === "__adhoc__") { setMode("adhoc"); return; }
+                  setItemId(e.target.value === "" ? "" : Number(e.target.value));
+                }}>
                 <option value="">{t("inv.waste.field.itemPlaceholder")}</option>
                 {items.map((i) => (
                   <option key={i.id} value={i.id}>{i.name}{i.unit ? ` (${i.unit})` : ""}</option>
                 ))}
+                <option value="__adhoc__">{t("inv.waste.adhocOption")}</option>
               </select>
             ) : (
-              <input className="input" value={adhocName} maxLength={200}
-                onChange={(e) => setAdhocName(e.target.value)} placeholder={t("inv.waste.adhocNamePlaceholder")} />
+              <>
+                {/* Names typed before are offered again, and picking one refills its unit and cost. */}
+                <input className="input" list="waste-adhoc-names" value={adhocName} maxLength={200}
+                  onChange={(e) => onAdhocName(e.target.value)} placeholder={t("inv.waste.adhocNamePlaceholder")} />
+                <datalist id="waste-adhoc-names">{pastAdhoc.map((p) => <option key={p.item_name} value={p.item_name} />)}</datalist>
+                <p className="text-[11px] text-slate-500 mt-1">{t("inv.waste.adhocHint")}</p>
+              </>
             )}
           </div>
           <label className="block">
