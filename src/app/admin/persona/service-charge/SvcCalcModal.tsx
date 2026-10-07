@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { SvcPenaltyReason } from "@/lib/service-charge";
 import { fmtMoney } from "@/lib/format";
 
 // ปุ่ม "วิธีคำนวณ" + modal แจกแจงว่าส่วนแบ่งเซอร์วิสชาร์จของคนนั้นมาจากไหน
@@ -23,7 +24,7 @@ export default function SvcCalcModal({
   grossAllocation: number;
   netAllocation: number;
   forfeited: boolean;
-  forfeitReason: "late_20pct" | "resignation" | null;
+  forfeitReason: SvcPenaltyReason | null;
   dailyBreakdown: BreakdownItem[];
   taxMode: "sso" | "wht";
   whtAmount: number;
@@ -135,7 +136,7 @@ export default function SvcCalcModal({
             )}
             {forfeited ? (
               <div className="mt-3 text-xs font-medium text-rose-600">
-                ยอดสุทธิ = 0 · งดจ่าย ส่วนแบ่งเข้าบริษัท ({forfeitReason === "late_20pct" ? "สายเกิน 20%" : "ลาออกผิดระเบียบ"})
+                ยอดสุทธิ = 0 · งดจ่าย ส่วนแบ่งเข้าบริษัท ({forfeitReason === "late_20pct" ? "สายเกิน 20%" : forfeitReason === "attendance" ? "ขาด/ลา/สาย เกิน 50%" : "ลาออกผิดระเบียบ"})
               </div>
             ) : (
               <div className="mt-3 text-xs space-y-0.5">

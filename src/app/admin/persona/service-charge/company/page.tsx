@@ -28,6 +28,8 @@ import CompanySvcPayoutActions from "./CompanySvcPayoutActions";
 import SvcGrossOverrideEditor from "./SvcGrossOverrideEditor";
 import CompanySvcCalcModal from "./CompanySvcCalcModal";
 import SvcForfeitExemptButton from "../SvcForfeitExemptButton";
+import SvcAttendancePanel, { type PanelRow } from "./SvcAttendancePanel";
+import { svcAttendanceApplies } from "@/lib/svc-attendance";
 import SvcReviewButton from "../SvcReviewButton";
 import SvcMeetingFeeEditor from "../SvcMeetingFeeEditor";
 import SvcDeductionEditor from "../SvcDeductionEditor";
@@ -96,6 +98,32 @@ export default function CompanyServiceChargePage({
         WHERE b.company_id = ? AND s.year_month = ?
       `).get(branchRow.company_id, month) as { net: number; wht: number; posted_at: string | null })
     : null;
+
+  // Attendance criteria review (owner 2026-10-07) — one row per person across all
+  // branches. Only for computed months from the start month.
+  const attendanceOn = !manual && svcAttendanceApplies(month);
+  const attendanceRows: PanelRow[] = attendanceOn
+    ? summary.rows
+        .filter((r) => r.attendance)
+        .map((r) => {
+          const a = r.attendance!;
+          return {
+            userId: r.userId, name: r.displayName,
+            scheduledDays: a.scheduledDays, computable: a.computable, tracksAttendance: a.tracksAttendance,
+            absent: a.absent, late: a.late, leave: a.leave, counted: a.counted, waived: a.waived, pct: a.pct,
+            tier: a.tier, events: a.events,
+            forfeited: r.forfeited, halved: !!r.halved,
+            monthExempted: r.exempted, monthExemptReason: r.exemptReason,
+            netNote: r.halved && (r.penaltyAmount ?? 0) > 0 ? `หักครึ่ง ฿${fmtMoney(r.penaltyAmount ?? 0)} เข้าบริษัท` : null
+          };
+        })
+        .sort((x, y) => y.pct - x.pct || x.name.localeCompare(y.name, "th"))
+    : [];
+  // The panel is editable only while the company month is still a draft.
+  const payoutLocked = (() => {
+    const st = companySvcPayoutState(branchRow.company_id, month).status;
+    return st !== "draft";
+  })();
 
   // 12-month picker
   const monthOptions: string[] = [];
@@ -250,6 +278,10 @@ export default function CompanyServiceChargePage({
         )}
       </div>
 
+      {attendanceOn && attendanceRows.length > 0 && (
+        <SvcAttendancePanel rows={attendanceRows} yearMonth={month} canEdit={canManagePayout} locked={payoutLocked} />
+      )}
+
       {/* Distribution */}
       <div className="card">
         <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
@@ -280,7 +312,7 @@ export default function CompanyServiceChargePage({
                   <th className="py-2 pr-3">ชื่อ</th>
                   <th className="py-2 pr-3">ได้จากสาขา</th>
                   <th className="py-2 pr-3 text-right">ชั่วโมง</th>
-                  <th className="py-2 pr-3 text-right">สาย</th>
+                  <th className="py-2 pr-3 text-right">{attendanceOn ? "ขาด/ลา/สาย" : "สาย"}</th>
                   <th className="py-2 pr-3 text-right">รวม</th>
                   <th className="py-2 pr-3 text-right">สุทธิ</th>
                   <th className="py-2 pr-3">สถานะ</th>
@@ -323,7 +355,13 @@ export default function CompanyServiceChargePage({
                           </td>
                           <td className="py-2 pr-3 text-right text-slate-600">{hours}</td>
                           <td className="py-2 pr-3 text-right text-slate-500">
-                            {r.lateMinutes > 0 ? `${latePct}%` : "—"}
+                            {attendanceOn
+                              ? (r.attendance && r.attendance.computable && r.attendance.counted > 0
+                                  ? <span title={`ขาด ${r.attendance.absent} · ลา ${r.attendance.leave} · สาย ${r.attendance.late} จาก ${r.attendance.scheduledDays} วันตามตาราง`}>
+                                      {r.attendance.counted} ครั้ง · {r.attendance.pct.toFixed(1)}%
+                                    </span>
+                                  : "—")
+                              : (r.lateMinutes > 0 ? `${latePct}%` : "—")}
                           </td>
                           <td className="py-2 pr-3">
                             <SvcGrossOverrideEditor userId={r.userId} yearMonth={month}
@@ -371,12 +409,21 @@ export default function CompanyServiceChargePage({
                             ) : r.forfeited ? (
                               <div className="flex flex-col items-start gap-1">
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                                  r.forfeitReason === "late_20pct" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"
+                                  r.forfeitReason === "resignation" ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"
                                 }`}>
-                                  ✗ {r.forfeitReason === "late_20pct" ? "สายเกิน 20%" : "ลาออก"}
+                                  ✗ {r.forfeitReason === "late_20pct" ? "สายเกิน 20%" : r.forfeitReason === "attendance" ? "ขาด/ลา/สาย เกิน 50%" : "ลาออก"}
                                 </span>
                                 <SvcForfeitExemptButton userId={r.userId} yearMonth={month}
                                   forfeited exempted={false} reason={r.forfeitReason}
+                                  canEdit={canManagePayout} />
+                              </div>
+                            ) : r.halved ? (
+                              <div className="flex flex-col items-start gap-1">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">
+                                  ½ ได้ครึ่ง · ขาด/ลา/สาย {r.attendance ? `${r.attendance.pct.toFixed(1)}%` : ""}
+                                </span>
+                                <SvcForfeitExemptButton userId={r.userId} yearMonth={month}
+                                  forfeited exempted={false} reason="attendance"
                                   canEdit={canManagePayout} />
                               </div>
                             ) : (
@@ -411,6 +458,8 @@ export default function CompanyServiceChargePage({
                                 foodClawback={r.foodClawback}
                                 otherDeductions={r.otherDeductions}
                                 otherDeductionItems={r.otherDeductionItems}
+                                grossBeforePenalty={r.grossBeforePenalty}
+                                penaltyAmount={r.penaltyAmount}
                               />
                             </div>
                           </td>

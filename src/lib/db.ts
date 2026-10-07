@@ -3191,6 +3191,24 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_svc_forfeit_exempt_month
     ON svc_forfeit_exemptions(year_month);
   `);
+  // svc_attendance_exemptions (owner 2026-10-07) — "ยกเว้น" one ขาด/ลา/สาย event for
+  // a person so it is NOT counted toward the SVC attendance criteria (events ÷
+  // scheduled days: ≤20% full, 21–50% half, >50% none). Keyed per (user, day, kind)
+  // so a re-import or recompute never loses it. A whole-month waiver still lives in
+  // svc_forfeit_exemptions.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS svc_attendance_exemptions (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      event_date TEXT NOT NULL,                       -- YYYY-MM-DD
+      kind TEXT NOT NULL CHECK (kind IN ('absent', 'late', 'leave')),
+      year_month TEXT NOT NULL,
+      reason TEXT,
+      exempted_by_user_id INTEGER REFERENCES users(id),
+      exempted_at TEXT,
+      PRIMARY KEY (user_id, event_date, kind)
+    );
+    CREATE INDEX IF NOT EXISTS idx_svc_att_exempt_month ON svc_attendance_exemptions(year_month);
+  `);
   // svc_deductions (owner 2026-08-20) — ad-hoc deductions taken from a person's
   // SVC for a month (e.g. ค่าเครื่องดื่มที่ไม่ใช่คูปอง / other staff debts). One row
   // per line item; an admin enters reason + amount. Applied in the SVC math AFTER

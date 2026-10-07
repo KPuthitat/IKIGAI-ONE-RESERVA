@@ -29,6 +29,7 @@ import { nameWithPrefix } from "./name";
 import { approvedEarlyLeaveKeys } from "./early-leave";
 import { LATE_GRACE_MINUTES, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
 import { approvedExcusedDatesForMonth } from "./late-excusals";
+import { computeSvcAttendance, svcAttendanceApplies, type SvcAttendance } from "./svc-attendance";
 import {
   shiftStartByDateForUserMonth,
   scheduledMinutesByUserForMonth
@@ -265,6 +266,31 @@ export type DailyAllocation = {
 
 /** Per-staff monthly roll-up — sums daily allocations + applies
  *  monthly forfeiture rules. */
+/** Why a month's SVC is withheld: the old late-minutes rule (months before the
+ *  attendance criteria), an unapproved-forfeit resignation, or the ขาด/ลา/สาย tiers. */
+export type SvcPenaltyReason = "late_20pct" | "resignation" | "attendance";
+
+/** The penalty decision every SVC roll-up shares (owner 2026-10-07). `attendance`
+ *  non-null means the criteria apply to this month, so the old late-minutes rule is
+ *  retired (callers pass lateForfeit=false). Tier none → forfeited, half → halved;
+ *  a whole-month waiver (exempted) clears either. */
+function decideSvcPenalty(i: {
+  attendance: SvcAttendance | null; lateForfeit: boolean; resignForfeit: boolean; exempted: boolean;
+}): { forfeited: boolean; halved: boolean; reason: SvcPenaltyReason | null; exempted: boolean; exemptReason: SvcPenaltyReason | null } {
+  const tier = i.attendance?.tier ?? "full";
+  const wouldForfeit = i.lateForfeit || i.resignForfeit || tier === "none";
+  const wouldHalve = !wouldForfeit && tier === "half";
+  const reason: SvcPenaltyReason | null = wouldForfeit
+    ? (i.resignForfeit ? "resignation" : i.lateForfeit ? "late_20pct" : "attendance")
+    : wouldHalve ? "attendance" : null;
+  const exempted = (wouldForfeit || wouldHalve) && i.exempted;
+  return {
+    forfeited: wouldForfeit && !exempted,
+    halved: wouldHalve && !exempted,
+    reason, exempted, exemptReason: exempted ? reason : null
+  };
+}
+
 export type MonthlySvcRow = {
   userId: number;
   displayName: string;
@@ -279,12 +305,18 @@ export type MonthlySvcRow = {
   // Money
   grossAllocation: number;   // pre-forfeit accrual from daily splits
   forfeited: boolean;
-  forfeitReason: "late_20pct" | "resignation" | null;
+  forfeitReason: SvcPenaltyReason | null;
   // Executive override (owner 2026-08-20): when set, the automatic forfeiture was
   // WAIVED for this person this month — forfeited flips back to false and they are
   // paid. exemptReason records what was waived (for the "ยกเว้นให้ · เดิม: …" badge).
   exempted: boolean;
-  exemptReason: "late_20pct" | "resignation" | null;
+  exemptReason: SvcPenaltyReason | null;
+  // Attendance criteria (owner 2026-10-07, from SVC_ATTENDANCE_START_MONTH): ขาด+ลา+สาย
+  // ÷ scheduled days → full / half / none. `halved` = the 21–50% tier applies (the
+  // payout is computed on half the accrual; the other half goes to the company pool).
+  halved?: boolean;
+  penaltyAmount?: number;
+  attendance?: SvcAttendance | null;
   netAllocation: number;     // 0 if forfeited; else grossAllocation (pre-WHT)
   // Withholding tax on the SVC payout, mirroring payroll (owner 2026-07-21):
   // 'wht' staff have 3% withheld, 'sso' staff receive the full net.
@@ -966,6 +998,20 @@ export function computeMonthlySvcSummary(
     .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03;
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
+  // Attendance criteria (owner 2026-10-07) — judged across the WHOLE company (every
+  // branch's roster + clock-ins), so a person gets the same tier here as on the
+  // company page. Only from SVC_ATTENDANCE_START_MONTH; earlier months keep the
+  // old late-minutes rule so already-paid figures are reproduced unchanged.
+  const attendanceOn = svcAttendanceApplies(yearMonth);
+  const attendanceByUser = (() => {
+    if (!attendanceOn) return new Map<number, SvcAttendance>();
+    const co = (db.prepare("SELECT company_id AS c FROM branches WHERE id = ?").get(branchId) as { c: number | null } | undefined)?.c ?? null;
+    const ids = co != null
+      ? (db.prepare("SELECT id FROM branches WHERE company_id = ?").all(co) as Array<{ id: number }>).map((b) => b.id)
+      : [branchId];
+    return computeSvcAttendance({ branchIds: ids, yearMonth, userIds: staff.map((x) => x.userId) });
+  })();
+
   const rows: MonthlySvcRow[] = staff.map((s) => {
     const a = acc.get(s.userId) ?? { minutesWorked: 0, daysWorked: 0, grossAllocation: 0 };
     // A cross-branch visitor's lateness / forfeiture / group-insurance are judged
@@ -999,17 +1045,23 @@ export function computeMonthlySvcSummary(
       if (diff > LATE_GRACE_MINUTES) lateMinutes += diff;
     }
     const lateRatio = scheduledMinutes > 0 ? lateMinutes / scheduledMinutes : 0;
-    const lateForfeit = anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
+    const lateForfeit = !attendanceOn && anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
     const resignForfeit = forfeitedFromResign.has(s.userId);
     // Executive exemption (owner 2026-08-20): the automatic rule still decides the
-    // reason, but if this (user, month) is exempted the forfeiture is waived and
+    // reason, but if this (user, month) is exempted the penalty is waived and
     // they are paid. isVisitor's exemption is judged at their home branch, but the
     // exemption set is company-wide (per user+month) so it applies here too.
-    const wouldForfeit = lateForfeit || resignForfeit;
-    const wouldReason: "late_20pct" | "resignation" | null =
-      wouldForfeit ? (resignForfeit ? "resignation" : "late_20pct") : null;
-    const exempted = wouldForfeit && exemptedSet.has(s.userId);
-    const forfeited = wouldForfeit && !exempted;
+    const attendance = !isVisitor ? (attendanceByUser.get(s.userId) ?? null) : null;
+    const pen = decideSvcPenalty({
+      attendance: attendanceOn ? attendance : null, lateForfeit, resignForfeit, exempted: exemptedSet.has(s.userId)
+    });
+    const { forfeited, exempted } = pen;
+    // 21–50% tier: the payout is worked out on half the accrual (the other half
+    // stays with the company). grossAllocation itself stays the full accrual so the
+    // company roll-up (which re-judges the person) never halves twice.
+    const grossFull = round2(a.grossAllocation);
+    const grossForNet = pen.halved ? round2(grossFull * 0.5) : a.grossAllocation;   // untouched when not halved → old months reproduce to the satang
+    const penaltyAmount = pen.halved ? round2(grossFull - grossForNet) : 0;
     // Name: mirror payroll — carry display_name + title_prefix and compose with
     // nameWithPrefix (owner 2026-07-21: ใช้วิธีเดียวกับหน้าค่าตอบแทน). Staff with a
     // title_prefix show it; staff with none show display_name as-is (owner fills
@@ -1020,7 +1072,7 @@ export function computeMonthlySvcSummary(
     // clamp against the actual gross so we never claw back more than they earned.
     const clawDays = clawbackByUser.get(s.userId) ?? [];
     const rawClawback = clawDays.reduce((sum, x) => sum + x.credit, 0);
-    const foodClawback = forfeited ? 0 : Math.min(rawClawback, round2(a.grossAllocation));
+    const foodClawback = forfeited ? 0 : Math.min(rawClawback, round2(grossForNet));
     // Ad-hoc deductions (owner 2026-08-20) — e.g. ค่าเครื่องดื่มที่ไม่ใช่คูปอง. Applied
     // AFTER the food clawback and BEFORE WHT (owner's order), clamped so the SVC
     // never goes negative. Skipped for a VISITOR (a transfer-in from another
@@ -1029,7 +1081,7 @@ export function computeMonthlySvcSummary(
     // group insurance).
     const otherItems = isVisitor ? [] : (deductionsByUser.get(s.userId) ?? []);
     const rawOther = round2(otherItems.reduce((sum, x) => sum + x.amount, 0));
-    const afterFood = round2(a.grossAllocation - foodClawback);
+    const afterFood = round2(grossForNet - foodClawback);
     const otherDeductions = forfeited ? 0 : Math.min(rawOther, Math.max(0, afterFood));
     // WHT: 'wht' staff have 3% withheld from their SVC payout; 'sso' staff get
     // the full net (owner 2026-07-21). Applied after forfeiture (forfeited = 0),
@@ -1066,9 +1118,12 @@ export function computeMonthlySvcSummary(
       lateRatio,
       grossAllocation: a.grossAllocation,
       forfeited,
-      forfeitReason: forfeited ? wouldReason : null,
+      forfeitReason: forfeited ? pen.reason : null,
       exempted,
-      exemptReason: exempted ? wouldReason : null,
+      exemptReason: pen.exemptReason,
+      halved: pen.halved,
+      penaltyAmount,
+      attendance: attendanceOn ? attendance : null,
       netAllocation,
       taxMode,
       whtAmount,
@@ -1087,7 +1142,7 @@ export function computeMonthlySvcSummary(
   const staffPoolTotal = totalCollected * SVC_STAFF_SHARE_RATIO;
   const companyFromSplit = totalCollected * SVC_COMPANY_SHARE_RATIO;
   const companyFromForfeit = rows.reduce(
-    (s, r) => s + (r.forfeited ? r.grossAllocation : 0), 0
+    (s, r) => s + (r.forfeited ? r.grossAllocation : 0) + (r.penaltyAmount ?? 0), 0
   );
   // Food-credit clawbacks recovered from staff shares also flow to the company
   // pool (owner 2026-07-30).
@@ -1151,9 +1206,13 @@ export type CompanySvcRow = {
   scheduledMinutes: number;  // real roster minutes across branches (fallback once)
   lateRatio: number;
   forfeited: boolean;
-  forfeitReason: "late_20pct" | "resignation" | null;
+  forfeitReason: SvcPenaltyReason | null;
   exempted: boolean;
-  exemptReason: "late_20pct" | "resignation" | null;
+  exemptReason: SvcPenaltyReason | null;
+  halved?: boolean;
+  penaltyAmount?: number;        // the half of the accrual withheld in the 21–50% tier
+  grossBeforePenalty?: number;   // accrual before that withholding (= grossAllocation when not halved)
+  attendance?: SvcAttendance | null;
   foodClawback: number;
   otherDeductions: number;
   otherDeductionItems: SvcDeductionItem[];
@@ -1567,19 +1626,34 @@ function rollupCompanyRow(input: {
   resignForfeit: boolean; rawFoodClawback: number;
   taxMode: "sso" | "wht"; giStartMonth: string | null; skipGroupInsurance: boolean;
   exempted: boolean;   // executive override — waive the automatic forfeiture (owner 2026-08-20)
+  /** Attendance criteria for this person (owner 2026-10-07); null = the old late-minutes rule applies (months before SVC_ATTENDANCE_START_MONTH). */
+  attendance: SvcAttendance | null;
   otherDeductionItems: SvcDeductionItem[];   // ad-hoc deductions (drinks etc.), before WHT
   yearMonth: string; whtRate: number;
 }): CompanySvcRow {
   const round2 = (n: number) => Math.round(n * 100) / 100;
-  const gross = round2(input.grossRaw);
+  const grossBeforePenalty = round2(input.grossRaw);
   const scheduledMinutes = input.realScheduledMinutes > 0 ? input.realScheduledMinutes : input.fallbackScheduled;
   const lateRatio = scheduledMinutes > 0 ? input.lateMinutes / scheduledMinutes : 0;
-  const lateForfeit = input.anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
-  const wouldForfeit = lateForfeit || input.resignForfeit;
-  const wouldReason: "late_20pct" | "resignation" | null =
-    wouldForfeit ? (input.resignForfeit ? "resignation" : "late_20pct") : null;
-  const exempted = wouldForfeit && input.exempted;
-  const forfeited = wouldForfeit && !exempted;
+  const lateForfeit = input.attendance == null && input.anyComputable && lateRatio > SC_INELIGIBILITY_THRESHOLD;
+  const pen = decideSvcPenalty({
+    attendance: input.attendance, lateForfeit, resignForfeit: input.resignForfeit, exempted: input.exempted
+  });
+  const { forfeited, exempted } = pen;
+  const wouldReason = pen.reason;
+  // 21–50% tier: only half of the accrual is paid out; the rest goes to the company pool.
+  const gross = pen.halved ? round2(grossBeforePenalty * 0.5) : grossBeforePenalty;
+  const penaltyAmount = pen.halved ? round2(grossBeforePenalty - gross) : 0;
+  const byBranch = pen.halved && grossBeforePenalty > 0
+    ? (() => {
+        let running = 0;
+        return input.byBranch.map((b, i) => {
+          const scaled = i === input.byBranch.length - 1 ? round2(gross - running) : round2(b.grossAllocation * (gross / grossBeforePenalty));
+          running = round2(running + scaled);
+          return { ...b, grossAllocation: scaled };
+        });
+      })()
+    : input.byBranch;
   const foodClawback = forfeited ? 0 : Math.min(round2(input.rawFoodClawback), gross);
   const afterFood = round2(gross - foodClawback);
   const rawOther = round2(input.otherDeductionItems.reduce((s, x) => s + x.amount, 0));
@@ -1600,12 +1674,13 @@ function rollupCompanyRow(input: {
   const netPayout = round2(netAllocation - groupInsurance - whtAmount);
   return {
     userId: input.userId, displayName: input.displayName, employmentType: input.employmentType,
-    byBranch: input.byBranch,
+    byBranch,
     grossAllocation: gross, lateMinutes: input.lateMinutes, scheduledMinutes, lateRatio,
     forfeited,
     forfeitReason: forfeited ? wouldReason : null,
     exempted,
-    exemptReason: exempted ? wouldReason : null,
+    exemptReason: pen.exemptReason,
+    halved: pen.halved, penaltyAmount, grossBeforePenalty, attendance: input.attendance,
     foodClawback,
     otherDeductions,
     otherDeductionItems: input.otherDeductionItems,
@@ -1894,6 +1969,9 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
 
   const exemptedSet = listSvcForfeitExemptions(yearMonth);
   const deductionsByUser = listSvcDeductionsByUser(yearMonth);
+  const attendanceByUser = svcAttendanceApplies(yearMonth)
+    ? computeSvcAttendance({ branchIds: branches.map((b) => b.id), yearMonth, userIds: [...accByUser.keys()] })
+    : new Map<number, SvcAttendance>();
   const rows: CompanySvcRow[] = [...accByUser.keys()].map((userId) => {
     const a = accByUser.get(userId)!;
     const meta = metaByUser.get(userId);
@@ -1919,6 +1997,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
       giStartMonth: meta?.groupInsuranceStartMonth ?? null,
       skipGroupInsurance: !memberIdsCompany.has(userId),
       exempted: exemptedSet.has(userId),
+      attendance: attendanceByUser.get(userId) ?? null,
       otherDeductionItems: deductionsByUser.get(userId) ?? [],
       yearMonth, whtRate
     });
@@ -1937,7 +2016,7 @@ export function computeCompanySvcSummaryShared(companyId: number, yearMonth: str
     staffPoolTotal: round2(totalCollected * SVC_STAFF_SHARE_RATIO),
     companyPoolTotal: round2(
       totalCollected * SVC_COMPANY_SHARE_RATIO
-      + rows.reduce((s, r) => s + (r.forfeited ? r.grossAllocation : 0), 0)
+      + rows.reduce((s, r) => s + (r.forfeited ? r.grossAllocation : 0) + (r.penaltyAmount ?? 0), 0)
       + rows.reduce((s, r) => s + r.foodClawback, 0)
       + rows.reduce((s, r) => s + r.otherDeductions, 0)
       + undistributedStaff
@@ -2046,6 +2125,9 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
 
   const exemptedSet = listSvcForfeitExemptions(yearMonth);
   const deductionsByUser = listSvcDeductionsByUser(yearMonth);
+  const attendanceByUser = svcAttendanceApplies(yearMonth)
+    ? computeSvcAttendance({ branchIds: branches.map((b) => b.id), yearMonth, userIds })
+    : new Map<number, SvcAttendance>();
   const rows: CompanySvcRow[] = userIds.map((userId) => {
     const a = accByUser.get(userId)!;
     return rollupCompanyRow({
@@ -2058,6 +2140,7 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
       giStartMonth: metaByUser.get(userId)?.startMonth ?? null,
       skipGroupInsurance: !companyMemberIds.has(userId),
       exempted: exemptedSet.has(userId),
+      attendance: attendanceByUser.get(userId) ?? null,
       otherDeductionItems: deductionsByUser.get(userId) ?? [],
       yearMonth, whtRate
     });
@@ -2076,7 +2159,7 @@ export function computeCompanySvcSummary(companyId: number, yearMonth: string): 
     staffPoolTotal: round2(totalCollected * SVC_STAFF_SHARE_RATIO),
     companyPoolTotal: round2(
       totalCollected * SVC_COMPANY_SHARE_RATIO
-      + rows.reduce((s, r) => s + (r.forfeited ? r.grossAllocation : 0), 0)
+      + rows.reduce((s, r) => s + (r.forfeited ? r.grossAllocation : 0) + (r.penaltyAmount ?? 0), 0)
       + rows.reduce((s, r) => s + r.foodClawback, 0)
       + rows.reduce((s, r) => s + r.otherDeductions, 0)
     ),
@@ -2245,7 +2328,12 @@ export function computeBranchSvcPayout(branchId: number, yearMonth: string): Bra
   const db = getDb();
   const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
     .get(branchId) as { company_id: number | null } | undefined)?.company_id ?? null;
-  const shared = companyId != null && !isManualSvcMonth(yearMonth) && isSharedSvcMonth(companyId, yearMonth);
+  // Company rows are the authoritative figures (the page, the payslip and — from the
+  // attendance-criteria start month — every payout), split back to this branch by each
+  // person's per-branch share. Older non-shared months keep the per-branch rows so
+  // figures already posted are reproduced unchanged.
+  const shared = companyId != null && !isManualSvcMonth(yearMonth)
+    && (isSharedSvcMonth(companyId, yearMonth) || svcAttendanceApplies(yearMonth));
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
   const rowsByUser = new Map<number, BranchSvcPayoutRow>();
@@ -2394,11 +2482,16 @@ export function companySvcRowForUser(
     scheduledMinutes: cr.scheduledMinutes,
     lateMinutes: cr.lateMinutes,
     lateRatio: cr.lateRatio,
-    grossAllocation: cr.grossAllocation,
+    // MonthlySvcRow.grossAllocation is the pre-penalty accrual; a halved company row
+    // carries the halved figure, so hand back the full one + the withheld half.
+    grossAllocation: cr.halved && cr.grossBeforePenalty != null ? cr.grossBeforePenalty : cr.grossAllocation,
     forfeited: cr.forfeited,
     forfeitReason: cr.forfeitReason,
     exempted: cr.exempted,
     exemptReason: cr.exemptReason,
+    halved: cr.halved,
+    penaltyAmount: cr.penaltyAmount,
+    attendance: cr.attendance ?? null,
     netAllocation: cr.netAllocation,
     taxMode: cr.taxMode,
     whtAmount: cr.whtAmount,

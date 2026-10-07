@@ -155,17 +155,33 @@ export default function PayslipDocument({
               <span>ส่วนแบ่งตามชั่วโมงทำงาน (ก่อนตัดสิทธิ์)</span>
               <span className="tabular-nums">฿{fmtMoney(svcRow.grossAllocation)}</span>
             </div>
-            <div className="flex justify-between py-0.5">
-              <span>อัตราการเข้างานสาย</span>
-              <span className="tabular-nums">
-                ร้อยละ {(svcRow.lateRatio * 100).toFixed(1)}{svcRow.forfeited ? "" : " (ไม่ถูกตัดสิทธิ์)"}
-              </span>
-            </div>
+            {svcRow.attendance && svcRow.attendance.computable ? (
+              <div className="flex justify-between py-0.5">
+                <span>ขาด {svcRow.attendance.absent} · ลา {svcRow.attendance.leave} · สาย {svcRow.attendance.late} ครั้ง จากวันตามตารางงาน {svcRow.attendance.scheduledDays} วัน</span>
+                <span className="tabular-nums">
+                  ร้อยละ {svcRow.attendance.pct.toFixed(1)}{svcRow.forfeited || svcRow.halved ? "" : " (เกณฑ์ผ่าน)"}
+                </span>
+              </div>
+            ) : svcRow.attendance ? null : (
+              <div className="flex justify-between py-0.5">
+                <span>อัตราการเข้างานสาย</span>
+                <span className="tabular-nums">
+                  ร้อยละ {(svcRow.lateRatio * 100).toFixed(1)}{svcRow.forfeited ? "" : " (ไม่ถูกตัดสิทธิ์)"}
+                </span>
+              </div>
+            )}
+            {svcRow.halved && (svcRow.penaltyAmount ?? 0) > 0 ? (
+              <div className="flex justify-between py-0.5 text-amber-700">
+                <span>ได้รับครึ่งหนึ่งตามเกณฑ์ (ขาด ลา มาสาย เกินร้อยละ 20 ไม่เกินร้อยละ 50)</span>
+                <span className="tabular-nums">−฿{fmtMoney(svcRow.penaltyAmount ?? 0)}</span>
+              </div>
+            ) : null}
             {svcRow.forfeited ? (
               <div className="flex justify-between py-0.5 text-rose-600">
                 <span>ตัดสิทธิ์รับเซอร์วิสชาร์จ</span>
                 <span>
                   {svcRow.forfeitReason === "late_20pct" ? "เข้างานสายเกินร้อยละ 20"
+                    : svcRow.forfeitReason === "attendance" ? "ขาด ลา มาสาย เกินร้อยละ 50 ของวันที่ลงตารางงาน"
                     : svcRow.forfeitReason === "resignation" ? "ลาออกระหว่างเดือน" : "—"}
                 </span>
               </div>

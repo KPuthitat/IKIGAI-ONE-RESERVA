@@ -66,8 +66,8 @@ export async function GET(req: Request) {
     groupInsurance: r.groupInsurance,
     net: r.netPayout,
     statusLabel: r.forfeited
-      ? (r.forfeitReason === "resignation" ? "ตัดสิทธิ์ (ลาออก)" : "ตัดสิทธิ์ (สาย)")
-      : r.exempted ? "ยกเว้นให้" : "ได้รับ"
+      ? (r.forfeitReason === "resignation" ? "ตัดสิทธิ์ (ลาออก)" : r.forfeitReason === "attendance" ? "ตัดสิทธิ์ (ขาด/ลา/สาย)" : "ตัดสิทธิ์ (สาย)")
+      : r.exempted ? "ยกเว้นให้" : r.halved ? "ได้ครึ่ง (ขาด/ลา/สาย)" : "ได้รับ"
   }));
   const totalFoodClawback = round2(summary.rows.reduce((s, r) => s + r.foodClawback, 0));
   const totalOtherDeductions = round2(summary.rows.reduce((s, r) => s + r.otherDeductions, 0));
