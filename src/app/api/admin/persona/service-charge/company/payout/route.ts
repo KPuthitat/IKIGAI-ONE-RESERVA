@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { postSvcToAccounta, removeSvcFromAccounta } from "@/lib/accounta-db";
 import { companySvcPayoutState, setSvcBatchPayDates, isValidIsoDay } from "@/lib/service-charge";
+import { svcAttendanceApplies, setSvcCriteriaReview, clearSvcCriteriaReview } from "@/lib/svc-attendance";
 import { notifySvcCompanyPaid } from "@/lib/payout-notify";
 
 // PATCH /api/admin/persona/service-charge/company/payout — company-wide payout,
@@ -21,6 +22,9 @@ const Body = z.object({
   action: z.enum(["finalize", "unfinalize", "mark_paid", "unpay", "post", "unpost", "set_pay_dates"]),
   yearMonth: z.string().regex(/^\d{4}-\d{2}$/),
   pin: z.string().optional(),
+  // finalize (owner 2026-10-07): the admin confirms the eligibility criteria
+  // (ขาด/ลา/สาย) were considered. Required for months under the attendance criteria.
+  criteriaReviewed: z.boolean().optional(),
   // set_pay_dates (owner 2026-10-01): actual transfer dates; null = back to default.
   svcPayDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   meetingPayDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
@@ -70,6 +74,12 @@ export async function PATCH(req: Request) {
         message: `ยังลงเซอร์วิสชาร์จไม่ครบทั้งเดือนในบางสาขา: ${names} — ต้องครบทุกสาขาก่อนปิดยอด (วันหยุด/ปิดร้าน ลง 0)`
       }, { status: 400 });
     }
+    if (svcAttendanceApplies(d.yearMonth) && d.criteriaReviewed !== true) {
+      return NextResponse.json({
+        error: "criteria_not_reviewed",
+        message: "ต้องยืนยันก่อนว่าได้พิจารณาเกณฑ์รับเซอร์วิสชาร์จ (ขาด/ลา/สาย) ของพนักงานทุกคนแล้ว จึงจะปิดยอดได้"
+      }, { status: 409 });
+    }
     const pinErr = requirePin(user.id, d.pin);
     if (pinErr) return pinErr;
     const upd = db.prepare(`UPDATE svc_payout_batches SET status = 'finalized', finalized_by_user_id = ?, finalized_at = ? WHERE branch_id = ? AND year_month = ?`);
@@ -83,6 +93,7 @@ export async function PATCH(req: Request) {
       }
     });
     tx();
+    if (svcAttendanceApplies(d.yearMonth)) setSvcCriteriaReview(companyId, d.yearMonth, user.id);
     return NextResponse.json({ ok: true });
   }
 
@@ -94,6 +105,8 @@ export async function PATCH(req: Request) {
         db.prepare(`UPDATE svc_payout_batches SET status = 'draft', finalized_by_user_id = NULL, finalized_at = NULL WHERE branch_id = ? AND year_month = ?`).run(b.id, d.yearMonth);
       }
     })();
+    // Re-opening means waivers may change again, so the next close asks again.
+    clearSvcCriteriaReview(companyId, d.yearMonth);
     return NextResponse.json({ ok: true });
   }
 

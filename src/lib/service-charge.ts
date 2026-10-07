@@ -1354,6 +1354,15 @@ export function deleteSvcDeduction(id: number): void {
   getDb().prepare("DELETE FROM svc_deductions WHERE id = ?").run(id);
 }
 
+/** True when a month is closed / paid / posted ONLY from the company page: the
+ *  "รวมกอง" months, and every computed month from the attendance-criteria start (the
+ *  criteria are judged across the whole company, so the payout must be too — owner
+ *  2026-10-07). Per-branch buttons are hidden and the branch endpoint refuses. */
+export function svcPayoutIsCompanyWide(companyId: number | null, yearMonth: string): boolean {
+  if (companyId == null || isManualSvcMonth(yearMonth)) return false;
+  return isSharedSvcMonth(companyId, yearMonth) || svcAttendanceApplies(yearMonth);
+}
+
 /** Is the (company, month) flagged to pool SVC across all its branches? (owner
  *  2026-08-18). A row in svc_shared_pool = shared ON for that month. */
 export function isSharedSvcMonth(companyId: number, yearMonth: string): boolean {

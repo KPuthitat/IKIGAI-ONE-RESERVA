@@ -84,6 +84,25 @@ process.env.DATABASE_PATH = TMP;
   const old = sc.computeCompanySvcSummary(co, "2026-08");
   ok("August 2026 (before the start month) is untouched by the new rule", old.rows.every((r) => !r.halved && !r.attendance && (r.penaltyAmount ?? 0) === 0));
 
+  // ── company-only payout + the "พิจารณาเกณฑ์แล้ว" confirmation ─────────────────
+  ok("September 2026: payout is company-wide even when the shared pool is OFF", sc.svcPayoutIsCompanyWide(co, "2026-09") === true);
+  ok("August 2026 (before the criteria, not shared): still per branch", sc.svcPayoutIsCompanyWide(co, "2026-08") === false);
+  ok("a branch with no company is never company-wide", sc.svcPayoutIsCompanyWide(null, "2026-09") === false);
+  sc.setSharedSvcMonth({ companyId: co, yearMonth: "2026-08", shared: true, userId: admin });
+  ok("a shared-pool month is company-wide whatever the date", sc.svcPayoutIsCompanyWide(co, "2026-08") === true);
+
+  ok("no criteria review recorded yet", att.getSvcCriteriaReview(co, "2026-09") === null);
+  att.setSvcCriteriaReview(co, "2026-09", admin);
+  const rev = att.getSvcCriteriaReview(co, "2026-09");
+  ok("review is stored with who and when", !!rev && rev.reviewedByName === "admin" && !!rev.reviewedAt);
+  att.clearSvcCriteriaReview(co, "2026-09");
+  ok("re-opening the month clears it (the next close asks again)", att.getSvcCriteriaReview(co, "2026-09") === null);
+
+  db.prepare("INSERT INTO leave_requests (user_id,type,date_from,date_to,days,status) VALUES (?, 'personal', '2026-09-20', '2026-09-21', 2, 'pending')").run(P);
+  db.prepare("INSERT INTO leave_requests (user_id,type,date_from,date_to,days,status) VALUES (?, 'personal', '2026-10-05', '2026-10-05', 1, 'pending')").run(P);
+  db.prepare("INSERT INTO leave_requests (user_id,type,date_from,date_to,days,status) VALUES (?, 'personal', '2026-09-22', '2026-09-22', 1, 'approved')").run(P);
+  ok("pending leave count: only pending requests touching the month", att.pendingLeaveCountForMonth([A], "2026-09") === 1);
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

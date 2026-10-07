@@ -3209,6 +3209,19 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_svc_att_exempt_month ON svc_attendance_exemptions(year_month);
   `);
+  // svc_criteria_reviews (owner 2026-10-07) — before a company's SVC month can be
+  // closed, the admin confirms that the eligibility criteria (ขาด/ลา/สาย) were
+  // considered. One row per (company, month); written when the month is finalized,
+  // removed when it is re-opened, so a re-close asks again.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS svc_criteria_reviews (
+      company_id INTEGER NOT NULL,
+      year_month TEXT NOT NULL,
+      reviewed_by_user_id INTEGER REFERENCES users(id),
+      reviewed_at TEXT NOT NULL,
+      PRIMARY KEY (company_id, year_month)
+    );
+  `);
   // svc_deductions (owner 2026-08-20) — ad-hoc deductions taken from a person's
   // SVC for a month (e.g. ค่าเครื่องดื่มที่ไม่ใช่คูปอง / other staff debts). One row
   // per line item; an admin enters reason + amount. Applied in the SVC math AFTER

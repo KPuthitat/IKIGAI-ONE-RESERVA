@@ -12,9 +12,16 @@ import { formatBkkDateTime } from "@/lib/time";
 type Status = "draft" | "finalized" | "paid" | "posted";
 type Action = "finalize" | "unfinalize" | "mark_paid" | "unpay" | "post" | "unpost" | "set_pay_dates";
 type PayDates = { svcPayDate: string; meetingPayDate: string; svcPayDateSet: boolean; meetingPayDateSet: boolean };
+// Shown in the "พิจารณาเกณฑ์แล้วหรือยัง" confirmation (owner 2026-10-07).
+type Criteria = {
+  people: number; full: number; half: number; none: number;
+  waivedEvents: number; unreviewedLines: number; pendingLeaves: number;
+};
+type CriteriaReview = { reviewedAt: string; reviewedByName: string | null };
 
 export default function CompanySvcPayoutActions({
-  yearMonth, status, netPayoutPreview, totalNet, totalWht, postedAt, incomplete, payDates, hasMeetingFee
+  yearMonth, status, netPayoutPreview, totalNet, totalWht, postedAt, incomplete, payDates, hasMeetingFee,
+  criteria = null, criteriaReview = null
 }: {
   yearMonth: string;
   status: Status;
@@ -25,12 +32,20 @@ export default function CompanySvcPayoutActions({
   incomplete: Array<{ id: number; name: string; filled: number; days: number }>;
   payDates: PayDates | null;      // actual transfer dates (owner 2026-10-01); null until finalized
   hasMeetingFee: boolean;
+  /** null = this month is not under the attendance criteria (no confirmation step). */
+  criteria?: Criteria | null;
+  criteriaReview?: CriteriaReview | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [pinFor, setPinFor] = useState<null | Action>(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Criteria confirmation (owner 2026-10-07): before a month under the attendance
+  // criteria can be closed, the admin must say the eligibility criteria were considered.
+  const [criteriaOpen, setCriteriaOpen] = useState(false);
+  const [criteriaTick, setCriteriaTick] = useState(false);
+  const [criteriaConfirmed, setCriteriaConfirmed] = useState(false);
   // Transfer-date editor (set_pay_dates). Pre-filled ONLY with dates the owner set
   // explicitly; an empty field means "default" (SVC: the 20th · meeting fee: same
   // day as SVC) and is sent as null, so confirming never pins a default as if it
@@ -52,11 +67,12 @@ export default function CompanySvcPayoutActions({
       const res = await fetch(apiUrl("/api/admin/persona/service-charge/company/payout"), {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action, yearMonth, pin: withPin, ...dates })
+        body: JSON.stringify({ action, yearMonth, pin: withPin, ...dates, ...(action === "finalize" && criteria ? { criteriaReviewed: criteriaConfirmed } : {}) })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setError(data.message || data.error || "ไม่สำเร็จ"); return; }
       setPinFor(null); setPin("");
+      if (action === "finalize") { setCriteriaConfirmed(false); setCriteriaTick(false); }
       router.refresh();
     } catch {
       setError("เชื่อมต่อไม่ได้");
@@ -100,6 +116,12 @@ export default function CompanySvcPayoutActions({
               );
             })}
           </div>
+          {criteria && status !== "draft" && criteriaReview && (
+            <p className="text-[11px] text-slate-600 mt-1.5">
+              ✓ พิจารณาเกณฑ์รับเซอร์วิสชาร์จ (ขาด/ลา/สาย) แล้ว
+              {criteriaReview.reviewedByName ? ` โดย ${criteriaReview.reviewedByName}` : ""} · {formatBkkDateTime(criteriaReview.reviewedAt)}
+            </p>
+          )}
           {blockedByIncomplete && (
             <p className="text-[11px] text-amber-700 mt-1.5">
               ยังลงเซอร์วิสชาร์จไม่ครบทั้งเดือน: {incomplete.map((b) => `${b.name} (${b.filled}/${b.days} วัน)`).join(", ")} — ต้องครบทุกสาขาก่อนปิดยอด
@@ -126,7 +148,10 @@ export default function CompanySvcPayoutActions({
           {status === "draft" && (
             <button type="button" disabled={busy || blockedByIncomplete}
               title={blockedByIncomplete ? "ลงข้อมูลให้ครบทุกสาขาก่อน" : undefined}
-              onClick={() => { setPinFor("finalize"); setError(null); }}
+              onClick={() => {
+                setError(null);
+                if (criteria) { setCriteriaConfirmed(false); setCriteriaTick(false); setCriteriaOpen(true); } else setPinFor("finalize");
+              }}
               className={`${btnBase} bg-slate-800 hover:bg-slate-900 text-white font-medium`}>
               1. ปิดยอด (finalize)
             </button>
@@ -168,6 +193,51 @@ export default function CompanySvcPayoutActions({
           )}
         </div>
       </div>
+
+      {criteriaOpen && criteria && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setCriteriaOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3" role="dialog" aria-modal="true"
+            aria-label="ยืนยันการพิจารณาเกณฑ์รับเซอร์วิสชาร์จ" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-slate-800">ก่อนปิดยอด: พิจารณาเกณฑ์รับเซอร์วิสชาร์จแล้วหรือยัง</h3>
+            <p className="text-xs text-slate-600">
+              เกณฑ์รับเซอร์วิสชาร์จเดือน {yearMonth}: จำนวนครั้งที่ ขาด + ลา + สาย ÷ จำนวนวันที่ลงตารางงาน —
+              ไม่เกิน 20% ได้เต็ม · 21–50% ได้ครึ่ง · เกิน 50% ไม่ได้รับ
+              หากมีกรณีที่ควรยกเว้น ให้กดปุ่ม “ยกเว้น” ในส่วน “ตรวจเกณฑ์รับเซอร์วิสชาร์จ” ก่อนปิดยอด
+            </p>
+            <ul className="text-sm rounded-lg border border-slate-200 divide-y divide-slate-100">
+              <li className="flex justify-between px-3 py-1.5"><span className="text-slate-600">ได้เต็ม</span><b>{criteria.full} คน</b></li>
+              <li className="flex justify-between px-3 py-1.5"><span className="text-slate-600">ได้ครึ่ง</span><b className="text-amber-700">{criteria.half} คน</b></li>
+              <li className="flex justify-between px-3 py-1.5"><span className="text-slate-600">ไม่ได้รับ</span><b className="text-rose-700">{criteria.none} คน</b></li>
+              <li className="flex justify-between px-3 py-1.5"><span className="text-slate-600">ยกเว้นแล้ว</span><b>{criteria.waivedEvents} ครั้ง</b></li>
+            </ul>
+            {criteria.pendingLeaves > 0 && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded px-3 py-2">
+                ยังมีใบลาที่รออนุมัติ {criteria.pendingLeaves} ใบในเดือนนี้ — วันดังกล่าวอาจถูกนับเป็นขาดจนกว่าจะอนุมัติหรือกดยกเว้น
+              </p>
+            )}
+            {criteria.unreviewedLines > 0 && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded px-3 py-2">
+                ยังไม่ได้ติ๊ก “ตรวจแล้ว” {criteria.unreviewedLines} คน ในตารางส่วนแบ่ง
+              </p>
+            )}
+            <label className="flex items-start gap-2 text-sm text-slate-800 cursor-pointer">
+              <input type="checkbox" className="mt-1" checked={criteriaTick} onChange={(e) => setCriteriaTick(e.target.checked)} />
+              <span>ข้าพเจ้าได้พิจารณาเกณฑ์รับเซอร์วิสชาร์จ (ขาด ลา มาสาย) ของพนักงานทุกคนแล้ว</span>
+            </label>
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setCriteriaOpen(false)}
+                className="flex-1 text-sm px-3 py-2 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
+                ยังไม่ได้พิจารณา — กลับไปตรวจ
+              </button>
+              <button type="button" disabled={!criteriaTick}
+                onClick={() => { setCriteriaConfirmed(true); setCriteriaOpen(false); setPinFor("finalize"); setError(null); }}
+                className="flex-1 text-sm font-bold px-3 py-2 rounded text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50">
+                พิจารณาแล้ว — ดำเนินการต่อ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pinFor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
