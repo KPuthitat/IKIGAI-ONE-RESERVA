@@ -418,14 +418,24 @@ export default function AdminServiceChargePage({
                             ) : r.forfeited ? (
                               <div className="flex flex-col items-start gap-1">
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                                  r.forfeitReason === "late_20pct" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"
+                                  r.forfeitReason === "resignation" ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"
                                 }`}>
                                   ✗ {r.forfeitReason === "late_20pct"
                                     ? t(lang, "admin.persona.svc.status.late20")
+                                    : r.forfeitReason === "attendance" ? "ขาด/ลา/สาย เกิน 50%"
                                     : t(lang, "admin.persona.svc.status.resignation")}
                                 </span>
                                 <SvcForfeitExemptButton userId={r.userId} yearMonth={month}
                                   forfeited exempted={false} reason={r.forfeitReason}
+                                  canEdit={canExempt} />
+                              </div>
+                            ) : r.halved ? (
+                              <div className="flex flex-col items-start gap-1">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">
+                                  ½ ได้ครึ่ง · ขาด/ลา/สาย {r.attendance ? `${r.attendance.pct.toFixed(1)}%` : ""}
+                                </span>
+                                <SvcForfeitExemptButton userId={r.userId} yearMonth={month}
+                                  forfeited exempted={false} reason="attendance"
                                   canEdit={canExempt} />
                               </div>
                             ) : (

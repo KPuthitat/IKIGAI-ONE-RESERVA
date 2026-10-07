@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { SvcPenaltyReason } from "@/lib/service-charge";
 import { fmtMoney } from "@/lib/format";
 
 // ปุ่ม "วิธีคำนวณ" + modal สำหรับหน้า เซอร์วิสชาร์จ รวมทั้งบริษัท (owner 2026-08-18). ต่างจาก
@@ -19,7 +20,8 @@ const fmtMin = (min: number) => Math.round(min).toLocaleString();
 export default function CompanySvcCalcModal({
   displayName, shared, byBranch, grossAllocation, netAllocation, forfeited,
   forfeitReason, dailyBreakdown, dayLedger, taxMode, whtAmount, groupInsurance, netPayout,
-  foodClawback = 0, otherDeductions = 0, otherDeductionItems = []
+  foodClawback = 0, otherDeductions = 0, otherDeductionItems = [],
+  grossBeforePenalty, penaltyAmount = 0
 }: {
   displayName: string;
   shared: boolean;
@@ -27,7 +29,7 @@ export default function CompanySvcCalcModal({
   grossAllocation: number;
   netAllocation: number;
   forfeited: boolean;
-  forfeitReason: "late_20pct" | "resignation" | null;
+  forfeitReason: SvcPenaltyReason | null;
   dailyBreakdown: BreakdownItem[];
   dayLedger?: Array<{ date: string; share: number; remark: string }>;
   taxMode: "sso" | "wht";
@@ -37,6 +39,9 @@ export default function CompanySvcCalcModal({
   foodClawback?: number;
   otherDeductions?: number;
   otherDeductionItems?: Array<{ id: number; amount: number; reason: string | null }>;
+  /** Accrual before the ½-tier withholding (ขาด/ลา/สาย 21–50%); = grossAllocation when nothing is withheld. */
+  grossBeforePenalty?: number;
+  penaltyAmount?: number;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -161,7 +166,7 @@ export default function CompanySvcCalcModal({
                   <tfoot>
                     <tr className="border-t-2 border-slate-200 font-bold text-slate-800">
                       <td className="py-1.5 pr-2" colSpan={7}>รวมส่วนแบ่ง (ก่อนหักสาย/ลาออก)</td>
-                      <td className="py-1.5 pl-2 text-right">฿{fmtMoney(grossAllocation)}</td>
+                      <td className="py-1.5 pl-2 text-right">฿{fmtMoney(penaltyAmount > 0 ? (grossBeforePenalty ?? grossAllocation + penaltyAmount) : grossAllocation)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -170,12 +175,22 @@ export default function CompanySvcCalcModal({
 
             {forfeited ? (
               <div className="mt-3 text-xs font-medium text-rose-600">
-                ยอดสุทธิ = 0 (ถูกตัดสิทธิ์: {forfeitReason === "late_20pct" ? "สายเกิน 20% ทั้งบริษัท" : "ลาออก"})
+                ยอดสุทธิ = 0 (ถูกตัดสิทธิ์: {forfeitReason === "late_20pct" ? "สายเกิน 20% ทั้งบริษัท" : forfeitReason === "attendance" ? "ขาด/ลา/สาย เกิน 50% ของวันตามตาราง" : "ลาออก"})
               </div>
             ) : (
               <div className="mt-3 text-xs space-y-0.5">
+                {penaltyAmount > 0 && (
+                  <>
+                    <div className="flex justify-between text-slate-600">
+                      <span>รวมส่วนแบ่ง (ก่อนหักตามเกณฑ์)</span><span>฿{fmtMoney(grossBeforePenalty ?? grossAllocation + penaltyAmount)}</span>
+                    </div>
+                    <div className="flex justify-between text-amber-700">
+                      <span>ได้รับครึ่งหนึ่งตามเกณฑ์ ขาด/ลา/สาย (เกินร้อยละ 20 ไม่เกินร้อยละ 50)</span><span>−฿{fmtMoney(penaltyAmount)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-between text-slate-600">
-                  <span>รวมส่วนแบ่ง</span><span>฿{fmtMoney(grossAllocation)}</span>
+                  <span>{penaltyAmount > 0 ? "ส่วนแบ่งที่ได้รับ" : "รวมส่วนแบ่ง"}</span><span>฿{fmtMoney(grossAllocation)}</span>
                 </div>
                 {foodClawback > 0 && (
                   <div className="flex justify-between text-rose-600">

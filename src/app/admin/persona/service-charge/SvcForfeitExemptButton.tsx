@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { SvcPenaltyReason } from "@/lib/service-charge";
 
 // ปุ่มยกเว้นการตัดสิทธิ์ เซอร์วิสชาร์จ (owner 2026-08-20). การตัดสิทธิ์ (สายเกิน 20% / ลาออก) เป็น
 // อัตโนมัติ แต่ผู้บริหารกด "ยกเว้นให้" รายคน/รายเดือนได้ → คนนั้นได้รับ เซอร์วิสชาร์จ ตามปกติ.
 // ใช้ได้ทั้งหน้ารายสาขาและหน้ารวมบริษัท (คีย์ด้วย user+เดือน เหมือนกัน).
-const reasonLabel = (r: "late_20pct" | "resignation" | null) =>
-  r === "late_20pct" ? "สายเกิน 20%" : r === "resignation" ? "ลาออก" : "";
+const reasonLabel = (r: SvcPenaltyReason | null) =>
+  r === "late_20pct" ? "สายเกิน 20%" : r === "resignation" ? "ลาออก" : r === "attendance" ? "ขาด/ลา/สาย" : "";
 
 export default function SvcForfeitExemptButton({
   userId, yearMonth, forfeited, exempted, reason, canEdit
@@ -16,7 +17,7 @@ export default function SvcForfeitExemptButton({
   yearMonth: string;
   forfeited: boolean;
   exempted: boolean;
-  reason: "late_20pct" | "resignation" | null;
+  reason: SvcPenaltyReason | null;
   canEdit: boolean;
 }) {
   const router = useRouter();
@@ -65,8 +66,8 @@ export default function SvcForfeitExemptButton({
     return (
       <button type="button" onClick={() => set(true)} disabled={busy}
         className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-medium whitespace-nowrap disabled:opacity-50"
-        title="จ่าย เซอร์วิสชาร์จ ให้คนนี้เดือนนี้ แม้จะถูกตัดสิทธิ์อัตโนมัติ">
-        {busy ? "…" : "ยกเว้นให้"}{err ? " (ลองใหม่)" : ""}
+        title="จ่าย เซอร์วิสชาร์จ เต็มจำนวนให้คนนี้เดือนนี้ โดยไม่ใช้เกณฑ์ตัดสิทธิ์/ลดครึ่ง (ยกเว้นทั้งเดือน)">
+        {busy ? "…" : "ยกเว้นทั้งเดือน"}{err ? " (ลองใหม่)" : ""}
       </button>
     );
   }
