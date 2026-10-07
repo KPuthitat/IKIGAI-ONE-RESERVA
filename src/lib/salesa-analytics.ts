@@ -1631,7 +1631,7 @@ function rangeHourlyByDayType(branchId: number, start: string, end: string): Hou
   const peakLine = (label: string, t: DayTypeHours) => {
     if (t.peakHour == null) return null;
     const h = t.hourly.find((x) => x.hour === t.peakHour)!;
-    return `${label}พีค ${hh(t.peakHour)} (เฉลี่ย ${h.avgBills.toFixed(1)} บิล/ชม. · ${t.days} วัน)`;
+    return `${label}พีค ${hh(t.peakHour)} (เฉลี่ย ${h.avgBills.toFixed(1)} บิลต่อชั่วโมง · ${t.days} วัน)`;
   };
   const a = peakLine("วันธรรมดา", weekday), b = peakLine("วันหยุด", weekend);
   if (a) insight.push(a);
@@ -1643,7 +1643,7 @@ function rangeHourlyByDayType(branchId: number, start: string, end: string): Hou
   }
   if (weekday.avgBillsPerDay != null && weekend.avgBillsPerDay != null && weekday.avgBillsPerDay > 0) {
     const lift = relPct(weekend.avgBillsPerDay, weekday.avgBillsPerDay);
-    if (lift != null && Math.abs(lift) >= 10) insight.push(`วันหยุดมีบิล/วัน ${lift > 0 ? "มากกว่า" : "น้อยกว่า"}วันธรรมดา ${intPct(lift)}`);
+    if (lift != null && Math.abs(lift) >= 10) insight.push(`วันหยุดมีบิลต่อวัน ${lift > 0 ? "มากกว่า" : "น้อยกว่า"}วันธรรมดา ${intPct(lift)}`);
   }
   // The CONTIGUOUS quiet stretch (< 25% of that type's peak; an hour with no
   // receipts counts as quiet) right after the peak, ending where business picks

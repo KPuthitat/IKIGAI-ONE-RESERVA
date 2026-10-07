@@ -154,13 +154,13 @@ export function salesPushPlan(branchId: number, targetBaht: number, days: number
   const advice: string[] = [];
   if (hasBaseline) {
     if (gap > 0) {
-      advice.push(`เป้าหมาย ${X} วัน รวม ${baht0(targetBaht)} บาท ต้องทำยอดเฉลี่ยวันละ ${baht0(requiredPerDay)} บาท (ปกติทำได้ประมาณ ${baht0(baselinePerDay)} บาท/วัน จึงต้องเพิ่มอีกประมาณ ${liftPct ?? 0}%)`);
+      advice.push(`เป้าหมาย ${X} วัน รวม ${baht0(targetBaht)} บาท ต้องทำยอดเฉลี่ยวันละ ${baht0(requiredPerDay)} บาท (ปกติทำได้ประมาณ ${baht0(baselinePerDay)} บาทต่อวัน จึงต้องเพิ่มอีกประมาณ ${liftPct ?? 0}%)`);
       const ways: string[] = [];
-      if (extraBillsPerDay != null) ways.push(`เพิ่มจำนวนลูกค้าประมาณ ${baht0(extraBillsPerDay)} บิล/วัน`);
+      if (extraBillsPerDay != null) ways.push(`เพิ่มจำนวนลูกค้าประมาณ ${baht0(extraBillsPerDay)} บิลต่อวัน`);
       if (extraTicketBaht != null) ways.push(`หรือเพิ่มยอดขายต่อบิลประมาณ ${baht0(extraTicketBaht)} บาท/บิล`);
       if (ways.length) advice.push(`แนวทางปิดส่วนต่าง: ${ways.join(" ")}`);
     } else {
-      advice.push(`เป้าหมาย ${X} วัน รวม ${baht0(targetBaht)} บาท เฉลี่ยวันละ ${baht0(requiredPerDay)} บาท ซึ่งต่ำกว่ายอดขายปกติ (ประมาณ ${baht0(baselinePerDay)} บาท/วัน) เพียงรักษาระดับการขายไว้ก็บรรลุเป้าหมาย`);
+      advice.push(`เป้าหมาย ${X} วัน รวม ${baht0(targetBaht)} บาท เฉลี่ยวันละ ${baht0(requiredPerDay)} บาท ซึ่งต่ำกว่ายอดขายปกติ (ประมาณ ${baht0(baselinePerDay)} บาทต่อวัน) เพียงรักษาระดับการขายไว้ก็บรรลุเป้าหมาย`);
     }
   }
   if (topEarners.length) advice.push(`เมนูที่ทำรายได้หลัก ควรผลักดันเป็นลำดับแรก: ${topEarners.slice(0, 3).map((m) => m.name).join(" · ")}`);
