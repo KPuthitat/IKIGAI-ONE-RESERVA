@@ -2,7 +2,7 @@ import { thDateBE } from "@/lib/th-month";
 import { NextResponse } from "next/server";
 import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { computeCompanySvcSummary, isSharedSvcMonth, companySvcPayoutState } from "@/lib/service-charge";
+import { computeCompanySvcSummary, isSharedSvcMonth, companySvcPayoutState, meetingFeeByUserCompany } from "@/lib/service-charge";
 import { generateSvcSummaryPdf, type SvcPdfData } from "@/lib/svc-summary-pdf";
 import { TH_MONTHS_FULL } from "@/lib/revshare";
 
@@ -53,22 +53,49 @@ export async function GET(req: Request) {
     };
   });
 
-  const rows: SvcPdfData["rows"] = summary.rows.map((r) => ({
-    name: r.displayName,
-    typeLabel: typeLabel(r.employmentType),
-    branchesLabel: r.byBranch.map((b) => b.branchName).join(", ") || "—",
-    gross: r.grossAllocation,
-    foodClawback: r.foodClawback,
-    otherDeductions: r.otherDeductions,
-    // netAllocation is pre-GI; the tax base ("ก่อนภาษี") is after group insurance.
-    preTax: round2(Math.max(0, r.netAllocation - r.groupInsurance)),
-    wht: r.whtAmount,
-    groupInsurance: r.groupInsurance,
-    net: r.netPayout,
-    statusLabel: r.forfeited
-      ? (r.forfeitReason === "resignation" ? "ตัดสิทธิ์ (ลาออก)" : r.forfeitReason === "attendance" ? "ตัดสิทธิ์ (ขาด/ลา/สาย)" : "ตัดสิทธิ์ (สาย)")
-      : r.exempted ? "ยกเว้นให้" : r.halved ? "ได้ครึ่ง (ขาด/ลา/สาย)" : "ได้รับ"
-  }));
+  // เบี้ยประชุม rides the same payout (owner 2026-10-09: it was missing from this PDF).
+  // Gross, its own 3% WHT (wht-mode staff) and net come from the one shared map the
+  // payroll summary uses, so the PDF can never disagree with it. Someone who only has a
+  // meeting fee (no service charge) still gets a row.
+  const mtgByUser = new Map<number, { gross: number; wht: number; net: number; typeLabel: string; name: string }>();
+  for (const m of meetingFeeByUserCompany(month).values()) {
+    if (m.companyId !== companyId) continue;
+    const cur = mtgByUser.get(m.userId) ?? { gross: 0, wht: 0, net: 0, typeLabel: typeLabel(m.employmentType), name: m.displayName };
+    cur.gross = round2(cur.gross + m.mtgGross); cur.wht = round2(cur.wht + m.mtgWht); cur.net = round2(cur.net + m.mtgNet);
+    mtgByUser.set(m.userId, cur);
+  }
+  const rows: SvcPdfData["rows"] = summary.rows.map((r) => {
+    const m = mtgByUser.get(r.userId);
+    mtgByUser.delete(r.userId);
+    return {
+      name: r.displayName,
+      typeLabel: typeLabel(r.employmentType),
+      branchesLabel: r.byBranch.map((b) => b.branchName).join(", ") || "—",
+      gross: r.grossAllocation,
+      meetingFee: m?.gross ?? 0,
+      foodClawback: r.foodClawback,
+      otherDeductions: r.otherDeductions,
+      // netAllocation is pre-GI; the tax base ("ก่อนภาษี") is after group insurance.
+      preTax: round2(Math.max(0, r.netAllocation - r.groupInsurance) + (m?.gross ?? 0)),
+      wht: round2(r.whtAmount + (m?.wht ?? 0)),
+      groupInsurance: r.groupInsurance,
+      net: round2(r.netPayout + (m?.net ?? 0)),
+      statusLabel: r.forfeited
+        ? (r.forfeitReason === "resignation" ? "ตัดสิทธิ์ (ลาออก)" : r.forfeitReason === "attendance" ? "ตัดสิทธิ์ (ขาด/ลา/สาย)" : "ตัดสิทธิ์ (สาย)")
+        : r.exempted ? "ยกเว้นให้" : r.halved ? "ได้ครึ่ง (ขาด/ลา/สาย)" : "ได้รับ"
+    };
+  });
+  for (const [, m] of mtgByUser) {
+    rows.push({
+      name: m.name, typeLabel: m.typeLabel, branchesLabel: "—",
+      gross: 0, meetingFee: m.gross, foodClawback: 0, otherDeductions: 0,
+      preTax: m.gross, wht: m.wht, groupInsurance: 0, net: m.net,
+      statusLabel: "เบี้ยประชุมอย่างเดียว"
+    });
+  }
+  const totalMeetingFee = round2(rows.reduce((s, r) => s + r.meetingFee, 0));
+  const totalMeetingWht = round2([...meetingFeeByUserCompany(month).values()].filter((m) => m.companyId === companyId).reduce((s, m) => s + m.mtgWht, 0));
+  const totalMeetingNet = round2([...meetingFeeByUserCompany(month).values()].filter((m) => m.companyId === companyId).reduce((s, m) => s + m.mtgNet, 0));
   const totalFoodClawback = round2(summary.rows.reduce((s, r) => s + r.foodClawback, 0));
   const totalOtherDeductions = round2(summary.rows.reduce((s, r) => s + r.otherDeductions, 0));
 
@@ -94,9 +121,10 @@ export async function GET(req: Request) {
       companyPool: round2(summary.companyPoolTotal),
       foodClawback: totalFoodClawback,
       otherDeductions: totalOtherDeductions,
-      wht: round2(summary.totalWht),
+      meetingFee: totalMeetingFee,
+      wht: round2(summary.totalWht + totalMeetingWht),
       groupInsurance: round2(summary.totalGroupInsurance),
-      netPayout: round2(summary.totalNetPayout)
+      netPayout: round2(summary.totalNetPayout + totalMeetingNet)
     },
     branches,
     rows

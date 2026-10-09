@@ -22,13 +22,15 @@ export type SvcPdfData = {
   totals: {
     collected: number; staffPool: number; companyPool: number;
     foodClawback: number; otherDeductions: number; wht: number; groupInsurance: number; netPayout: number;
+    /** เบี้ยประชุม paid with the service charge (gross). wht / netPayout already include it. */
+    meetingFee: number;
   };
   branches: Array<{
     name: string; collected: number; staffAttributed: number; netAttributed: number; headcount: number;
   }>;
   rows: Array<{
     name: string; typeLabel: string; branchesLabel: string;
-    gross: number; foodClawback: number; otherDeductions: number; preTax: number;
+    gross: number; meetingFee: number; foodClawback: number; otherDeductions: number; preTax: number;
     wht: number; groupInsurance: number; net: number; statusLabel: string;
   }>;
 };
@@ -89,11 +91,12 @@ export function generateSvcSummaryPdf(d: SvcPdfData): Promise<Buffer> {
         ["ยอดเซอร์วิสชาร์จเก็บได้รวมทุกสาขา", baht(d.totals.collected), true],
         ["ส่วนของพนักงาน (60%)", baht(d.totals.staffPool), false],
         ["ส่วนของบริษัท (40% + ตัดสิทธิ์/คืน)", baht(d.totals.companyPool), false],
+        ["เบี้ยประชุมรวม (จ่ายพร้อมเซอร์วิสชาร์จ)", baht(d.totals.meetingFee), false],
         ["หักค่าอาหาร (คูปอง · คืนเข้าบริษัท)", deduct(d.totals.foodClawback), false, "#a32d2d"],
         ["หักรายการอื่นๆ (เช่น ค่าเครื่องดื่ม)", deduct(d.totals.otherDeductions), false, "#a32d2d"],
-        ["หักภาษี ณ ที่จ่าย 3% รวม", deduct(d.totals.wht), false, "#a32d2d"],
+        ["หักภาษี ณ ที่จ่าย 3% รวม (รวมเบี้ยประชุม)", deduct(d.totals.wht), false, "#a32d2d"],
         ["หักประกันกลุ่มรวม (เจ้าหนี้รอนำส่ง)", deduct(d.totals.groupInsurance), false, "#a32d2d"],
-        ["ยอดจ่ายพนักงานสุทธิรวม", baht(d.totals.netPayout), true, "#0f6e56"]
+        ["ยอดจ่ายพนักงานสุทธิรวม (รวมเบี้ยประชุม)", baht(d.totals.netPayout), true, "#0f6e56"]
       ];
       const aTop = y;
       aPairs.forEach(([label, value, bold, color], i) => {
@@ -136,17 +139,18 @@ export function generateSvcSummaryPdf(d: SvcPdfData): Promise<Buffer> {
       cell(baht(d.branches.reduce((s, b) => s + b.netAttributed, 0)), bX(3), bCols[3].w, "right", { font: "th-b", color: "#281a0e" });
       y += 16;
       doc.font("th").fontSize(7.5).fillColor("#999")
-        .text("* ส่วนพนักงาน/จ่ายสุทธิ ปันตามสัดส่วนที่แต่ละคนได้จากสาขานั้น (ภาษี/ประกันกลุ่มหักที่ระดับบุคคล)", left, y);
+        .text("* ส่วนพนักงาน/จ่ายสุทธิ ปันตามสัดส่วนที่แต่ละคนได้จากสาขานั้น (ภาษี/ประกันกลุ่มหักที่ระดับบุคคล) · ไม่รวมเบี้ยประชุม", left, y);
       y = doc.y + 10;
 
       // ── Section C: per-person distribution ──────────────────────
       if (y + 60 > bottom) { doc.addPage(); y = doc.page.margins.top; }
       doc.font("th-b").fontSize(11).fillColor("#281a0e").text("รายบุคคล", left, y); y = doc.y + 4;
-      const numW = 76;
+      const numW = 66;
       const statusW = 78;
       const cCols: Array<{ label: string } & Col> = [
-        { key: "name", label: "ชื่อ", w: contentW - 6 * numW - statusW, align: "left" },
+        { key: "name", label: "ชื่อ", w: contentW - 7 * numW - statusW, align: "left" },
         { key: "gross", label: "ส่วนแบ่ง", w: numW, align: "right" },
+        { key: "meeting", label: "เบี้ยประชุม", w: numW, align: "right" },
         { key: "food", label: "หักค่าอาหาร", w: numW, align: "right" },
         { key: "other", label: "หักอื่นๆ", w: numW, align: "right" },
         { key: "gi", label: "ประกันกลุ่ม", w: numW, align: "right" },
@@ -177,12 +181,13 @@ export function generateSvcSummaryPdf(d: SvcPdfData): Promise<Buffer> {
         const rowTop = y;
         // numbers on the top baseline of the row
         cell(baht(p.gross), cX(1), cCols[1].w, "right", { size: 9 });
-        cell(deduct(p.foodClawback), cX(2), cCols[2].w, "right", { size: 9, color: p.foodClawback > 0 ? "#a32d2d" : "#999" });
-        cell(deduct(p.otherDeductions), cX(3), cCols[3].w, "right", { size: 9, color: p.otherDeductions > 0 ? "#a32d2d" : "#999" });
-        cell(deduct(p.groupInsurance), cX(4), cCols[4].w, "right", { size: 9, color: p.groupInsurance > 0 ? "#a32d2d" : "#999" });
-        cell(baht(p.preTax), cX(5), cCols[5].w, "right", { size: 9 });
-        cell(deduct(p.wht), cX(6), cCols[6].w, "right", { size: 9, color: p.wht > 0 ? "#a32d2d" : "#999" });
-        cell(baht(p.net), cX(7), cCols[7].w, "right", { font: "th-b", size: 9, color: p.net > 0 ? "#0f6e56" : "#a32d2d" });
+        cell(p.meetingFee > 0 ? baht(p.meetingFee) : "-", cX(2), cCols[2].w, "right", { size: 9, color: p.meetingFee > 0 ? "#5b3a8c" : "#999" });
+        cell(deduct(p.foodClawback), cX(3), cCols[3].w, "right", { size: 9, color: p.foodClawback > 0 ? "#a32d2d" : "#999" });
+        cell(deduct(p.otherDeductions), cX(4), cCols[4].w, "right", { size: 9, color: p.otherDeductions > 0 ? "#a32d2d" : "#999" });
+        cell(deduct(p.groupInsurance), cX(5), cCols[5].w, "right", { size: 9, color: p.groupInsurance > 0 ? "#a32d2d" : "#999" });
+        cell(baht(p.preTax), cX(6), cCols[6].w, "right", { size: 9 });
+        cell(deduct(p.wht), cX(7), cCols[7].w, "right", { size: 9, color: p.wht > 0 ? "#a32d2d" : "#999" });
+        cell(baht(p.net), cX(8), cCols[8].w, "right", { font: "th-b", size: 9, color: p.net > 0 ? "#0f6e56" : "#a32d2d" });
         // name + sub-line in the first column only
         doc.font("th").fontSize(9).fillColor("#222").text(p.name, cX(0) + 3, rowTop, { width: nameW - 6 });
         doc.font("th").fontSize(7.5).fillColor(p.statusLabel.startsWith("ตัดสิทธิ์") ? "#a32d2d" : "#999")
@@ -196,12 +201,13 @@ export function generateSvcSummaryPdf(d: SvcPdfData): Promise<Buffer> {
       hr("#bbb", 0.8);
       cell(`รวม ${d.rows.length} คน`, cX(0), cCols[0].w, "left", { font: "th-b", color: "#281a0e" });
       cell(baht(d.rows.reduce((s, r) => s + r.gross, 0)), cX(1), cCols[1].w, "right", { font: "th-b", color: "#281a0e" });
-      cell(deduct(d.totals.foodClawback), cX(2), cCols[2].w, "right", { font: "th-b", color: "#a32d2d" });
-      cell(deduct(d.totals.otherDeductions), cX(3), cCols[3].w, "right", { font: "th-b", color: "#a32d2d" });
-      cell(deduct(d.totals.groupInsurance), cX(4), cCols[4].w, "right", { font: "th-b", color: "#a32d2d" });
-      cell(baht(d.rows.reduce((s, r) => s + r.preTax, 0)), cX(5), cCols[5].w, "right", { font: "th-b", color: "#281a0e" });
-      cell(deduct(d.totals.wht), cX(6), cCols[6].w, "right", { font: "th-b", color: "#a32d2d" });
-      cell(baht(d.totals.netPayout), cX(7), cCols[7].w, "right", { font: "th-b", color: "#0f6e56" });
+      cell(baht(d.totals.meetingFee), cX(2), cCols[2].w, "right", { font: "th-b", color: "#5b3a8c" });
+      cell(deduct(d.totals.foodClawback), cX(3), cCols[3].w, "right", { font: "th-b", color: "#a32d2d" });
+      cell(deduct(d.totals.otherDeductions), cX(4), cCols[4].w, "right", { font: "th-b", color: "#a32d2d" });
+      cell(deduct(d.totals.groupInsurance), cX(5), cCols[5].w, "right", { font: "th-b", color: "#a32d2d" });
+      cell(baht(d.rows.reduce((s, r) => s + r.preTax, 0)), cX(6), cCols[6].w, "right", { font: "th-b", color: "#281a0e" });
+      cell(deduct(d.totals.wht), cX(7), cCols[7].w, "right", { font: "th-b", color: "#a32d2d" });
+      cell(baht(d.totals.netPayout), cX(8), cCols[8].w, "right", { font: "th-b", color: "#0f6e56" });
       y += 14;
 
       // Footer flows right after the totals (pinning it to the page bottom can
