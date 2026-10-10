@@ -1,7 +1,7 @@
 // Whole-month sales estimate for a revshare partner (owner 2026-10-06).
 // Run:  node --import tsx scripts/test-revshare-forecast.ts
 
-import { projectMonthSales } from "../src/lib/revshare-forecast";
+import { projectMonthSales, shopShareStats } from "../src/lib/revshare-forecast";
 
 let passed = 0, failed = 0;
 const ok = (n: string, c: boolean) => { if (c) { passed++; console.log(`  ✓ ${n}`); } else { failed++; console.error(`  ✗ FAIL: ${n}`); } };
@@ -39,6 +39,18 @@ ok("no sales history at all → null", projectMonthSales({ year: 2026, month: 10
 // Month with no import yet still projects from the prior-weeks run rate.
 const early = projectMonthSales({ year: 2026, month: 10, history: history.filter((h) => h.date < "2026-10-01"), closedWeekdays: [1] })!;
 ok("no import yet this month → projects the whole month from history", early.actual === 0 && early.actualDays === 0 && early.lastDate === null && early.remainingDays === 27);
+
+// Partner share of the whole restaurant.
+const sh = shopShareStats({
+  partnerDaily: [{ date: "2026-10-01", sales: 200 }, { date: "2026-10-02", sales: 300 }, { date: "2026-10-03", sales: 999 }],
+  shopDaily: [{ date: "2026-10-01", sales: 1000 }, { date: "2026-10-02", sales: 1000 }],
+  partnerForecastTotal: 1000, shopForecastTotal: 8000
+});
+ok("share: per day = partner ÷ restaurant", sh.perDay["2026-10-01"] === 20 && sh.perDay["2026-10-02"] === 30);
+ok("share: a day only one side has is ignored", sh.perDay["2026-10-03"] === undefined && sh.cumulative?.days === 2);
+ok("share: cumulative = Σ partner ÷ Σ restaurant (500 ÷ 2000 = 25%)", sh.cumulative?.pct === 25 && sh.cumulative?.partner === 500 && sh.cumulative?.shop === 2000);
+ok("share: latest day and whole-month forecast (1000 ÷ 8000 = 12.5%)", sh.latest?.date === "2026-10-02" && sh.latest?.pct === 30 && sh.forecast?.pct === 12.5);
+ok("share: no restaurant data → nothing", (() => { const e = shopShareStats({ partnerDaily: [{ date: "2026-10-01", sales: 5 }], shopDaily: [] }); return e.cumulative === null && e.latest === null && e.forecast === null; })());
 
 console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
