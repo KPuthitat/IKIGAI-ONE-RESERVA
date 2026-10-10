@@ -10,6 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { getDb, type Branch, type Booking } from "@/lib/db";
+import { upcomingBirthdays, birthdayReminderFlex, birthdayReminderSent, markBirthdayReminderSent } from "@/lib/birthday-reminder";
 import { postDueRecurringExpenses, listDueUnpaidBills, markBillsReminded } from "@/lib/accounta-db";
 import {
   notifyCustomer,
@@ -152,6 +153,25 @@ async function runCron(): Promise<NextResponse> {
   } catch (e) {
     console.error("cron due-bill reminder error", e);
     reportError(e, "cron due-bill reminder", {});
+  }
+
+  // ── Birthday heads-up to the HR group (owner 2026-10-10) ─────────
+  // 3, 2 and 1 day before a colleague's birthday; one card per day, from 09:00 BKK.
+  // Marked sent only when there is someone to announce AND a card went out, so a
+  // missing HR group never silently burns the day.
+  let birthdayRemindersSent = 0;
+  try {
+    if (nowHhmmBkk >= "09:00" && !birthdayReminderSent(todayBkk)) {
+      const people = upcomingBirthdays(todayBkk);
+      if (people.length > 0) {
+        await notifyToHrGroup(birthdayReminderFlex(people));
+        markBirthdayReminderSent(todayBkk, people.length);
+        birthdayRemindersSent = people.length;
+      }
+    }
+  } catch (e) {
+    console.error("cron birthday reminder error", e);
+    reportError(e, "cron birthday reminder", {});
   }
 
   // Multi-time path: check which configured time slots are due for each branch.

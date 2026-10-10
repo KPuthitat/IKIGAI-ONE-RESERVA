@@ -3222,6 +3222,15 @@ function runMigrations(db: Database.Database): void {
       PRIMARY KEY (company_id, year_month)
     );
   `);
+  // birthday_reminders_sent (owner 2026-10-10) — one HR-group birthday heads-up per
+  // day; the row stops the cron (which pings every few minutes) from repeating it.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS birthday_reminders_sent (
+      remind_date TEXT PRIMARY KEY,   -- YYYY-MM-DD (BKK) the reminder was sent for
+      people INTEGER NOT NULL DEFAULT 0,
+      sent_at TEXT NOT NULL
+    );
+  `);
   // svc_deductions (owner 2026-08-20) — ad-hoc deductions taken from a person's
   // SVC for a month (e.g. ค่าเครื่องดื่มที่ไม่ใช่คูปอง / other staff debts). One row
   // per line item; an admin enters reason + amount. Applied in the SVC math AFTER

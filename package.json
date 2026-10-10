@@ -31,6 +31,7 @@
     "test:svc-attendance": "node --import tsx scripts/test-svc-attendance.ts",
     "test:svc-attendance-payout": "node --import tsx scripts/test-svc-attendance-payout.ts",
     "test:svc-summary-pdf": "node --import tsx scripts/test-svc-summary-pdf.ts",
+    "test:birthday-reminder": "node --import tsx scripts/test-birthday-reminder.ts",
     "test:payroll-pending-ot": "node --import tsx scripts/test-payroll-pending-ot.ts",
     "test:clinica-analytics": "node --import tsx scripts/test-clinica-analytics.ts",
     "test:inventa-waste": "node --import tsx scripts/test-inventa-waste.ts",
