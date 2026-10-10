@@ -9,7 +9,7 @@ import { fmtMoney } from "@/lib/format";
 import { roundLabel, mondayOf, TH_MONTHS_FULL, salesBaseIncludesVat, salesVat, partnerShopName, type Tier, type SalesBase } from "@/lib/revshare";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import { useConfirm } from "@/app/components/useConfirm";
-import type { MonthSalesForecast } from "@/lib/revshare-forecast";
+import type { MonthSalesForecast, ShopShare } from "@/lib/revshare-forecast";
 import { DailyCardPreview, WeeklyCardPreview, DrinkWelfareCardPreview, SendPreviewModal } from "./CardPreviews";
 
 // Calendar-day span (inclusive) between two ISO dates — mirrors the notify
@@ -35,8 +35,8 @@ const BASE_LABEL: Record<SalesBase, string> = { gross: "Gross (ก่อนส�
 const PIN_ERRORS = new Set(["wrong_pin", "pin_invalid", "no_pin", "user_not_found"]);
 
 export default function RoundsClient({
-  partner, rounds: initialRounds, year, month, operatorName, sellerName, drinkWelfare, monthForecast
-}: { partner: Partner; tiers: Tier[]; rounds: Round[]; year: number; month: number; operatorName: string; sellerName: string; drinkWelfare: DrinkWelfareData | null; monthForecast: MonthSalesForecast | null }) {
+  partner, rounds: initialRounds, year, month, operatorName, sellerName, drinkWelfare, monthForecast, shopShare
+}: { partner: Partner; tiers: Tier[]; rounds: Round[]; year: number; month: number; operatorName: string; sellerName: string; drinkWelfare: DrinkWelfareData | null; monthForecast: MonthSalesForecast | null; shopShare: ShopShare }) {
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [rounds, setRounds] = useState<Round[]>(initialRounds);
@@ -372,6 +372,7 @@ export default function RoundsClient({
               <thead><tr className="text-[11px] text-slate-400 border-b border-slate-200">
                 <th className="text-left py-1.5 px-2">วันที่</th>
                 <th className="text-right py-1.5 px-2">ยอดขาย</th>
+                <th className="text-right py-1.5 px-2" title="ยอดขายร้านจ้อจี้ (รวมภาษี) ÷ ยอดขายทั้งร้านของวันนั้น">สัดส่วนต่อยอดร้าน</th>
                 <th className="text-left py-1.5 px-2">ที่มา</th>
                 <th></th>
               </tr></thead>
@@ -393,6 +394,9 @@ export default function RoundsClient({
                             <SalesInput value={r.sales_amount} disabled={busy} autoFocus={editingId === r.id}
                               onSave={(v) => { saveSales(r, v); setEditingId(null); }} />
                           )}
+                        </td>
+                        <td className="py-1 px-2 text-right tabular-nums text-xs text-sky-700 whitespace-nowrap">
+                          {shopShare.perDay[r.period_start] != null ? `${shopShare.perDay[r.period_start].toFixed(2)}%` : <span className="text-slate-300" title="ยังไม่มียอดขายร้านของวันนี้">—</span>}
                         </td>
                         <td className="py-1 px-2 text-[11px] text-slate-400">
                           {r.source === "pos_import" ? "นำเข้าไฟล์" : "กรอกเอง"}
@@ -419,7 +423,7 @@ export default function RoundsClient({
                     <tr className="bg-slate-50 border-b border-slate-200">
                       <td className="py-1 px-2 text-[11px] font-bold text-slate-600">ยอดโอนสัปดาห์ {w.label}</td>
                       <td className="py-1 px-2 text-right font-mono font-bold text-brand">฿{fmtMoney(w.total)}</td>
-                      <td colSpan={2} className="py-1 px-2 text-[10px] text-slate-400">
+                      <td colSpan={3} className="py-1 px-2 text-[10px] text-slate-400">
                         โอนเต็มจำนวนให้คู่ค้า
                         {partner.line_group_id && (
                           <button type="button" onClick={() => setSendModal({
@@ -438,6 +442,7 @@ export default function RoundsClient({
               <tfoot><tr className="border-t-2 border-slate-300 font-bold">
                 <td className="py-1.5 px-2 text-slate-700">รวมทั้งเดือน</td>
                 <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(totalSales)}</td>
+                <td className="py-1.5 px-2 text-right tabular-nums text-xs text-sky-700 whitespace-nowrap">{shopShare.cumulative ? `${shopShare.cumulative.pct.toFixed(2)}%` : "—"}</td>
                 <td colSpan={2} className="py-1.5 px-2 text-[11px] text-slate-400">ส่วนแบ่งคำนวณรายเดือนที่หน้าสรุปยอด</td>
               </tr></tfoot>
             </table>
@@ -455,6 +460,31 @@ export default function RoundsClient({
             </div>
           );
         })()}
+        {(shopShare.cumulative || shopShare.forecast) && (
+          <section className="mt-4 rounded-xl border border-sky-200 bg-white p-4 space-y-3" aria-label="สัดส่วนยอดขายต่อยอดขายร้าน">
+            <div>
+              <h3 className="font-bold text-slate-800">สัดส่วนยอดขายของ {shop} ต่อยอดขายทั้งร้าน</h3>
+              <p className="text-xs text-slate-500 mt-0.5">{sellerName} · {TH_MONTHS_FULL[month]} พ.ศ. {year + 543}</p>
+            </div>
+            <dl className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
+              {[
+                shopShare.latest && { k: "d", label: `รายวัน (${roundLabel(shopShare.latest.date, shopShare.latest.date)})`, pct: shopShare.latest.pct, sub: `฿${fmtMoney(shopShare.latest.partner)} จากยอดร้าน ฿${fmtMoney(shopShare.latest.shop)}` },
+                shopShare.cumulative && { k: "c", label: `สะสมทั้งเดือน (${shopShare.cumulative.days} วัน)`, pct: shopShare.cumulative.pct, sub: `฿${fmtMoney(shopShare.cumulative.partner)} จากยอดร้าน ฿${fmtMoney(shopShare.cumulative.shop)}` },
+                shopShare.forecast && { k: "f", label: "คาดการณ์ทั้งเดือน (ประมาณการ)", pct: shopShare.forecast.pct, sub: `฿${fmtMoney(shopShare.forecast.partner)} จากยอดร้าน ฿${fmtMoney(shopShare.forecast.shop)}` }
+              ].filter((x): x is { k: string; label: string; pct: number; sub: string } => !!x).map((x) => (
+                <div key={x.k} className="rounded-lg bg-sky-50/60 border border-sky-100 px-2 py-2.5">
+                  <dt className="text-[11px] text-slate-500">{x.label}</dt>
+                  <dd className="text-xl font-bold text-sky-700 tabular-nums">{x.pct.toFixed(2)}%</dd>
+                  <dd className="text-[10px] text-slate-400">{x.sub}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="text-[11px] text-slate-500">
+              คำนวณจากยอดขายที่รวมภาษีมูลค่าเพิ่มทั้งสองฝั่ง เทียบกับยอดขายรวม (Total Sales) ของร้านในแต่ละวัน นับเฉพาะวันที่มีข้อมูลทั้งสองฝั่ง ·
+              ตัวเลขคาดการณ์เป็นประมาณการ ใช้ประกอบการพิจารณาภายในเท่านั้น ไม่นำไปคิดส่วนแบ่ง ใบวางบิล หรือส่งในรายงาน
+            </p>
+          </section>
+        )}
         {monthForecast && monthForecast.remainingDays > 0 && (() => {
           // Display-only estimate (owner 2026-10-06): not part of the settlement,
           // the invoice, or any card/report sent to the partner.

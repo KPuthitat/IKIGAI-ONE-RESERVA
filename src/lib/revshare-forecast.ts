@@ -72,3 +72,40 @@ export function projectMonthSales(args: {
     method: usedFallback ? "overall" : "weekday"
   };
 }
+
+// ── Partner shop vs the whole restaurant (owner 2026-10-10) ───────────────────
+// "ยอดขายจ้อจี้เป็นกี่ % ของยอดขายร้าน" per day, month to date and for the forecast
+// month. Both sides are VAT-inclusive totals (the partner side is converted by the
+// caller; the restaurant side is the POS "Total Sales"). Days count only when BOTH
+// sides have data, so a missing import never skews the percentage.
+
+export type ShopShare = {
+  perDay: Record<string, number>;      // date → partner ÷ restaurant × 100 (days with both)
+  latest: { date: string; pct: number; partner: number; shop: number } | null;
+  cumulative: { pct: number; partner: number; shop: number; days: number } | null;
+  forecast: { pct: number; partner: number; shop: number } | null;
+};
+
+export function shopShareStats(args: {
+  partnerDaily: DailySales[];          // VAT-inclusive
+  shopDaily: DailySales[];
+  partnerForecastTotal?: number | null;   // VAT-inclusive whole-month estimates
+  shopForecastTotal?: number | null;
+}): ShopShare {
+  const shop = new Map(args.shopDaily.filter((d) => d.sales > 0).map((d) => [d.date, d.sales]));
+  const perDay: Record<string, number> = {};
+  let sp = 0, ss = 0, days = 0, latest: ShopShare["latest"] = null;
+  for (const p of [...args.partnerDaily].sort((a, b) => a.date.localeCompare(b.date))) {
+    const s = shop.get(p.date);
+    if (!s || p.sales < 0) continue;
+    perDay[p.date] = round2((p.sales / s) * 100);
+    sp += p.sales; ss += s; days++;
+    latest = { date: p.date, pct: perDay[p.date], partner: round2(p.sales), shop: round2(s) };
+  }
+  const fp = args.partnerForecastTotal, fs = args.shopForecastTotal;
+  return {
+    perDay, latest,
+    cumulative: days > 0 ? { pct: round2((sp / ss) * 100), partner: round2(sp), shop: round2(ss), days } : null,
+    forecast: fp != null && fs != null && fs > 0 ? { pct: round2((fp / fs) * 100), partner: round2(fp), shop: round2(fs) } : null
+  };
+}

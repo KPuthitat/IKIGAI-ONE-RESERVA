@@ -3,7 +3,9 @@ import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isRevshareBranch, getPartner, getTiers, listRounds, listRoundsRange } from "@/lib/revshare-db";
-import { projectMonthSales } from "@/lib/revshare-forecast";
+import { projectMonthSales, shopShareStats } from "@/lib/revshare-forecast";
+import { listMonth as listShopMonth, listRange as listShopRange } from "@/lib/salesa-db";
+import { salesBaseIncludesVat, salesVat } from "@/lib/revshare";
 import { drinkWelfareByWeek } from "@/lib/partner-drink-orders";
 import RoundsClient from "./RoundsClient";
 
@@ -56,6 +58,34 @@ export default function RevshareRoundsPage({ searchParams }: { searchParams: { p
     });
   }
 
+  // Partner sales as a share of the whole restaurant's sales (owner 2026-10-10): daily,
+  // month to date and the month forecast. Both sides VAT-inclusive; display-only.
+  const vatRate = partner.vat_enabled ? partner.vat_rate : 0;
+  const incl = salesBaseIncludesVat(partner.sales_base);
+  const toGross = (amount: number) => salesVat(amount, vatRate, incl).total;
+  const shopMonth = listShopMonth(branchId, year, month).map((r) => ({ date: r.sale_date, sales: r.nett }));
+  let shopForecastTotal: number | null = null;
+  if (monthForecast) {
+    const mm2 = String(month).padStart(2, "0");
+    const dim2 = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const lb = new Date(Date.UTC(year, month - 1, 1) - 56 * 86400000).toISOString().slice(0, 10);
+    let closed2: number[] = [];
+    try {
+      const a = JSON.parse((getDb().prepare("SELECT closed_weekdays FROM branches WHERE id = ?").get(branchId) as { closed_weekdays: string | null }).closed_weekdays ?? "[]");
+      if (Array.isArray(a)) closed2 = a.filter((x) => Number.isInteger(x) && x >= 0 && x <= 6);
+    } catch { closed2 = []; }
+    shopForecastTotal = projectMonthSales({
+      year, month, closedWeekdays: closed2,
+      history: listShopRange(branchId, lb, `${year}-${mm2}-${String(dim2).padStart(2, "0")}`).map((r) => ({ date: r.sale_date, sales: r.nett }))
+    })?.total ?? null;
+  }
+  const shopShare = shopShareStats({
+    partnerDaily: listRounds(partner.id, branchId, year, month).map((r) => ({ date: r.period_start, sales: toGross(r.sales_amount) })),
+    shopDaily: shopMonth,
+    partnerForecastTotal: monthForecast ? toGross(monthForecast.total) : null,
+    shopForecastTotal
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -76,6 +106,7 @@ export default function RevshareRoundsPage({ searchParams }: { searchParams: { p
         sellerName={sellerName}
         drinkWelfare={partner.drink_welfare ? drinkWelfareByWeek(getDb(), partner.id, year, month) : null}
         monthForecast={monthForecast}
+        shopShare={shopShare}
       />
     </div>
   );
