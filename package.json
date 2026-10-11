@@ -40,6 +40,7 @@
     "test:special-duty-evidence": "node --import tsx scripts/test-special-duty-evidence.ts",
     "test:special-duty-payout": "node --import tsx scripts/test-special-duty-payout.ts",
     "test:special-duty-swap": "node --import tsx scripts/test-special-duty-swap.ts",
+    "test:special-duty-cron": "node --import tsx scripts/test-special-duty-cron.ts",
     "test:special-duty-roster": "node --import tsx scripts/test-special-duty-roster.ts",
     "test:payroll-pending-ot": "node --import tsx scripts/test-payroll-pending-ot.ts",
     "test:clinica-analytics": "node --import tsx scripts/test-clinica-analytics.ts",

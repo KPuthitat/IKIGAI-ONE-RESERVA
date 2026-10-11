@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import { getDb, type Branch, type Booking } from "@/lib/db";
 import { upcomingBirthdays, birthdayReminderFlex, birthdayReminderSent, markBirthdayReminderSent } from "@/lib/birthday-reminder";
+import { runSpecialDutyDaily } from "@/lib/special-duty-cron";
 import { postDueRecurringExpenses, listDueUnpaidBills, markBillsReminded } from "@/lib/accounta-db";
 import {
   notifyCustomer,
@@ -172,6 +173,17 @@ async function runCron(): Promise<NextResponse> {
   } catch (e) {
     console.error("cron birthday reminder error", e);
     reportError(e, "cron birthday reminder", {});
+  }
+
+  // ── ตำแหน่งงานค่าตอบแทนพิเศษ daily job (owner 2026-10-11) ─────────
+  // Auto-close booking, manager/owner digests, day-before + last-day reminders, and the
+  // evidence-photo retention sweep. Idempotent: each message is claimed once.
+  let specialDuty: { closed: number; messages: number; swept: number } | null = null;
+  try {
+    specialDuty = await runSpecialDutyDaily({ today: todayBkk, hhmm: nowHhmmBkk });
+  } catch (e) {
+    console.error("cron special duty error", e);
+    reportError(e, "cron special duty", {});
   }
 
   // Multi-time path: check which configured time slots are due for each branch.
@@ -631,7 +643,8 @@ async function runCron(): Promise<NextResponse> {
     review_invites_purged: reviewInvitesPurged,
     insigna_rollup: insignaRollup,
     insigna_churn: insignaChurn,
-    inventa_expiry_alerts_sent: inventaExpiryAlertsSent
+    inventa_expiry_alerts_sent: inventaExpiryAlertsSent,
+    special_duty: specialDuty
   });
 }
 
