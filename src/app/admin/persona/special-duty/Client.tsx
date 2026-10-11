@@ -73,6 +73,10 @@ export default function Client({ month }: { month: string }) {
       <div>
         <h1 className="text-xl font-bold text-slate-900">ตำแหน่งงานค่าตอบแทนพิเศษ</h1>
         <p className="text-sm text-slate-500 mt-1">ดูผู้ที่เลือกวัน จัดวันที่ว่าง และประกาศตารางของสาขา</p>
+        <div className="flex gap-2 mt-2 text-sm">
+          <a href={apiUrl(`/admin/persona/special-duty/settings?month=${month}`)} className="btn-secondary !py-1">ตั้งค่าตำแหน่ง</a>
+          <a href={apiUrl(`/admin/persona/special-duty/overview?month=${month}`)} className="btn-secondary !py-1">ภาพรวมทุกสาขา</a>
+        </div>
       </div>
 
       <div className="card flex items-center justify-between gap-2">
