@@ -10,7 +10,7 @@ export type StaffOption = { id: number; name: string; type: string | null };
 const MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 const fmtDate = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return `${d} ${MONTHS[m - 1]} ${y + 543}`; };
 const money = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const KIND = { aid: "เงินช่วยเหลือพิเศษ", advance: "เบิกเงินล่วงหน้า" } as const;
+const KIND = { aid: "การช่วยเหลือ", advance: "เบิกล่วงหน้า" } as const;
 const shiftMonth = (ym: string, by: number) => { const [y, m] = ym.split("-").map(Number); const d = new Date(Date.UTC(y, m - 1 + by, 1)); return d.toISOString().slice(0, 7); };
 
 type Limit = { earned: number; taken: number; available: number; basis: string; workedDays: number };
@@ -75,12 +75,13 @@ export default function Client({ month, today, staff, payments }: { month: strin
   return (
     <div className="space-y-5 max-w-3xl">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">เงินช่วยเหลือพิเศษและเบิกเงินล่วงหน้า</h1>
-        <p className="text-sm text-slate-500 mt-1">บันทึกเงินที่จ่ายให้พนักงานนอกรอบเงินเดือน พร้อมเหตุผล ระบบจะนำไปรวมในรายได้และหักออกจากยอดโอนในรอบเงินเดือนให้โดยอัตโนมัติ</p>
+        <h1 className="text-xl font-bold text-slate-900">รอบจ่ายกรณีพิเศษ</h1>
+        <p className="text-sm text-slate-500 mt-1">บันทึกการจ่ายเงินให้พนักงานนอกรอบเงินเดือน โดยเลือกว่าเป็นการช่วยเหลือหรือการเบิกล่วงหน้า พร้อมระบุเหตุผล ระบบจะนำไปรวมในรายได้และหักออกจากยอดโอนในรอบเงินเดือนให้โดยอัตโนมัติ</p>
       </div>
 
       <section className="card space-y-3">
-        <h2 className="font-semibold text-slate-800">เพิ่มรายการ</h2>
+        <h2 className="font-semibold text-slate-800">เพิ่มรอบจ่ายกรณีพิเศษ</h2>
+        <p className="text-sm text-slate-600">เลือกประเภทการจ่าย</p>
         <div className="grid grid-cols-2 gap-2">
           {(["aid", "advance"] as const).map((k) => (
             <button key={k} type="button" onClick={() => setKind(k)}

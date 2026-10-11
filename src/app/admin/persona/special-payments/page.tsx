@@ -6,7 +6,7 @@ import { canPayUser } from "@/lib/special-payments-access";
 import Client, { type StaffOption } from "./Client";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "เงินช่วยเหลือพิเศษและเบิกล่วงหน้า · NOKHOOK OS" };
+export const metadata: Metadata = { title: "รอบจ่ายกรณีพิเศษ · NOKHOOK OS" };
 
 export default function SpecialPaymentsPage({ searchParams }: { searchParams: { month?: string } }) {
   const user = requirePayrollAccess();

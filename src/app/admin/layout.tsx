@@ -180,7 +180,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           ? [
               { href: "/admin/persona/payroll", label: t(lang, "admin.persona.nav.payroll") },
               { href: "/admin/persona/payroll/company", label: t(lang, "admin.persona.nav.payrollCompany") },
-              { href: "/admin/persona/special-payments", label: "เงินช่วยเหลือพิเศษและเบิกล่วงหน้า" },
+              { href: "/admin/persona/special-payments", label: "รอบจ่ายกรณีพิเศษ" },
               // ค่าตอบแทนแพทย์ (Doctor Fee) — clinic branch only (owner 2026-08).
               ...(dfBranch ? [{ href: "/admin/persona/doctor-fee", label: "ค่าตอบแทนแพทย์ (DF)" }] : [])
             ]
