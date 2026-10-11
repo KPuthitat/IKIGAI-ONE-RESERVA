@@ -5,13 +5,42 @@ import { apiUrl } from "@/lib/url";
 
 type Slot = { date: string; state: "free" | "full" | "mine" };
 type Position = { id: number; slotNo: number; name: string; description: string | null; dailyRate: number; eligible: boolean; days: Slot[] };
-type Data = { slots: { status: string; bookingCloseDate: string | null; minDays: number; positions: Position[] }; mine: Array<{ positionName: string; date: string; amount: number }> };
+type Mine = { id: number; positionName: string; date: string; status: string; amount: number; iDoIt: boolean; reviewNote: string | null; evidenceCount: number };
+type Data = {
+  status: string;
+  slots: { status: string; bookingCloseDate: string | null; minDays: number; positions: Position[] } | null;
+  mine: Mine[];
+  schedule: Array<{ positionName: string; date: string; name: string }> | null;
+};
 
 const MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 const DOW = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
 const fmtDate = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return `${d} ${MONTHS[m - 1]} ${y + 543}`; };
 const fmtShort = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return `${DOW[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}ที่ ${d}`; };
 const money = (n: number) => n.toLocaleString("th-TH");
+const DUTY_STATUS: Record<string, string> = {
+  booked: "รอปฏิบัติงาน", assigned: "รอปฏิบัติงาน", covered: "ท่านเป็นผู้แทน รอปฏิบัติงาน", submitted: "ส่งหลักฐานแล้ว รอผู้จัดการตรวจ",
+  approved: "ตรวจรับแล้ว", absent: "บันทึกว่าขาดปฏิบัติงาน"
+};
+const todayBkk = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+
+function downscaleToDataUrl(file: File, maxEdge = 1280, quality = 0.7): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith("image/")) return resolve(null);
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d"); if (!ctx) return resolve(null);
+      ctx.drawImage(img, 0, 0, w, h); resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
 
 export default function Client({ month }: { month: string }) {
   const [data, setData] = useState<Data | null>(null);
@@ -26,7 +55,7 @@ export default function Client({ month }: { month: string }) {
     if (!r.ok) { setErr(j.error); return; }
     setData(j);
     const init: Record<number, string[]> = {};
-    for (const p of (j as Data).slots.positions) init[p.id] = p.days.filter((d) => d.state === "mine").map((d) => d.date);
+    for (const p of (j as Data).slots?.positions ?? []) init[p.id] = p.days.filter((d) => d.state === "mine").map((d) => d.date);
     setPicked(init);
   }, [month]);
   useEffect(() => { load(); }, [load]);
@@ -44,24 +73,24 @@ export default function Client({ month }: { month: string }) {
   const title = `เดือน${MONTHS[m - 1]} ${y + 543}`;
   if (err) return <div className="card text-sm text-slate-600">{err === "not_published" ? "ขณะนี้ยังไม่อยู่ในช่วงเลือกวัน" : err === "month_off" ? "เดือนนี้ไม่มีตำแหน่งงานค่าตอบแทนพิเศษ" : "ไม่สามารถแสดงข้อมูลได้"}</div>;
   if (!data) return <div className="card text-sm text-slate-500">กำลังโหลด</div>;
-  const open = data.slots.status === "booking_open";
+  const open = data.slots?.status === "booking_open";
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-lg font-bold text-slate-900">ตำแหน่งงานค่าตอบแทนพิเศษ</h1>
-        <p className="text-sm text-slate-500">{title}{data.slots.bookingCloseDate ? ` · ปิดรับการเลือกวันที่ ${fmtDate(data.slots.bookingCloseDate)}` : ""}</p>
+        <p className="text-sm text-slate-500">{title}{data.slots?.bookingCloseDate ? ` · ปิดรับการเลือกวันที่ ${fmtDate(data.slots.bookingCloseDate)}` : ""}</p>
       </div>
-      <div className="card text-sm text-slate-600 space-y-1">
+      {data.slots != null && <div className="card text-sm text-slate-600 space-y-1">
         <p className="font-semibold text-slate-800">วิธีเลือกวัน</p>
         <p>เลือกได้เฉพาะวันที่ท่านมีตารางทำงานปกติ และต้องเลือกให้ครบจำนวนวันขั้นต่ำของแต่ละตำแหน่ง</p>
         <p>วันที่มีผู้เลือกแล้วจะแสดงว่า “เต็ม” โดยไม่แสดงชื่อผู้ที่เลือก</p>
         <p>ค่าตอบแทนจะจ่ายพร้อมค่าบริการในวันที่ 20 ของเดือนถัดไป</p>
-      </div>
+      </div>}
       {msg && <div className={`card text-sm whitespace-pre-line ${msg.ok ? "text-emerald-700" : "text-rose-700"}`}>{msg.text}</div>}
-      {data.slots.positions.filter((p) => p.eligible).map((p) => {
+      {(data.slots?.positions ?? []).filter((p) => p.eligible).map((p) => {
         const sel = new Set(picked[p.id] ?? []);
-        const min = data.slots.minDays;
+        const min = data.slots!.minDays;
         return (
           <section key={p.id} className="card space-y-3">
             <div>
@@ -86,15 +115,97 @@ export default function Client({ month }: { month: string }) {
           </section>
         );
       })}
-      {data.mine.length > 0 && (
-        <section className="card">
-          <h2 className="font-semibold text-slate-900 mb-2">วันที่ท่านเลือกไว้</h2>
-          <ul className="text-sm text-slate-700 space-y-1">
-            {data.mine.map((d, i) => <li key={i}>{fmtDate(d.date)} · {d.positionName} · {money(d.amount)} บาท</li>)}
-          </ul>
-        </section>
-      )}
+      {data.mine.length > 0 && <MyDuties mine={data.mine} published={data.slots == null} onChanged={load} setMsg={setMsg} />}
+      {data.schedule && <Schedule rows={data.schedule} />}
     </div>
+  );
+}
+
+function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; published: boolean; onChanged: () => void; setMsg: (m: { ok: boolean; text: string }) => void }) {
+  const [openId, setOpenId] = useState<number | null>(null);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [noPeople, setNoPeople] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const today = todayBkk();
+
+  async function addFiles(files: FileList | null) {
+    if (!files) return;
+    const out: string[] = [];
+    for (const f of Array.from(files)) { const u = await downscaleToDataUrl(f); if (u) out.push(u); }
+    setPhotos((p) => [...p, ...out].slice(0, 5));
+  }
+  async function send(id: number) {
+    setBusy(true); setMsg({ ok: true, text: "" });
+    const r = await fetch(apiUrl("/api/staff/persona/special-duty/evidence"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ day_id: id, photos, no_people: noPeople }) });
+    const j = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) { setMsg({ ok: false, text: j.message ?? "ส่งหลักฐานไม่สำเร็จ" }); return; }
+    setMsg({ ok: true, text: "ส่งหลักฐานเรียบร้อยแล้ว รอผู้จัดการตรวจรับ" });
+    setOpenId(null); setPhotos([]); setNoPeople(false); onChanged();
+  }
+
+  return (
+    <section className="card space-y-3">
+      <h2 className="font-semibold text-slate-900">{published ? "หน้าที่ของท่าน" : "วันที่ท่านเลือกไว้"}</h2>
+      {published && <p className="text-sm text-slate-600">เมื่อทำหน้าที่เสร็จให้ถ่ายภาพพื้นที่ที่รับผิดชอบ โดยไม่ให้มีบุคคลอยู่ในภาพ แล้วกดส่งหลักฐาน ค่าตอบแทนนับเฉพาะวันที่ผู้จัดการตรวจรับแล้ว และท่านต้องมาทำงานปกติในวันนั้นด้วย</p>}
+      <ul className="space-y-2">
+        {mine.map((d) => {
+          const canSend = published && d.iDoIt && ["booked", "assigned", "covered"].includes(d.status) && today >= d.date;
+          return (
+            <li key={d.id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-medium text-slate-900">{fmtDate(d.date)} · {d.positionName}</div>
+                  <div className="text-slate-600">{published ? (DUTY_STATUS[d.status] ?? d.status) : ""}{d.iDoIt && published ? ` · ${money(d.amount)} บาท` : ""}{!d.iDoIt && d.status !== "absent" && published ? " · ผู้อื่นปฏิบัติแทน" : ""}</div>
+                  {d.reviewNote && d.status !== "approved" && <div className="text-rose-700">ผู้จัดการแจ้งกลับ: {d.reviewNote}</div>}
+                </div>
+                {canSend && openId !== d.id && <button type="button" className="btn-primary !py-1 !px-3 whitespace-nowrap" onClick={() => { setOpenId(d.id); setPhotos([]); setNoPeople(false); }}>ส่งหลักฐาน</button>}
+              </div>
+              {openId === d.id && (
+                <div className="mt-2 space-y-2 rounded-lg bg-slate-50 p-3">
+                  <label className="block">
+                    <span className="text-sm text-slate-700">ภาพพื้นที่ที่ทำความสะอาด (1 ถึง 5 ภาพ)</span>
+                    <input type="file" accept="image/*" capture="environment" multiple className="mt-1 block w-full text-sm" onChange={(e) => addFiles(e.target.files)} />
+                  </label>
+                  {photos.length > 0 && <div className="flex flex-wrap gap-2">{photos.map((u, i) => (
+                    <div key={i} className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={u} alt="" className="h-20 w-20 rounded-md object-cover" />
+                      <button type="button" className="absolute -right-1 -top-1 rounded-full bg-rose-600 px-1.5 text-xs text-white" onClick={() => setPhotos((p) => p.filter((_, k) => k !== i))}>ลบ</button>
+                    </div>))}</div>}
+                  <label className="flex items-start gap-2 text-sm text-slate-700">
+                    <input type="checkbox" className="mt-1" checked={noPeople} onChange={(e) => setNoPeople(e.target.checked)} />
+                    <span>ข้าพเจ้ายืนยันว่าในภาพมีเฉพาะพื้นที่ทำงาน ไม่มีบุคคลปรากฏอยู่</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <button type="button" className="btn-primary" disabled={busy || photos.length === 0 || !noPeople} onClick={() => send(d.id)}>{busy ? "กำลังส่ง" : "ส่งหลักฐาน"}</button>
+                    <button type="button" className="btn-secondary" onClick={() => setOpenId(null)}>ปิด</button>
+                  </div>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function Schedule({ rows }: { rows: Array<{ positionName: string; date: string; name: string }> }) {
+  const byDate = new Map<string, Array<{ positionName: string; name: string }>>();
+  for (const r of rows) byDate.set(r.date, [...(byDate.get(r.date) ?? []), r]);
+  return (
+    <section className="card space-y-2">
+      <h2 className="font-semibold text-slate-900">ตารางของสาขา</h2>
+      <ul className="divide-y divide-slate-100 text-sm">
+        {[...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, list]) => (
+          <li key={date} className="py-1.5">
+            <div className="font-medium text-slate-800">{fmtDate(date)}</div>
+            {list.map((x, i) => <div key={i} className="text-slate-600">{x.positionName} · {x.name}</div>)}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

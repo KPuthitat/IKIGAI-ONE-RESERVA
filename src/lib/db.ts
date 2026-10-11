@@ -3255,7 +3255,10 @@ function runMigrations(db: Database.Database): void {
       ('evidence_retention_days', '90'),
       ('swap_notice_days', '1'),
       ('owner_alert_min_bookers', '6'),
-      ('owner_alert_max_days_per_person', '20');
+      ('owner_alert_max_days_per_person', '20'),
+      ('evidence_min_photos', '1'),
+      ('evidence_max_photos', '5'),
+      ('evidence_deadline_days', '1');
 
     CREATE TABLE IF NOT EXISTS special_duty_months (
       branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
@@ -3300,6 +3303,19 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_special_duty_days_user ON special_duty_days(user_id, duty_date);
 
+    -- Evidence photos of the finished work area (never of people), kept per branch on disk and
+    -- swept after special_duty_config.evidence_retention_days (the row stays, deleted_at is set).
+    CREATE TABLE IF NOT EXISTS special_duty_evidence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      day_id INTEGER NOT NULL REFERENCES special_duty_days(id) ON DELETE CASCADE,
+      branch_id INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      uploaded_by INTEGER NOT NULL REFERENCES users(id),
+      uploaded_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_duty_evidence_day ON special_duty_evidence(day_id);
+
     CREATE TABLE IF NOT EXISTS special_duty_alerts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       branch_id INTEGER NOT NULL,
@@ -3326,6 +3342,11 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_special_duty_audit_scope ON special_duty_audit(branch_id, year_month, at);
   `);
+  // Review trail on a duty day: when the holder/substitute submitted evidence, and who approved or sent it back.
+  const sddCols = new Set((db.prepare("PRAGMA table_info(special_duty_days)").all() as Array<{ name: string }>).map((c) => c.name));
+  for (const [col, decl] of [["submitted_at", "TEXT"], ["reviewed_by", "INTEGER REFERENCES users(id)"], ["reviewed_at", "TEXT"], ["review_note", "TEXT"]] as const) {
+    if (!sddCols.has(col)) db.exec(`ALTER TABLE special_duty_days ADD COLUMN ${col} ${decl}`);
+  }
   // svc_deductions (owner 2026-08-20) — ad-hoc deductions taken from a person's
   // SVC for a month (e.g. ค่าเครื่องดื่มที่ไม่ใช่คูปอง / other staff debts). One row
   // per line item; an admin enters reason + amount. Applied in the SVC math AFTER

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
 type Position = { id: number; slotNo: number; name: string; dailyRate: number };
-type Row = { id: number; positionId: number; date: string; userId: number; name: string; source: "booked" | "assigned"; status: string };
+type Row = { id: number; positionId: number; date: string; userId: number; name: string; source: "booked" | "assigned"; status: string; performerName: string | null; reviewNote: string | null; evidenceCount: number; presentAtWork: boolean };
 type Open = { positionId: number; positionName: string; date: string; candidates: number };
 type Data = { month: { enabled: boolean; status: string; bookingCloseDate: string | null }; positions: Position[]; rows: Row[]; open: Open[] };
 type Plan = { suggestions: Array<{ positionName: string; date: string; userName: string }>; unfillable: Open[] };
@@ -19,6 +19,9 @@ const STATUS_TH: Record<string, string> = {
 const fmtDate = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return `${d} ${MONTHS[m - 1]} ${y + 543}`; };
 const shiftMonth = (ym: string, by: number) => { const [y, m] = ym.split("-").map(Number); return new Date(Date.UTC(y, m - 1 + by, 1)).toISOString().slice(0, 7); };
 const HEAD = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+const DAY_STATUS: Record<string, string> = {
+  booked: "รอปฏิบัติงาน", assigned: "รอปฏิบัติงาน", covered: "มีผู้แทน รอปฏิบัติงาน", submitted: "ส่งหลักฐานแล้ว รอตรวจ", approved: "ตรวจรับแล้ว", absent: "ขาดปฏิบัติงาน"
+};
 const ERR: Record<string, string> = { unfilled_days: "ยังมีวันที่ว่างอยู่", invalid_transition: "ขั้นตอนนี้ทำไม่ได้ในสถานะปัจจุบัน", not_removable: "ถอนไม่ได้ เพราะมีการส่งหลักฐานแล้ว", wrong_stage: "ถอนได้เฉพาะช่วงจัดวันที่ว่าง", not_found: "ไม่พบรายการ" };
 
 export default function Client({ month }: { month: string }) {
@@ -30,6 +33,9 @@ export default function Client({ month }: { month: string }) {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [pick, setPick] = useState<{ positionId: number; positionName: string; date: string; list: Array<{ id: number; name: string }> } | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
+  const [photos, setPhotos] = useState<Array<{ id: number }>>([]);
+  const [rejectNote, setRejectNote] = useState("");
+  const [subs, setSubs] = useState<Array<{ id: number; name: string }> | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}`), { cache: "no-store" });
@@ -46,7 +52,12 @@ export default function Client({ month }: { month: string }) {
     setBusy(false);
     return { ok: r.ok, j };
   }
-  const done = async (text: string) => { setMsg({ ok: true, text }); setPlan(null); setPick(null); setSelected(null); await load(); router.refresh(); };
+  const done = async (text: string) => { setMsg({ ok: true, text }); setPlan(null); setPick(null); setSelected(null); setPhotos([]); setRejectNote(""); setSubs(null); await load(); router.refresh(); };
+  const open_ = async (row: Row) => {
+    setSelected(row); setPick(null); setPhotos([]); setRejectNote(""); setSubs(null);
+    if (row.evidenceCount > 0) { const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&photos=${row.id}`), { cache: "no-store" }); const j = await r.json(); setPhotos(j.photos ?? []); }
+    if (row.status === "absent") { const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&substitutes=${row.id}`), { cache: "no-store" }); const j = await r.json(); setSubs(j.candidates ?? []); }
+  };
 
   if (err) return <div className="card text-sm text-rose-700">{err === "forbidden" ? "เฉพาะผู้ดูแลสาขาเท่านั้นที่ใช้หน้านี้ได้" : "ไม่สามารถแสดงข้อมูลได้"}</div>;
   if (!data) return <div className="card text-sm text-slate-500">กำลังโหลด</div>;
@@ -136,8 +147,47 @@ export default function Client({ month }: { month: string }) {
           {selected && (
             <div className="card space-y-2 border-amber-300">
               <h2 className="font-semibold text-slate-800">{selected.name}</h2>
-              <p className="text-sm text-slate-600">{fmtDate(selected.date)} · {selected.source === "booked" ? "เลือกเอง" : "ผู้จัดการมอบหมาย"}</p>
-              <div className="flex gap-2">
+              <p className="text-sm text-slate-600">{fmtDate(selected.date)} · {selected.source === "booked" ? "เลือกเอง" : "ผู้จัดการมอบหมาย"} · {DAY_STATUS[selected.status] ?? selected.status}</p>
+              {selected.performerName && <p className="text-sm text-violet-800">ผู้ปฏิบัติแทน: {selected.performerName}</p>}
+              {selected.reviewNote && <p className="text-sm text-rose-700">หมายเหตุ: {selected.reviewNote}</p>}
+              {["submitted", "approved"].includes(selected.status) && (
+                <p className={`text-sm ${selected.presentAtWork ? "text-emerald-700" : "text-rose-700"}`}>
+                  {selected.presentAtWork ? "ตรวจพบการลงเวลาเข้างานปกติของผู้ปฏิบัติงานในวันนั้น" : "ไม่พบการลงเวลาเข้างานปกติของผู้ปฏิบัติงานในวันนั้น ตรวจรับไม่ได้"}
+                </p>
+              )}
+              {photos.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {photos.map((ph) => (
+                    <a key={ph.id} href={apiUrl(`/api/special-duty/photo/${ph.id}`)} target="_blank" rel="noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={apiUrl(`/api/special-duty/photo/${ph.id}`)} alt="หลักฐาน" className="h-28 w-28 rounded-md object-cover border border-slate-200" />
+                    </a>
+                  ))}
+                </div>
+              )}
+              {selected.status === "submitted" && (
+                <div className="space-y-2">
+                  <input className="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="เหตุผล (ต้องกรอกเมื่อส่งกลับ)" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className="btn-primary" disabled={busy || !selected.presentAtWork} onClick={async () => { const r = await act({ action: "approve", day_id: selected.id }); r.ok ? done("ตรวจรับเรียบร้อยแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ตรวจรับไม่สำเร็จ" }); }}>ตรวจรับ</button>
+                    <button type="button" className="btn-secondary" disabled={busy || rejectNote.trim().length < 3} onClick={async () => { const r = await act({ action: "reject", day_id: selected.id, note: rejectNote }); r.ok ? done("ส่งกลับให้แก้ไขแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>ส่งกลับให้แก้ไข</button>
+                  </div>
+                </div>
+              )}
+              {selected.status === "absent" && (
+                <div className="space-y-2">
+                  <p className="text-sm text-slate-600">เลือกผู้ปฏิบัติแทน (ต้องมีตารางทำงานในวันนั้น ไม่ลา และอยู่ในกลุ่มงานที่กำหนด)</p>
+                  {subs == null ? <p className="text-sm text-slate-500">กำลังโหลด</p> : subs.length === 0 ? <p className="text-sm text-rose-700">ไม่มีผู้ที่แทนได้ในวันนี้</p> : (
+                    <div className="flex flex-wrap gap-2">
+                      {subs.map((u) => <button key={u.id} type="button" className="btn-secondary" disabled={busy} onClick={async () => { const r = await act({ action: "substitute", day_id: selected.id, user_id: u.id }); r.ok ? done("มอบหมายผู้ปฏิบัติแทนแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>{u.name}</button>)}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {["booked", "assigned", "submitted", "covered"].includes(selected.status) && ["special_published", "in_progress"].includes(st) && selected.date <= new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10) && (
+                  <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { if (!window.confirm("บันทึกว่าผู้ปฏิบัติงานขาดในวันนี้ใช่หรือไม่ รายการนี้นับเป็นการขาดหนึ่งครั้งของผู้ที่ได้รับมอบหมาย")) return; const r = await act({ action: "absent", day_id: selected.id }); r.ok ? done("บันทึกการขาดแล้ว เลือกผู้ปฏิบัติแทนได้ที่ช่องวันนี้") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>บันทึกว่าขาด</button>
+                )}
                 {filling && <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { const r = await act({ action: "remove", day_id: selected.id }); r.ok ? done("ถอนวันนี้ออกแล้ว") : setMsg({ ok: false, text: ERR[r.j.error] ?? "ถอนไม่สำเร็จ" }); }}>ถอนออก</button>}
                 <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>ปิด</button>
               </div>
@@ -161,19 +211,19 @@ export default function Client({ month }: { month: string }) {
                     return (
                       <button key={date} type="button" disabled={!row && !(filling && isOpen)}
                         onClick={async () => {
-                          if (row) { setSelected(row); setPick(null); return; }
+                          if (row) { await open_(row); return; }
                           const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&candidates=${p.id}:${date}`), { cache: "no-store" });
                           const j = await r.json(); setSelected(null);
                           setPick({ positionId: p.id, positionName: p.name, date, list: j.candidates ?? [] });
                         }}
-                        className={`rounded-md border px-0.5 py-1 text-center leading-tight min-h-[3.2rem] ${row ? (row.source === "booked" ? "border-emerald-300 bg-emerald-50" : "border-sky-300 bg-sky-50") : isOpen ? "border-rose-300 bg-rose-50" : "border-slate-200 text-slate-300"}`}>
+                        className={`rounded-md border px-0.5 py-1 text-center leading-tight min-h-[3.2rem] ${row ? (row.status === "approved" ? "border-emerald-600 bg-emerald-200" : row.status === "submitted" ? "border-amber-500 bg-amber-100" : row.status === "absent" ? "border-rose-600 bg-rose-200" : row.status === "covered" ? "border-violet-400 bg-violet-100" : row.source === "booked" ? "border-emerald-300 bg-emerald-50" : "border-sky-300 bg-sky-50") : isOpen ? "border-rose-300 bg-rose-50" : "border-slate-200 text-slate-300"}`}>
                         <div className="text-xs text-slate-500">{d}</div>
                         <div className="text-[10px] text-slate-800 break-words">{row ? row.name : isOpen ? "ว่าง" : ""}</div>
                       </button>
                     );
                   })}
                 </div>
-                <p className="text-xs text-slate-500">สีเขียวคือพนักงานเลือกเอง สีฟ้าคือผู้จัดการมอบหมาย สีแดงคือวันที่ว่าง</p>
+                <p className="text-xs text-slate-500">สีเขียวอ่อนคือพนักงานเลือกเอง สีฟ้าคือผู้จัดการมอบหมาย สีแดงอ่อนคือวันที่ว่าง สีเหลืองคือรอตรวจหลักฐาน สีเขียวเข้มคือตรวจรับแล้ว สีม่วงคือมีผู้แทน สีแดงเข้มคือขาดปฏิบัติงาน</p>
               </section>
             );
           })}

@@ -1,0 +1,138 @@
+// ตำแหน่งงานค่าตอบแทนพิเศษ — evidence, review, absence, substitute, retention.
+// Run: node --import tsx scripts/test-special-duty-evidence.ts
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+const TMP = path.join(process.cwd(), "data", "test-special-duty-evidence.db");
+const PHOTOS = fs.mkdtempSync(path.join(os.tmpdir(), "sd-photos-"));
+function cleanup() { for (const f of [TMP, `${TMP}-wal`, `${TMP}-shm`]) { try { fs.rmSync(f, { force: true }); } catch { /* ignore */ } } try { fs.rmSync(PHOTOS, { recursive: true, force: true }); } catch { /* ignore */ } }
+cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DATABASE_PATH = TMP; process.env.SPECIAL_DUTY_PHOTO_DIR = PHOTOS;
+
+(async () => {
+  const { getDb } = await import("../src/lib/db");
+  const D = await import("../src/lib/special-duty");
+  const R = await import("../src/lib/special-duty-rules");
+  const H = await import("../src/lib/special-duty-roster");
+  const F = await import("../src/lib/special-duty-fill");
+  const E = await import("../src/lib/special-duty-evidence");
+  const roster = await import("../src/lib/roster");
+  const db = getDb();
+  let failed = 0;
+  const ok = (n: string, c: boolean) => { if (c) console.log(`  ✓ ${n}`); else { failed++; console.error(`  ✗ FAIL: ${n}`); } };
+  const code = (f: () => unknown) => { try { f(); return "none"; } catch (e) { return e instanceof E.EvidenceError ? e.code : `other:${(e as Error).message}`; } };
+  const NOW = "2026-11-05", YM = "2026-12";
+  const date = (d: number) => `${YM}-${String(d).padStart(2, "0")}`;
+  const PIX = "data:image/jpeg;base64," + Buffer.from("fake-jpeg-bytes").toString("base64");
+
+  const nama = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('nama','NAMA')").run().lastInsertRowid);
+  const hypo = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('hypo','HYPO')").run().lastInsertRowid);
+  const shift = Number(db.prepare("INSERT INTO shift_codes (branch_id,code,name,start_time,end_time) VALUES (?,?,?,?,?)").run(nama, "M", "M", "09:00", "17:00").lastInsertRowid);
+  const rps = [1, 2, 3, 4].map((i) => Number(db.prepare("INSERT INTO roster_positions (branch_id,title) VALUES (?,?)").run(nama, `P${i}`).lastInsertRowid));
+  const mk = (u: string, dept = "service") => { const id = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,department) VALUES (?,?,?,'staff','active',?)").run(u, "x", u, dept).lastInsertRowid); db.prepare("INSERT INTO user_branches (user_id,branch_id) VALUES (?,?)").run(id, nama); return id; };
+  const owner = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status) VALUES ('o','x','O','super_admin','active')").run().lastInsertRowid);
+  const holder = mk("holder"), sub = mk("sub"), other = mk("other"), cook = mk("cook", "kitchen");
+  const up = (uid: number, d: number, pos: number) => roster.upsertAssignment({ branchId: nama, date: date(d), positionId: pos, userId: uid, shiftCodeId: shift, actingUserId: owner });
+  for (let d = 1; d <= 31; d++) { up(holder, d, rps[0]); up(sub, d, rps[1]); up(other, d, rps[2]); }
+  for (let d = 1; d <= 31; d++) up(cook, d, rps[3]);
+  const clockIn = (uid: number, d: number, branch: number | null = nama) => db.prepare("INSERT INTO time_entries (user_id,type,ts,branch_id) VALUES (?, 'in', ?, ?)").run(uid, new Date(`${date(d)}T09:00:00+07:00`).toISOString(), branch);
+
+  const toilet = D.savePosition({ branchId: nama, yearMonth: YM, slotNo: 1, name: "ล้างห้องน้ำ", actorId: owner, asOf: NOW });
+  D.savePosition({ branchId: nama, yearMonth: YM, slotNo: 2, name: "ล้างจาน", eligibleGroups: ["kitchen"], actorId: owner, asOf: NOW });
+  D.enableMonth({ branchId: nama, yearMonth: YM, actorId: owner, asOf: NOW });
+  H.openBookingOnPublish({ branchId: nama, yearMonth: YM, actorId: owner, nowIso: "2026-11-20T03:00:00.000Z" });
+  R.setUserBookings({ userId: holder, branchId: nama, yearMonth: YM, positionId: toilet.id, dates: [1, 2, 3, 4, 5, 6].map(date), asOf: "2026-11-21" });
+  F.closeBooking({ branchId: nama, yearMonth: YM, actorId: owner });
+  F.managerAssign({ branchId: nama, yearMonth: YM, positionId: toilet.id, date: date(7), userId: other, managerId: owner, asOf: "2026-11-28" });
+  const dayId = (d: number) => (db.prepare("SELECT id FROM special_duty_days WHERE position_id = ? AND duty_date = ?").get(toilet.id, date(d)) as { id: number }).id;
+  const status = (d: number) => (db.prepare("SELECT status FROM special_duty_days WHERE id = ?").get(dayId(d)) as { status: string }).status;
+  const sub1 = { dayId: dayId(1), userId: holder, photos: [PIX], noPeopleConfirmed: true, today: date(1) };
+
+  ok("before the schedule is published no evidence can be sent", code(() => E.submitEvidence(sub1)) === "wrong_stage");
+  F.publishSchedule({ branchId: nama, yearMonth: YM, actorId: owner, allowUnfilled: true, asOf: "2026-11-28" });
+
+  ok("not before the day itself", code(() => E.submitEvidence({ ...sub1, today: "2026-11-30" })) === "too_early");
+  ok("only the holder may send it", code(() => E.submitEvidence({ ...sub1, userId: sub })) === "forbidden");
+  ok("the 'no people in the photos' confirmation is required", code(() => E.submitEvidence({ ...sub1, noPeopleConfirmed: false })) === "no_people_not_confirmed");
+  ok("at least one photo is required", code(() => E.submitEvidence({ ...sub1, photos: [] })) === "photos_required");
+  ok("no more than the configured number of photos", code(() => E.submitEvidence({ ...sub1, photos: Array(6).fill(PIX) })) === "too_many_photos");
+  ok("only image data is accepted", code(() => E.submitEvidence({ ...sub1, photos: ["data:text/html;base64,AAAA"] })) === "photo_bad_format");
+  ok("a holder who did not come to regular work cannot claim the duty", code(() => E.submitEvidence(sub1)) === "not_present");
+  clockIn(holder, 1, hypo);
+  ok("a clock-in at another branch does not count", code(() => E.submitEvidence(sub1)) === "not_present");
+  clockIn(holder, 1);
+  ok("rejected attempts leave no photo files behind", !fs.existsSync(path.join(PHOTOS, String(nama))) || fs.readdirSync(path.join(PHOTOS, String(nama))).length === 0);
+
+  E.submitEvidence(sub1);
+  ok("holder submits: status submitted, photo stored under the branch folder", status(1) === "submitted" && fs.readdirSync(path.join(PHOTOS, String(nama))).length === 1);
+  ok("the first submission moves the month to in progress", D.getMonth(nama, YM).status === "in_progress");
+  ok("a submitted day cannot be submitted twice", code(() => E.submitEvidence(sub1)) === "wrong_status");
+
+  // photo access
+  const ph = E.listEvidence(dayId(1))[0];
+  ok("the holder can open their own photo", E.photoForViewer(ph.id, { userId: holder, manageBranchIds: [] }) != null);
+  ok("a manager of the branch can open it", E.photoForViewer(ph.id, { userId: owner, manageBranchIds: [nama] }) != null);
+  ok("another employee cannot", E.photoForViewer(ph.id, { userId: other, manageBranchIds: [] }) == null);
+  ok("a manager of another branch cannot", E.photoForViewer(ph.id, { userId: owner, manageBranchIds: [hypo] }) == null);
+  ok("path traversal in a filename is refused", E.evidencePhotoPath(nama, "../x.jpg") == null);
+
+  // review
+  ok("rejecting needs a note", code(() => E.reviewEvidence({ dayId: dayId(1), branchId: nama, managerId: owner, approve: false })) === "note_required");
+  ok("another branch's manager cannot review it", code(() => E.reviewEvidence({ dayId: dayId(1), branchId: hypo, managerId: owner, approve: true })) === "not_found");
+  E.reviewEvidence({ dayId: dayId(1), branchId: nama, managerId: owner, approve: false, note: "ภาพไม่เห็นพื้นที่ทั้งหมด" });
+  ok("rejected: back to booked with the note, resubmission allowed", status(1) === "booked" && (db.prepare("SELECT review_note n FROM special_duty_days WHERE id=?").get(dayId(1)) as { n: string }).n.includes("ภาพไม่เห็น"));
+  E.submitEvidence({ ...sub1, today: date(2) });
+  ok("a resubmission after a rejection is allowed even after the normal deadline", status(1) === "submitted");
+  E.reviewEvidence({ dayId: dayId(1), branchId: nama, managerId: owner, approve: true });
+  ok("approved", status(1) === "approved");
+  ok("an approved day cannot be changed by another review", code(() => E.reviewEvidence({ dayId: dayId(1), branchId: nama, managerId: owner, approve: true })) === "wrong_status");
+
+  // deadline
+  clockIn(holder, 2);
+  ok("evidence is refused after the deadline (day + 1)", code(() => E.submitEvidence({ dayId: dayId(2), userId: holder, photos: [PIX], noPeopleConfirmed: true, today: date(4) })) === "deadline_passed");
+  ok("…but fine on the next day", code(() => E.submitEvidence({ dayId: dayId(2), userId: holder, photos: [PIX], noPeopleConfirmed: true, today: date(3) })) === "none");
+  // approve requires presence at that moment
+  db.prepare("DELETE FROM time_entries WHERE user_id = ? AND ts LIKE ?").run(holder, `%${new Date(`${date(2)}T09:00:00+07:00`).toISOString().slice(0, 10)}%`);
+  ok("approval is refused if the clock-in is no longer there", code(() => E.reviewEvidence({ dayId: dayId(2), branchId: nama, managerId: owner, approve: true })) === "not_present");
+
+  // absence + substitute
+  ok("absence cannot be recorded before the day", code(() => E.markAbsent({ dayId: dayId(5), branchId: nama, managerId: owner, today: date(4) })) === "too_early");
+  E.markAbsent({ dayId: dayId(5), branchId: nama, managerId: owner, today: date(5) });
+  const row5 = db.prepare("SELECT status, absent_by_holder a FROM special_duty_days WHERE id=?").get(dayId(5)) as { status: string; a: number };
+  ok("absent: no pay, one strike for the holder", row5.status === "absent" && row5.a === 1 && R.absenceStrikes(holder, nama, YM) === 1);
+  ok("the absent holder can no longer submit", code(() => E.submitEvidence({ dayId: dayId(5), userId: holder, photos: [PIX], noPeopleConfirmed: true, today: date(5) })) === "wrong_status");
+  ok("substitute must differ from the holder", code(() => E.assignSubstitute({ dayId: dayId(5), branchId: nama, performerId: holder, managerId: owner, today: date(5) })) === "substitute_same_person");
+  ok("a substitute who is not a member of the branch is refused", code(() => E.assignSubstitute({ dayId: dayId(5), branchId: nama, performerId: owner, managerId: owner, today: date(5) })) === "substitute_invalid");
+  db.prepare("INSERT INTO leave_requests (user_id, type, date_from, date_to, days, status) VALUES (?, 'sick', ?, ?, 1, 'approved')").run(sub, date(5), date(5));
+  ok("a substitute on approved leave is refused", code(() => E.assignSubstitute({ dayId: dayId(5), branchId: nama, performerId: sub, managerId: owner, today: date(5) })) === "substitute_invalid");
+  db.prepare("DELETE FROM leave_requests").run();
+  E.assignSubstitute({ dayId: dayId(5), branchId: nama, performerId: sub, managerId: owner, today: date(5) });
+  ok("substitute named: status covered", status(5) === "covered");
+  ok("the original holder cannot submit for a covered day", code(() => E.submitEvidence({ dayId: dayId(5), userId: holder, photos: [PIX], noPeopleConfirmed: true, today: date(5) })) === "forbidden");
+  ok("the substitute must also have come to regular work", code(() => E.submitEvidence({ dayId: dayId(5), userId: sub, photos: [PIX], noPeopleConfirmed: true, today: date(5) })) === "not_present");
+  clockIn(sub, 5);
+  E.submitEvidence({ dayId: dayId(5), userId: sub, photos: [PIX], noPeopleConfirmed: true, today: date(5) });
+  E.reviewEvidence({ dayId: dayId(5), branchId: nama, managerId: owner, approve: true });
+  const r5 = db.prepare("SELECT status, user_id u, performer_user_id p FROM special_duty_days WHERE id=?").get(dayId(5)) as { status: string; u: number; p: number };
+  ok("substitute's day approved: performer is the substitute, holder unchanged (still carries the strike)", r5.status === "approved" && r5.p === sub && r5.u === holder && R.absenceStrikes(holder, nama, YM) === 1);
+  ok("the substitute day is not counted as the substitute's own booking", (db.prepare("SELECT COUNT(*) n FROM special_duty_days WHERE user_id = ?").get(sub) as { n: number }).n === 0);
+  ok("a second absence on a covered day by the substitute is not a holder strike", (() => { E.markAbsent({ dayId: dayId(3), branchId: nama, managerId: owner, today: date(3) }); E.assignSubstitute({ dayId: dayId(3), branchId: nama, performerId: sub, managerId: owner, today: date(3) }); E.markAbsent({ dayId: dayId(3), branchId: nama, managerId: owner, today: date(3) }); return R.absenceStrikes(holder, nama, YM) === 2; })());
+
+  // assigned day by manager: other, day 7
+  clockIn(other, 7);
+  E.submitEvidence({ dayId: dayId(7), userId: other, photos: [PIX, PIX], noPeopleConfirmed: true, today: date(7) });
+  ok("a manager-assigned day follows the same path", status(7) === "submitted" && E.listEvidence(dayId(7)).length === 2);
+
+  // retention
+  const old = new Date(Date.now() - 100 * 86_400_000).toISOString();
+  db.prepare("UPDATE special_duty_evidence SET uploaded_at = ? WHERE day_id = ?").run(old, dayId(7));
+  const files = () => fs.readdirSync(path.join(PHOTOS, String(nama))).length;
+  const before = files();
+  const swept = E.sweepEvidence();
+  ok("photos older than the retention period (90 days) are deleted from disk", swept === 2 && files() === before - 2);
+  ok("their rows stay, marked deleted, and cannot be opened", E.listEvidence(dayId(7)).every((p) => p.deleted) && E.photoForViewer(E.listEvidence(dayId(7))[0].id, { userId: other, manageBranchIds: [] }) == null);
+  ok("recent photos are untouched", E.listEvidence(dayId(1)).every((p) => !p.deleted));
+  ok("sweeping again does nothing", E.sweepEvidence() === 0);
+
+  console.log(failed ? `\n${failed} FAILED` : "\nAll checks passed");
+  cleanup(); process.exit(failed ? 1 : 0);
+})();

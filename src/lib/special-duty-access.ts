@@ -14,6 +14,7 @@
 import { getDb } from "./db";
 import { cfgNum, getMonth, listPositions, type DutyMonthStatus, type DutyPosition } from "./special-duty";
 import { isGroupEligible, isOnRoster } from "./special-duty-rules";
+import { wasPresent } from "./special-duty-evidence";
 
 export type Viewer = { userId: number; role: "staff" | "admin" | "super_admin"; branchIds: number[]; adminBranchIds: number[]; department?: string | null };
 
@@ -63,18 +64,23 @@ export function getAnonymousSlots(viewer: Viewer, branchId: number, yearMonth: s
   return { status: month.status, bookingCloseDate: month.bookingCloseDate, minDays: cfgNum("min_days_per_position"), positions };
 }
 
-export type MyDuty = { positionId: number; positionName: string; date: string; status: string; amount: number };
+export type MyDuty = { id: number; positionId: number; positionName: string; date: string; status: string; amount: number; iDoIt: boolean; reviewNote: string | null; evidenceCount: number };
 
-/** The viewer's own rows with the pay they would get — never anyone else's. */
+/** The viewer's own rows with the pay they would get — never anyone else's. `iDoIt` is false when the
+ *  holder was replaced by a substitute (or marked absent), so the holder is never shown as the performer. */
 export function getMyDuties(viewer: Viewer, branchId: number, yearMonth: string): MyDuty[] {
   if (!inBranch(viewer, branchId)) throw new AccessError("forbidden");
   return (getDb().prepare(`
-    SELECT p.id AS pid, p.name, p.daily_rate AS rate, d.duty_date AS date, d.status
+    SELECT d.id, p.id AS pid, p.name, p.daily_rate AS rate, d.duty_date AS date, d.status, d.user_id AS uid, d.performer_user_id AS perf, d.review_note AS note,
+           (SELECT COUNT(*) FROM special_duty_evidence e WHERE e.day_id = d.id AND e.deleted_at IS NULL) AS photos
       FROM special_duty_days d JOIN special_duty_positions p ON p.id = d.position_id
      WHERE p.branch_id = ? AND p.year_month = ? AND (d.user_id = ? OR d.performer_user_id = ?)
      ORDER BY d.duty_date, p.slot_no
-  `).all(branchId, yearMonth, viewer.userId, viewer.userId) as Array<{ pid: number; name: string; rate: number; date: string; status: string }>)
-    .map((r) => ({ positionId: r.pid, positionName: r.name, date: r.date, status: r.status, amount: r.rate }));
+  `).all(branchId, yearMonth, viewer.userId, viewer.userId) as Array<{ id: number; pid: number; name: string; rate: number; date: string; status: string; uid: number; perf: number | null; note: string | null; photos: number }>)
+    .map((r) => {
+      const iDoIt = (r.perf ?? r.uid) === viewer.userId && r.status !== "absent";
+      return { id: r.id, positionId: r.pid, positionName: r.name, date: r.date, status: r.status, amount: iDoIt ? r.rate : 0, iDoIt, reviewNote: r.note, evidenceCount: r.photos };
+    });
 }
 
 export type PublishedRow = { positionId: number; positionName: string; date: string; name: string };
@@ -99,6 +105,7 @@ export function getPublishedSchedule(viewer: Viewer, branchId: number, yearMonth
 export type ManagerRow = {
   id: number; positionId: number; positionName: string; date: string; userId: number; name: string;
   source: "booked" | "assigned"; status: string; performerUserId: number | null; performerName: string | null; dailyRate: number;
+  submittedAt: string | null; reviewNote: string | null; evidenceCount: number; presentAtWork: boolean;
 };
 
 /** Everything for a branch, for its manager (or the owner). */
@@ -106,15 +113,16 @@ export function getManagerView(viewer: Viewer, branchId: number, yearMonth: stri
   if (!canManage(viewer, branchId)) throw new AccessError("forbidden");
   return (getDb().prepare(`
     SELECT d.id, p.id AS pid, p.name AS pname, p.daily_rate AS rate, d.duty_date AS date, d.user_id AS uid, u.display_name AS uname,
-           d.source, d.status, d.performer_user_id AS perf, pu.display_name AS perfname
+           d.source, d.status, d.performer_user_id AS perf, pu.display_name AS perfname,
+           d.submitted_at AS sub, d.review_note AS note, (SELECT COUNT(*) FROM special_duty_evidence e WHERE e.day_id = d.id AND e.deleted_at IS NULL) AS photos
       FROM special_duty_days d
       JOIN special_duty_positions p ON p.id = d.position_id
       JOIN users u ON u.id = d.user_id
       LEFT JOIN users pu ON pu.id = d.performer_user_id
      WHERE p.branch_id = ? AND p.year_month = ?
      ORDER BY p.slot_no, d.duty_date
-  `).all(branchId, yearMonth) as Array<{ id: number; pid: number; pname: string; rate: number; date: string; uid: number; uname: string; source: "booked" | "assigned"; status: string; perf: number | null; perfname: string | null }>)
-    .map((r) => ({ id: r.id, positionId: r.pid, positionName: r.pname, date: r.date, userId: r.uid, name: r.uname, source: r.source, status: r.status, performerUserId: r.perf, performerName: r.perfname, dailyRate: r.rate }));
+  `).all(branchId, yearMonth) as Array<{ id: number; pid: number; pname: string; rate: number; date: string; uid: number; uname: string; source: "booked" | "assigned"; status: string; perf: number | null; perfname: string | null; sub: string | null; note: string | null; photos: number }>)
+    .map((r) => ({ submittedAt: r.sub, reviewNote: r.note, evidenceCount: r.photos, presentAtWork: wasPresent(r.perf ?? r.uid, branchId, r.date), id: r.id, positionId: r.pid, positionName: r.pname, date: r.date, userId: r.uid, name: r.uname, source: r.source, status: r.status, performerUserId: r.perf, performerName: r.perfname, dailyRate: r.rate }));
 }
 
 export type { DutyPosition };

@@ -7,7 +7,8 @@ import { getMonth, listPositions, SpecialDutyError } from "@/lib/special-duty";
 import { checkAssignment } from "@/lib/special-duty-rules";
 import { closeBooking, fillOpenDays, managerAssign, openDays, publishSchedule, removeDay, startFilling } from "@/lib/special-duty-fill";
 import { pushIndividually, schedulePublishedFlex } from "@/lib/special-duty-notify";
-import { RULE_TEXT, viewerOf } from "@/lib/special-duty-viewer";
+import { assignSubstitute, dayBelongsToBranch, EvidenceError, listEvidence, listSubstituteCandidates, markAbsent, reviewEvidence } from "@/lib/special-duty-evidence";
+import { EVIDENCE_TEXT, RULE_TEXT, viewerOf } from "@/lib/special-duty-viewer";
 
 // Manager console for ตำแหน่งงานค่าตอบแทนพิเศษ (active branch).
 //   GET  ?month=YYYY-MM[&candidates=<positionId>:<date>]
@@ -31,6 +32,14 @@ export async function GET(req: Request) {
   const month = YM.safeParse(q.get("month"));
   if (!month.success) return NextResponse.json({ error: "invalid_month" }, { status: 400 });
   const m = getMonth(g.branchId, month.data);
+  const photosOf = q.get("photos");
+  if (photosOf) {
+    const id = Number(photosOf);
+    if (!dayBelongsToBranch(id, g.branchId)) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    return NextResponse.json({ photos: listEvidence(id).filter((x) => !x.deleted).map((x) => ({ id: x.id, uploadedAt: x.uploadedAt })) });
+  }
+  const subsOf = q.get("substitutes");
+  if (subsOf) return NextResponse.json({ candidates: listSubstituteCandidates(Number(subsOf), g.branchId) });
   const cand = q.get("candidates");
   if (cand) {
     const [pid, date] = cand.split(":");
@@ -49,9 +58,9 @@ export async function GET(req: Request) {
 
 const Body = z.object({
   month: YM,
-  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish"]),
+  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute"]),
   position_id: z.number().int().optional(), date: z.string().optional(), user_id: z.number().int().optional(),
-  day_id: z.number().int().optional(), allow_unfilled: z.boolean().optional()
+  day_id: z.number().int().optional(), allow_unfilled: z.boolean().optional(), note: z.string().max(300).optional()
 });
 
 export async function POST(req: Request) {
@@ -77,6 +86,21 @@ export async function POST(req: Request) {
         if (!r.ok) return NextResponse.json({ ok: false, error: r.code }, { status: 422 });
         break;
       }
+      case "approve": case "reject": {
+        if (!d.day_id) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+        reviewEvidence({ dayId: d.day_id, branchId, managerId: actorId, approve: d.action === "approve", note: d.note });
+        break;
+      }
+      case "absent": {
+        if (!d.day_id) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+        markAbsent({ dayId: d.day_id, branchId, managerId: actorId });
+        break;
+      }
+      case "substitute": {
+        if (!d.day_id || !d.user_id) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+        assignSubstitute({ dayId: d.day_id, branchId, performerId: d.user_id, managerId: actorId });
+        break;
+      }
       case "publish": {
         const r = publishSchedule({ branchId, yearMonth: ym, actorId, allowUnfilled: d.allow_unfilled === true });
         if (!r.published) return NextResponse.json({ ok: false, error: "unfilled_days", unfilled: r.unfilled }, { status: 409 });
@@ -93,6 +117,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof SpecialDutyError) return NextResponse.json({ ok: false, error: e.code }, { status: 409 });
+    if (e instanceof EvidenceError) return NextResponse.json({ ok: false, error: e.code, message: EVIDENCE_TEXT[e.code] ?? e.code }, { status: 422 });
     throw e;
   }
 }

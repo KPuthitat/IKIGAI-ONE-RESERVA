@@ -37,6 +37,7 @@
     "test:special-duty-rules": "node --import tsx scripts/test-special-duty-rules.ts",
     "test:special-duty-access": "node --import tsx scripts/test-special-duty-access.ts",
     "test:special-duty-fill": "node --import tsx scripts/test-special-duty-fill.ts",
+    "test:special-duty-evidence": "node --import tsx scripts/test-special-duty-evidence.ts",
     "test:special-duty-roster": "node --import tsx scripts/test-special-duty-roster.ts",
     "test:payroll-pending-ot": "node --import tsx scripts/test-payroll-pending-ot.ts",
     "test:clinica-analytics": "node --import tsx scripts/test-clinica-analytics.ts",

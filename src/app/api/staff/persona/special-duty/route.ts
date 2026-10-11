@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser, userHasBranch } from "@/lib/auth";
-import { AccessError, getAnonymousSlots, getMyDuties } from "@/lib/special-duty-access";
+import { AccessError, getAnonymousSlots, getMyDuties, getPublishedSchedule } from "@/lib/special-duty-access";
+import { getMonth } from "@/lib/special-duty";
 import { setUserBookings } from "@/lib/special-duty-rules";
 import { RULE_TEXT, viewerOf } from "@/lib/special-duty-viewer";
 
@@ -17,8 +18,15 @@ export async function GET(req: Request) {
   const month = YM.safeParse(new URL(req.url).searchParams.get("month"));
   if (!month.success) return NextResponse.json({ error: "invalid_month" }, { status: 400 });
   const v = viewerOf(user);
+  const branchId = user.activeBranchId;
+  const m = getMonth(branchId, month.data);
+  if (!m.enabled) return NextResponse.json({ error: "month_off" }, { status: 409 });
+  const mine = getMyDuties(v, branchId, month.data);
+  const revealed = ["special_published", "in_progress", "settled"].includes(m.status);
   try {
-    return NextResponse.json({ slots: getAnonymousSlots(v, user.activeBranchId, month.data), mine: getMyDuties(v, user.activeBranchId, month.data) });
+    // Booking stages show the anonymous calendar; once published the names of the own branch are shown instead.
+    if (revealed) return NextResponse.json({ status: m.status, slots: null, mine, schedule: getPublishedSchedule(v, branchId, month.data) });
+    return NextResponse.json({ status: m.status, slots: getAnonymousSlots(v, branchId, month.data), mine, schedule: null });
   } catch (e) {
     if (e instanceof AccessError) return NextResponse.json({ error: e.code }, { status: e.code === "forbidden" ? 403 : 409 });
     throw e;
