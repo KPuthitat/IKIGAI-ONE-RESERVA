@@ -46,6 +46,8 @@ export type PayslipLine = {
   sso_amount: number;
   drink_deductions: number;
   mealpass_deductions: number;
+  special_payment: number;       // เงินช่วยเหลือพิเศษ (in gross_pay)
+  special_paid_out: number;      // aid + advances already paid out (netted off the transfer)
   tax_amount: number;
   other_deductions: number;
   net_pay: number;
@@ -82,7 +84,7 @@ const LINE_COLS = `
   holiday_minutes,
   days_worked, leave_days, unpaid_leave_days, unpaid_leave_deduction, unpaired_clockins,
   base_pay, ot_pay, service_charge, other_additions, meeting_fee, gross_pay,
-  sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, net_pay
+  sso_amount, tax_amount, other_deductions, drink_deductions, mealpass_deductions, special_payment, special_paid_out, net_pay
 `;
 
 /**

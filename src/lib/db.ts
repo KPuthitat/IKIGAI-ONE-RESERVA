@@ -4657,6 +4657,41 @@ function runMigrations(db: Database.Database): void {
   if (!plNames.has("meeting_fee")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN meeting_fee REAL NOT NULL DEFAULT 0");
   }
+  // เงินช่วยเหลือพิเศษ / เบิกล่วงหน้า (owner 2026-10-11): folded into the line from the
+  // staff_special_payments ledger after every build/recompute (special-payments.ts).
+  //   special_payment   — aid paid out early; an earning in gross_pay, taxed with the line
+  //   special_tax       — the withholding that aid added to tax_amount
+  //   special_paid_out  — aid + advances already transferred; deducted from net_pay only
+  if (!plNames.has("special_payment")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN special_payment REAL NOT NULL DEFAULT 0");
+  }
+  if (!plNames.has("special_tax")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN special_tax REAL NOT NULL DEFAULT 0");
+  }
+  if (!plNames.has("special_paid_out")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN special_paid_out REAL NOT NULL DEFAULT 0");
+  }
+  // Ledger of one-off payments made outside the payroll run. kind 'aid' = a grant
+  // (added to the month's income, taxed as wages, then netted off because it was
+  // already paid); 'advance' = early draw of earned pay (netted off, not extra income).
+  // Rows are never deleted — a mistaken row is voided with a reason.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS staff_special_payments (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL REFERENCES users(id),
+      kind        TEXT NOT NULL CHECK (kind IN ('aid','advance')),
+      paid_on     TEXT NOT NULL,                       -- YYYY-MM-DD (Asia/Bangkok)
+      amount      REAL NOT NULL CHECK (amount > 0),
+      reason      TEXT NOT NULL,
+      created_by  INTEGER NOT NULL REFERENCES users(id),
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      voided_at   TEXT,
+      voided_by   INTEGER REFERENCES users(id),
+      void_reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_payments_user_date
+      ON staff_special_payments(user_id, paid_on);
+  `);
   // "ตรวจแล้ว" review sign-off (owner 2026-08-03) — auto-cleared on any line change.
   if (!plNames.has("reviewed_at")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN reviewed_at TEXT");

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { foldSpecialPayments } from "@/lib/special-payments";
 import { z } from "zod";
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
@@ -239,6 +240,7 @@ export async function PATCH(
           other_additions = ?, other_deductions = ?, meeting_fee = ?,
           gross_pay = ?, sso_amount = ?, tax_amount = ?,
           drink_deductions = ?, mealpass_deductions = ?, net_pay = ?,
+          special_payment = 0, special_tax = 0, special_paid_out = 0,
           salary_tax_mode_snapshot = ?,
           hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
           pay_cycle_snapshot = ?,
@@ -310,6 +312,7 @@ export async function PATCH(
           other_additions = ?, other_deductions = ?, meeting_fee = ?,
           gross_pay = ?, sso_amount = ?, tax_amount = ?,
           drink_deductions = ?, mealpass_deductions = ?, net_pay = ?,
+          special_payment = 0, special_tax = 0, special_paid_out = 0,
           salary_tax_mode_snapshot = ?,
           notes = COALESCE(?, notes),
           overridden = 1, reviewed_at = NULL, reviewed_by = NULL,
@@ -330,6 +333,9 @@ export async function PATCH(
       periodId, userId
     );
   }
+
+  // Re-apply เงินช่วยเหลือพิเศษ / เบิกล่วงหน้า on top of the rewritten line (the UPDATEs above reset it).
+  foldSpecialPayments(db, periodId, userId);
 
   // Audit trail — read the stored row back so the "after" snapshot is
   // exactly what was persisted, then append an immutable audit row.

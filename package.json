@@ -32,6 +32,7 @@
     "test:svc-attendance-payout": "node --import tsx scripts/test-svc-attendance-payout.ts",
     "test:svc-summary-pdf": "node --import tsx scripts/test-svc-summary-pdf.ts",
     "test:birthday-reminder": "node --import tsx scripts/test-birthday-reminder.ts",
+    "test:special-payments": "node --import tsx scripts/test-special-payments.ts",
     "test:special-duty-core": "node --import tsx scripts/test-special-duty-core.ts",
     "test:special-duty-rules": "node --import tsx scripts/test-special-duty-rules.ts",
     "test:special-duty-access": "node --import tsx scripts/test-special-duty-access.ts",

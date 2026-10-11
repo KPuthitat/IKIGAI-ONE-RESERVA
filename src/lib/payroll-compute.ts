@@ -29,6 +29,7 @@ export { payrollStatusEligibleSql };
 import { sumRedeemedDrinksForUser } from "./partner-drink-orders";
 import { sumCrossCompanyChargesForUser } from "./mealpass-payroll";
 import { isDfBranch, computeDoctorFees, dfPayrollEnd } from "./df-db";
+import { foldAllForPeriod, foldSpecialPayments } from "./special-payments";
 
 // Which payroll_lines are shown to the admin (and therefore reviewable). Two
 // kinds of noise are hidden: an FT with no salary set, and an FT's all-zero
@@ -2463,6 +2464,9 @@ export function computePayrollPeriod(db: Database.Database, periodId: number): {
       new Date().toISOString(), periodId
     );
 
+    // เงินช่วยเหลือพิเศษ / เบิกล่วงหน้า: fold the ledger into every freshly built line.
+    foldAllForPeriod(db, periodId);
+
     return { computed, skipped, locked };
   });
 
@@ -2927,6 +2931,7 @@ export function recomputeLine(
           hourly_rate_snapshot = ?, monthly_salary_snapshot = ?,
           pay_cycle_snapshot = ?, salary_tax_mode_snapshot = ?,
           employment_type = ?, is_helper = ?,
+          special_payment = 0, special_tax = 0, special_paid_out = 0,
           overridden = 1, reviewed_at = NULL, reviewed_by = NULL,
           updated_at = CURRENT_TIMESTAMP
       WHERE period_id = ? AND user_id = ?
@@ -2971,4 +2976,5 @@ export function recomputeLine(
       rlHelperFlag
     );
   }
+  foldSpecialPayments(db, periodId, userId);
 }

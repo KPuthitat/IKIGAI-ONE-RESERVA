@@ -47,6 +47,8 @@ type Line = {
   drink_deductions: number;
   mealpass_deductions: number;
   net_pay: number;
+  special_payment: number;
+  special_paid_out: number;
 };
 
 const STATUS_TH: Record<Period["status"], string> = {
@@ -79,13 +81,16 @@ export default function PayrollSummaryPage({ params }: { params: { id: string } 
            u.bank_name, u.bank_account,
            pl.days_worked, pl.base_pay, pl.ot_pay, pl.service_charge, pl.other_additions,
            pl.gross_pay, pl.sso_amount, pl.tax_amount, pl.other_deductions,
-           pl.drink_deductions, pl.mealpass_deductions, pl.net_pay
+           pl.drink_deductions, pl.mealpass_deductions, pl.net_pay, pl.special_payment, pl.special_paid_out
     FROM payroll_lines pl
     LEFT JOIN users u ON u.id = pl.user_id
     WHERE pl.period_id = ?
     ORDER BY CASE WHEN pl.employment_type = 'ft' THEN 0 WHEN pl.employment_type = 'pt' THEN 1 ELSE 2 END,
              pl.display_name
   `).all(id) as Line[];
+  // เงินช่วยเหลือพิเศษ shows with the other additions, and what was already paid out early
+  // (aid + advances) with the other deductions, so every printed row and the footer tie out to net.
+  for (const l of lines) { l.other_additions += l.special_payment; l.other_deductions += l.special_paid_out; }
 
   // Company on the letterhead = the one the run's employees belong to, via
   // their branch (owner 2026-06-18: หัวกระดาษต้องตรงสังกัดพนักงาน). Pick the

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { foldSpecialPayments } from "@/lib/special-payments";
 import { z } from "zod";
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -173,6 +174,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     Math.round(Math.max(0, computed.net_pay - drinkDed - mealpassDed) * 100) / 100,
     computed.is_helper ?? 0
   );
+  foldSpecialPayments(db, periodId, computed.user_id);
 
   return NextResponse.json({ ok: true });
 }
