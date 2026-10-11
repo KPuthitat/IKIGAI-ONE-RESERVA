@@ -3285,6 +3285,21 @@ function runMigrations(db: Database.Database): void {
       UNIQUE (branch_id, year_month, slot_no)
     );
 
+    CREATE TABLE IF NOT EXISTS special_duty_days (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      position_id INTEGER NOT NULL REFERENCES special_duty_positions(id) ON DELETE CASCADE,
+      duty_date TEXT NOT NULL,                 -- YYYY-MM-DD (Asia/Bangkok)
+      user_id INTEGER NOT NULL REFERENCES users(id),          -- who holds the slot
+      source TEXT NOT NULL CHECK (source IN ('booked','assigned')),
+      status TEXT NOT NULL DEFAULT 'booked' CHECK (status IN ('booked','assigned','submitted','approved','absent','covered')),
+      absent_by_holder INTEGER NOT NULL DEFAULT 0,            -- 1 once the holder missed it (counts toward the strike limit)
+      performer_user_id INTEGER REFERENCES users(id),         -- the substitute who did it, when the holder did not
+      booked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      assigned_by INTEGER REFERENCES users(id),
+      UNIQUE (position_id, duty_date)                         -- one holder per position per day, enforced by the database
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_duty_days_user ON special_duty_days(user_id, duty_date);
+
     CREATE TABLE IF NOT EXISTS special_duty_audit (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       at TEXT NOT NULL,
