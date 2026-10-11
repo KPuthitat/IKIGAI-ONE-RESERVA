@@ -3231,6 +3231,74 @@ function runMigrations(db: Database.Database): void {
       sent_at TEXT NOT NULL
     );
   `);
+  // ── ตำแหน่งงานค่าตอบแทนพิเศษ (owner 2026-10-11) ─────────────────────────────
+  // Per-branch, per-month extra-pay duties staff book on top of their roster. Every
+  // table is special_duty_* so nothing here touches the roster_positions table
+  // (which means a position in the ROSTER). Rates / limits live in
+  // special_duty_config, never in code; a month's positions are a snapshot so a later
+  // edit cannot change a month that is already closed.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS special_duty_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_by INTEGER REFERENCES users(id),
+      updated_at TEXT
+    );
+    INSERT OR IGNORE INTO special_duty_config (key, value) VALUES
+      ('max_positions_per_branch', '3'),
+      ('default_daily_rate', '150'),
+      ('min_days_per_position', '6'),
+      ('max_positions_per_person_per_day', '2'),
+      ('absence_strike_limit', '2'),
+      ('booking_close_day_of_previous_month', '25'),
+      ('min_booking_window_days', '3'),
+      ('evidence_retention_days', '90'),
+      ('swap_notice_days', '1'),
+      ('owner_alert_min_bookers', '6'),
+      ('owner_alert_max_days_per_person', '20');
+
+    CREATE TABLE IF NOT EXISTS special_duty_months (
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'off' CHECK (status IN
+        ('off','awaiting_roster','booking_open','booking_closed','filling','special_published','in_progress','settled')),
+      booking_close_date TEXT,                -- YYYY-MM-DD, last day a booking is accepted
+      booking_opened_at TEXT,
+      special_published_at TEXT,
+      settled_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (branch_id, year_month)
+    );
+
+    CREATE TABLE IF NOT EXISTS special_duty_positions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      slot_no INTEGER NOT NULL CHECK (slot_no BETWEEN 1 AND 3),   -- a 4th position cannot exist
+      name TEXT NOT NULL,
+      description TEXT,
+      daily_rate REAL NOT NULL CHECK (daily_rate >= 0),
+      eligible_groups TEXT,                    -- JSON array of users.department values; NULL = every group
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, year_month, slot_no)
+    );
+
+    CREATE TABLE IF NOT EXISTS special_duty_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      at TEXT NOT NULL,
+      actor_user_id INTEGER REFERENCES users(id),
+      branch_id INTEGER,
+      year_month TEXT,
+      entity TEXT NOT NULL,
+      entity_id TEXT,
+      action TEXT NOT NULL,
+      before_json TEXT,
+      after_json TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_duty_audit_scope ON special_duty_audit(branch_id, year_month, at);
+  `);
   // svc_deductions (owner 2026-08-20) — ad-hoc deductions taken from a person's
   // SVC for a month (e.g. ค่าเครื่องดื่มที่ไม่ใช่คูปอง / other staff debts). One row
   // per line item; an admin enters reason + amount. Applied in the SVC math AFTER
