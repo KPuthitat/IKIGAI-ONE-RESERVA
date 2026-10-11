@@ -34,9 +34,9 @@ export default function PayslipDocument({
   const svcGrossRound = usesMonthlySvc ? (svcRow?.netAllocation ?? 0) : line.service_charge;
   const svcWhtRound = usesMonthlySvc ? (svcRow?.whtAmount ?? 0) : 0;
   const svcGiRound = usesMonthlySvc ? (svcRow?.groupInsurance ?? 0) : 0;
-  const incomeTotalRound = wageComp + svcGrossRound;
+  const incomeTotalRound = wageComp + line.special_payment + svcGrossRound;
   const whtTotalRound = line.tax_amount + svcWhtRound;
-  const dedTotalRound = line.sso_amount + whtTotalRound + line.drink_deductions + line.mealpass_deductions + line.other_deductions + svcGiRound;
+  const dedTotalRound = line.sso_amount + whtTotalRound + line.drink_deductions + line.mealpass_deductions + line.other_deductions + line.special_paid_out + svcGiRound;
   const netTotalRound = incomeTotalRound - dedTotalRound;
   const svcMonth = period.period_start.slice(0, 7);
 
@@ -196,6 +196,7 @@ export default function PayslipDocument({
           <Money label={t(lang, "admin.persona.payroll.col.otherAdd")} value={line.other_additions} />
         )}
         {line.meeting_fee > 0 && <Money label="ค่าเบี้ยประชุม" value={line.meeting_fee} />}
+        {line.special_payment > 0 && <Money label="เงินช่วยเหลือพิเศษ" value={line.special_payment} />}
         <Money label={t(lang, "admin.persona.payroll.payslip.grossLabel")} value={line.gross_pay} bold />
       </Section>
 
@@ -206,11 +207,12 @@ export default function PayslipDocument({
         {line.other_deductions > 0 && <Money label={t(lang, "admin.persona.payroll.col.otherDed")} value={line.other_deductions} />}
         {line.drink_deductions > 0 && <Money label={t(lang, "admin.persona.payroll.col.drinkDed")} value={line.drink_deductions} />}
         {line.mealpass_deductions > 0 && <Money label={t(lang, "admin.persona.payroll.col.mealpassDed")} value={line.mealpass_deductions} />}
-        {line.sso_amount === 0 && line.tax_amount === 0 && line.other_deductions === 0 && line.drink_deductions === 0 && line.mealpass_deductions === 0 && (
+        {line.special_paid_out > 0 && <Money label="หักเงินที่จ่ายล่วงหน้าแล้ว" value={line.special_paid_out} />}
+        {line.sso_amount === 0 && line.tax_amount === 0 && line.other_deductions === 0 && line.drink_deductions === 0 && line.mealpass_deductions === 0 && line.special_paid_out === 0 && (
           <div className="text-sm text-slate-400 italic py-1">{t(lang, "admin.persona.payroll.payslip.noDeductions")}</div>
         )}
         <Money label={t(lang, "admin.persona.payroll.payslip.totalDeductions")}
-          value={line.sso_amount + line.tax_amount + line.other_deductions + line.drink_deductions + line.mealpass_deductions} bold />
+          value={line.sso_amount + line.tax_amount + line.other_deductions + line.drink_deductions + line.mealpass_deductions + line.special_paid_out} bold />
       </Section>
 
       {/* Plain-language summary */}
@@ -226,6 +228,12 @@ export default function PayslipDocument({
                   {line.ot_pay > 0 && <span className="text-xs text-slate-400"> · รวมค่าล่วงเวลา ฿{fmtMoney(line.ot_pay)}</span>}
                 </span>
                 <span className="tabular-nums font-medium text-slate-800">{fmtMoney(wageComp)}</span>
+              </div>
+            )}
+            {line.special_payment > 0 && (
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-slate-600">เงินช่วยเหลือพิเศษ <span className="text-xs text-slate-400">(จ่ายไปแล้วล่วงหน้า)</span></span>
+                <span className="tabular-nums font-medium text-slate-800">{fmtMoney(line.special_payment)}</span>
               </div>
             )}
             {svcGrossRound > 0 && (
@@ -280,6 +288,12 @@ export default function PayslipDocument({
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-slate-600">{t(lang, "admin.persona.payroll.col.otherDed")}</span>
                 <span className="tabular-nums font-medium text-slate-700">{fmtMoney(line.other_deductions)}</span>
+              </div>
+            )}
+            {line.special_paid_out > 0 && (
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-slate-600">หักเงินที่จ่ายล่วงหน้าแล้ว <span className="text-xs text-slate-400">(เงินช่วยเหลือพิเศษและเบิกล่วงหน้า)</span></span>
+                <span className="tabular-nums font-medium text-slate-700">{fmtMoney(line.special_paid_out)}</span>
               </div>
             )}
             {svcGiRound > 0 && (

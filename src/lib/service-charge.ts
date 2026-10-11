@@ -30,6 +30,7 @@ import { approvedEarlyLeaveKeys } from "./early-leave";
 import { LATE_GRACE_MINUTES, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
 import { approvedExcusedDatesForMonth } from "./late-excusals";
 import { computeSvcAttendance, svcAttendanceApplies, type SvcAttendance } from "./svc-attendance";
+import { dutyFeeGrossByBranchUser } from "./special-duty-payout";
 import {
   shiftStartByDateForUserMonth,
   scheduledMinutesByUserForMonth
@@ -2193,6 +2194,13 @@ export type BranchSvcPayoutRow = {
   meetingFeeGross: number;   // pre-WHT meeting fee attributed to this branch
   meetingFeeWht: number;     // 3% for wht-mode staff, else 0
   meetingFeeNet: number;     // meetingFeeGross − meetingFeeWht (cash paid)
+  // ตำแหน่งงานค่าตอบแทนพิเศษ (owner 2026-10-11): approved duty days of the month are paid WITH
+  // the service charge, booked to the branch that owns the position. Same tax rule as the
+  // meeting fee. `net`/`wht` above ALSO include it, these expose the portion for its own
+  // accounta category and payslip line.
+  dutyFeeGross: number;
+  dutyFeeWht: number;
+  dutyFeeNet: number;
 };
 
 /**
@@ -2348,7 +2356,7 @@ export function computeBranchSvcPayout(branchId: number, yearMonth: string): Bra
   const rowsByUser = new Map<number, BranchSvcPayoutRow>();
   const blank = (userId: number, displayName: string, taxMode: "sso" | "wht"): BranchSvcPayoutRow =>
     ({ userId, displayName, taxMode, gross: 0, net: 0, wht: 0, groupInsurance: 0,
-       meetingFeeGross: 0, meetingFeeWht: 0, meetingFeeNet: 0 });
+       meetingFeeGross: 0, meetingFeeWht: 0, meetingFeeNet: 0, dutyFeeGross: 0, dutyFeeWht: 0, dutyFeeNet: 0 });
 
   if (!shared) {
     for (const r of computeMonthlySvcSummary(branchId, yearMonth).rows) {
@@ -2408,7 +2416,66 @@ export function computeBranchSvcPayout(branchId: number, yearMonth: string): Bra
     }
   }
 
+  // ตำแหน่งงานค่าตอบแทนพิเศษ — approved duty days of this branch, same tax rule as the meeting fee.
+  const dutyFees = dutyFeeGrossByBranchUser(yearMonth).get(branchId);
+  if (dutyFees && dutyFees.size > 0) {
+    const whtRate = (db.prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")
+      .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03;
+    for (const [userId, gross] of dutyFees) {
+      const u = db.prepare("SELECT display_name, title_prefix, salary_tax_mode, sso_start_month FROM users WHERE id = ?")
+        .get(userId) as { display_name: string; title_prefix: string | null; salary_tax_mode: "sso" | "wht" | null; sso_start_month: string | null } | undefined;
+      const dName = nameWithPrefix(u?.title_prefix ?? null, u?.display_name ?? "");
+      const taxMode = svcEffectiveTaxMode(u?.salary_tax_mode ?? "sso", u?.sso_start_month ?? null, yearMonth);
+      const dWht = taxMode === "wht" ? round2(gross * whtRate) : 0;
+      const dNet = round2(gross - dWht);
+      const row = rowsByUser.get(userId) ?? blank(userId, dName, taxMode);
+      row.dutyFeeGross = round2(row.dutyFeeGross + gross);
+      row.dutyFeeWht = round2(row.dutyFeeWht + dWht);
+      row.dutyFeeNet = round2(row.dutyFeeNet + dNet);
+      row.net = round2(row.net + dNet);
+      row.wht = round2(row.wht + dWht);
+      if (!row.displayName) row.displayName = dName;
+      rowsByUser.set(userId, row);
+    }
+  }
+
   return [...rowsByUser.values()];
+}
+
+export type DutyFeeAgg = {
+  userId: number; companyId: number | null; displayName: string;
+  employmentType: string | null; taxMode: "sso" | "wht";
+  dutyGross: number; dutyWht: number; dutyNet: number;
+};
+
+/** ตำแหน่งงานค่าตอบแทนพิเศษ paid with the svcMonth round, merged per (user, company) like
+ *  meetingFeeByUserCompany — one map so the screen, the PDF and the export can never disagree.
+ *  Key: `${userId}|${companyId ?? "null"}`. */
+export function dutyFeeByUserCompany(svcMonth: string): Map<string, DutyFeeAgg> {
+  const db = getDb();
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const out = new Map<string, DutyFeeAgg>();
+  const companyOf = db.prepare("SELECT company_id FROM branches WHERE id = ?");
+  const empTypeOf = db.prepare("SELECT employment_type FROM users WHERE id = ?");
+  for (const branchId of dutyFeeGrossByBranchUser(svcMonth).keys()) {
+    const companyId = (companyOf.get(branchId) as { company_id: number | null } | undefined)?.company_id ?? null;
+    let rows: BranchSvcPayoutRow[] = [];
+    try { rows = computeBranchSvcPayout(branchId, svcMonth); } catch { /* no payout for this branch */ }
+    for (const p of rows) {
+      if (!p.dutyFeeGross) continue;
+      const k = `${p.userId}|${companyId ?? "null"}`;
+      const cur = out.get(k) ?? {
+        userId: p.userId, companyId, displayName: p.displayName,
+        employmentType: (empTypeOf.get(p.userId) as { employment_type: string | null } | undefined)?.employment_type ?? null,
+        taxMode: p.taxMode, dutyGross: 0, dutyWht: 0, dutyNet: 0
+      };
+      cur.dutyGross = round2(cur.dutyGross + p.dutyFeeGross);
+      cur.dutyWht = round2(cur.dutyWht + p.dutyFeeWht);
+      cur.dutyNet = round2(cur.dutyNet + p.dutyFeeNet);
+      out.set(k, cur);
+    }
+  }
+  return out;
 }
 
 export type MeetingFeeAgg = {

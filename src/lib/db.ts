@@ -3231,6 +3231,142 @@ function runMigrations(db: Database.Database): void {
       sent_at TEXT NOT NULL
     );
   `);
+  // ── ตำแหน่งงานค่าตอบแทนพิเศษ (owner 2026-10-11) ─────────────────────────────
+  // Per-branch, per-month extra-pay duties staff book on top of their roster. Every
+  // table is special_duty_* so nothing here touches the roster_positions table
+  // (which means a position in the ROSTER). Rates / limits live in
+  // special_duty_config, never in code; a month's positions are a snapshot so a later
+  // edit cannot change a month that is already closed.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS special_duty_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_by INTEGER REFERENCES users(id),
+      updated_at TEXT
+    );
+    INSERT OR IGNORE INTO special_duty_config (key, value) VALUES
+      ('max_positions_per_branch', '3'),
+      ('default_daily_rate', '150'),
+      ('min_days_per_position', '6'),
+      ('max_positions_per_person_per_day', '2'),
+      ('absence_strike_limit', '2'),
+      ('booking_close_day_of_previous_month', '25'),
+      ('min_booking_window_days', '3'),
+      ('evidence_retention_days', '90'),
+      ('swap_notice_days', '1'),
+      ('owner_alert_min_bookers', '6'),
+      ('owner_alert_max_days_per_person', '20'),
+      ('evidence_min_photos', '1'),
+      ('evidence_max_photos', '5'),
+      ('evidence_deadline_days', '1');
+
+    CREATE TABLE IF NOT EXISTS special_duty_months (
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'off' CHECK (status IN
+        ('off','awaiting_roster','booking_open','booking_closed','filling','special_published','in_progress','settled')),
+      booking_close_date TEXT,                -- YYYY-MM-DD, last day a booking is accepted
+      booking_opened_at TEXT,
+      special_published_at TEXT,
+      settled_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (branch_id, year_month)
+    );
+
+    CREATE TABLE IF NOT EXISTS special_duty_positions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      slot_no INTEGER NOT NULL CHECK (slot_no BETWEEN 1 AND 3),   -- a 4th position cannot exist
+      name TEXT NOT NULL,
+      description TEXT,
+      daily_rate REAL NOT NULL CHECK (daily_rate >= 0),
+      eligible_groups TEXT,                    -- JSON array of users.department values; NULL = every group
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, year_month, slot_no)
+    );
+
+    CREATE TABLE IF NOT EXISTS special_duty_days (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      position_id INTEGER NOT NULL REFERENCES special_duty_positions(id) ON DELETE CASCADE,
+      duty_date TEXT NOT NULL,                 -- YYYY-MM-DD (Asia/Bangkok)
+      user_id INTEGER NOT NULL REFERENCES users(id),          -- who holds the slot
+      source TEXT NOT NULL CHECK (source IN ('booked','assigned')),
+      status TEXT NOT NULL DEFAULT 'booked' CHECK (status IN ('booked','assigned','submitted','approved','absent','covered')),
+      absent_by_holder INTEGER NOT NULL DEFAULT 0,            -- 1 once the holder missed it (counts toward the strike limit)
+      performer_user_id INTEGER REFERENCES users(id),         -- the substitute who did it, when the holder did not
+      booked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      assigned_by INTEGER REFERENCES users(id),
+      UNIQUE (position_id, duty_date)                         -- one holder per position per day, enforced by the database
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_duty_days_user ON special_duty_days(user_id, duty_date);
+
+    -- Evidence photos of the finished work area (never of people), kept per branch on disk and
+    -- swept after special_duty_config.evidence_retention_days (the row stays, deleted_at is set).
+    CREATE TABLE IF NOT EXISTS special_duty_evidence (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      day_id INTEGER NOT NULL REFERENCES special_duty_days(id) ON DELETE CASCADE,
+      branch_id INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      uploaded_by INTEGER NOT NULL REFERENCES users(id),
+      uploaded_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_duty_evidence_day ON special_duty_evidence(day_id);
+
+    -- Two holders trade duty days (owner 2026-10-11): proposed by A, accepted by B, approved by the
+    -- manager; only then do the two rows change hands (swap_notice_days before the earlier day).
+    CREATE TABLE IF NOT EXISTS special_duty_swaps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL,
+      year_month TEXT NOT NULL,
+      day_a_id INTEGER NOT NULL REFERENCES special_duty_days(id) ON DELETE CASCADE,   -- held by the proposer
+      day_b_id INTEGER NOT NULL REFERENCES special_duty_days(id) ON DELETE CASCADE,   -- held by the partner
+      from_user_id INTEGER NOT NULL REFERENCES users(id),
+      to_user_id INTEGER NOT NULL REFERENCES users(id),
+      status TEXT NOT NULL DEFAULT 'pending_peer' CHECK (status IN ('pending_peer','pending_manager','approved','declined','rejected','cancelled')),
+      note TEXT,
+      created_at TEXT NOT NULL,
+      peer_responded_at TEXT,
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT,
+      decision_note TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_duty_swaps_scope ON special_duty_swaps(branch_id, year_month, status);
+
+    CREATE TABLE IF NOT EXISTS special_duty_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL,
+      year_month TEXT NOT NULL,
+      kind TEXT NOT NULL,                      -- slot_released | coverage_gap | open_day_after_25 | ...
+      dedupe_key TEXT NOT NULL,
+      payload_json TEXT,
+      created_at TEXT NOT NULL,
+      notified_at TEXT,
+      UNIQUE (branch_id, year_month, kind, dedupe_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS special_duty_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      at TEXT NOT NULL,
+      actor_user_id INTEGER REFERENCES users(id),
+      branch_id INTEGER,
+      year_month TEXT,
+      entity TEXT NOT NULL,
+      entity_id TEXT,
+      action TEXT NOT NULL,
+      before_json TEXT,
+      after_json TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_duty_audit_scope ON special_duty_audit(branch_id, year_month, at);
+  `);
+  // Review trail on a duty day: when the holder/substitute submitted evidence, and who approved or sent it back.
+  const sddCols = new Set((db.prepare("PRAGMA table_info(special_duty_days)").all() as Array<{ name: string }>).map((c) => c.name));
+  for (const [col, decl] of [["submitted_at", "TEXT"], ["reviewed_by", "INTEGER REFERENCES users(id)"], ["reviewed_at", "TEXT"], ["review_note", "TEXT"]] as const) {
+    if (!sddCols.has(col)) db.exec(`ALTER TABLE special_duty_days ADD COLUMN ${col} ${decl}`);
+  }
   // svc_deductions (owner 2026-08-20) — ad-hoc deductions taken from a person's
   // SVC for a month (e.g. ค่าเครื่องดื่มที่ไม่ใช่คูปอง / other staff debts). One row
   // per line item; an admin enters reason + amount. Applied in the SVC math AFTER
@@ -4562,6 +4698,41 @@ function runMigrations(db: Database.Database): void {
   if (!plNames.has("meeting_fee")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN meeting_fee REAL NOT NULL DEFAULT 0");
   }
+  // เงินช่วยเหลือพิเศษ / เบิกล่วงหน้า (owner 2026-10-11): folded into the line from the
+  // staff_special_payments ledger after every build/recompute (special-payments.ts).
+  //   special_payment   — aid paid out early; an earning in gross_pay, taxed with the line
+  //   special_tax       — the withholding that aid added to tax_amount
+  //   special_paid_out  — aid + advances already transferred; deducted from net_pay only
+  if (!plNames.has("special_payment")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN special_payment REAL NOT NULL DEFAULT 0");
+  }
+  if (!plNames.has("special_tax")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN special_tax REAL NOT NULL DEFAULT 0");
+  }
+  if (!plNames.has("special_paid_out")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN special_paid_out REAL NOT NULL DEFAULT 0");
+  }
+  // Ledger of one-off payments made outside the payroll run. kind 'aid' = a grant
+  // (added to the month's income, taxed as wages, then netted off because it was
+  // already paid); 'advance' = early draw of earned pay (netted off, not extra income).
+  // Rows are never deleted — a mistaken row is voided with a reason.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS staff_special_payments (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL REFERENCES users(id),
+      kind        TEXT NOT NULL CHECK (kind IN ('aid','advance')),
+      paid_on     TEXT NOT NULL,                       -- YYYY-MM-DD (Asia/Bangkok)
+      amount      REAL NOT NULL CHECK (amount > 0),
+      reason      TEXT NOT NULL,
+      created_by  INTEGER NOT NULL REFERENCES users(id),
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      voided_at   TEXT,
+      voided_by   INTEGER REFERENCES users(id),
+      void_reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_payments_user_date
+      ON staff_special_payments(user_id, paid_on);
+  `);
   // "ตรวจแล้ว" review sign-off (owner 2026-08-03) — auto-cleared on any line change.
   if (!plNames.has("reviewed_at")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN reviewed_at TEXT");

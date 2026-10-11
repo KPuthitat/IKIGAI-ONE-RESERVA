@@ -22,6 +22,7 @@ import {
   getLastPublish,
   type AssignmentForStaffCalendar
 } from "@/lib/roster";
+import { getMonth as getDutyMonth } from "@/lib/special-duty";
 import OwlMascot from "../../../components/OwlMascot";
 // Reuse the admin calendar component verbatim — same visual language,
 // same birthday + greeting flow. Staff is in read-only mode by
@@ -121,8 +122,17 @@ export default function StaffCalendarPage({
     monthOptions.push(d.toISOString().slice(0, 7));
   }
 
+  const dutyMonth = getDutyMonth(branch.id, month);
+  const dutyOpen = dutyMonth.enabled && dutyMonth.status === "booking_open";
+
   return (
     <div className="space-y-4">
+      {dutyOpen && (
+        <Link href={`/staff/persona/special-duty?month=${month}`} className="card block border-amber-300 bg-amber-50 text-sm text-amber-900">
+          <span className="font-semibold">เปิดให้เลือกวันตำแหน่งงานค่าตอบแทนพิเศษแล้ว</span>
+          <span className="block text-xs mt-0.5">เลือกวันที่ต้องการภายในวันที่กำหนด แตะเพื่อเลือกวัน</span>
+        </Link>
+      )}
       <div>
         <h1 className="text-2xl font-bold text-slate-800">
           {t(lang, "staff.persona.calendar.title")}

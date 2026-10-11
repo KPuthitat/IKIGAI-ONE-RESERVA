@@ -86,6 +86,7 @@ type WeekLine = {
   other_deductions: number;
   drink_deductions: number;
   mealpass_deductions: number;
+  special_paid_out: number;         // เงินช่วยเหลือพิเศษ/เบิกล่วงหน้า ที่จ่ายไปแล้ว (หักจากยอดโอน)
   net_pay: number;
   days_worked: number;
 };
@@ -136,7 +137,7 @@ export default function MonthlyPayslipPage({
            pl.monthly_salary_snapshot, pl.hourly_rate_snapshot,
            pl.unpaid_leave_days, pl.unpaid_leave_deduction,
            pl.base_pay, pl.ot_pay, pl.service_charge, pl.other_additions, pl.meeting_fee, pl.gross_pay,
-           pl.sso_amount, pl.tax_amount, pl.other_deductions, pl.drink_deductions, pl.mealpass_deductions,
+           pl.sso_amount, pl.tax_amount, pl.other_deductions, pl.drink_deductions, pl.mealpass_deductions, pl.special_paid_out,
            pl.net_pay, pl.days_worked
     FROM payroll_lines pl
     JOIN payroll_periods pp ON pp.id = pl.period_id
@@ -164,7 +165,7 @@ export default function MonthlyPayslipPage({
   // if that would leave nothing (shouldn't happen — weeks.length was checked).
   const displayWeeks = weeks.filter((w) =>
     w.base_pay || w.ot_pay || w.service_charge || w.other_additions ||
-    w.sso_amount || w.tax_amount || w.other_deductions || w.drink_deductions || w.mealpass_deductions || w.net_pay
+    w.sso_amount || w.tax_amount || w.other_deductions || w.drink_deductions || w.mealpass_deductions || w.special_paid_out || w.net_pay
   );
   const rows = displayWeeks.length > 0 ? displayWeeks : weeks;
   const first: WeekLine | undefined = rows[0];
@@ -202,12 +203,13 @@ export default function MonthlyPayslipPage({
   const svcMonth = rollup.svcMonth;
   const sum = (f: (p: (typeof mine)[number]) => number) => round2(mine.reduce((a, p) => a + f(p), 0));
   const svcGrossOnly = sum((p) => p.svcGross);
-  const svcWht = sum((p) => p.svcWht + p.mtgWht);     // WHT on SVC + meeting fee (wht-mode staff)
+  const svcWht = sum((p) => p.svcWht + p.mtgWht + p.dutyWht);     // WHT on SVC + meeting fee + duty fee (wht-mode staff)
   const svcGroupInsurance = sum((p) => p.svcGi);
   const meetingFeeGross = sum((p) => p.mtgGross);
+  const dutyFeeGross = sum((p) => p.dutyGross);   // ตำแหน่งงานค่าตอบแทนพิเศษ (owner 2026-10-11)
   // SVC is shown as income at GROSS (before WHT + group insurance); the WHT and the
   // premium are then listed as deductions (owner 2026-08-02). Includes เบี้ยประชุม.
-  const svcGross = round2(svcGrossOnly + meetingFeeGross);
+  const svcGross = round2(svcGrossOnly + meetingFeeGross + dutyFeeGross);
 
   // Actual transfer dates (owner 2026-10-01: "เอาวันโอนจริง") — read from the SVC
   // batch of each paying company; before a batch exists the default 20th shows as
@@ -216,7 +218,7 @@ export default function MonthlyPayslipPage({
   const payInfos: PayInfo[] = [];
   const seenPayCo = new Set<string>();
   for (const p of mine) {
-    if (!(p.svcGross > 0 || p.mtgGross > 0)) continue;
+    if (!(p.svcGross > 0 || p.mtgGross > 0 || p.dutyGross > 0)) continue;
     const coKey = String(p.companyId);
     if (seenPayCo.has(coKey)) continue;
     seenPayCo.add(coKey);
@@ -254,7 +256,7 @@ export default function MonthlyPayslipPage({
     (a, w) => ({
       comp: a.comp + w.base_pay + w.ot_pay,
       other: a.other + (w.gross_pay - w.base_pay - w.ot_pay),
-      ded: a.ded + w.sso_amount + w.tax_amount + w.other_deductions + w.drink_deductions + w.mealpass_deductions,
+      ded: a.ded + w.sso_amount + w.tax_amount + w.other_deductions + w.drink_deductions + w.mealpass_deductions + w.special_paid_out,
       net: a.net + w.net_pay
     }),
     { comp: 0, other: 0, ded: 0, net: 0 }
@@ -324,6 +326,7 @@ export default function MonthlyPayslipPage({
     if (w.drink_deductions > 0) parts.push(`${t(lang, "admin.persona.payroll.col.drinkDed")} ฿${fmtMoney(w.drink_deductions)}`);
     if (w.mealpass_deductions > 0) parts.push(`${t(lang, "admin.persona.payroll.col.mealpassDed")} ฿${fmtMoney(w.mealpass_deductions)}`);
     if (w.other_deductions > 0) parts.push(`${t(lang, "admin.persona.payroll.col.otherDed")} ฿${fmtMoney(w.other_deductions)}`);
+    if (w.special_paid_out > 0) parts.push(`หักเงินที่จ่ายล่วงหน้าแล้ว ฿${fmtMoney(w.special_paid_out)}`);
     return parts.join(" · ");
   };
 
@@ -402,7 +405,7 @@ export default function MonthlyPayslipPage({
                 {rows.map((w) => {
                   const comp = w.base_pay + w.ot_pay;
                   const other = round2(w.gross_pay - comp);
-                  const ded = w.sso_amount + w.tax_amount + w.other_deductions + w.drink_deductions + w.mealpass_deductions;
+                  const ded = w.sso_amount + w.tax_amount + w.other_deductions + w.drink_deductions + w.mealpass_deductions + w.special_paid_out;
                   const parts = dedParts(w);
                   return (
                     <tr key={w.period_id} className="border-b border-slate-100 align-top">
@@ -491,7 +494,7 @@ export default function MonthlyPayslipPage({
               {svcIncome > 0 && (
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-slate-600">
-                    เซอร์วิสชาร์จ{meetingFeeGross > 0 ? " + เบี้ยประชุม" : ""}เดือน{monthNameOnly(svcMonth, lang)}{" "}
+                    เซอร์วิสชาร์จ{meetingFeeGross > 0 ? " + เบี้ยประชุม" : ""}{dutyFeeGross > 0 ? " + ตำแหน่งงานค่าตอบแทนพิเศษ" : ""}เดือน{monthNameOnly(svcMonth, lang)}{" "}
                     <span className="text-xs text-slate-400">
                       ({svcWht > 0 ? "ถูกหักภาษี ณ ที่จ่าย" : "ไม่ถูกหักภาษี ณ ที่จ่าย"} · {svcPayLabel}{meetingPayLabel ? ` · ${meetingPayLabel}` : ""}{meetingFeeGross > 0 ? ` · รวมเบี้ยประชุม ฿${fmtMoney(meetingFeeGross)}` : ""})
                     </span>

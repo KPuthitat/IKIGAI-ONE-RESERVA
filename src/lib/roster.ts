@@ -16,6 +16,7 @@
 // unchanged for branches that haven't filled in a roster yet.
 
 import { getDb } from "./db";
+import { releaseInvalidDutyDays } from "./special-duty-roster";
 import { timeToMinutes } from "./time";
 import type {
   ShiftCode,
@@ -792,6 +793,7 @@ export function upsertAssignment(args: {
           updated_by = ?, updated_at = ?
       WHERE id = ?
     `).run(args.userId, args.shiftCodeId, args.actingUserId, nowIso, existing.id);
+    releaseInvalidDutyDays(args.branchId, args.date);
     return { id: existing.id, created: false };
   }
   const info = db.prepare(`
@@ -799,6 +801,7 @@ export function upsertAssignment(args: {
       (branch_id, assignment_date, position_id, user_id, shift_code_id, created_by, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(args.branchId, args.date, args.positionId, args.userId, args.shiftCodeId, args.actingUserId, nowIso);
+  releaseInvalidDutyDays(args.branchId, args.date);
   return { id: Number(info.lastInsertRowid), created: true };
 }
 
@@ -811,6 +814,7 @@ export function deleteAssignment(args: {
     DELETE FROM roster_assignments
     WHERE branch_id = ? AND assignment_date = ? AND position_id = ?
   `).run(args.branchId, args.date, args.positionId);
+  if (r.changes > 0) releaseInvalidDutyDays(args.branchId, args.date);
   return r.changes > 0;
 }
 

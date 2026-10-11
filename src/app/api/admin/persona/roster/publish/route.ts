@@ -4,6 +4,8 @@ import { getSessionUser, userHasBranch } from "@/lib/auth";
 import { getDb, logPersonaAction, type Branch } from "@/lib/db";
 import { notifyToStaffGroup, rosterPublishedFlex } from "@/lib/line";
 import { recordPublish } from "@/lib/roster";
+import { openBookingOnPublish } from "@/lib/special-duty-roster";
+import { bookingOpenFlex, pushIndividually } from "@/lib/special-duty-notify";
 
 // POST /api/admin/persona/roster/publish
 //
@@ -65,5 +67,20 @@ export async function POST(req: Request) {
     console.error("roster publish notify error", e)
   );
 
-  return NextResponse.json({ ok: true, log_id: logId });
+  // 3. ตำแหน่งงานค่าตอบแทนพิเศษ: the first publish opens booking for branches that enabled the
+  //    month, and each eligible person is invited individually. Never blocks the publish.
+  let specialDuty: { opened: boolean; gaps: number } = { opened: false, gaps: 0 };
+  if (d.kind === "publish") {
+    try {
+      const r = openBookingOnPublish({ branchId: branch.id, yearMonth: d.year_month, actorId: user.id });
+      specialDuty = { opened: r.opened, gaps: r.gaps.length };
+      if (r.opened) {
+        const url = `${baseUrl}/staff/persona/special-duty?month=${d.year_month}`;
+        pushIndividually(r.audience.map((a) => a.lineUserId), bookingOpenFlex({ branchName: branch.name, yearMonth: d.year_month, closeDate: r.closeDate, url }))
+          .catch((e) => console.error("special duty invite error", e));
+      }
+    } catch (e) { console.error("special duty open error", e); }
+  }
+
+  return NextResponse.json({ ok: true, log_id: logId, special_duty: specialDuty });
 }

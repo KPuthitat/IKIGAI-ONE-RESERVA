@@ -26,11 +26,11 @@ export function sumLineDeductions(periodId: number, userId: number): number {
 export function applyDeductionsToLine(periodId: number, userId: number): number | null {
   const db = getDb();
   const line = db
-    .prepare("SELECT gross_pay, sso_amount, tax_amount FROM payroll_lines WHERE period_id = ? AND user_id = ?")
-    .get(periodId, userId) as { gross_pay: number; sso_amount: number; tax_amount: number } | undefined;
+    .prepare("SELECT gross_pay, sso_amount, tax_amount, special_paid_out FROM payroll_lines WHERE period_id = ? AND user_id = ?")
+    .get(periodId, userId) as { gross_pay: number; sso_amount: number; tax_amount: number; special_paid_out: number } | undefined;
   if (!line) return null;
   const total = sumLineDeductions(periodId, userId);
-  const net = r2(line.gross_pay - line.sso_amount - line.tax_amount - total);
+  const net = r2(line.gross_pay - line.sso_amount - line.tax_amount - total - line.special_paid_out);
   db.prepare(
     "UPDATE payroll_lines SET other_deductions = ?, net_pay = ?, reviewed_at = NULL, reviewed_by = NULL, updated_at = CURRENT_TIMESTAMP WHERE period_id = ? AND user_id = ?"
   ).run(total, net, periodId, userId);
