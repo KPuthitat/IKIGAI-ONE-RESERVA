@@ -3300,6 +3300,18 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_special_duty_days_user ON special_duty_days(user_id, duty_date);
 
+    CREATE TABLE IF NOT EXISTS special_duty_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL,
+      year_month TEXT NOT NULL,
+      kind TEXT NOT NULL,                      -- slot_released | coverage_gap | open_day_after_25 | ...
+      dedupe_key TEXT NOT NULL,
+      payload_json TEXT,
+      created_at TEXT NOT NULL,
+      notified_at TEXT,
+      UNIQUE (branch_id, year_month, kind, dedupe_key)
+    );
+
     CREATE TABLE IF NOT EXISTS special_duty_audit (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       at TEXT NOT NULL,
