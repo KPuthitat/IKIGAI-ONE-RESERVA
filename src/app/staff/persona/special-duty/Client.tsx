@@ -5,7 +5,7 @@ import { apiUrl } from "@/lib/url";
 
 type Slot = { date: string; state: "free" | "full" | "mine" };
 type Position = { id: number; slotNo: number; name: string; description: string | null; dailyRate: number; eligible: boolean; days: Slot[] };
-type Data = { slots: { status: string; bookingCloseDate: string | null; positions: Position[] }; mine: Array<{ positionName: string; date: string; amount: number }> };
+type Data = { slots: { status: string; bookingCloseDate: string | null; minDays: number; positions: Position[] }; mine: Array<{ positionName: string; date: string; amount: number }> };
 
 const MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 const DOW = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
@@ -61,28 +61,22 @@ export default function Client({ month }: { month: string }) {
       {msg && <div className={`card text-sm whitespace-pre-line ${msg.ok ? "text-emerald-700" : "text-rose-700"}`}>{msg.text}</div>}
       {data.slots.positions.filter((p) => p.eligible).map((p) => {
         const sel = new Set(picked[p.id] ?? []);
+        const min = data.slots.minDays;
         return (
           <section key={p.id} className="card space-y-3">
             <div>
               <h2 className="font-semibold text-slate-900">{p.name}</h2>
               {p.description && <p className="text-sm text-slate-500">{p.description}</p>}
-              <p className="text-sm text-slate-600">ค่าตอบแทนวันละ {money(p.dailyRate)} บาท · เลือกแล้ว {sel.size} วัน</p>
+              <p className="text-sm text-slate-600">ค่าตอบแทนวันละ {money(p.dailyRate)} บาท</p>
             </div>
             {p.days.length === 0 ? <p className="text-sm text-slate-500">ท่านไม่มีวันทำงานที่เลือกได้ในเดือนนี้</p> : (
-              <div className="grid grid-cols-2 gap-2">
-                {p.days.map((d) => {
-                  const on = sel.has(d.date);
-                  const full = d.state === "full";
-                  return (
-                    <button key={d.date} type="button" disabled={!open || full}
-                      onClick={() => setPicked((s) => { const cur = new Set(s[p.id] ?? []); cur.has(d.date) ? cur.delete(d.date) : cur.add(d.date); return { ...s, [p.id]: [...cur].sort() }; })}
-                      className={`rounded-lg border px-3 py-2 text-left text-sm ${on ? "border-amber-600 bg-amber-50 text-amber-900 font-semibold" : full ? "border-slate-200 bg-slate-50 text-slate-400" : "border-slate-300 text-slate-700"}`}>
-                      <div>{fmtShort(d.date)}</div>
-                      <div className="text-xs">{on ? "เลือกแล้ว" : full ? "เต็ม" : "ว่าง"}</div>
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                <div className={`rounded-lg px-3 py-2 text-sm ${sel.size === 0 ? "bg-slate-50 text-slate-600" : sel.size < min ? "bg-amber-50 text-amber-900" : "bg-emerald-50 text-emerald-800"}`}>
+                  {sel.size === 0 ? `ต้องเลือกอย่างน้อย ${min} วัน` : sel.size < min ? `เลือกแล้ว ${sel.size} วัน ต้องเลือกเพิ่มอีก ${min - sel.size} วัน` : `เลือกแล้ว ${sel.size} วัน ครบตามเกณฑ์ขั้นต่ำ ${min} วัน`}
+                </div>
+                <MonthGrid month={month} days={p.days} sel={sel} open={open}
+                  toggle={(date) => setPicked((s) => { const cur = new Set(s[p.id] ?? []); cur.has(date) ? cur.delete(date) : cur.add(date); return { ...s, [p.id]: [...cur].sort() }; })} />
+              </>
             )}
             {open && p.days.length > 0 && (
               <button type="button" className="btn-primary w-full" disabled={busy === p.id} onClick={() => save(p)}>
@@ -100,6 +94,39 @@ export default function Client({ month }: { month: string }) {
           </ul>
         </section>
       )}
+    </div>
+  );
+}
+
+const HEAD = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+
+function MonthGrid({ month, days, sel, open, toggle }: { month: string; days: Slot[]; sel: Set<string>; open: boolean; toggle: (d: string) => void }) {
+  const [y, m] = month.split("-").map(Number);
+  const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const byDate = new Map(days.map((d) => [d.date, d.state]));
+  const cells: Array<number | null> = [...Array(first).fill(null), ...Array.from({ length: last }, (_, i) => i + 1)];
+  return (
+    <div>
+      <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-500 mb-1">{HEAD.map((h) => <div key={h}>{h}</div>)}</div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((d, i) => {
+          if (d == null) return <div key={`b${i}`} />;
+          const date = `${month}-${String(d).padStart(2, "0")}`;
+          const state = byDate.get(date);
+          const on = sel.has(date);
+          if (!state) return <div key={date} className="rounded-md py-2 text-center text-sm text-slate-300">{d}</div>;
+          const full = state === "full";
+          return (
+            <button key={date} type="button" disabled={!open || full} onClick={() => toggle(date)}
+              className={`rounded-md border py-1.5 text-center leading-tight ${on ? "border-amber-700 bg-amber-600 text-white font-semibold" : full ? "border-slate-200 bg-slate-100 text-slate-400" : "border-slate-300 text-slate-800"}`}>
+              <div className="text-sm">{d}</div>
+              <div className="text-[10px]">{on ? "เลือก" : full ? "เต็ม" : "ว่าง"}</div>
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-xs text-slate-500">วันที่ไม่มีกรอบคือวันที่ท่านไม่มีตารางทำงาน จึงเลือกไม่ได้</p>
     </div>
   );
 }

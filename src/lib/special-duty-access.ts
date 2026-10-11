@@ -12,7 +12,7 @@
 //  • A manager sees their branches in full, the owner every branch.
 
 import { getDb } from "./db";
-import { getMonth, listPositions, type DutyMonthStatus, type DutyPosition } from "./special-duty";
+import { cfgNum, getMonth, listPositions, type DutyMonthStatus, type DutyPosition } from "./special-duty";
 import { isGroupEligible, isOnRoster } from "./special-duty-rules";
 
 export type Viewer = { userId: number; role: "staff" | "admin" | "super_admin"; branchIds: number[]; adminBranchIds: number[]; department?: string | null };
@@ -32,7 +32,7 @@ function viewerDept(v: Viewer): string | null {
 
 export type SlotState = "free" | "full" | "mine";
 export type AnonymousSlots = {
-  status: DutyMonthStatus; bookingCloseDate: string | null;
+  status: DutyMonthStatus; bookingCloseDate: string | null; minDays: number;
   positions: Array<{ id: number; slotNo: number; name: string; description: string | null; dailyRate: number; eligible: boolean;
     days: Array<{ date: string; state: SlotState }> }>;
 };
@@ -60,7 +60,7 @@ export function getAnonymousSlots(viewer: Viewer, branchId: number, yearMonth: s
     }
     return { id: p.id, slotNo: p.slotNo, name: p.name, description: p.description, dailyRate: p.dailyRate, eligible, days };
   });
-  return { status: month.status, bookingCloseDate: month.bookingCloseDate, positions };
+  return { status: month.status, bookingCloseDate: month.bookingCloseDate, minDays: cfgNum("min_days_per_position"), positions };
 }
 
 export type MyDuty = { positionId: number; positionName: string; date: string; status: string; amount: number };
