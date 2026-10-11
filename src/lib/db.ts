@@ -1827,6 +1827,7 @@ function runMigrations(db: Database.Database): void {
     add("recommendations_json", "TEXT");           // JSON string[] — reporter's suggestions
     add("self_involved", "INTEGER NOT NULL DEFAULT 0");   // the reporter was directly involved
     add("reporter_updated_at", "TEXT");            // last edit of the reporter sections
+    add("line_sent_at", "TEXT");                   // when the report was last pushed to the RM LINE group
   }
   // Other people named in a report (colleagues involved / witnesses / affected).
   // user_id is NULL for a non-employee (e.g. a customer) typed in by name.

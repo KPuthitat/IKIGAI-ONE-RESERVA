@@ -53,6 +53,7 @@ export type IrReport = {
   recommendations_json: string | null;
   self_involved: number;
   reporter_updated_at: string | null;
+  line_sent_at: string | null;       // last push to the RM LINE group (null = never sent)
 };
 
 // Another person named in the report. user_id is null for a non-employee.
@@ -163,6 +164,18 @@ export function deleteReport(id: number, branchId: number): { code: string | nul
   if (!r) return null;
   db.prepare("DELETE FROM ir_reports WHERE id = ? AND branch_id = ?").run(id, branchId);
   return r;
+}
+
+/** A clinic branch (doctor-fee branch). Clinic-only incident categories are hidden everywhere else. */
+export function irBranchIsClinic(branchId: number): boolean {
+  const r = getDb().prepare("SELECT df_enabled FROM branches WHERE id = ?").get(branchId) as { df_enabled: number } | undefined;
+  return !!r && r.df_enabled === 1;
+}
+
+export function markLineSent(reportId: number): string {
+  const at = new Date().toISOString();
+  getDb().prepare("UPDATE ir_reports SET line_sent_at = ? WHERE id = ?").run(at, reportId);
+  return at;
 }
 
 export function listPeople(reportId: number): IrPerson[] {

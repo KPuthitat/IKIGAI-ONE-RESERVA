@@ -7,7 +7,7 @@ import Link from "next/link";
 import { nameWithPrefix } from "@/lib/name";
 import IrReportForm, { type ColleagueOption } from "@/app/components/ir/IrReportForm";
 import {
-  IR_SEVERITIES, IR_STATUSES, IR_CATEGORY_GROUPS,
+  IR_SEVERITIES, IR_STATUSES, irCategoryGroupsFor,
   severityMeta, statusMeta, categoryLabel, incidentTypeLabel
 } from "@/lib/ir-vocab";
 import type { IrReportView } from "@/lib/ir-db";
@@ -18,8 +18,8 @@ function fmtOccurred(s: string): string {
   return thDateBE(d, { time: true });
 }
 
-export default function ReportsClient({ initialReports, colleagues, selfUserId }: {
-  initialReports: IrReportView[]; colleagues: ColleagueOption[]; selfUserId: number;
+export default function ReportsClient({ initialReports, colleagues, selfUserId, isClinic = true }: {
+  initialReports: IrReportView[]; colleagues: ColleagueOption[]; selfUserId: number; isClinic?: boolean;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -61,7 +61,7 @@ export default function ReportsClient({ initialReports, colleagues, selfUserId }
         </select>
         <select className="input !py-1.5 !w-auto text-xs" value={fCategory} onChange={(e) => setFCategory(e.target.value)}>
           <option value="">ทุกหมวด</option>
-          {IR_CATEGORY_GROUPS.map((g) => (
+          {irCategoryGroupsFor(isClinic, initialReports.map((x) => x.category)).map((g) => (
             <optgroup key={g.group} label={g.group}>
               {g.items.map((it) => <option key={it.key} value={it.key}>{it.labelTh}</option>)}
             </optgroup>
@@ -78,6 +78,7 @@ export default function ReportsClient({ initialReports, colleagues, selfUserId }
           guideHref="/admin/ir/guide"
           colleagues={colleagues}
           selfUserId={selfUserId}
+          isClinic={isClinic}
           onDone={(r) => { router.push(`/admin/ir/${r.id}`); router.refresh(); }}
           onCancel={() => setShowForm(false)}
         />

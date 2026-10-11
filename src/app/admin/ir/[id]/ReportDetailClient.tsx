@@ -3,24 +3,28 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { thDateBE } from "@/lib/th-month";
 import { humanizeApiError } from "@/lib/error-messages";
 import { nameWithPrefix } from "@/lib/name";
 import { FormSection, Field } from "@/app/components/FormKit";
 import IrReportView from "@/app/components/ir/IrReportView";
 import {
-  IR_SEVERITIES, IR_STATUSES, IR_CATEGORY_GROUPS,
+  IR_SEVERITIES, IR_STATUSES, irCategoryGroupsFor,
   type IrSeverity, type IrStatus
 } from "@/lib/ir-vocab";
 import type { IrReportDetail } from "@/lib/ir-db";
 
+const fmtSent = (iso: string) => thDateBE(new Date(iso), { time: true });
+
 export type AssigneeOption = { id: number; display_name: string; title_prefix: string | null };
 
 export default function ReportDetailClient({
-  initialReport, assignees, canDelete = false
+  initialReport, assignees, canDelete = false, isClinic = true
 }: {
   initialReport: IrReportDetail;
   assignees: AssigneeOption[];
   canDelete?: boolean;
+  isClinic?: boolean;
 }) {
   const router = useRouter();
   const [r, setR] = useState<IrReportDetail>(initialReport);
@@ -62,7 +66,8 @@ export default function ReportDetailClient({
     try {
       const res = await fetch(apiUrl(`/api/admin/ir/${r.id}/resend`), { method: "POST" });
       const j = await res.json().catch(() => ({}));
-      setResendMsg(res.ok && j.ok ? "ส่งเข้ากลุ่ม LINE ของทีมบริหารความเสี่ยงแล้ว" : humanizeApiError(j, "ส่งไม่สำเร็จ"));
+      if (res.ok && j.ok) setR((x) => ({ ...x, line_sent_at: j.line_sent_at ?? new Date().toISOString() }));
+      setResendMsg(res.ok && j.ok ? "ส่งรายงานเข้ากลุ่ม LINE ของทีมบริหารความเสี่ยงแล้ว" : humanizeApiError(j, "ส่งไม่สำเร็จ"));
     } catch { setResendMsg("เชื่อมต่อไม่สำเร็จ"); }
     finally { setResending(false); }
   }
@@ -124,7 +129,7 @@ export default function ReportDetailClient({
               </Field>
               <Field label="หมวด">
                 <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                  {IR_CATEGORY_GROUPS.map((g) => (
+                  {irCategoryGroupsFor(isClinic, [r.category]).map((g) => (
                     <optgroup key={g.group} label={g.group}>
                       {g.items.map((it) => <option key={it.key} value={it.key}>{it.labelTh}</option>)}
                     </optgroup>
@@ -173,9 +178,9 @@ export default function ReportDetailClient({
             </button>
           </div>
           <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
-            <span className="text-xs text-slate-500">{resendMsg ?? "ส่งรายงานนี้เข้ากลุ่ม LINE ของทีมบริหารความเสี่ยงอีกครั้ง"}</span>
+            <span className="text-xs text-slate-500">{resendMsg ?? (r.line_sent_at ? `ส่งเข้ากลุ่ม LINE ของทีมบริหารความเสี่ยงล่าสุดเมื่อ ${fmtSent(r.line_sent_at)}` : "ยังไม่ได้ส่งรายงานนี้เข้ากลุ่ม LINE ของทีมบริหารความเสี่ยง")}</span>
             <button type="button" className="btn btn-secondary text-sm" onClick={resend} disabled={resending}>
-              {resending ? "กำลังส่ง…" : "ส่งเข้ากลุ่ม LINE อีกครั้ง"}
+              {resending ? "กำลังส่ง…" : r.line_sent_at ? "ส่งอีกครั้ง" : "ส่งรายงาน"}
             </button>
           </div>
           {canDelete && (

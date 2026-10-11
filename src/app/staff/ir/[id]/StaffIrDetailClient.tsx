@@ -9,9 +9,9 @@ import { humanizeApiError } from "@/lib/error-messages";
 import type { IrReportDetail } from "@/lib/ir-db";
 
 export default function StaffIrDetailClient({
-  initialReport, canEdit, colleagues, selfUserId
+  initialReport, canEdit, colleagues, selfUserId, isClinic = true
 }: {
-  initialReport: IrReportDetail; canEdit: boolean; colleagues: ColleagueOption[]; selfUserId: number;
+  initialReport: IrReportDetail; canEdit: boolean; colleagues: ColleagueOption[]; selfUserId: number; isClinic?: boolean;
 }) {
   const router = useRouter();
   const [r, setR] = useState<IrReportDetail>(initialReport);
@@ -28,7 +28,8 @@ export default function StaffIrDetailClient({
       const res = await fetch(apiUrl(`/api/staff/ir/${r.id}/resend`), { method: "POST" });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setSendMsg({ kind: "err", text: humanizeApiError(j, "ส่งไม่สำเร็จ") }); return; }
-      setSendMsg({ kind: "ok", text: "ส่งรายงานถึงทีมบริหารความเสี่ยงอีกครั้งเรียบร้อยแล้ว" });
+      setSendMsg({ kind: "ok", text: "ส่งรายงานถึงทีมบริหารความเสี่ยงเรียบร้อยแล้ว" });
+      setR((x) => ({ ...x, line_sent_at: j.line_sent_at ?? new Date().toISOString() }));
       setJustEdited(false);
     } catch {
       setSendMsg({ kind: "err", text: "เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" });
@@ -51,6 +52,7 @@ export default function StaffIrDetailClient({
         apiBase="/api/staff/ir"
         colleagues={colleagues}
         selfUserId={selfUserId}
+        isClinic={isClinic}
         initial={r}
         onDone={async () => { await reload(); setEditing(false); setJustEdited(true); setSendMsg(null); router.refresh(); }}
         onCancel={() => setEditing(false)}
@@ -67,12 +69,12 @@ export default function StaffIrDetailClient({
               <button type="button" className="btn btn-secondary text-sm" onClick={() => setEditing(true)}>แก้ไขรายงาน</button>
               <button type="button" className={`btn text-sm ${justEdited ? "btn-primary" : "btn-secondary"}`} disabled={sending} onClick={resend}
                 title="แจ้งทีมบริหารความเสี่ยงทาง LINE ว่ารายงานนี้มีข้อมูลเพิ่มเติม">
-                {sending ? "กำลังส่ง…" : "ส่งรายงานถึงทีมบริหารความเสี่ยงอีกครั้ง"}
+                {sending ? "กำลังส่ง…" : r.line_sent_at ? "ส่งอีกครั้ง" : "ส่งรายงาน"}
               </button>
             </div>
           </div>
           {justEdited && !sendMsg && (
-            <div className="text-xs text-emerald-700">บันทึกการแก้ไขแล้ว หากต้องการให้ทีมบริหารความเสี่ยงทราบว่ามีข้อมูลเพิ่มเติม กรุณาเลือก “ส่งรายงานถึงทีมบริหารความเสี่ยงอีกครั้ง”</div>
+            <div className="text-xs text-emerald-700">บันทึกการแก้ไขแล้ว หากต้องการให้ทีมบริหารความเสี่ยงทราบว่ามีข้อมูลเพิ่มเติม กรุณากด “ส่งอีกครั้ง”</div>
           )}
           {sendMsg && <div className={`text-xs ${sendMsg.kind === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{sendMsg.text}</div>}
         </div>

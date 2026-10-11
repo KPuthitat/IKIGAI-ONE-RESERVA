@@ -10,7 +10,7 @@ import { getDb } from "./db";
 import { publicBaseUrl } from "./line-login";
 import { nameWithPrefix } from "./name";
 import {
-  getReportDetail, getIrLineGroupId, severityMeta, statusMeta, categoryLabel, incidentTypeLabel, personRoleLabel,
+  getReportDetail, getIrLineGroupId, markLineSent, severityMeta, statusMeta, categoryLabel, incidentTypeLabel, personRoleLabel,
   type IrReportDetail
 } from "./ir-db";
 
@@ -115,6 +115,7 @@ export async function notifyIrRmGroup(branchId: number, reportId: number): Promi
   const base = publicBaseUrl();
   const flex = irNewReportFlex(r, { branchName: branch?.name ?? `สาขา #${branchId}`, reportUrl: base ? `${base}/admin/ir/${r.id}` : null });
   const res = await sendLinePush(token, { to: groupId, messages: [flex] });
+  if (res.ok) markLineSent(reportId);
   return { ok: res.ok, error: res.ok ? undefined : (res.error ?? `line_${res.status}`) };
 }
 

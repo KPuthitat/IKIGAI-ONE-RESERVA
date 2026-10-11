@@ -7,7 +7,7 @@ import { humanizeApiError } from "@/lib/error-messages";
 import { nameWithPrefix } from "@/lib/name";
 import { FormSection, Field } from "@/app/components/FormKit";
 import {
-  IR_SEVERITIES, IR_INCIDENT_TYPES, IR_CATEGORY_GROUPS, IR_CONTRIBUTING_FACTORS, IR_PERSON_ROLES,
+  IR_SEVERITIES, IR_INCIDENT_TYPES, irCategoryGroupsFor, IR_CONTRIBUTING_FACTORS, IR_PERSON_ROLES,
   IR_MAX_WHYS, IR_MAX_RECOMMENDATIONS, IR_MAX_PEOPLE, severityMeta,
   type IrSeverity, type IrIncidentType, type IrPersonRole
 } from "@/lib/ir-vocab";
@@ -46,7 +46,7 @@ function toLocalInput(s: string): string {
 }
 
 export default function IrReportForm({
-  apiBase, colleagues, selfUserId, initial, allowAnonymous = true, guideHref = "/staff/ir/guide",
+  apiBase, colleagues, selfUserId, initial, allowAnonymous = true, guideHref = "/staff/ir/guide", isClinic = true,
   onDone, onCancel
 }: {
   apiBase: string;                      // "/api/staff/ir" | "/api/admin/ir"
@@ -55,13 +55,14 @@ export default function IrReportForm({
   initial?: IrReportDetail | null;      // edit mode when set
   allowAnonymous?: boolean;
   guideHref?: string;
+  isClinic?: boolean;                   // false → hide the clinic-only categories (restaurant branches)
   onDone: (report: { id: number }) => void;
   onCancel?: () => void;
 }) {
   const editing = !!initial;
   const [occurredAt, setOccurredAt] = useState(initial ? toLocalInput(initial.occurred_at) : nowLocalInput());
   const [location, setLocation] = useState(initial?.location_detail ?? "");
-  const [category, setCategory] = useState(initial?.category ?? IR_CATEGORY_GROUPS[0].items[0].key);
+  const [category, setCategory] = useState(initial?.category ?? irCategoryGroupsFor(isClinic)[0].items[0].key);
   const [incidentType, setIncidentType] = useState<IrIncidentType>(initial?.incident_type ?? "actual");
   const [severity, setSeverity] = useState<IrSeverity>((initial?.severity as IrSeverity | undefined) ?? 2);
   const [selfInvolved, setSelfInvolved] = useState(initial ? initial.self_involved === 1 : true);
@@ -184,7 +185,7 @@ export default function IrReportForm({
         <div className="grid sm:grid-cols-2 gap-2.5">
           <Field label="หมวดเหตุการณ์">
             <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {IR_CATEGORY_GROUPS.map((g) => (
+              {irCategoryGroupsFor(isClinic, initial?.category ? [initial.category] : []).map((g) => (
                 <optgroup key={g.group} label={g.group}>
                   {g.items.map((it) => <option key={it.key} value={it.key}>{it.labelTh}</option>)}
                 </optgroup>
