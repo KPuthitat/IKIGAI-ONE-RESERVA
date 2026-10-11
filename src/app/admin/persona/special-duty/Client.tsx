@@ -8,7 +8,7 @@ type Position = { id: number; slotNo: number; name: string; dailyRate: number };
 type Row = { id: number; positionId: number; date: string; userId: number; name: string; source: "booked" | "assigned"; status: string; performerName: string | null; reviewNote: string | null; evidenceCount: number; presentAtWork: boolean };
 type Open = { positionId: number; positionName: string; date: string; candidates: number };
 type Summary = { budget: number; approvedDays: number; approvedAmount: number; pendingDays: number; absentDays: number; unfilledDays: number; heldDays: number };
-type Data = { month: { enabled: boolean; status: string; bookingCloseDate: string | null }; positions: Position[]; rows: Row[]; open: Open[]; summary: Summary | null; alerts: Array<{ kind: string; text: string }> };
+type Data = { month: { enabled: boolean; status: string; bookingCloseDate: string | null }; positions: Position[]; rows: Row[]; open: Open[]; swaps: Array<{ id: number; note: string | null; fromName: string; toName: string; a: { date: string; positionName: string }; b: { date: string; positionName: string } }>; summary: Summary | null; alerts: Array<{ kind: string; text: string }> };
 type Plan = { suggestions: Array<{ positionName: string; date: string; userName: string }>; unfillable: Open[] };
 
 const MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
@@ -112,6 +112,23 @@ export default function Client({ month }: { month: string }) {
             )}
             {["special_published", "in_progress", "settled"].includes(st) && <p className="text-sm text-slate-600">ประกาศตารางแล้ว พนักงานในสาขาเห็นรายชื่อผู้ปฏิบัติงานแต่ไม่เห็นค่าตอบแทน</p>}
           </div>
+
+          {data.swaps.length > 0 && (
+            <div className="card space-y-2 border-amber-300">
+              <h2 className="font-semibold text-slate-800">คำขอสลับวันรออนุมัติ ({data.swaps.length})</h2>
+              {data.swaps.map((x) => (
+                <div key={x.id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm space-y-2">
+                  <div className="text-slate-700">{x.fromName} ให้วันที่ {fmtDate(x.a.date)} ({x.a.positionName}) แลกกับวันที่ {fmtDate(x.b.date)} ({x.b.positionName}) ของ {x.toName}</div>
+                  {x.note && <div className="text-slate-600">เหตุผลของผู้ขอ: {x.note}</div>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button type="button" className="btn-primary !py-1" disabled={busy} onClick={async () => { const r = await act({ action: "approve_swap", swap_id: x.id }); r.ok ? done("อนุมัติการสลับวันแล้ว วันของทั้งสองคนเปลี่ยนเรียบร้อย") : setMsg({ ok: false, text: r.j.message ?? "อนุมัติไม่สำเร็จ" }); }}>อนุมัติ</button>
+                    <input className="flex-1 min-w-[10rem] border border-slate-300 rounded-lg px-3 py-1" placeholder="เหตุผลที่ไม่อนุมัติ" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
+                    <button type="button" className="btn-secondary !py-1" disabled={busy || rejectNote.trim().length < 3} onClick={async () => { const r = await act({ action: "reject_swap", swap_id: x.id, note: rejectNote }); r.ok ? done("ไม่อนุมัติการสลับวันแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>ไม่อนุมัติ</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {data.summary && ["special_published", "in_progress", "settled"].includes(st) && (
             <div className="card space-y-2">

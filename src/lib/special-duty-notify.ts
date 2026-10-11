@@ -74,3 +74,18 @@ export function schedulePublishedFlex(args: { branchName: string; yearMonth: str
     }
   };
 }
+
+export function noticeFlex(args: { title: string; lines: string[]; url: string; button: string }): LineFlexMessage {
+  return {
+    type: "flex", altText: args.title,
+    contents: {
+      type: "bubble", size: "giga",
+      header: { type: "box", layout: "vertical", backgroundColor: "#281a0e", paddingAll: "20px", contents: [
+        { type: "text", text: "NOKHOOK OS", color: "#d6a14d", size: "xxs", weight: "bold" },
+        { type: "text", text: args.title, color: "#ffffff", size: "lg", weight: "bold", wrap: true, margin: "md" }
+      ] },
+      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "20px", contents: args.lines.map((t) => ({ type: "text", text: t, size: "sm", color: "#1a1a2e", wrap: true })) },
+      footer: { type: "box", layout: "vertical", paddingAll: "12px", contents: [{ type: "button", style: "primary", color: "#a06820", action: { type: "uri", label: args.button, uri: args.url } }] }
+    }
+  };
+}

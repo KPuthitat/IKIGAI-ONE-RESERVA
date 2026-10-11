@@ -6,10 +6,11 @@ import { canManage, getManagerView } from "@/lib/special-duty-access";
 import { getMonth, listPositions, SpecialDutyError } from "@/lib/special-duty";
 import { checkAssignment } from "@/lib/special-duty-rules";
 import { closeBooking, fillOpenDays, managerAssign, openDays, publishSchedule, removeDay, startFilling } from "@/lib/special-duty-fill";
-import { pushIndividually, schedulePublishedFlex } from "@/lib/special-duty-notify";
+import { noticeFlex, pushIndividually, schedulePublishedFlex } from "@/lib/special-duty-notify";
+import { decideSwap, listPendingForManager, swapNotices, SwapError } from "@/lib/special-duty-swap";
 import { dutyMonthSummary, dutyOwnerAlerts } from "@/lib/special-duty-payout";
 import { assignSubstitute, dayBelongsToBranch, EvidenceError, listEvidence, listSubstituteCandidates, markAbsent, reviewEvidence } from "@/lib/special-duty-evidence";
-import { EVIDENCE_TEXT, RULE_TEXT, viewerOf } from "@/lib/special-duty-viewer";
+import { EVIDENCE_TEXT, RULE_TEXT, SWAP_TEXT, viewerOf } from "@/lib/special-duty-viewer";
 
 // Manager console for ตำแหน่งงานค่าตอบแทนพิเศษ (active branch).
 //   GET  ?month=YYYY-MM[&candidates=<positionId>:<date>]
@@ -55,15 +56,16 @@ export async function GET(req: Request) {
     rows: m.enabled ? getManagerView(g.viewer, g.branchId, month.data) : [],
     summary: m.enabled ? dutyMonthSummary(g.branchId, month.data) : null,
     alerts: m.enabled && ["special_published", "in_progress", "settled"].includes(m.status) ? dutyOwnerAlerts(g.branchId, month.data) : [],
+    swaps: m.enabled ? listPendingForManager(g.branchId, month.data) : [],
     open: m.enabled && (filling || m.status === "booking_open") ? openDays(g.branchId, month.data) : []
   });
 }
 
 const Body = z.object({
   month: YM,
-  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute"]),
+  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute", "approve_swap", "reject_swap"]),
   position_id: z.number().int().optional(), date: z.string().optional(), user_id: z.number().int().optional(),
-  day_id: z.number().int().optional(), allow_unfilled: z.boolean().optional(), note: z.string().max(300).optional()
+  swap_id: z.number().int().optional(), day_id: z.number().int().optional(), allow_unfilled: z.boolean().optional(), note: z.string().max(300).optional()
 });
 
 export async function POST(req: Request) {
@@ -94,6 +96,15 @@ export async function POST(req: Request) {
         reviewEvidence({ dayId: d.day_id, branchId, managerId: actorId, approve: d.action === "approve", note: d.note });
         break;
       }
+      case "approve_swap": case "reject_swap": {
+        if (!d.swap_id) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+        const approve = d.action === "approve_swap";
+        decideSwap({ swapId: d.swap_id, branchId, managerId: actorId, approve, note: d.note });
+        const base = (process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || "").replace(/\/$/, "");
+        for (const n of swapNotices(d.swap_id, approve ? "approved" : "rejected"))
+          pushIndividually(n.to, noticeFlex({ title: n.title, lines: n.lines, url: `${base}/staff/persona/special-duty?month=${ym}`, button: "เปิดดู" })).catch((e) => console.error("swap push", e));
+        break;
+      }
       case "absent": {
         if (!d.day_id) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
         markAbsent({ dayId: d.day_id, branchId, managerId: actorId });
@@ -120,6 +131,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof SpecialDutyError) return NextResponse.json({ ok: false, error: e.code }, { status: 409 });
+    if (e instanceof SwapError) return NextResponse.json({ ok: false, error: e.code, message: SWAP_TEXT[e.code] ?? e.code }, { status: 422 });
     if (e instanceof EvidenceError) return NextResponse.json({ ok: false, error: e.code, message: EVIDENCE_TEXT[e.code] ?? e.code }, { status: 422 });
     throw e;
   }

@@ -3316,6 +3316,26 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_special_duty_evidence_day ON special_duty_evidence(day_id);
 
+    -- Two holders trade duty days (owner 2026-10-11): proposed by A, accepted by B, approved by the
+    -- manager; only then do the two rows change hands (swap_notice_days before the earlier day).
+    CREATE TABLE IF NOT EXISTS special_duty_swaps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL,
+      year_month TEXT NOT NULL,
+      day_a_id INTEGER NOT NULL REFERENCES special_duty_days(id) ON DELETE CASCADE,   -- held by the proposer
+      day_b_id INTEGER NOT NULL REFERENCES special_duty_days(id) ON DELETE CASCADE,   -- held by the partner
+      from_user_id INTEGER NOT NULL REFERENCES users(id),
+      to_user_id INTEGER NOT NULL REFERENCES users(id),
+      status TEXT NOT NULL DEFAULT 'pending_peer' CHECK (status IN ('pending_peer','pending_manager','approved','declined','rejected','cancelled')),
+      note TEXT,
+      created_at TEXT NOT NULL,
+      peer_responded_at TEXT,
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT,
+      decision_note TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_duty_swaps_scope ON special_duty_swaps(branch_id, year_month, status);
+
     CREATE TABLE IF NOT EXISTS special_duty_alerts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       branch_id INTEGER NOT NULL,

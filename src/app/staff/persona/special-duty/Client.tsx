@@ -116,6 +116,7 @@ export default function Client({ month }: { month: string }) {
         );
       })}
       {data.mine.length > 0 && <MyDuties mine={data.mine} published={data.slots == null} onChanged={load} setMsg={setMsg} />}
+      {data.schedule && <Swaps month={month} setMsg={setMsg} />}
       {data.schedule && <Schedule rows={data.schedule} />}
     </div>
   );
@@ -188,6 +189,84 @@ function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; publis
           );
         })}
       </ul>
+    </section>
+  );
+}
+
+type SwapView = { id: number; status: string; note: string | null; decisionNote: string | null; fromUserId: number; fromName: string; toUserId: number; toName: string;
+  a: { dayId: number; date: string; positionName: string }; b: { dayId: number; date: string; positionName: string } };
+type SwapData = { incoming: SwapView[]; sent: SwapView[]; mine: Array<{ dayId: number; date: string; positionName: string }>;
+  others: Array<{ dayId: number; date: string; positionName: string; holderName: string }> };
+const SWAP_STATUS: Record<string, string> = { pending_peer: "รอคู่สลับตอบรับ", pending_manager: "รอผู้จัดการอนุมัติ", approved: "อนุมัติแล้ว วันเปลี่ยนเรียบร้อย", declined: "คู่สลับปฏิเสธ", rejected: "ผู้จัดการไม่อนุมัติ", cancelled: "ยกเลิกแล้ว" };
+
+function Swaps({ month, setMsg }: { month: string; setMsg: (m: { ok: boolean; text: string }) => void }) {
+  const [d, setD] = useState<SwapData | null>(null);
+  const [mine, setMine] = useState(""); const [theirs, setTheirs] = useState(""); const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => {
+    const r = await fetch(apiUrl(`/api/staff/persona/special-duty/swap?month=${month}`), { cache: "no-store" });
+    if (r.ok) setD(await r.json());
+  }, [month]);
+  useEffect(() => { load(); }, [load]);
+  async function post(body: Record<string, unknown>, okText: string) {
+    setBusy(true);
+    const r = await fetch(apiUrl("/api/staff/persona/special-duty/swap"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month, ...body }) });
+    const j = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) { setMsg({ ok: false, text: j.message ?? "ทำรายการไม่สำเร็จ" }); return; }
+    setMsg({ ok: true, text: okText }); setMine(""); setTheirs(""); setNote(""); load();
+  }
+  if (!d) return null;
+  const open = (x: SwapView) => ["pending_peer", "pending_manager"].includes(x.status);
+  const line = (x: SwapView) => `${x.fromName} ให้วันที่ ${fmtDate(x.a.date)} (${x.a.positionName}) แลกกับวันที่ ${fmtDate(x.b.date)} (${x.b.positionName}) ของ ${x.toName}`;
+  return (
+    <section className="card space-y-3">
+      <h2 className="font-semibold text-slate-900">สลับวัน</h2>
+      <p className="text-sm text-slate-600">สลับวันกับเพื่อนร่วมงานได้เมื่อทั้งสองฝ่ายตกลงและผู้จัดการอนุมัติ ต้องแจ้งล่วงหน้าอย่างน้อยหนึ่งวันก่อนวันที่ปฏิบัติงานที่เร็วกว่า และต่างฝ่ายต้องมีตารางทำงานในวันที่ได้รับ</p>
+      {d.incoming.filter((x) => x.status === "pending_peer").map((x) => (
+        <div key={x.id} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm space-y-2">
+          <div className="font-medium text-amber-900">มีคำขอสลับวันถึงท่าน</div>
+          <div className="text-slate-700">{line(x)}</div>
+          {x.note && <div className="text-slate-600">เหตุผล: {x.note}</div>}
+          <div className="flex gap-2">
+            <button type="button" className="btn-primary !py-1" disabled={busy} onClick={() => post({ action: "accept", swap_id: x.id }, "ตอบรับแล้ว รอผู้จัดการอนุมัติ")}>ตอบรับ</button>
+            <button type="button" className="btn-secondary !py-1" disabled={busy} onClick={() => post({ action: "decline", swap_id: x.id }, "ปฏิเสธคำขอแล้ว")}>ปฏิเสธ</button>
+          </div>
+        </div>
+      ))}
+      {d.mine.length > 0 && d.others.length > 0 ? (
+        <div className="space-y-2">
+          <label className="block text-sm">วันของท่านที่ต้องการให้
+            <select className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2" value={mine} onChange={(e) => setMine(e.target.value)}>
+              <option value="">เลือกวัน</option>
+              {d.mine.map((x) => <option key={x.dayId} value={x.dayId}>{fmtDate(x.date)} · {x.positionName}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm">วันของเพื่อนที่ต้องการรับแทน
+            <select className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2" value={theirs} onChange={(e) => setTheirs(e.target.value)}>
+              <option value="">เลือกวัน</option>
+              {d.others.map((x) => <option key={x.dayId} value={x.dayId}>{fmtDate(x.date)} · {x.positionName} · {x.holderName}</option>)}
+            </select>
+          </label>
+          <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" maxLength={200} placeholder="เหตุผล (ไม่บังคับ)" value={note} onChange={(e) => setNote(e.target.value)} />
+          <button type="button" className="btn-primary w-full" disabled={busy || !mine || !theirs} onClick={() => post({ action: "propose", my_day_id: Number(mine), their_day_id: Number(theirs), note }, "ส่งคำขอสลับวันแล้ว รอคู่สลับตอบรับ")}>ส่งคำขอสลับวัน</button>
+        </div>
+      ) : <p className="text-sm text-slate-500">ขณะนี้ไม่มีวันที่สลับได้</p>}
+      {d.sent.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-slate-800">คำขอที่ท่านส่ง</div>
+          {d.sent.map((x) => (
+            <div key={x.id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <div className="text-slate-700">{line(x)}</div>
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <span className={x.status === "approved" ? "text-emerald-700" : x.status === "declined" || x.status === "rejected" ? "text-rose-700" : "text-slate-600"}>{SWAP_STATUS[x.status] ?? x.status}</span>
+                {open(x) && <button type="button" className="text-xs text-rose-700 underline" disabled={busy} onClick={() => post({ action: "cancel", swap_id: x.id }, "ยกเลิกคำขอแล้ว")}>ยกเลิกคำขอ</button>}
+              </div>
+              {x.decisionNote && <div className="text-slate-600">ผู้จัดการแจ้ง: {x.decisionNote}</div>}
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
