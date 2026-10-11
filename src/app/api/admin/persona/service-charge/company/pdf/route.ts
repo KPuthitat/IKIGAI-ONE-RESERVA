@@ -2,7 +2,7 @@ import { thDateBE } from "@/lib/th-month";
 import { NextResponse } from "next/server";
 import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { computeCompanySvcSummary, isSharedSvcMonth, companySvcPayoutState, meetingFeeByUserCompany } from "@/lib/service-charge";
+import { computeCompanySvcSummary, isSharedSvcMonth, companySvcPayoutState, meetingFeeByUserCompany, dutyFeeByUserCompany } from "@/lib/service-charge";
 import { generateSvcSummaryPdf, type SvcPdfData } from "@/lib/svc-summary-pdf";
 import { TH_MONTHS_FULL } from "@/lib/revshare";
 
@@ -64,22 +64,33 @@ export async function GET(req: Request) {
     cur.gross = round2(cur.gross + m.mtgGross); cur.wht = round2(cur.wht + m.mtgWht); cur.net = round2(cur.net + m.mtgNet);
     mtgByUser.set(m.userId, cur);
   }
+  // ตำแหน่งงานค่าตอบแทนพิเศษ (owner 2026-10-11) rides the same payout — same shared map as the payroll summary.
+  const dutyByUser = new Map<number, { gross: number; wht: number; net: number; typeLabel: string; name: string }>();
+  for (const dd of dutyFeeByUserCompany(month).values()) {
+    if (dd.companyId !== companyId) continue;
+    const cur = dutyByUser.get(dd.userId) ?? { gross: 0, wht: 0, net: 0, typeLabel: typeLabel(dd.employmentType), name: dd.displayName };
+    cur.gross = round2(cur.gross + dd.dutyGross); cur.wht = round2(cur.wht + dd.dutyWht); cur.net = round2(cur.net + dd.dutyNet);
+    dutyByUser.set(dd.userId, cur);
+  }
   const rows: SvcPdfData["rows"] = summary.rows.map((r) => {
     const m = mtgByUser.get(r.userId);
     mtgByUser.delete(r.userId);
+    const du = dutyByUser.get(r.userId);
+    dutyByUser.delete(r.userId);
     return {
       name: r.displayName,
       typeLabel: typeLabel(r.employmentType),
       branchesLabel: r.byBranch.map((b) => b.branchName).join(", ") || "—",
       gross: r.grossAllocation,
       meetingFee: m?.gross ?? 0,
+      dutyFee: du?.gross ?? 0,
       foodClawback: r.foodClawback,
       otherDeductions: r.otherDeductions,
       // netAllocation is pre-GI; the tax base ("ก่อนภาษี") is after group insurance.
-      preTax: round2(Math.max(0, r.netAllocation - r.groupInsurance) + (m?.gross ?? 0)),
-      wht: round2(r.whtAmount + (m?.wht ?? 0)),
+      preTax: round2(Math.max(0, r.netAllocation - r.groupInsurance) + (m?.gross ?? 0) + (du?.gross ?? 0)),
+      wht: round2(r.whtAmount + (m?.wht ?? 0) + (du?.wht ?? 0)),
       groupInsurance: r.groupInsurance,
-      net: round2(r.netPayout + (m?.net ?? 0)),
+      net: round2(r.netPayout + (m?.net ?? 0) + (du?.net ?? 0)),
       statusLabel: r.forfeited
         ? (r.forfeitReason === "resignation" ? "ตัดสิทธิ์ (ลาออก)" : r.forfeitReason === "attendance" ? "ตัดสิทธิ์ (ขาด/ลา/สาย)" : "ตัดสิทธิ์ (สาย)")
         : r.exempted ? "ยกเว้นให้" : r.halved ? "ได้ครึ่ง (ขาด/ลา/สาย)" : "ได้รับ"
@@ -88,11 +99,23 @@ export async function GET(req: Request) {
   for (const [, m] of mtgByUser) {
     rows.push({
       name: m.name, typeLabel: m.typeLabel, branchesLabel: "—",
-      gross: 0, meetingFee: m.gross, foodClawback: 0, otherDeductions: 0,
+      gross: 0, meetingFee: m.gross, dutyFee: 0, foodClawback: 0, otherDeductions: 0,
       preTax: m.gross, wht: m.wht, groupInsurance: 0, net: m.net,
       statusLabel: "เบี้ยประชุมอย่างเดียว"
     });
   }
+  for (const [, du] of dutyByUser) {
+    rows.push({
+      name: du.name, typeLabel: du.typeLabel, branchesLabel: "—",
+      gross: 0, meetingFee: 0, dutyFee: du.gross, foodClawback: 0, otherDeductions: 0,
+      preTax: du.gross, wht: du.wht, groupInsurance: 0, net: du.net,
+      statusLabel: "ตำแหน่งงานค่าตอบแทนพิเศษอย่างเดียว"
+    });
+  }
+  const dutyAgg = [...dutyFeeByUserCompany(month).values()].filter((x) => x.companyId === companyId);
+  const totalDutyFee = round2(dutyAgg.reduce((s, x) => s + x.dutyGross, 0));
+  const totalDutyWht = round2(dutyAgg.reduce((s, x) => s + x.dutyWht, 0));
+  const totalDutyNet = round2(dutyAgg.reduce((s, x) => s + x.dutyNet, 0));
   const totalMeetingFee = round2(rows.reduce((s, r) => s + r.meetingFee, 0));
   const totalMeetingWht = round2([...meetingFeeByUserCompany(month).values()].filter((m) => m.companyId === companyId).reduce((s, m) => s + m.mtgWht, 0));
   const totalMeetingNet = round2([...meetingFeeByUserCompany(month).values()].filter((m) => m.companyId === companyId).reduce((s, m) => s + m.mtgNet, 0));
@@ -122,9 +145,10 @@ export async function GET(req: Request) {
       foodClawback: totalFoodClawback,
       otherDeductions: totalOtherDeductions,
       meetingFee: totalMeetingFee,
-      wht: round2(summary.totalWht + totalMeetingWht),
+      dutyFee: totalDutyFee,
+      wht: round2(summary.totalWht + totalMeetingWht + totalDutyWht),
       groupInsurance: round2(summary.totalGroupInsurance),
-      netPayout: round2(summary.totalNetPayout + totalMeetingNet)
+      netPayout: round2(summary.totalNetPayout + totalMeetingNet + totalDutyNet)
     },
     branches,
     rows

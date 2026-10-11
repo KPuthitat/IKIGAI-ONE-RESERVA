@@ -9,11 +9,11 @@ import { generateSvcSummaryPdf, type SvcPdfData } from "../src/lib/svc-summary-p
   const d: SvcPdfData = {
     company: { name: "CO", taxId: null, address: null }, monthLabel: "สิงหาคม พ.ศ. 2569", shared: false,
     payoutDate: "2026-09-20", generatedLabel: "x",
-    totals: { collected: 1000, staffPool: 600, companyPool: 400, foodClawback: 0, otherDeductions: 0, wht: 60, groupInsurance: 0, netPayout: 2540, meetingFee: 2000 },
+    totals: { collected: 1000, staffPool: 600, companyPool: 400, foodClawback: 0, otherDeductions: 0, wht: 60, groupInsurance: 0, netPayout: 2540, meetingFee: 2000, dutyFee: 0 },
     branches: [{ name: "A", collected: 1000, staffAttributed: 600, netAttributed: 540, headcount: 1 }],
     rows: [
-      { name: "ฐิติรัตน์", typeLabel: "ประจำ", branchesLabel: "A", gross: 600, meetingFee: 2000, foodClawback: 0, otherDeductions: 0, preTax: 2600, wht: 60, groupInsurance: 0, net: 2540, statusLabel: "ได้รับ" },
-      { name: "เฉพาะเบี้ยประชุม", typeLabel: "ประจำ", branchesLabel: "—", gross: 0, meetingFee: 0, foodClawback: 0, otherDeductions: 0, preTax: 0, wht: 0, groupInsurance: 0, net: 0, statusLabel: "เบี้ยประชุมอย่างเดียว" }
+      { name: "ฐิติรัตน์", typeLabel: "ประจำ", branchesLabel: "A", gross: 600, meetingFee: 2000, dutyFee: 0, foodClawback: 0, otherDeductions: 0, preTax: 2600, wht: 60, groupInsurance: 0, net: 2540, statusLabel: "ได้รับ" },
+      { name: "เฉพาะเบี้ยประชุม", typeLabel: "ประจำ", branchesLabel: "—", gross: 0, meetingFee: 0, dutyFee: 0, foodClawback: 0, otherDeductions: 0, preTax: 0, wht: 0, groupInsurance: 0, net: 0, statusLabel: "เบี้ยประชุมอย่างเดียว" }
     ]
   };
   const pdf = await generateSvcSummaryPdf(d);

@@ -18,8 +18,8 @@ function rollupVal(r: EmpDocRow, col: DocColumn): Cell {
   return n;
 }
 function totalsRow(label: string, t: DocTotals): Cell[] {
-  // Column order MUST mirror ROLLUP_COLUMNS (name, type, comp, svc, mtg, income, …).
-  return [label, "", t.comp, t.svcGross, t.mtgGross, t.income,
+  // Column order MUST mirror ROLLUP_COLUMNS (name, type, comp, svc, mtg, duty, income, …).
+  return [label, "", t.comp, t.svcGross, t.mtgGross, t.dutyGross, t.income,
     t.sso > 0 ? -t.sso : 0, t.tax > 0 ? -t.tax : 0, t.gi > 0 ? -t.gi : 0,
     t.other > 0 ? -t.other : 0, t.deduction > 0 ? -t.deduction : 0, t.take, ""];
 }

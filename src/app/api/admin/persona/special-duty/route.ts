@@ -7,6 +7,7 @@ import { getMonth, listPositions, SpecialDutyError } from "@/lib/special-duty";
 import { checkAssignment } from "@/lib/special-duty-rules";
 import { closeBooking, fillOpenDays, managerAssign, openDays, publishSchedule, removeDay, startFilling } from "@/lib/special-duty-fill";
 import { pushIndividually, schedulePublishedFlex } from "@/lib/special-duty-notify";
+import { dutyMonthSummary, dutyOwnerAlerts } from "@/lib/special-duty-payout";
 import { assignSubstitute, dayBelongsToBranch, EvidenceError, listEvidence, listSubstituteCandidates, markAbsent, reviewEvidence } from "@/lib/special-duty-evidence";
 import { EVIDENCE_TEXT, RULE_TEXT, viewerOf } from "@/lib/special-duty-viewer";
 
@@ -52,6 +53,8 @@ export async function GET(req: Request) {
   return NextResponse.json({
     month: m, positions: listPositions(g.branchId, month.data, { activeOnly: true }),
     rows: m.enabled ? getManagerView(g.viewer, g.branchId, month.data) : [],
+    summary: m.enabled ? dutyMonthSummary(g.branchId, month.data) : null,
+    alerts: m.enabled && ["special_published", "in_progress", "settled"].includes(m.status) ? dutyOwnerAlerts(g.branchId, month.data) : [],
     open: m.enabled && (filling || m.status === "booking_open") ? openDays(g.branchId, month.data) : []
   });
 }

@@ -7,7 +7,8 @@ import { apiUrl } from "@/lib/url";
 type Position = { id: number; slotNo: number; name: string; dailyRate: number };
 type Row = { id: number; positionId: number; date: string; userId: number; name: string; source: "booked" | "assigned"; status: string; performerName: string | null; reviewNote: string | null; evidenceCount: number; presentAtWork: boolean };
 type Open = { positionId: number; positionName: string; date: string; candidates: number };
-type Data = { month: { enabled: boolean; status: string; bookingCloseDate: string | null }; positions: Position[]; rows: Row[]; open: Open[] };
+type Summary = { budget: number; approvedDays: number; approvedAmount: number; pendingDays: number; absentDays: number; unfilledDays: number; heldDays: number };
+type Data = { month: { enabled: boolean; status: string; bookingCloseDate: string | null }; positions: Position[]; rows: Row[]; open: Open[]; summary: Summary | null; alerts: Array<{ kind: string; text: string }> };
 type Plan = { suggestions: Array<{ positionName: string; date: string; userName: string }>; unfillable: Open[] };
 
 const MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
@@ -111,6 +112,19 @@ export default function Client({ month }: { month: string }) {
             )}
             {["special_published", "in_progress", "settled"].includes(st) && <p className="text-sm text-slate-600">ประกาศตารางแล้ว พนักงานในสาขาเห็นรายชื่อผู้ปฏิบัติงานแต่ไม่เห็นค่าตอบแทน</p>}
           </div>
+
+          {data.summary && ["special_published", "in_progress", "settled"].includes(st) && (
+            <div className="card space-y-2">
+              <h2 className="font-semibold text-slate-800">ค่าตอบแทนของเดือนนี้</h2>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-900">ตรวจรับแล้ว {data.summary.approvedDays} วัน<div className="font-bold">{data.summary.approvedAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท</div></div>
+                <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900">ยังไม่ตรวจรับ {data.summary.pendingDays} วัน<div className="font-bold">ขาด {data.summary.absentDays} วัน</div></div>
+              </div>
+              <p className="text-sm text-slate-600">งบสูงสุดของเดือน {data.summary.budget.toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท (ทุกวัน ทุกตำแหน่ง) · วันที่ไม่มีผู้ปฏิบัติ {data.summary.unfilledDays} วัน</p>
+              <p className="text-xs text-slate-500">จ่ายเฉพาะวันที่ตรวจรับแล้ว พร้อมค่าบริการวันที่ 20 ของเดือนถัดไป พนักงานที่หักภาษี ณ ที่จ่ายถูกหัก 3% พนักงานในประกันสังคมไม่ถูกหัก</p>
+              {data.alerts.length > 0 && <ul className="text-sm text-rose-700 list-disc pl-5">{data.alerts.map((a, i) => <li key={i}>{a.text}</li>)}</ul>}
+            </div>
+          )}
 
           {plan && (
             <div className="card space-y-2 border-amber-300">

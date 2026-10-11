@@ -135,8 +135,9 @@ export default function PayrollMonthlySummaryPage({
   );
   const grandSvc = rollup.people.reduce(
     (a, p) => ({ gross: a.gross + p.svcGross, wht: a.wht + p.svcWht, gi: a.gi + p.svcGi, net: a.net + p.svcNet,
-                 mtgGross: a.mtgGross + p.mtgGross, mtgWht: a.mtgWht + p.mtgWht, mtgNet: a.mtgNet + p.mtgNet }),
-    { gross: 0, wht: 0, gi: 0, net: 0, mtgGross: 0, mtgWht: 0, mtgNet: 0 }
+                 mtgGross: a.mtgGross + p.mtgGross, mtgWht: a.mtgWht + p.mtgWht, mtgNet: a.mtgNet + p.mtgNet,
+                 dutyGross: a.dutyGross + p.dutyGross, dutyWht: a.dutyWht + p.dutyWht, dutyNet: a.dutyNet + p.dutyNet }),
+    { gross: 0, wht: 0, gi: 0, net: 0, mtgGross: 0, mtgWht: 0, mtgNet: 0, dutyGross: 0, dutyWht: 0, dutyNet: 0 }
   );
   const hasAnyRow = rollup.people.length > 0;
 
@@ -156,7 +157,7 @@ export default function PayrollMonthlySummaryPage({
   // All figures are pre-derived by the rollup (round2, stored-net anchored,
   // itemised parts capped) — this is a plain read so the page can't diverge.
   const figuresFor = (r: EmpCompanyRow, _companyKey: number | null) => ({
-    comp: r.comp, svcGross: r.svcGross, mtgGross: r.mtgGross, income: r.income,
+    comp: r.comp, svcGross: r.svcGross, mtgGross: r.mtgGross, dutyGross: r.dutyGross, income: r.income,
     sso: r.sso, tax: r.tax, gi: r.gi,
     inRound: r.inRound, drink: r.drink, mealpass: r.mealpass, otherDed: r.otherDed,
     unpaidDays: r.unpaidDays, baseCut: r.unpaidCut,
@@ -174,11 +175,11 @@ export default function PayrollMonthlySummaryPage({
     const sub = figs.reduce(
       (a, { f }) => {
         return {
-          comp: a.comp + f.comp, svcGross: a.svcGross + f.svcGross, mtgGross: a.mtgGross + f.mtgGross, income: a.income + f.income,
+          comp: a.comp + f.comp, svcGross: a.svcGross + f.svcGross, mtgGross: a.mtgGross + f.mtgGross, dutyGross: a.dutyGross + f.dutyGross, income: a.income + f.income,
           sso: a.sso + f.sso, tax: a.tax + f.tax, gi: a.gi + f.gi, inRound: a.inRound + f.inRound, ded: a.ded + f.ded, take: a.take + f.take
         };
       },
-      { comp: 0, svcGross: 0, mtgGross: 0, income: 0, sso: 0, tax: 0, gi: 0, inRound: 0, ded: 0, take: 0 }
+      { comp: 0, svcGross: 0, mtgGross: 0, dutyGross: 0, income: 0, sso: 0, tax: 0, gi: 0, inRound: 0, ded: 0, take: 0 }
     );
     return (
       <div className="card overflow-x-auto">
@@ -194,6 +195,7 @@ export default function PayrollMonthlySummaryPage({
               <th className="py-2 pr-3 text-right whitespace-nowrap">ค่าตอบแทน</th>
               <th className="py-2 pr-3 text-right whitespace-nowrap">เซอร์วิสชาร์จ</th>
               <th className="py-2 pr-3 text-right whitespace-nowrap">เบี้ยประชุม</th>
+              <th className="py-2 pr-3 text-right">ตำแหน่งงานค่าตอบแทนพิเศษ</th>
               <th className="py-2 pr-3 text-right whitespace-nowrap">รวมรายรับ</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.sso")}</th>
               <th className="py-2 pr-3 text-right">{t(lang, "admin.persona.payroll.col.tax")}</th>
@@ -226,6 +228,7 @@ export default function PayrollMonthlySummaryPage({
                   </td>
                   <td className="py-2 pr-3 text-right tabular-nums text-violet-700">{money(f.svcGross)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-fuchsia-700">{money(f.mtgGross)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums text-fuchsia-700">{money(f.dutyGross)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums font-medium text-slate-800">{money(f.income)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-sky-700">{money(f.sso)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums text-amber-700">{money(f.tax)}</td>
@@ -255,6 +258,7 @@ export default function PayrollMonthlySummaryPage({
               <td className="py-2 pr-3 text-right tabular-nums">{fmtMoney(sub.comp)}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-violet-700">{fmtMoney(sub.svcGross)}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-fuchsia-700">{fmtMoney(sub.mtgGross)}</td>
+              <td className="py-2 pr-3 text-right tabular-nums text-fuchsia-700">{fmtMoney(sub.dutyGross)}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-slate-800">{fmtMoney(sub.income)}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-sky-700">{fmtMoney(sub.sso)}</td>
               <td className="py-2 pr-3 text-right tabular-nums text-amber-700">{fmtMoney(sub.tax)}</td>
@@ -323,11 +327,11 @@ export default function PayrollMonthlySummaryPage({
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="card">
               <div className="text-xs text-slate-500">
-                รวมรายรับ (ค่าตอบแทน + เซอร์วิสชาร์จ + เบี้ยประชุม)
+                รวมรายรับ (ค่าตอบแทน + เซอร์วิสชาร์จ + เบี้ยประชุม + ตำแหน่งงานค่าตอบแทนพิเศษ)
               </div>
-              <div className="text-2xl font-bold mt-1 text-slate-800">{fmtMoney(totals.gross + grandSvc.gross + grandSvc.mtgGross)}</div>
+              <div className="text-2xl font-bold mt-1 text-slate-800">{fmtMoney(totals.gross + grandSvc.gross + grandSvc.mtgGross + grandSvc.dutyGross)}</div>
               <div className="text-xs text-slate-500 mt-1">
-                ค่าตอบแทน {fmtMoney(totals.gross)}{grandSvc.gross > 0 ? ` + SVC ${fmtMoney(grandSvc.gross)}` : ""}{grandSvc.mtgGross > 0 ? ` + เบี้ยประชุม ${fmtMoney(grandSvc.mtgGross)}` : ""}
+                ค่าตอบแทน {fmtMoney(totals.gross)}{grandSvc.gross > 0 ? ` + SVC ${fmtMoney(grandSvc.gross)}` : ""}{grandSvc.mtgGross > 0 ? ` + เบี้ยประชุม ${fmtMoney(grandSvc.mtgGross)}` : ""}{grandSvc.dutyGross > 0 ? ` + ตำแหน่งงานค่าตอบแทนพิเศษ ${fmtMoney(grandSvc.dutyGross)}` : ""}
               </div>
             </div>
             <div className="card">
@@ -343,7 +347,7 @@ export default function PayrollMonthlySummaryPage({
               <div className="text-xs text-slate-500">
                 {t(lang, "admin.persona.payroll.col.tax")}
               </div>
-              <div className="text-2xl font-bold mt-1 text-amber-700">{fmtMoney(totals.tax + grandSvc.wht + grandSvc.mtgWht)}</div>
+              <div className="text-2xl font-bold mt-1 text-amber-700">{fmtMoney(totals.tax + grandSvc.wht + grandSvc.mtgWht + grandSvc.dutyWht)}</div>
               <div className="text-xs text-slate-500 mt-1">
                 {totals.whtEmployees} {t(lang, "admin.persona.payroll.summary.whtEmpLabel")}
                 {grandSvc.gi > 0 ? ` · ประกันกลุ่ม ${fmtMoney(grandSvc.gi)}` : ""}
@@ -353,9 +357,9 @@ export default function PayrollMonthlySummaryPage({
               <div className="text-xs text-slate-500">
                 รวมรับจริง (โอนเข้าบัญชี)
               </div>
-              <div className="text-2xl font-bold mt-1 text-emerald-700">{fmtMoney(totals.net + grandSvc.net + grandSvc.mtgNet)}</div>
+              <div className="text-2xl font-bold mt-1 text-emerald-700">{fmtMoney(totals.net + grandSvc.net + grandSvc.mtgNet + grandSvc.dutyNet)}</div>
               <div className="text-xs text-slate-500 mt-1">
-                เงินเดือนสุทธิ {fmtMoney(totals.net)}{grandSvc.net > 0 ? ` + SVC ${fmtMoney(grandSvc.net)}` : ""}{grandSvc.mtgNet > 0 ? ` + เบี้ยประชุม ${fmtMoney(grandSvc.mtgNet)}` : ""}
+                เงินเดือนสุทธิ {fmtMoney(totals.net)}{grandSvc.net > 0 ? ` + SVC ${fmtMoney(grandSvc.net)}` : ""}{grandSvc.mtgNet > 0 ? ` + เบี้ยประชุม ${fmtMoney(grandSvc.mtgNet)}` : ""}{grandSvc.dutyNet > 0 ? ` + ตำแหน่งงานค่าตอบแทนพิเศษ ${fmtMoney(grandSvc.dutyNet)}` : ""}
               </div>
             </div>
           </div>

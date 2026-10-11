@@ -17,7 +17,7 @@
 import type Database from "better-sqlite3";
 import { nameWithPrefix } from "./name";
 import {
-  computeCompanySvcSummary, computeMonthlySvcSummary, meetingFeeByUserCompany
+  computeCompanySvcSummary, computeMonthlySvcSummary, meetingFeeByUserCompany, dutyFeeByUserCompany
 } from "./service-charge";
 
 export type MonthPerson = {
@@ -46,12 +46,14 @@ export type MonthPerson = {
   // service charge (svcMonth) + meeting fee
   svcGross: number; svcWht: number; svcGi: number; svcNet: number;
   mtgGross: number; mtgWht: number; mtgNet: number;
+  // ตำแหน่งงานค่าตอบแทนพิเศษ paid with the same round (owner 2026-10-11)
+  dutyGross: number; dutyWht: number; dutyNet: number;
   // derived
-  income: number;                    // comp + svcGross + mtgGross
-  tax: number;                       // taxWage + svcWht + mtgWht
+  income: number;                    // comp + svcGross + mtgGross + dutyGross
+  tax: number;                       // taxWage + svcWht + mtgWht + dutyWht
   gi: number;                        // svcGi
   ded: number;                       // sso + tax + gi + inRound
-  take: number;                      // income − ded  (= payrollNet + svcNet + mtgNet)
+  take: number;                      // income − ded  (= payrollNet + svcNet + mtgNet + dutyNet)
 };
 
 export type MonthBranch = { branchId: number; branchName: string; companyId: number | null; companyName: string | null };
@@ -110,6 +112,7 @@ export function monthlyPayrollRollup(db: Database.Database, month: string): Mont
   // branches carrying a meeting fee (owner 2026-09-03 / 2026-10-01: anyone who
   // received money from a company that had transactions must appear).
   const meetingFees = meetingFeeByUserCompany(svcMonth);
+  const dutyFees = dutyFeeByUserCompany(svcMonth);
   const branchRows = db.prepare(`
     SELECT b.id AS branchId, b.name AS branchName, b.company_id AS companyId, c.name_th AS companyName
     FROM branches b LEFT JOIN companies c ON c.id = b.company_id
@@ -118,7 +121,7 @@ export function monthlyPayrollRollup(db: Database.Database, month: string): Mont
   `).all(from, to, svcMonth) as MonthBranch[];
   const branchMap = new Map<number, MonthBranch>(branchRows.map((b) => [b.branchId, b]));
   // Meeting-fee companies not yet represented by a branch: pull one branch of that company.
-  for (const m of meetingFees.values()) {
+  for (const m of [...meetingFees.values(), ...dutyFees.values()]) {
     if (m.companyId == null || [...branchMap.values()].some((b) => b.companyId === m.companyId)) continue;
     const b = db.prepare(`
       SELECT b.id AS branchId, b.name AS branchName, b.company_id AS companyId, c.name_th AS companyName
@@ -187,7 +190,7 @@ export function monthlyPayrollRollup(db: Database.Database, month: string): Mont
     homeBranch: homeByUser.get(userId) ?? null, hasPayroll: false,
     comp: 0, sso: 0, taxWage: 0, payrollNet: 0, periodCount: 0,
     drink: 0, mealpass: 0, otherDed: 0, inRound: 0, unpaidDays: 0, unpaidCut: 0,
-    svcGross: 0, svcWht: 0, svcGi: 0, svcNet: 0, mtgGross: 0, mtgWht: 0, mtgNet: 0,
+    svcGross: 0, svcWht: 0, svcGi: 0, svcNet: 0, mtgGross: 0, mtgWht: 0, mtgNet: 0, dutyGross: 0, dutyWht: 0, dutyNet: 0,
     income: 0, tax: 0, gi: 0, ded: 0, take: 0
   });
   for (const r of payroll) {
@@ -217,6 +220,12 @@ export function monthlyPayrollRollup(db: Database.Database, month: string): Mont
     p.mtgGross = round2(p.mtgGross + m.mtgGross); p.mtgWht = round2(p.mtgWht + m.mtgWht); p.mtgNet = round2(p.mtgNet + m.mtgNet);
     byKey.set(k, p);
   }
+  for (const d of dutyFees.values()) {
+    const k = `${d.userId}|${d.companyId ?? "null"}`;
+    const p = byKey.get(k) ?? blank(d.userId, d.companyId, d.displayName, null, d.employmentType, d.taxMode);
+    p.dutyGross = round2(p.dutyGross + d.dutyGross); p.dutyWht = round2(p.dutyWht + d.dutyWht); p.dutyNet = round2(p.dutyNet + d.dutyNet);
+    byKey.set(k, p);
+  }
   // Synthesised rows carry no title_prefix from the SVC/meeting source — look it up.
   const prefixOf = db.prepare("SELECT title_prefix FROM users WHERE id = ?");
   for (const p of byKey.values()) {
@@ -224,8 +233,8 @@ export function monthlyPayrollRollup(db: Database.Database, month: string): Mont
       p.titlePrefix = (prefixOf.get(p.userId) as { title_prefix: string | null } | undefined)?.title_prefix ?? null;
       p.name = nameWithPrefix(p.titlePrefix, p.displayName);
     }
-    p.income = round2(p.comp + p.svcGross + p.mtgGross);
-    p.tax = round2(p.taxWage + p.svcWht + p.mtgWht);
+    p.income = round2(p.comp + p.svcGross + p.mtgGross + p.dutyGross);
+    p.tax = round2(p.taxWage + p.svcWht + p.mtgWht + p.dutyWht);
     p.gi = p.svcGi;
     p.ded = round2(p.sso + p.tax + p.gi + p.inRound);
     p.take = round2(p.income - p.ded);

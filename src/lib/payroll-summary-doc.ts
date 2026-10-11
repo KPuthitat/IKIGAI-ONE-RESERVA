@@ -109,7 +109,8 @@ export type EmpDocRow = {
   comp: number;        // ค่าตอบแทน (payroll gross, all rounds this month)
   svcGross: number;    // เซอร์วิสชาร์จ (company-level gross to the person)
   mtgGross: number;    // เบี้ยประชุม paid with the SVC round (owner 2026-10-01)
-  income: number;      // ยอดก่อนหัก = comp + svcGross + mtgGross
+  dutyGross: number;   // ตำแหน่งงานค่าตอบแทนพิเศษ paid with the SVC round (owner 2026-10-11)
+  income: number;      // ยอดก่อนหัก = comp + svcGross + mtgGross + dutyGross
   sso: number;         // ประกันสังคม (หัก)
   tax: number;         // ภาษี ณ ที่จ่าย incl. SVC + meeting-fee WHT (หัก)
   gi: number;          // ประกันกลุ่ม (หัก)
@@ -120,7 +121,7 @@ export type EmpDocRow = {
 };
 
 export type DocTotals = {
-  comp: number; svcGross: number; mtgGross: number; income: number;
+  comp: number; svcGross: number; mtgGross: number; dutyGross: number; income: number;
   sso: number; tax: number; gi: number; other: number; deduction: number; take: number;
 };
 
@@ -196,10 +197,11 @@ const cycleLabel = (cycle: string, target: string) =>
   cycle === "monthly" ? "รายเดือน (ประจำ)" : target === "pt" ? "รายวัน (พาร์ทไทม์)" : "รายสัปดาห์ (ประจำ)";
 
 const zeroTotals = (): DocTotals =>
-  ({ comp: 0, svcGross: 0, mtgGross: 0, income: 0, sso: 0, tax: 0, gi: 0, other: 0, deduction: 0, take: 0 });
+  ({ comp: 0, svcGross: 0, mtgGross: 0, dutyGross: 0, income: 0, sso: 0, tax: 0, gi: 0, other: 0, deduction: 0, take: 0 });
 function addRowToTotals(t: DocTotals, r: EmpDocRow) {
   t.comp = round2(t.comp + r.comp); t.svcGross = round2(t.svcGross + r.svcGross);
   t.mtgGross = round2(t.mtgGross + r.mtgGross);
+  t.dutyGross = round2(t.dutyGross + r.dutyGross);
   t.income = round2(t.income + r.income); t.sso = round2(t.sso + r.sso);
   t.tax = round2(t.tax + r.tax); t.gi = round2(t.gi + r.gi);
   t.other = round2(t.other + r.other); t.deduction = round2(t.deduction + r.deduction);
@@ -222,7 +224,7 @@ function docRowFrom(p: MonthPerson): EmpDocRow {
     userId: p.userId, name: p.name,
     empTypeLabel: typeLabel(p.employmentType), taxModeLabel: taxLabel(p.taxMode),
     homeBranch: p.homeBranch ?? "—",
-    comp: p.comp, svcGross: p.svcGross, mtgGross: p.mtgGross, income: p.income,
+    comp: p.comp, svcGross: p.svcGross, mtgGross: p.mtgGross, dutyGross: p.dutyGross, income: p.income,
     sso: p.sso, tax: p.tax, gi: p.gi, other: p.inRound, deduction: p.ded, take: p.take,
     periodCount: p.periodCount
   };
@@ -384,6 +386,7 @@ export const ROLLUP_COLUMNS: DocColumn[] = [
   { key: "comp", header: "ค่าตอบแทน", kind: "money" },
   { key: "svcGross", header: "เซอร์วิสชาร์จ", kind: "money" },
   { key: "mtgGross", header: "เบี้ยประชุม", kind: "money" },
+  { key: "dutyGross", header: "ตำแหน่งงานค่าตอบแทนพิเศษ", kind: "money" },
   { key: "income", header: "ยอดก่อนหัก", kind: "money" },
   { key: "sso", header: "ประกันสังคม (หัก)", kind: "deduction" },
   { key: "tax", header: "ภาษี ณ ที่จ่าย (หัก)", kind: "deduction" },
@@ -450,11 +453,11 @@ export function renderPayrollSummaryCsv(
       if (bl.roundGroups.length === 0) { push("  (ไม่มีรอบจ่ายในเดือนนี้ — มีเฉพาะเซอร์วิสชาร์จ)"); lines.push(""); }
 
       // Final per-person rollup for this branch.
-      push("  สรุปรวมต่อคน (ทั้งเดือน · รวมเซอร์วิสชาร์จระดับบริษัท + เบี้ยประชุม)");
+      push("  สรุปรวมต่อคน (ทั้งเดือน · รวมเซอร์วิสชาร์จระดับบริษัท + เบี้ยประชุม + ตำแหน่งงานค่าตอบแทนพิเศษ)");
       push(...ROLLUP_COLUMNS.map((col) => col.header));
       for (const r of bl.rollup) push(...ROLLUP_COLUMNS.map((col) => rollupCell(r, col)));
       const t = bl.totals;
-      push("รวมสาขา", "", t.comp.toFixed(2), t.svcGross.toFixed(2), t.mtgGross.toFixed(2), t.income.toFixed(2),
+      push("รวมสาขา", "", t.comp.toFixed(2), t.svcGross.toFixed(2), t.mtgGross.toFixed(2), t.dutyGross.toFixed(2), t.income.toFixed(2),
         t.sso > 0 ? (-t.sso).toFixed(2) : "0.00", t.tax > 0 ? (-t.tax).toFixed(2) : "0.00",
         t.gi > 0 ? (-t.gi).toFixed(2) : "0.00", t.other > 0 ? (-t.other).toFixed(2) : "0.00",
         t.deduction > 0 ? (-t.deduction).toFixed(2) : "0.00", t.take.toFixed(2), "");
@@ -462,7 +465,7 @@ export function renderPayrollSummaryCsv(
     }
 
     const ct = c.totals;
-    push(`รวมทั้งบริษัท ${c.name}`, "", ct.comp.toFixed(2), ct.svcGross.toFixed(2), ct.mtgGross.toFixed(2), ct.income.toFixed(2),
+    push(`รวมทั้งบริษัท ${c.name}`, "", ct.comp.toFixed(2), ct.svcGross.toFixed(2), ct.mtgGross.toFixed(2), ct.dutyGross.toFixed(2), ct.income.toFixed(2),
       ct.sso > 0 ? (-ct.sso).toFixed(2) : "0.00", ct.tax > 0 ? (-ct.tax).toFixed(2) : "0.00",
       ct.gi > 0 ? (-ct.gi).toFixed(2) : "0.00", ct.other > 0 ? (-ct.other).toFixed(2) : "0.00",
       ct.deduction > 0 ? (-ct.deduction).toFixed(2) : "0.00", ct.take.toFixed(2), "");
@@ -471,7 +474,7 @@ export function renderPayrollSummaryCsv(
 
   if (doc.companies.length > 1) {
     const g = doc.grand;
-    push("รวมทั้งหมด (ทุกบริษัท)", "", g.comp.toFixed(2), g.svcGross.toFixed(2), g.mtgGross.toFixed(2), g.income.toFixed(2),
+    push("รวมทั้งหมด (ทุกบริษัท)", "", g.comp.toFixed(2), g.svcGross.toFixed(2), g.mtgGross.toFixed(2), g.dutyGross.toFixed(2), g.income.toFixed(2),
       g.sso > 0 ? (-g.sso).toFixed(2) : "0.00", g.tax > 0 ? (-g.tax).toFixed(2) : "0.00",
       g.gi > 0 ? (-g.gi).toFixed(2) : "0.00", g.other > 0 ? (-g.other).toFixed(2) : "0.00",
       g.deduction > 0 ? (-g.deduction).toFixed(2) : "0.00", g.take.toFixed(2), "");

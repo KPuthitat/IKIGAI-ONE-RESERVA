@@ -147,6 +147,7 @@ function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; publis
   return (
     <section className="card space-y-3">
       <h2 className="font-semibold text-slate-900">{published ? "หน้าที่ของท่าน" : "วันที่ท่านเลือกไว้"}</h2>
+      {published && (() => { const total = mine.filter((d) => d.status === "approved" && d.iDoIt).reduce((a, d) => a + d.amount, 0); return total > 0 ? <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900">ตรวจรับแล้วเดือนนี้ <b>{money(total)} บาท</b> จ่ายพร้อมค่าบริการวันที่ 20 ของเดือนถัดไป (พนักงานที่หักภาษี ณ ที่จ่ายถูกหัก 3%)</div> : null; })()}
       {published && <p className="text-sm text-slate-600">เมื่อทำหน้าที่เสร็จให้ถ่ายภาพพื้นที่ที่รับผิดชอบ โดยไม่ให้มีบุคคลอยู่ในภาพ แล้วกดส่งหลักฐาน ค่าตอบแทนนับเฉพาะวันที่ผู้จัดการตรวจรับแล้ว และท่านต้องมาทำงานปกติในวันนั้นด้วย</p>}
       <ul className="space-y-2">
         {mine.map((d) => {

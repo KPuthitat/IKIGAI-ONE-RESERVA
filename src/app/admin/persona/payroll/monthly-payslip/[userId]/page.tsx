@@ -203,12 +203,13 @@ export default function MonthlyPayslipPage({
   const svcMonth = rollup.svcMonth;
   const sum = (f: (p: (typeof mine)[number]) => number) => round2(mine.reduce((a, p) => a + f(p), 0));
   const svcGrossOnly = sum((p) => p.svcGross);
-  const svcWht = sum((p) => p.svcWht + p.mtgWht);     // WHT on SVC + meeting fee (wht-mode staff)
+  const svcWht = sum((p) => p.svcWht + p.mtgWht + p.dutyWht);     // WHT on SVC + meeting fee + duty fee (wht-mode staff)
   const svcGroupInsurance = sum((p) => p.svcGi);
   const meetingFeeGross = sum((p) => p.mtgGross);
+  const dutyFeeGross = sum((p) => p.dutyGross);   // ตำแหน่งงานค่าตอบแทนพิเศษ (owner 2026-10-11)
   // SVC is shown as income at GROSS (before WHT + group insurance); the WHT and the
   // premium are then listed as deductions (owner 2026-08-02). Includes เบี้ยประชุม.
-  const svcGross = round2(svcGrossOnly + meetingFeeGross);
+  const svcGross = round2(svcGrossOnly + meetingFeeGross + dutyFeeGross);
 
   // Actual transfer dates (owner 2026-10-01: "เอาวันโอนจริง") — read from the SVC
   // batch of each paying company; before a batch exists the default 20th shows as
@@ -217,7 +218,7 @@ export default function MonthlyPayslipPage({
   const payInfos: PayInfo[] = [];
   const seenPayCo = new Set<string>();
   for (const p of mine) {
-    if (!(p.svcGross > 0 || p.mtgGross > 0)) continue;
+    if (!(p.svcGross > 0 || p.mtgGross > 0 || p.dutyGross > 0)) continue;
     const coKey = String(p.companyId);
     if (seenPayCo.has(coKey)) continue;
     seenPayCo.add(coKey);
@@ -493,7 +494,7 @@ export default function MonthlyPayslipPage({
               {svcIncome > 0 && (
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-slate-600">
-                    เซอร์วิสชาร์จ{meetingFeeGross > 0 ? " + เบี้ยประชุม" : ""}เดือน{monthNameOnly(svcMonth, lang)}{" "}
+                    เซอร์วิสชาร์จ{meetingFeeGross > 0 ? " + เบี้ยประชุม" : ""}{dutyFeeGross > 0 ? " + ตำแหน่งงานค่าตอบแทนพิเศษ" : ""}เดือน{monthNameOnly(svcMonth, lang)}{" "}
                     <span className="text-xs text-slate-400">
                       ({svcWht > 0 ? "ถูกหักภาษี ณ ที่จ่าย" : "ไม่ถูกหักภาษี ณ ที่จ่าย"} · {svcPayLabel}{meetingPayLabel ? ` · ${meetingPayLabel}` : ""}{meetingFeeGross > 0 ? ` · รวมเบี้ยประชุม ฿${fmtMoney(meetingFeeGross)}` : ""})
                     </span>
