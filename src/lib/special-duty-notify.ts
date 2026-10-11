@@ -51,3 +51,26 @@ export async function pushIndividually(recipients: Array<string | null>, flex: L
   }
   return sent;
 }
+
+export function schedulePublishedFlex(args: { branchName: string; yearMonth: string; days: Array<{ positionName: string; date: string }>; url: string }): LineFlexMessage {
+  const title = `ตารางตำแหน่งงานค่าตอบแทนพิเศษ เดือน${thaiMonth(args.yearMonth)}`;
+  return {
+    type: "flex", altText: `${title} · ${args.branchName}`,
+    contents: {
+      type: "bubble", size: "giga",
+      header: { type: "box", layout: "vertical", backgroundColor: "#281a0e", paddingAll: "20px", contents: [
+        { type: "text", text: "NOKHOOK OS", color: "#d6a14d", size: "xxs", weight: "bold" },
+        { type: "text", text: title, color: "#ffffff", size: "lg", weight: "bold", wrap: true, margin: "md" }
+      ] },
+      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "20px", contents: [
+        { type: "text", text: args.branchName, weight: "bold", size: "md", color: "#1a1a2e", wrap: true },
+        { type: "text", text: "วันที่ท่านได้รับตำแหน่งงานค่าตอบแทนพิเศษ", size: "sm", color: "#64748b", wrap: true },
+        ...args.days.slice(0, 12).map((d) => ({ type: "text", text: `${thaiDate(d.date)} · ${d.positionName}`, size: "sm", color: "#1a1a2e", wrap: true })),
+        ...(args.days.length > 12 ? [{ type: "text", text: `และอีก ${args.days.length - 12} วัน ดูรายละเอียดทั้งหมดในระบบ`, size: "xs", color: "#64748b", wrap: true }] : [])
+      ] },
+      footer: { type: "box", layout: "vertical", paddingAll: "12px", contents: [
+        { type: "button", style: "primary", color: "#a06820", action: { type: "uri", label: "ดูตารางของฉัน", uri: args.url } }
+      ] }
+    }
+  };
+}
