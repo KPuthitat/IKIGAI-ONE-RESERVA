@@ -34,6 +34,7 @@
     "test:birthday-reminder": "node --import tsx scripts/test-birthday-reminder.ts",
     "test:special-duty-core": "node --import tsx scripts/test-special-duty-core.ts",
     "test:special-duty-rules": "node --import tsx scripts/test-special-duty-rules.ts",
+    "test:special-duty-access": "node --import tsx scripts/test-special-duty-access.ts",
     "test:payroll-pending-ot": "node --import tsx scripts/test-payroll-pending-ot.ts",
     "test:clinica-analytics": "node --import tsx scripts/test-clinica-analytics.ts",
     "test:inventa-waste": "node --import tsx scripts/test-inventa-waste.ts",
