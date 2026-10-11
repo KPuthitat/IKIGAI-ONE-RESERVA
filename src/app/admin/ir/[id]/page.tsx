@@ -32,7 +32,7 @@ export default function IrReportDetail({ params }: { params: { id: string } }) {
   return (
     <div className="space-y-4">
       <Link href="/admin/ir/reports" className="text-sm text-slate-500 hover:text-brand">← กลับรายการ</Link>
-      <ReportDetailClient initialReport={report} assignees={assignees} />
+      <ReportDetailClient initialReport={report} assignees={assignees} canDelete={user.role === "super_admin"} />
     </div>
   );
 }

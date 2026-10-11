@@ -16,10 +16,11 @@ import type { IrReportDetail } from "@/lib/ir-db";
 export type AssigneeOption = { id: number; display_name: string; title_prefix: string | null };
 
 export default function ReportDetailClient({
-  initialReport, assignees
+  initialReport, assignees, canDelete = false
 }: {
   initialReport: IrReportDetail;
   assignees: AssigneeOption[];
+  canDelete?: boolean;
 }) {
   const router = useRouter();
   const [r, setR] = useState<IrReportDetail>(initialReport);
@@ -38,6 +39,23 @@ export default function ReportDetailClient({
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [resendMsg, setResendMsg] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
+
+  // Delete — top executive only, PIN-gated (owner 2026-10-11).
+  const [delOpen, setDelOpen] = useState(false);
+  const [delPin, setDelPin] = useState("");
+  const [delBusy, setDelBusy] = useState(false);
+  const [delErr, setDelErr] = useState<string | null>(null);
+  async function remove() {
+    setDelBusy(true); setDelErr(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/ir/${r.id}`), { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ admin_pin: delPin }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setDelErr(j.message ?? humanizeApiError(j, "ลบไม่สำเร็จ")); return; }
+      router.push("/admin/ir/reports");
+      router.refresh();
+    } catch { setDelErr("เชื่อมต่อไม่สำเร็จ"); }
+    finally { setDelBusy(false); }
+  }
 
   async function resend() {
     setResending(true); setResendMsg(null);
@@ -160,6 +178,28 @@ export default function ReportDetailClient({
               {resending ? "กำลังส่ง…" : "ส่งเข้ากลุ่ม LINE อีกครั้ง"}
             </button>
           </div>
+          {canDelete && (
+            <div className="border-t border-slate-100 pt-3 space-y-2">
+              {!delOpen ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-slate-500">ลบเหตุการณ์นี้ออกจากระบบถาวร (เฉพาะผู้บริหารสูงสุด)</span>
+                  <button type="button" className="btn btn-secondary text-sm text-rose-700" onClick={() => { setDelOpen(true); setDelPin(""); setDelErr(null); }}>ลบเหตุการณ์</button>
+                </div>
+              ) : (
+                <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 space-y-2">
+                  <div className="text-sm text-rose-800">ลบเหตุการณ์ {r.code ?? `#${r.id}`} ถาวร กู้คืนไม่ได้ กรุณาใส่ PIN เพื่อยืนยัน</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input type="password" inputMode="numeric" autoFocus placeholder="PIN" value={delPin} onChange={(e) => setDelPin(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && delPin && !delBusy) { e.preventDefault(); void remove(); } }}
+                      className="border border-slate-300 rounded px-2 py-1 text-sm w-28 bg-white" />
+                    <button type="button" className="btn btn-primary text-sm whitespace-nowrap" disabled={delBusy || !delPin} onClick={remove}>{delBusy ? "กำลังลบ…" : "ยืนยันลบ"}</button>
+                    <button type="button" className="btn btn-secondary text-sm whitespace-nowrap" disabled={delBusy} onClick={() => setDelOpen(false)}>ยกเลิก</button>
+                  </div>
+                  {delErr && <div className="text-sm text-rose-700">{delErr}</div>}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

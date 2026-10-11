@@ -154,6 +154,17 @@ export function getReport(id: number, branchId: number): IrReportView | null {
     .get(id, branchId) as IrReportView | undefined) ?? null;
 }
 
+/** Permanently delete one report and the people named in it (they cascade). Returns what was deleted so the
+ *  caller can write it to the audit log, or null when the report is not on this branch. */
+export function deleteReport(id: number, branchId: number): { code: string | null; status: string; severity: number; occurredAt: string } | null {
+  const db = getDb();
+  const r = db.prepare("SELECT code, status, severity, occurred_at AS occurredAt FROM ir_reports WHERE id = ? AND branch_id = ?")
+    .get(id, branchId) as { code: string | null; status: string; severity: number; occurredAt: string } | undefined;
+  if (!r) return null;
+  db.prepare("DELETE FROM ir_reports WHERE id = ? AND branch_id = ?").run(id, branchId);
+  return r;
+}
+
 export function listPeople(reportId: number): IrPerson[] {
   return getDb().prepare(
     "SELECT id, report_id, user_id, name, role, note FROM ir_report_people WHERE report_id = ? ORDER BY id"
