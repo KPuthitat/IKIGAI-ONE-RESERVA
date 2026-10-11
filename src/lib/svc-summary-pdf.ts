@@ -94,12 +94,12 @@ export function generateSvcSummaryPdf(d: SvcPdfData): Promise<Buffer> {
         ["ส่วนของพนักงาน (60%)", baht(d.totals.staffPool), false],
         ["ส่วนของบริษัท (40% + ตัดสิทธิ์/คืน)", baht(d.totals.companyPool), false],
         ["เบี้ยประชุมรวม (จ่ายพร้อมเซอร์วิสชาร์จ)", baht(d.totals.meetingFee), false],
-        ["ตำแหน่งงานค่าตอบแทนพิเศษรวม (จ่ายพร้อมเซอร์วิสชาร์จ)", baht(d.totals.dutyFee), false],
+        ["ตำแหน่งงานค่าตอบแทนพิเศษรวม (จ่ายพร้อมกัน)", baht(d.totals.dutyFee), false],
         ["หักค่าอาหาร (คูปอง · คืนเข้าบริษัท)", deduct(d.totals.foodClawback), false, "#a32d2d"],
         ["หักรายการอื่นๆ (เช่น ค่าเครื่องดื่ม)", deduct(d.totals.otherDeductions), false, "#a32d2d"],
-        ["หักภาษี ณ ที่จ่าย 3% รวม (รวมเบี้ยประชุมและตำแหน่งงานพิเศษ)", deduct(d.totals.wht), false, "#a32d2d"],
+        ["หักภาษี ณ ที่จ่าย 3% รวม (ทุกรายการ)", deduct(d.totals.wht), false, "#a32d2d"],
         ["หักประกันกลุ่มรวม (เจ้าหนี้รอนำส่ง)", deduct(d.totals.groupInsurance), false, "#a32d2d"],
-        ["ยอดจ่ายพนักงานสุทธิรวม (รวมเบี้ยประชุมและตำแหน่งงานพิเศษ)", baht(d.totals.netPayout), true, "#0f6e56"]
+        ["ยอดจ่ายพนักงานสุทธิรวม (ทุกรายการ)", baht(d.totals.netPayout), true, "#0f6e56"]
       ];
       const aTop = y;
       aPairs.forEach(([label, value, bold, color], i) => {
@@ -142,7 +142,7 @@ export function generateSvcSummaryPdf(d: SvcPdfData): Promise<Buffer> {
       cell(baht(d.branches.reduce((s, b) => s + b.netAttributed, 0)), bX(3), bCols[3].w, "right", { font: "th-b", color: "#281a0e" });
       y += 16;
       doc.font("th").fontSize(7.5).fillColor("#999")
-        .text("* ส่วนพนักงาน/จ่ายสุทธิ ปันตามสัดส่วนที่แต่ละคนได้จากสาขานั้น (ภาษี/ประกันกลุ่มหักที่ระดับบุคคล) · ไม่รวมเบี้ยประชุม", left, y);
+        .text("* ส่วนพนักงาน/จ่ายสุทธิ ปันตามสัดส่วนที่แต่ละคนได้จากสาขานั้น (ภาษี/ประกันกลุ่มหักที่ระดับบุคคล) · ไม่รวมเบี้ยประชุมและตำแหน่งงานค่าตอบแทนพิเศษ", left, y);
       y = doc.y + 10;
 
       // ── Section C: per-person distribution ──────────────────────
