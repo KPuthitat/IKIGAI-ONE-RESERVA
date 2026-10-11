@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
-  addOrgPlacement, removeOrgPlacement, addOrgParent, removeOrgParent, setOrgNodeDepartment
+  addOrgPlacement, linkAllProfileSupervisors, removeOrgPlacement, addOrgParent, removeOrgParent, setOrgNodeDepartment
 } from "@/lib/org-chart";
 
 // POST /api/admin/persona/orgchart — edit a branch's org chart (v2, placements).
@@ -11,12 +11,13 @@ import {
 // branch must belong to the caller's company (resolved from their active branch).
 
 const Body = z.object({
-  action: z.enum(["add", "remove", "add-parent", "remove-parent", "department"]),
+  action: z.enum(["add", "remove", "add-parent", "remove-parent", "department", "link-profile"]),
   branchId: z.number().int().positive(),
   userId: z.number().int().positive().optional(),
   nodeId: z.number().int().positive().optional(),
   parentNodeId: z.number().int().positive().nullable().optional(),
-  department: z.string().max(60).nullable().optional()
+  department: z.string().max(60).nullable().optional(),
+  fromProfile: z.boolean().optional()
 });
 
 function sameCompany(branchId: number, activeBranchId: number): boolean {
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
   switch (d.action) {
     case "add": {
       if (d.userId == null) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
-      const nodeId = addOrgPlacement(d.branchId, d.userId, d.parentNodeId ?? null);
+      const nodeId = addOrgPlacement(d.branchId, d.userId, d.parentNodeId ?? null, { fromProfile: d.fromProfile === true });
       if (nodeId == null) return NextResponse.json({ error: "not_addable" }, { status: 400 });
       return NextResponse.json({ ok: true, nodeId });
     }
@@ -61,6 +62,8 @@ export async function POST(req: Request) {
       if (d.nodeId == null || d.parentNodeId == null) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
       removeOrgParent(d.branchId, d.nodeId, d.parentNodeId);
       break;
+    case "link-profile":
+      return NextResponse.json({ ok: true, added: linkAllProfileSupervisors(d.branchId) });
     case "department":
       if (d.nodeId == null) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
       setOrgNodeDepartment(d.branchId, d.nodeId, d.department ?? null);

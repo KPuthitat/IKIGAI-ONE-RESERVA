@@ -6,6 +6,7 @@
 
 import { getDb } from "./db";
 import { wouldCreateCycle, type OrgPlacementBase } from "./org-chart-tree";
+import { supervisorIdsOf } from "./org-structure";
 
 export type OrgPlacement = OrgPlacementBase;
 export { buildOrgForest, wouldCreateCycle, descendantsOf, type OrgTreeNode } from "./org-chart-tree";
@@ -71,7 +72,7 @@ export function listCompanyBranchesForOrg(companyId: number): Array<{ id: number
 /** Add a placement for an employee (optionally under a parent node). Verifies
  *  the user is an active member of the branch. Returns the new node id, or null
  *  if the user isn't eligible or the parent isn't on the branch's chart. */
-export function addOrgPlacement(branchId: number, userId: number, parentNodeId: number | null): number | null {
+export function addOrgPlacement(branchId: number, userId: number, parentNodeId: number | null, opts: { fromProfile?: boolean } = {}): number | null {
   const db = getDb();
   const eligible = db.prepare(`
     SELECT 1 FROM users u JOIN user_branches ub ON ub.user_id = u.id
@@ -91,7 +92,51 @@ export function addOrgPlacement(branchId: number, userId: number, parentNodeId: 
       "INSERT OR IGNORE INTO org_chart_edges (branch_id, node_id, parent_node_id) VALUES (?,?,?)"
     ).run(branchId, nodeId, parentNodeId);
   }
+  // No parent picked → follow the supervisors set in the person's profile (owner 2026-10-11).
+  if (parentNodeId == null && opts.fromProfile) linkProfileSupervisors(branchId, nodeId);
   return nodeId;
+}
+
+/** The node already on the branch chart for this person, or a new one when they are an eligible
+ *  member (null otherwise). Used to pull a supervisor onto the chart. */
+function nodeForUser(branchId: number, userId: number): number | null {
+  const db = getDb();
+  const have = db.prepare("SELECT id FROM org_chart_nodes WHERE branch_id = ? AND user_id = ? ORDER BY id LIMIT 1").get(branchId, userId) as { id: number } | undefined;
+  if (have) return have.id;
+  return addOrgPlacement(branchId, userId, null);
+}
+
+/**
+ * Connect a placement to the supervisor(s) in its owner's profile (users.supervisor / user_supervisors),
+ * putting a supervisor on the chart first when they are missing and doing the same for THEIR supervisor,
+ * so the whole line of command up to the top appears. Only ever ADDS edges: existing manual links stay,
+ * a link that would form a cycle or point at someone who cannot sit on this branch's chart is skipped.
+ * Returns the number of edges added.
+ */
+export function linkProfileSupervisors(branchId: number, nodeId: number, seen: Set<number> = new Set()): number {
+  const db = getDb();
+  if (seen.has(nodeId)) return 0;
+  seen.add(nodeId);
+  const row = db.prepare("SELECT user_id FROM org_chart_nodes WHERE id = ? AND branch_id = ?").get(nodeId, branchId) as { user_id: number } | undefined;
+  if (!row) return 0;
+  let added = 0;
+  for (const supUserId of supervisorIdsOf(row.user_id)) {
+    if (supUserId === row.user_id) continue;
+    const supNode = nodeForUser(branchId, supUserId);
+    if (supNode == null || supNode === nodeId) continue;
+    const exists = db.prepare("SELECT 1 FROM org_chart_edges WHERE branch_id = ? AND node_id = ? AND parent_node_id = ?").get(branchId, nodeId, supNode);
+    if (!exists && addOrgParent(branchId, nodeId, supNode) === null) added++;
+    added += linkProfileSupervisors(branchId, supNode, seen);
+  }
+  return added;
+}
+
+/** Run linkProfileSupervisors for every placement on the branch (the "เชื่อมตามโปรไฟล์" button). */
+export function linkAllProfileSupervisors(branchId: number): number {
+  const ids = (getDb().prepare("SELECT id FROM org_chart_nodes WHERE branch_id = ? ORDER BY id").all(branchId) as Array<{ id: number }>).map((r) => r.id);
+  let added = 0; const seen = new Set<number>();
+  for (const id of ids) added += linkProfileSupervisors(branchId, id, seen);
+  return added;
 }
 
 /** Remove a placement. Its edges (as child and as parent) cascade, so anyone

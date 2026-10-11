@@ -44,6 +44,22 @@ function personName(m: { titlePrefix: string | null; displayName: string; nickna
   return m.nickname?.trim() ? `${base} (${m.nickname.trim()})` : base;
 }
 
+/** Who may be picked as a boss: only the tier 1 (หัวหน้างาน) and tier 2 (ผู้บริหาร) of this branch,
+ *  one entry per person (their first box), so the list is short and never repeats a name. */
+function managerOptions(branch: OrgBranchData, excludeNodeIds: Set<number> = new Set()): Array<{ nodeId: number; label: string }> {
+  const t2 = new Set(branch.auto.tier2), t1 = new Set(branch.auto.tier1);
+  // A person is excluded as a whole when any of their boxes is excluded (own box, below them, already a boss).
+  const seen = new Set<number>(branch.placements.filter((p) => excludeNodeIds.has(p.nodeId)).map((p) => p.userId));
+  const out: Array<{ nodeId: number; label: string }> = [];
+  for (const p of branch.placements) {
+    if (!t1.has(p.userId) && !t2.has(p.userId)) continue;
+    if (seen.has(p.userId)) continue;
+    seen.add(p.userId);
+    out.push({ nodeId: p.nodeId, label: `${personName(p)} · ${t2.has(p.userId) ? "ผู้บริหาร" : "หัวหน้างาน"}` });
+  }
+  return out;
+}
+
 export default function OrgChartClient({
   companyName, activeBranchId, branches
 }: { companyName: string | null; activeBranchId: number; branches: OrgBranchData[] }) {
@@ -55,6 +71,7 @@ export default function OrgChartClient({
   const [tab, setTab] = useState<string>(multiBranch ? "company" : String(branches[0]?.id ?? activeBranchId));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ branchId: number; nodeId: number } | null>(null);
   const [nonce, setNonce] = useState(0);
   // Add-member form (per branch).
@@ -141,6 +158,7 @@ export default function OrgChartClient({
       )}
 
       {mode === "manual" && err && <p className="text-sm text-rose-600">{err}</p>}
+      {mode === "manual" && info && <p className="text-sm text-emerald-700">{info}</p>}
 
       {mode === "manual" && (tab === "company" ? (
         <div className="space-y-4">
@@ -172,17 +190,14 @@ export default function OrgChartClient({
                   <label className="block">
                     <span className="text-[11px] text-slate-500">อยู่ใต้ (หัวหน้า)</span>
                     <select className="input !w-auto" value={addParent} onChange={(e) => setAddParent(e.target.value)}>
-                      <option value="">— บนสุด (ไม่มีหัวหน้า) —</option>
-                      {b.placements.map((p) => (
-                        <option key={p.nodeId} value={p.nodeId}>
-                          {personName(p)}{p.department ? ` · ${p.department}` : ""}
-                        </option>
-                      ))}
+                      <option value="">ตามผู้บังคับบัญชาในโปรไฟล์ (อัตโนมัติ)</option>
+                      <option value="top">บนสุด (ไม่มีหัวหน้า)</option>
+                      {managerOptions(b).map((o) => <option key={o.nodeId} value={o.nodeId}>{o.label}</option>)}
                     </select>
                   </label>
                   <button type="button" disabled={busy || !addUser}
                     onClick={async () => {
-                      if (await post({ action: "add", branchId: b.id, userId: Number(addUser), parentNodeId: addParent ? Number(addParent) : null })) {
+                      if (await post({ action: "add", branchId: b.id, userId: Number(addUser), parentNodeId: addParent && addParent !== "top" ? Number(addParent) : null, fromProfile: addParent === "" })) {
                         setAddUser(""); setAddParent(""); setAddFor(null);
                       }
                     }}
@@ -190,8 +205,21 @@ export default function OrgChartClient({
                   <button type="button" onClick={() => { setAddFor(null); setAddUser(""); setAddParent(""); }} className="btn-secondary">ยกเลิก</button>
                 </div>
               ) : (
-                <button type="button" onClick={() => { setAddFor(b.id); setErr(null); }} disabled={busy || b.candidates.length === 0}
-                  className="btn-secondary disabled:opacity-50">+ เพิ่มคนเข้าผัง</button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={() => { setAddFor(b.id); setErr(null); }} disabled={busy || b.candidates.length === 0}
+                    className="btn-secondary disabled:opacity-50">+ เพิ่มคนเข้าผัง</button>
+                  <button type="button" disabled={busy}
+                    onClick={async () => {
+                      setBusy(true); setErr(null); setInfo(null);
+                      try {
+                        const res = await fetch(apiUrl("/api/admin/persona/orgchart"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "link-profile", branchId: b.id }) });
+                        const j = await res.json().catch(() => ({}));
+                        if (!res.ok || !j.ok) setErr("เชื่อมสายไม่สำเร็จ");
+                        else { setInfo(j.added > 0 ? `เชื่อมสายตามโปรไฟล์เพิ่ม ${j.added} เส้น` : "สายในผังตรงกับโปรไฟล์ครบแล้ว ไม่มีเส้นที่ต้องเพิ่ม"); startTransition(() => router.refresh()); }
+                      } catch { setErr("เชื่อมต่อไม่สำเร็จ"); } finally { setBusy(false); }
+                    }}
+                    className="btn-secondary disabled:opacity-50">เชื่อมสายตามโปรไฟล์อัตโนมัติ</button>
+                </div>
               )}
 
               {b.placements.length === 0 ? (
@@ -257,9 +285,8 @@ export default function OrgChartClient({
                 {(() => {
                   const exclude = descendantsOf(editBranch.placements, editNode.nodeId);
                   const current = new Set(editNode.parentNodeIds);
-                  return editBranch.placements
-                    .filter((p) => p.nodeId !== editNode.nodeId && !exclude.has(p.nodeId) && !current.has(p.nodeId))
-                    .map((p) => <option key={p.nodeId} value={p.nodeId}>{personName(p)}{p.department ? ` · ${p.department}` : ""}</option>);
+                  const blocked = new Set<number>([editNode.nodeId, ...exclude, ...current]);
+                  return managerOptions(editBranch, blocked).map((o) => <option key={o.nodeId} value={o.nodeId}>{o.label}</option>);
                 })()}
               </select>
             </div>
