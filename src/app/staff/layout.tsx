@@ -100,6 +100,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/inventa/orders", label: t(lang, "inv.nav.orders") },
         { href: "/staff/inventa/orders/list", label: t(lang, "inv.nav.ordersList") },
         { href: "/staff/inventa/waste", label: t(lang, "inv.nav.waste") },
+        ...(isAdminUser ? [{ href: "/staff/inventa/forecast", label: t(lang, "inv.nav.forecast") }] : []),
         // Waste report + settings are admin/super_admin only (each page also
         // enforces access server-side).
         ...(isAdminUser ? [{ href: "/staff/inventa/waste/report", label: t(lang, "inv.nav.wasteReport") }] : []),
