@@ -36,35 +36,35 @@ const config: Config = {
         // login page (owner 2026-06-03, "ปรับสี CI ให้เหมือนน้องฮูก").
         // Replaces the old red-pink #e94560. DEFAULT is dark enough for
         // white button text + small text-brand to stay legible.
+        // Values come from CSS variables (src/app/globals.css) so a UI theme
+        // (html[data-ui]) can restyle the whole app without touching call
+        // sites. <alpha-value> keeps bg-brand/10 style opacity working.
         brand: {
-          DEFAULT: "#a06820",
-          dark: "#7a4f16",
-          light: "#d6a14d"
+          DEFAULT: "rgb(var(--brand) / <alpha-value>)",
+          dark: "rgb(var(--brand-dark) / <alpha-value>)",
+          light: "rgb(var(--brand-light) / <alpha-value>)"
         },
+        accent: "rgb(var(--accent) / <alpha-value>)",
         // Header / sidebar gradient stops — warm espresso brown, mirroring
         // the owl's outline + coffee cup (was deep navy). White text on it
         // stays high-contrast. Used everywhere via bg-ink-gradient.
         ink: {
-          900: "#4e351f",
-          800: "#3a2716",
-          700: "#281a0e"
+          900: "rgb(var(--ink-900) / <alpha-value>)",
+          800: "rgb(var(--ink-800) / <alpha-value>)",
+          700: "rgb(var(--ink-700) / <alpha-value>)"
         }
       },
       backgroundImage: {
-        "ink-gradient":
-          "linear-gradient(160deg, #281a0e 0%, #3a2716 60%, #4e351f 100%)",
-        // Header bar gradient (owner 2026-08, PGH-style) — a visible warm
-        // sweep espresso → coffee → caramel. All stops stay dark enough for
-        // white text; richer/more "gradient" than the flat espresso ink one.
-        "coffee-gradient":
-          "linear-gradient(105deg, #2C1D0F 0%, #4E3115 52%, #7A4F16 100%)"
+        "ink-gradient": "var(--grad-ink)",
+        // Header bar gradient — see --grad-header in globals.css.
+        "coffee-gradient": "var(--grad-header)"
       },
       boxShadow: {
         // Softened 2026-08 (owner redesign) — the old heavy 60px/.3 drop
         // shadow read as "loud"; PEAK-style soft elevation instead. Warm
         // espresso-tinted rgba so it sits right on the cream surfaces.
-        card: "0 1px 3px rgba(58,39,22,.05), 0 8px 24px rgba(58,39,22,.06)",
-        "card-lg": "0 2px 6px rgba(58,39,22,.07), 0 18px 40px rgba(58,39,22,.10)"
+        card: "var(--shadow-card)",
+        "card-lg": "var(--shadow-card-lg)"
       }
     }
   },

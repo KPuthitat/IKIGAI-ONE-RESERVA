@@ -72,7 +72,7 @@ export const metadata: Metadata = {
 // chips, etc.) so the Android address-bar tints to the same colour
 // as the in-page CTAs.
 export const viewport: Viewport = {
-  themeColor: "#a06820"
+  themeColor: "#6B4FD8"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

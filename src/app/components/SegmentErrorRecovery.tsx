@@ -12,7 +12,7 @@
 
 import { useEffect } from "react";
 
-const BRAND = "#a06820";
+const BRAND = "#6B4FD8";
 const INK = "#281a0e";
 
 export default function SegmentErrorRecovery({
