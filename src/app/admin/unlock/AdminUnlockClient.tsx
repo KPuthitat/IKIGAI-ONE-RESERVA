@@ -25,7 +25,7 @@ export default function AdminUnlockClient({ next }: { next: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#F6F0E5]">
+    <div className="min-h-screen bg-[color:var(--page-bg)]">
       <PinPromptModal
         title="เข้าสู่มุมมองผู้ดูแลระบบ"
         description={<>ใส่ PIN 4 หลักของคุณเพื่อเข้าโหมดผู้ดูแลระบบ · กด &quot;ยกเลิก&quot; เพื่ออยู่ในมุมมองพนักงาน</>}

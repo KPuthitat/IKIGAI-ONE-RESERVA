@@ -466,7 +466,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const canSwitchView = isAdminCapable(user);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F6F0E5]">
+    <div className="min-h-screen flex flex-col bg-[color:var(--page-bg)]">
       {/* Maintenance banner above impersonation banner — see staff
           layout for the same ordering rationale. */}
       {maintenanceMsg && <MaintenanceBanner message={maintenanceMsg} />}
