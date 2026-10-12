@@ -130,8 +130,8 @@ function HealthTrendChart({
     <div className="card space-y-2">
       <h2 className="font-bold text-slate-800 text-sm">แนวโน้มสุขภาพของคุณ</h2>
       <div className="flex flex-wrap gap-4 justify-center text-[12px] text-slate-600">
-        <SelfLegend color="#3a2716" label="น้ำหนัก (กก.)" />
-        <SelfLegend color="#a06820" label="ขนาดยา (mg)" />
+        <SelfLegend color="#21165a" label="น้ำหนัก (กก.)" />
+        <SelfLegend color="#6B4FD8" label="ขนาดยา (mg)" />
         <SelfLegend color="#B91C1C" label="ชีพจร (ครั้ง/นาที)" dashed />
         {target != null && <SelfLegend color="#10b981" label="น้ำหนักเป้าหมาย" dashed />}
       </div>
@@ -144,7 +144,7 @@ function HealthTrendChart({
             <g key={t}>
               <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#E5E0D5" strokeWidth={1} />
               <text x={padL - 6} y={y + 3} textAnchor="end" fontSize={9} fill="#9CA3AF">{wv}</text>
-              <text x={W - padR + 6} y={y + 3} textAnchor="start" fontSize={9} fill="#a06820">{dv}</text>
+              <text x={W - padR + 6} y={y + 3} textAnchor="start" fontSize={9} fill="#6B4FD8">{dv}</text>
             </g>
           );
         })}
@@ -157,12 +157,12 @@ function HealthTrendChart({
           if (i !== 0 && i !== n - 1 && i % step !== 0) return null;
           return <text key={i} x={xAt(i)} y={H - 10} textAnchor="middle" fontSize={9} fill="#9CA3AF">{sd(p.date)}</text>;
         })}
-        {n > 1 && <polyline points={dosePts} fill="none" stroke="#a06820" strokeWidth={2} />}
-        {pts.map((p, i) => <circle key={`d${i}`} cx={xAt(i)} cy={yD(p.dose)} r={3} fill="#a06820" />)}
+        {n > 1 && <polyline points={dosePts} fill="none" stroke="#6B4FD8" strokeWidth={2} />}
+        {pts.map((p, i) => <circle key={`d${i}`} cx={xAt(i)} cy={yD(p.dose)} r={3} fill="#6B4FD8" />)}
         {hrPts && n > 1 && <polyline points={hrPts} fill="none" stroke="#B91C1C" strokeWidth={1.5} strokeDasharray="4 4" />}
         {pts.map((p, i) => p.hr != null ? <circle key={`h${i}`} cx={xAt(i)} cy={yH(p.hr)} r={2.5} fill="#B91C1C" /> : null)}
-        {weightPts && n > 1 && <polyline points={weightPts} fill="none" stroke="#3a2716" strokeWidth={2.5} />}
-        {pts.map((p, i) => p.weight != null ? <circle key={`w${i}`} cx={xAt(i)} cy={yW(p.weight)} r={4} fill="#3a2716" /> : null)}
+        {weightPts && n > 1 && <polyline points={weightPts} fill="none" stroke="#21165a" strokeWidth={2.5} />}
+        {pts.map((p, i) => p.weight != null ? <circle key={`w${i}`} cx={xAt(i)} cy={yW(p.weight)} r={4} fill="#21165a" /> : null)}
       </svg>
       <p className="text-[10px] text-slate-400 text-center">
         เส้นน้ำหนัก = แกนซ้าย · ขนาดยา = แกนขวา (0–15) · ยิ่งลงข้อมูลทุกวัน เส้นยิ่งละเอียด

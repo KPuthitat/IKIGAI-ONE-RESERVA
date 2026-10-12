@@ -8,6 +8,7 @@ import { useLang } from "@/lib/LangProvider";
 import type { LeaveType, QuotaInfo, PublicHoliday } from "@/lib/leave-types";
 import { useConfirm } from "@/app/components/useConfirm";
 import Switch from "@/app/components/Switch";
+import ActionBar from "@/app/components/ActionBar";
 
 export type { LeaveType };
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested";
@@ -423,7 +424,7 @@ export default function LeaveClient({
         </button>
 
         {formOpen && (
-          <form onSubmit={submit} className="space-y-3 mt-4">
+          <form id="leave-form" onSubmit={submit} className="space-y-3 mt-4">
             <div>
               <label className="label">{t("staff.persona.leave.type")}</label>
               <select className="input" value={type} onChange={(e) => setType(e.target.value as LeaveType)}>
@@ -674,18 +675,19 @@ export default function LeaveClient({
 
             {err && <div className="text-rose-600 text-sm">{err}</div>}
 
-            <div className="flex gap-2 pt-2">
-              <button type="button" onClick={() => { setFormOpen(false); reset(); }}
-                className="flex-1 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-medium">
+            {/* Submit / cancel live in the sticky bottom bar (portal), tied to the form by id. */}
+            <ActionBar>
+              <button type="button" onClick={() => { setFormOpen(false); reset(); }} className="btn-secondary">
                 {t("common.cancel")}
               </button>
               <button
-                className="btn-primary flex-1"
+                type="submit" form="leave-form"
+                className="btn-primary"
                 disabled={busy || hardBlockedByOffDay || annualNeedsYos || fullDayBlockedByFraction || (specialTrackRequired && !isSpecial)}
               >
                 {busy ? t("common.submitting") : t("staff.persona.leave.submit")}
               </button>
-            </div>
+            </ActionBar>
           </form>
         )}
       </div>
@@ -793,14 +795,14 @@ export default function LeaveClient({
 function StatusBadge({ status }: { status: LeaveStatus }) {
   const { t } = useLang();
   const cls: Record<LeaveStatus, string> = {
-    pending: "bg-amber-100 text-amber-700",
-    approved: "bg-emerald-100 text-emerald-700",
-    rejected: "bg-rose-100 text-rose-700",
-    cancelled: "bg-slate-100 text-slate-500",
-    revision_requested: "bg-orange-100 text-orange-700"
+    pending: "tag-warn",
+    approved: "tag-ok",
+    rejected: "tag-bad",
+    cancelled: "tag-mute",
+    revision_requested: "tag-warn"
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded font-medium ${cls[status]}`}>
+    <span className={`tag ${cls[status]}`}>
       {t(`leave.status.${status}` as any)}
     </span>
   );

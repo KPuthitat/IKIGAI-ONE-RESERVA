@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
 import { nameWithPrefix } from "@/lib/name";
 import { FormSection, Field } from "@/app/components/FormKit";
+import ActionBar from "@/app/components/ActionBar";
 import {
   IR_SEVERITIES, IR_INCIDENT_TYPES, irCategoryGroupsFor, IR_CONTRIBUTING_FACTORS, IR_PERSON_ROLES,
   IR_MAX_WHYS, IR_MAX_RECOMMENDATIONS, IR_MAX_PEOPLE, severityMeta,
@@ -331,12 +332,12 @@ export default function IrReportForm({
       )}
 
       {err && <div className="text-sm text-rose-600">{err}</div>}
-      <div className="flex items-center justify-end gap-2">
+      <ActionBar>
         {onCancel && <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={busy}>ยกเลิก</button>}
         <button type="button" className="btn btn-primary" onClick={submit} disabled={busy}>
           {busy ? "กำลังบันทึก…" : editing ? "บันทึกการแก้ไข" : "ส่งรายงาน"}
         </button>
-      </div>
+      </ActionBar>
     </div>
   );
 }

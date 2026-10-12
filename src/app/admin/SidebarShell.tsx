@@ -41,7 +41,7 @@ export default function SidebarShell({
           onClick={toggle}
           aria-label={collapsed ? showLabel : hideLabel}
           title={collapsed ? showLabel : hideLabel}
-          className="hidden md:inline-flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg border border-[#EFE4D3] bg-white text-xs text-slate-500 hover:text-brand hover:border-brand/40 transition-colors"
+          className="hidden md:inline-flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg border border-[color:var(--card-border)] bg-white text-xs text-slate-500 hover:text-brand hover:border-brand/40 transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden

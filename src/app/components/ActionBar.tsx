@@ -49,7 +49,7 @@ export function ActionBarProvider({
       {mounted &&
         createPortal(
           <div
-            className={`fixed inset-x-0 bottom-0 z-40 border-t border-[#E4D8C4] bg-white/95 backdrop-blur-sm shadow-[0_-4px_20px_rgba(58,39,22,0.07)] ${active ? "" : "hidden"}`}
+            className={`fixed inset-x-0 bottom-0 z-40 border-t border-[color:var(--card-border)] bg-white/95 backdrop-blur-sm shadow-[0_-4px_20px_rgba(60,40,140,0.08)] ${active ? "" : "hidden"}`}
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           >
             <div ref={setTarget} className={`${maxWidth} mx-auto w-full`} />

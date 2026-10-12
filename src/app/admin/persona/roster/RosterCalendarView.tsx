@@ -326,7 +326,7 @@ export default function RosterCalendarView({
                   >
                     <span
                       className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
-                      style={{ background: a.shift_color || "#a06820" }}
+                      style={{ background: a.shift_color || "#6B4FD8" }}
                     />
                     <span className="font-medium text-slate-800 truncate">
                       {shortName(a)}
@@ -427,7 +427,7 @@ export default function RosterCalendarView({
                 >
                   <span
                     className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ background: a.shift_color || "#a06820" }}
+                    style={{ background: a.shift_color || "#6B4FD8" }}
                   />
                   <span className="font-medium text-slate-800 flex-1 truncate">
                     {a.user_display_name}

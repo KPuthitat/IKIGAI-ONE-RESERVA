@@ -50,8 +50,8 @@ const ADH_LABEL: Record<string, string> = {
 };
 
 const inputCls =
-  "w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white text-[#3a2716] " +
-  "focus:outline-none focus:border-[#a06820] focus:ring-2 focus:ring-[#a06820]/20";
+  "w-full px-3 py-2 text-sm border border-slate-300 rounded-xl bg-white text-[#21165a] " +
+  "focus:outline-none focus:border-[#6B4FD8] focus:ring-2 focus:ring-[#6B4FD8]/20";
 const labelCls = "text-[12px] font-medium text-slate-500 tracking-wide";
 
 function toBE(d: string | null): string {
@@ -171,11 +171,11 @@ export default function PatientDetailClient(props: {
     <div className="space-y-5">
       {ConfirmDialog}
       {/* Header */}
-      <div className="relative bg-white border border-slate-200 rounded-2xl shadow-card px-6 py-6 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-20 after:h-[3px] after:bg-[#a06820] after:rounded-bl-2xl">
+      <div className="relative bg-white border border-slate-200 rounded-2xl shadow-card px-6 py-6 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-20 after:h-[3px] after:bg-[#6B4FD8] after:rounded-bl-2xl">
         <button onClick={() => router.push("/admin/mounjaro")}
-          className="text-[12px] text-[#a06820] hover:text-[#7a4f16] tracking-[0.08em] uppercase mb-2">← กลับสู่รายชื่อ</button>
-        <div className="text-[24px] font-semibold leading-tight text-[#3a2716]">{employeeName}</div>
-        <div className="text-[13px] text-[#a06820] tabular-nums tracking-[0.05em] mt-0.5">
+          className="text-[12px] text-[#6B4FD8] hover:text-[#4F36B0] tracking-[0.08em] uppercase mb-2">← กลับสู่รายชื่อ</button>
+        <div className="text-[24px] font-semibold leading-tight text-[#21165a]">{employeeName}</div>
+        <div className="text-[13px] text-[#6B4FD8] tabular-nums tracking-[0.05em] mt-0.5">
           HN {hn ?? "—"} · เริ่มยา {toBE(startDate)}
         </div>
         <div className="text-[12px] text-slate-500 tabular-nums mt-1">
@@ -264,7 +264,7 @@ export default function PatientDetailClient(props: {
         {([["titration", "การปรับขนาดยา"], ["visits", "บันทึกการนัด"], ["chart", "กราฟติดตาม"], ["exercise", "การออกกำลังกาย"], ["baseline", "ข้อมูลพื้นฐาน"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex-shrink-0 px-4 py-3 text-[13px] font-medium -mb-px border-b-2 transition ${
-              tab === k ? "text-[#3a2716] border-[#a06820]" : "text-slate-500 border-transparent hover:text-[#3a2716]"}`}>
+              tab === k ? "text-[#21165a] border-[#6B4FD8]" : "text-slate-500 border-transparent hover:text-[#21165a]"}`}>
             {label}
           </button>
         ))}
@@ -277,10 +277,10 @@ export default function PatientDetailClient(props: {
           <div className="grid grid-cols-3 sm:grid-cols-6">
             {DOSES.map((dose, i) => {
               const idx = DOSES.indexOf(currentDose);
-              const cls = i < idx ? "bg-white border-[#a06820]" : i === idx ? "bg-[#a06820] border-[#a06820] text-white" : "bg-white border-slate-200";
+              const cls = i < idx ? "bg-white border-[#6B4FD8]" : i === idx ? "bg-[#6B4FD8] border-[#6B4FD8] text-white" : "bg-white border-slate-200";
               return (
                 <div key={dose} className={`text-center py-4 px-2 border ${i > 0 ? "border-l-0 sm:border-l-0" : ""} ${cls}`}>
-                  <div className={`text-lg font-bold ${i === idx ? "text-white" : "text-[#3a2716]"}`}>{dose}</div>
+                  <div className={`text-lg font-bold ${i === idx ? "text-white" : "text-[#21165a]"}`}>{dose}</div>
                   <div className={`text-[10px] ${i === idx ? "text-white/80" : "text-slate-500"}`}>mg</div>
                   <div className={`text-[10px] uppercase tracking-[0.08em] mt-1.5 ${i === idx ? "text-white/80" : "text-slate-500"}`}>
                     {i === 0 ? "Starter" : `Step ${i + 1}`}
@@ -295,9 +295,9 @@ export default function PatientDetailClient(props: {
               <div><div className="font-semibold">ยังไม่มีการบันทึกนัด</div>เริ่มต้นที่ 2.5 mg เป็นเวลา 4 สัปดาห์ แล้วประเมินการปรับขนาดยา</div>
             </div>
           ) : (
-            <div className="mt-4 bg-slate-50 border-l-[3px] border-[#a06820] px-4 py-3">
+            <div className="mt-4 bg-slate-50 border-l-[3px] border-[#6B4FD8] px-4 py-3">
               <div className="text-[11px] text-slate-500 uppercase tracking-[0.08em] mb-1">การตัดสินใจครั้งล่าสุด</div>
-              <div className="font-semibold text-[15px] text-[#3a2716]">{DECISION_LABEL[last.decision ?? "maintain"] ?? "—"}</div>
+              <div className="font-semibold text-[15px] text-[#21165a]">{DECISION_LABEL[last.decision ?? "maintain"] ?? "—"}</div>
               <div className="text-[12px] text-slate-500 mt-0.5">
                 บันทึก {toBE(last.date)} · ขนาดถัดไป {DOSES.indexOf(currentDose) < 5 ? `${DOSES[DOSES.indexOf(currentDose) + 1]} mg` : "ถึง max แล้ว"}
               </div>
@@ -422,7 +422,7 @@ export default function PatientDetailClient(props: {
       {/* Tab: Baseline */}
       {tab === "baseline" && (
         <Card title="ข้อมูลพื้นฐาน · Baseline Data"
-          action={<button onClick={() => setShowEdit(true)} className="px-3 py-1.5 text-[12px] border border-slate-300 rounded-xl text-[#3a2716] hover:bg-slate-50">แก้ไข</button>}>
+          action={<button onClick={() => setShowEdit(true)} className="px-3 py-1.5 text-[12px] border border-slate-300 rounded-xl text-[#21165a] hover:bg-slate-50">แก้ไข</button>}>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-200 border border-slate-200 rounded-2xl overflow-hidden">
             <Stat label="น้ำหนักเริ่มต้น" value={baseWeight != null ? baseWeight.toFixed(1) : "—"} unit="กก." />
             <Stat label="ส่วนสูง" value={baseHeight != null ? baseHeight.toFixed(0) : "—"} unit="ซม." />
@@ -439,9 +439,9 @@ export default function PatientDetailClient(props: {
             <FlagList title="ข้อห้าม / สัญญาณเตือน" danger labels={flagLabels(contraindications, CONTRA_LABELS)} empty="ไม่พบ" />
           </div>
           {notes && (
-            <div className="mt-5 bg-slate-50 border-l-[3px] border-[#a06820] px-4 py-3">
+            <div className="mt-5 bg-slate-50 border-l-[3px] border-[#6B4FD8] px-4 py-3">
               <div className="text-[11px] text-slate-500 uppercase tracking-[0.08em] mb-1">หมายเหตุ</div>
-              <div className="text-[13px] text-[#3a2716]">{notes}</div>
+              <div className="text-[13px] text-[#21165a]">{notes}</div>
             </div>
           )}
         </Card>
@@ -455,7 +455,7 @@ export default function PatientDetailClient(props: {
 
       {/* Footer actions */}
       <div className="flex justify-end gap-2.5 pt-1">
-        <button onClick={() => window.print()} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#3a2716] hover:bg-slate-50">พิมพ์เอกสาร</button>
+        <button onClick={() => window.print()} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#21165a] hover:bg-slate-50">พิมพ์เอกสาร</button>
         <button onClick={deletePatient} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#B91C1C] hover:bg-[#FEF2F2]">ลบผู้ป่วย</button>
       </div>
 
@@ -476,7 +476,7 @@ function Stat({ label, value, unit, sub, valueColor, small }: {
   return (
     <div className="bg-white px-5 py-4">
       <div className="text-[10px] text-slate-500 uppercase tracking-[0.12em] mb-1.5">{label}</div>
-      <div className={`font-bold text-[#3a2716] tabular-nums ${small ? "text-base" : "text-[22px]"}`} style={valueColor ? { color: valueColor } : undefined}>
+      <div className={`font-bold text-[#21165a] tabular-nums ${small ? "text-base" : "text-[22px]"}`} style={valueColor ? { color: valueColor } : undefined}>
         {value}{unit && <span className="text-[12px] text-slate-500 font-normal font-sans ml-1">{unit}</span>}
       </div>
       {sub && <div className="text-[11px] text-slate-500 mt-1">{sub}</div>}
@@ -488,8 +488,8 @@ function Card({ title, action, children }: { title: string; action?: React.React
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
       <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-200">
-        <div className="text-[15px] font-semibold text-[#3a2716] flex items-center">
-          <span className="inline-block w-[3px] h-4 bg-[#a06820] mr-2.5" />{title}
+        <div className="text-[15px] font-semibold text-[#21165a] flex items-center">
+          <span className="inline-block w-[3px] h-4 bg-[#6B4FD8] mr-2.5" />{title}
         </div>
         {action}
       </div>
@@ -499,7 +499,7 @@ function Card({ title, action, children }: { title: string; action?: React.React
 }
 
 function GoldBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return <button onClick={onClick} className="px-3 py-1.5 text-[12px] bg-[#a06820] hover:bg-[#7a4f16] text-white rounded-xl font-medium">{children}</button>;
+  return <button onClick={onClick} className="px-3 py-1.5 text-[12px] bg-[#6B4FD8] hover:bg-[#4F36B0] text-white rounded-xl font-medium">{children}</button>;
 }
 
 function AlertBox({ level, a }: { level: "danger" | "warning"; a: Alert }) {
@@ -532,12 +532,12 @@ function flagLabels(state: Record<string, boolean>, labels: Array<[string, strin
 function FlagList({ title, labels, danger, empty }: { title: string; labels: string[]; danger?: boolean; empty?: string }) {
   return (
     <div>
-      <div className={`text-[12px] font-semibold uppercase tracking-[0.08em] mb-2 ${danger ? "text-[#B91C1C]" : "text-[#3a2716]"}`}>{title}</div>
+      <div className={`text-[12px] font-semibold uppercase tracking-[0.08em] mb-2 ${danger ? "text-[#B91C1C]" : "text-[#21165a]"}`}>{title}</div>
       {labels.length ? (
-        <ul className={`space-y-1 ${danger ? "text-[#B91C1C] font-semibold" : "text-[#3a2716]"}`}>
+        <ul className={`space-y-1 ${danger ? "text-[#B91C1C] font-semibold" : "text-[#21165a]"}`}>
           {labels.map((l) => (
             <li key={l} className="flex items-start gap-1.5 text-[13px]">
-              <span className="text-[#a06820] font-bold mt-px flex-shrink-0">·</span>
+              <span className="text-[#6B4FD8] font-bold mt-px flex-shrink-0">·</span>
               {l}
             </li>
           ))}
@@ -572,7 +572,7 @@ function FragmentRow({ v, se, patientId, onEdit, onChange }: { v: Visit; se: str
   return (
     <>
       <tr className="border-b border-slate-200">
-        <td className="py-3 px-4 font-medium text-[#3a2716]">{toBE(v.date)}</td>
+        <td className="py-3 px-4 font-medium text-[#21165a]">{toBE(v.date)}</td>
         <td className="py-3 px-3 tabular-nums">{v.dose != null ? `${v.dose} mg` : "—"}</td>
         <td className="py-3 px-3 tabular-nums">{v.weight != null ? `${v.weight.toFixed(1)} กก.` : "—"}</td>
         <td className="py-3 px-3 tabular-nums">{v.bp || "—"} · {v.hr ?? "—"} bpm</td>
@@ -584,7 +584,7 @@ function FragmentRow({ v, se, patientId, onEdit, onChange }: { v: Visit; se: str
         </td>
         <td className="py-3 px-4 text-right whitespace-nowrap">
           {ConfirmDialog}
-          <button onClick={onEdit} disabled={busy} className="text-[12px] text-[#a06820] hover:underline disabled:opacity-50">แก้ไข</button>
+          <button onClick={onEdit} disabled={busy} className="text-[12px] text-[#6B4FD8] hover:underline disabled:opacity-50">แก้ไข</button>
           <span className="text-slate-300 mx-1.5">·</span>
           <button onClick={del} disabled={busy} className="text-[12px] text-[#B91C1C] hover:underline disabled:opacity-50">ลบ</button>
         </td>
@@ -642,8 +642,8 @@ function ProgressChart({ baseline, startDate, visits, selfLogs }: {
   return (
     <div>
       <div className="flex flex-wrap gap-4 justify-center text-[12px] text-slate-600 mb-2">
-        <Legend color="#3a2716" label="น้ำหนัก (กก.)" />
-        <Legend color="#a06820" label="ขนาดยา (mg)" />
+        <Legend color="#21165a" label="น้ำหนัก (กก.)" />
+        <Legend color="#6B4FD8" label="ขนาดยา (mg)" />
         <Legend color="#B91C1C" label="HR (bpm)" dashed />
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 300 }}>
@@ -656,7 +656,7 @@ function ProgressChart({ baseline, startDate, visits, selfLogs }: {
             <g key={t}>
               <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#E5E0D5" strokeWidth={1} />
               <text x={padL - 6} y={y + 3} textAnchor="end" fontSize={9} fill="#9CA3AF">{wv}</text>
-              <text x={W - padR + 6} y={y + 3} textAnchor="start" fontSize={9} fill="#a06820">{dv}</text>
+              <text x={W - padR + 6} y={y + 3} textAnchor="start" fontSize={9} fill="#6B4FD8">{dv}</text>
             </g>
           );
         })}
@@ -667,14 +667,14 @@ function ProgressChart({ baseline, startDate, visits, selfLogs }: {
           return <text key={i} x={xAt(i)} y={H - 10} textAnchor="middle" fontSize={9} fill="#9CA3AF">{toBE(p.date)}</text>;
         })}
         {/* dose (gold, stepped-ish) */}
-        {n > 1 && <polyline points={dosePts} fill="none" stroke="#a06820" strokeWidth={2} />}
-        {pts.map((p, i) => <circle key={`d${i}`} cx={xAt(i)} cy={yD(p.dose)} r={3} fill="#a06820" />)}
+        {n > 1 && <polyline points={dosePts} fill="none" stroke="#6B4FD8" strokeWidth={2} />}
+        {pts.map((p, i) => <circle key={`d${i}`} cx={xAt(i)} cy={yD(p.dose)} r={3} fill="#6B4FD8" />)}
         {/* HR (red dashed) */}
         {hrPts && n > 1 && <polyline points={hrPts} fill="none" stroke="#B91C1C" strokeWidth={1.5} strokeDasharray="4 4" />}
         {pts.map((p, i) => p.hr != null ? <circle key={`h${i}`} cx={xAt(i)} cy={yH(p.hr)} r={2.5} fill="#B91C1C" /> : null)}
         {/* weight (navy) */}
-        {weightPts && n > 1 && <polyline points={weightPts} fill="none" stroke="#3a2716" strokeWidth={2.5} />}
-        {pts.map((p, i) => p.weight != null ? <circle key={`w${i}`} cx={xAt(i)} cy={yW(p.weight)} r={4} fill="#3a2716" /> : null)}
+        {weightPts && n > 1 && <polyline points={weightPts} fill="none" stroke="#21165a" strokeWidth={2.5} />}
+        {pts.map((p, i) => p.weight != null ? <circle key={`w${i}`} cx={xAt(i)} cy={yW(p.weight)} r={4} fill="#21165a" /> : null)}
       </svg>
     </div>
   );
@@ -711,13 +711,13 @@ function SelfLogRow({ log, onReplied }: { log: SelfLog; onReplied: () => void })
         {log.fbs != null && <> · DTX {log.fbs}</>}
         {log.injection_done && <> · ฉีดแล้ว</>}</div>
       {log.diary && <div className="text-slate-600 mt-0.5">บันทึกประจำวัน: {log.diary}</div>}
-      {log.notes_for_doctor && <div className="text-[#3a2716] mt-0.5">ผู้ป่วย: {log.notes_for_doctor}</div>}
+      {log.notes_for_doctor && <div className="text-[#21165a] mt-0.5">ผู้ป่วย: {log.notes_for_doctor}</div>}
       {log.doctor_reply ? (
         <div className="text-[#047857] bg-[#ECFDF5] rounded-xl px-2 py-1 mt-1">แพทย์: {log.doctor_reply}</div>
       ) : (
         <div className="flex gap-1.5 mt-1">
           <input className={inputCls + " !py-1 text-[12px]"} value={reply} placeholder="ตอบผู้ป่วย…" onChange={(e) => setReply(e.target.value)} />
-          <button onClick={send} disabled={busy} className="px-3 text-[12px] bg-[#a06820] text-white rounded-xl disabled:opacity-50">ตอบ</button>
+          <button onClick={send} disabled={busy} className="px-3 text-[12px] bg-[#6B4FD8] text-white rounded-xl disabled:opacity-50">ตอบ</button>
         </div>
       )}
     </div>
@@ -782,8 +782,8 @@ function VisitModal({ patientId, defaultDose, existing, onClose, onSaved }: {
   return (
     <ModalShell title={existing ? "แก้ไขการนัดติดตาม" : "บันทึกการนัดติดตาม"} sub="Follow-up Visit Entry" onClose={onClose}
       footer={<>
-        <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#3a2716] hover:bg-white">ยกเลิก</button>
-        <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#a06820] hover:bg-[#7a4f16] text-white rounded-xl disabled:opacity-50">{busy ? "กำลังบันทึก…" : existing ? "บันทึกการแก้ไข" : "บันทึกการนัด"}</button>
+        <button onClick={onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#21165a] hover:bg-white">ยกเลิก</button>
+        <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#6B4FD8] hover:bg-[#4F36B0] text-white rounded-xl disabled:opacity-50">{busy ? "กำลังบันทึก…" : existing ? "บันทึกการแก้ไข" : "บันทึกการนัด"}</button>
       </>}>
       <Section title="ข้อมูลการนัด">
         <div className="grid sm:grid-cols-2 gap-4">
@@ -811,14 +811,14 @@ function VisitModal({ patientId, defaultDose, existing, onClose, onSaved }: {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {SE_FIELDS.map(([k, label]) => (
             <div key={k} className="border border-slate-200 p-3">
-              <div className="text-[12px] font-medium mb-2 text-[#3a2716]">{label}</div>
+              <div className="text-[12px] font-medium mb-2 text-[#21165a]">{label}</div>
               <div className="flex gap-1">
                 {[0, 1, 2, 3].map((lvl) => {
                   const active = (se[k] ?? 0) === lvl;
                   const colors = ["bg-[#047857] border-[#047857] text-white", "bg-[#FCD34D] border-[#F59E0B] text-[#78350F]", "bg-[#B45309] border-[#B45309] text-white", "bg-[#B91C1C] border-[#B91C1C] text-white"];
                   return (
                     <button key={lvl} type="button" onClick={() => setSe((p) => ({ ...p, [k]: lvl }))}
-                      className={`flex-1 h-7 text-[11px] font-medium border ${active ? colors[lvl] : "bg-white border-slate-300 text-slate-500 hover:border-[#a06820]"}`}>{lvl}</button>
+                      className={`flex-1 h-7 text-[11px] font-medium border ${active ? colors[lvl] : "bg-white border-slate-300 text-slate-500 hover:border-[#6B4FD8]"}`}>{lvl}</button>
                   );
                 })}
               </div>
@@ -917,8 +917,8 @@ function PatientEditModal(props: {
   return (
     <ModalShell title="แก้ไขข้อมูลผู้ป่วย" sub="Edit Patient" onClose={props.onClose}
       footer={<>
-        <button onClick={props.onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#3a2716] hover:bg-white">ยกเลิก</button>
-        <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#a06820] hover:bg-[#7a4f16] text-white rounded-xl disabled:opacity-50">{busy ? "กำลังบันทึก…" : "บันทึก"}</button>
+        <button onClick={props.onClose} disabled={busy} className="px-4 py-2 text-[13px] border border-slate-300 rounded-xl text-[#21165a] hover:bg-white">ยกเลิก</button>
+        <button onClick={save} disabled={busy} className="px-5 py-2 text-[13px] bg-[#6B4FD8] hover:bg-[#4F36B0] text-white rounded-xl disabled:opacity-50">{busy ? "กำลังบันทึก…" : "บันทึก"}</button>
       </>}>
       <Section title="ข้อมูลผู้ป่วย">
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -960,7 +960,7 @@ const MED_FORM: Array<[string, string]> = [["insulin", "Insulin (เสี่ย
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-6 last:mb-0">
-      <div className="inline-block text-[12px] font-semibold text-[#3a2716] uppercase tracking-[0.1em] mb-3.5 pb-2 pr-10 border-b border-[#a06820]">{title}</div>
+      <div className="inline-block text-[12px] font-semibold text-[#21165a] uppercase tracking-[0.1em] mb-3.5 pb-2 pr-10 border-b border-[#6B4FD8]">{title}</div>
       {children}
     </div>
   );
@@ -972,7 +972,7 @@ function CheckRow({ state, set, items }: {
     <div className="flex flex-wrap gap-x-5 gap-y-3">
       {items.map(([k, label]) => (
         <label key={k} className="flex items-center gap-1.5 text-[13px] cursor-pointer">
-          <input type="checkbox" className="w-4 h-4 accent-[#a06820]" checked={!!state[k]} onChange={(e) => set((p) => ({ ...p, [k]: e.target.checked }))} />
+          <input type="checkbox" className="w-4 h-4 accent-[#6B4FD8]" checked={!!state[k]} onChange={(e) => set((p) => ({ ...p, [k]: e.target.checked }))} />
           {label}
         </label>
       ))}
@@ -984,10 +984,10 @@ function ModalShell({ title, sub, onClose, footer, children }: {
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 backdrop-blur-[2px] p-4 sm:p-10 overflow-y-auto" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white w-full max-w-3xl rounded-2xl border-t-[3px] border-[#a06820] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-3xl rounded-2xl border-t-[3px] border-[#6B4FD8] shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
-          <div><div className="text-[#3a2716] font-semibold text-[16px]">{title}</div>
-            <div className="text-[10px] text-[#a06820] tracking-[0.1em] uppercase mt-0.5">{sub}</div></div>
+          <div><div className="text-[#21165a] font-semibold text-[16px]">{title}</div>
+            <div className="text-[10px] text-[#6B4FD8] tracking-[0.1em] uppercase mt-0.5">{sub}</div></div>
           <button onClick={onClose} className="w-8 h-8 rounded-lg border border-slate-200 text-slate-400 text-lg hover:bg-slate-50">×</button>
         </div>
         <div className="p-6 max-h-[70vh] overflow-y-auto">{children}</div>

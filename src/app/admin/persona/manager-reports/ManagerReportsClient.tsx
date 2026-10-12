@@ -188,7 +188,7 @@ export function EditReport({ row, endpoint, onDone, onCancel }: {
   }
 
   return (
-    <div className="space-y-2 rounded-lg bg-[#faf6ef] border border-[#EFE4D3] p-3">
+    <div className="space-y-2 rounded-lg bg-[color:var(--surface-field)] border border-[color:var(--card-border)] p-3">
       <Field label="สรุปปิดกะ / ยอดขาย" value={shift} onChange={setShift} />
       <Field label="สถานการณ์ / ปัญหา / เหตุการณ์ประจำวัน" value={situation} onChange={setSituation} />
       <Field label="เรื่องที่อยากเสนอเข้าประชุมประจำสัปดาห์" value={topics} onChange={setTopics} />
