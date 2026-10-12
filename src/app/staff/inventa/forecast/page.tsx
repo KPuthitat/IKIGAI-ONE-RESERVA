@@ -4,6 +4,7 @@ import { requireUser, isAdminCapable } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { fmtMoney } from "@/lib/format";
+import Mascot from "@/app/components/Mascot";
 import {
   inventaForecast, FORECAST_LEAD_DAYS, FORECAST_BUFFER_DAYS, FORECAST_OVERSTOCK_DAYS, type ForecastStatus
 } from "@/lib/inventa-forecast";
@@ -43,14 +44,18 @@ export default function ForecastPage({ searchParams }: { searchParams: { s?: str
 
   return (
     <div className="space-y-4">
-      <div className="pl-11 md:pl-0">
-        <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.forecast.title")}</h1>
-        <p className="text-sm text-slate-500">{t(lang, "inv.forecast.subtitle")}</p>
+      <div className="pl-11 md:pl-0 flex items-center gap-3">
+        <Mascot pose="mortar" size={72} className="flex-shrink-0" />
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.forecast.title")}</h1>
+          <p className="text-sm text-slate-500">{t(lang, "inv.forecast.subtitle")}</p>
+        </div>
       </div>
 
       {!f.hasSalesData && (
-        <div className="card text-sm text-slate-600">
-          ยังไม่มีข้อมูลยอดขาย CLINICA ใน 90 วันที่ผ่านมาของสาขานี้ — นำเข้ารายงานบิลก่อน แล้วระบบจะคำนวณให้
+        <div className="card text-sm text-slate-600 flex items-center gap-3">
+          <Mascot pose="sign" size={80} className="flex-shrink-0" />
+          <span>ยังไม่มีข้อมูลยอดขาย CLINICA ใน 90 วันที่ผ่านมาของสาขานี้ — นำเข้ารายงานบิลก่อน แล้วระบบจะคำนวณให้</span>
         </div>
       )}
 
