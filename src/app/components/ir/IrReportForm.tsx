@@ -7,6 +7,7 @@ import { humanizeApiError } from "@/lib/error-messages";
 import { nameWithPrefix } from "@/lib/name";
 import { FormSection, Field } from "@/app/components/FormKit";
 import ActionBar from "@/app/components/ActionBar";
+import Mascot from "@/app/components/Mascot";
 import {
   IR_SEVERITIES, IR_INCIDENT_TYPES, irCategoryGroupsFor, IR_CONTRIBUTING_FACTORS, IR_PERSON_ROLES,
   IR_MAX_WHYS, IR_MAX_RECOMMENDATIONS, IR_MAX_PEOPLE, severityMeta,
@@ -163,8 +164,9 @@ export default function IrReportForm({
 
   return (
     <div className="card space-y-5">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
+      <div className="flex items-start gap-3">
+        <Mascot pose="notes" size={64} className="flex-shrink-0" />
+        <div className="min-w-0">
           <h2 className="font-bold text-slate-800">{editing ? `แก้ไขรายงาน ${initial!.code ?? `#${initial!.id}`}` : "แจ้งเหตุการณ์ / ความเสี่ยง (IR)"}</h2>
           <p className="text-xs text-slate-500 mt-0.5">
             เขียนตามความเป็นจริง เพื่อค้นหาสาเหตุและป้องกันไม่ให้เกิดซ้ำ ไม่ใช่เพื่อค้นหาผู้กระทำผิด ·{" "}
