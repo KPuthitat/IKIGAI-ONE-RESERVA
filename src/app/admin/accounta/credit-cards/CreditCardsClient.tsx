@@ -8,6 +8,7 @@ import { round2 } from "@/lib/accounta";
 import { humanizeApiError } from "@/lib/error-messages";
 import Select from "@/app/components/Select";
 import { useConfirm } from "@/app/components/useConfirm";
+import EmptyState from "@/app/components/EmptyState";
 
 type Charge = {
   id: number; card_id: number | null; card_name: string | null; merchant: string | null;
@@ -109,7 +110,7 @@ export default function CreditCardsClient({
       </div>
 
       {reserve.length === 0 ? (
-        <div className="card text-sm text-slate-400">ยังไม่มีบัตรเครดิตกรรมการ</div>
+        <EmptyState>ยังไม่มีบัตรเครดิตกรรมการ</EmptyState>
       ) : reserve.map((g) => (
         <div key={g.card_id ?? g.card_name} className="card space-y-3">
           <div className="flex items-start justify-between gap-3 flex-wrap">

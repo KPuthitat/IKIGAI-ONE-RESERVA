@@ -4,6 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import QrCode from "@/app/components/QrCode";
+import EmptyState from "@/app/components/EmptyState";
 
 const NAVY = "#0B1F3A";
 const GOLD = "#C9A227";
@@ -245,7 +246,7 @@ export default function MealpassClient(props: {
         <div className="space-y-2">
           <div className="text-xs text-slate-500 px-1">คูปองเครื่องดื่มในร้าน · ฟรี 1 แก้ว/วัน · ได้เมื่อลงเวลาเข้าทำงาน</div>
           {props.drinkCoupon == null ? (
-            <div className="card text-sm text-slate-400">วันนี้ยังไม่มีคูปอง — ตอกบัตรเข้างานเพื่อรับคูปองเครื่องดื่ม 1 แก้ว</div>
+            <EmptyState>วันนี้ยังไม่มีคูปอง — ตอกบัตรเข้างานเพื่อรับคูปองเครื่องดื่ม 1 แก้ว</EmptyState>
           ) : props.drinkCoupon.status === "redeemed" ? (
             <div className="card text-sm" style={{ color: NAVY }}>ใช้คูปองเครื่องดื่มแล้ววันนี้: <b>{props.drinkCoupon.menuName}</b> ✓</div>
           ) : drinkCode ? (
@@ -258,7 +259,7 @@ export default function MealpassClient(props: {
           ) : (
             <>
               {drinkErr && <div className="text-sm text-rose-600 px-1">{ERR_TH[drinkErr] ?? "ทำรายการไม่สำเร็จ"}</div>}
-              {props.storeDrinks.length === 0 && <div className="card text-sm text-slate-400">ยังไม่มีเครื่องดื่มในร้าน — แจ้งแอดมินให้ติดธงเมนู</div>}
+              {props.storeDrinks.length === 0 && <EmptyState>ยังไม่มีเครื่องดื่มในร้าน — แจ้งแอดมินให้ติดธงเมนู</EmptyState>}
               {props.storeDrinks.map((m) => (
                 <div key={m.id} className="card flex items-center gap-3">
                   <div className="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
@@ -305,7 +306,7 @@ export default function MealpassClient(props: {
                 </div>
               )}
               {salaErr && <div className="text-sm text-rose-600 px-1">{ERR_TH[salaErr] ?? "ทำรายการไม่สำเร็จ"}</div>}
-              {props.salaMenu.length === 0 && <div className="card text-sm text-slate-400">ยังไม่มีเมนูข้ามบริษัท</div>}
+              {props.salaMenu.length === 0 && <EmptyState>ยังไม่มีเมนูข้ามบริษัท</EmptyState>}
               {props.salaMenu.map((m) => (
                 <div key={m.id} className="card flex items-center gap-3">
                   <div className="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
@@ -437,7 +438,7 @@ function MenuList(props: {
   return (
     <div className="space-y-2">
       <div className="text-xs text-slate-500 px-1">{props.title}</div>
-      {props.items.length === 0 && <div className="card text-sm text-slate-400">ยังไม่มีเมนูในหมวดนี้</div>}
+      {props.items.length === 0 && <EmptyState>ยังไม่มีเมนูในหมวดนี้</EmptyState>}
       {props.items.map((m) => (
         <div key={m.id} className="card flex items-center gap-3">
           <div className="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">

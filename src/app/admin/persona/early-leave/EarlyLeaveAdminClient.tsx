@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import type { PendingEarlyLeave } from "@/lib/early-leave";
+import EmptyState from "@/app/components/EmptyState";
 
 const PIN_ERRORS = new Set(["wrong_pin", "pin_invalid", "no_pin", "user_not_found"]);
 
@@ -37,7 +38,7 @@ export default function EarlyLeaveAdminClient({ pending }: { pending: PendingEar
     <div className="space-y-3">
       {err && <div className="text-sm text-rose-600">{err}</div>}
       {rows.length === 0 ? (
-        <div className="card text-sm text-slate-400">ไม่มีคำขอค้างอยู่</div>
+        <EmptyState>ไม่มีคำขอค้างอยู่</EmptyState>
       ) : (
         <div className="card divide-y divide-slate-100">
           {rows.map((r) => (

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiUrl } from "@/lib/url";
+import EmptyState from "@/app/components/EmptyState";
 
 type Channel = {
   page_id: string; page_name: string | null; branch_id: number | null;
@@ -70,7 +71,7 @@ export default function FacebookSettingsClient() {
     setSaving(false);
   };
 
-  if (loading) return <div className="card text-sm text-slate-400">กำลังโหลด…</div>;
+  if (loading) return <EmptyState>กำลังโหลด…</EmptyState>;
 
   return (
     <div className="space-y-4">

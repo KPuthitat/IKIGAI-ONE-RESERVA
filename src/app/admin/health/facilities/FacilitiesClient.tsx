@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { HealthFacility } from "@/lib/health-facility";
 import { useConfirm } from "@/app/components/useConfirm";
+import EmptyState from "@/app/components/EmptyState";
 
 type Editing = {
   id: number | null;
@@ -111,7 +112,7 @@ export default function FacilitiesClient({ facilities }: { facilities: HealthFac
           </div>
         ))}
         {facilities.length === 0 && (
-          <div className="card text-sm text-slate-400 text-center py-6">ยังไม่มีสถานพยาบาล</div>
+          <EmptyState>ยังไม่มีสถานพยาบาล</EmptyState>
         )}
       </div>
 

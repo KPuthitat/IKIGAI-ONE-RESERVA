@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import ActionBar from "@/app/components/ActionBar";
 import type { BackdateDay } from "@/lib/ot-backdate";
+import Mascot from "@/app/components/Mascot";
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   pending: { label: "รออนุมัติ", cls: "tag-warn" },
@@ -101,7 +102,12 @@ export default function OtRequestClient({ days, hasActiveBranch }: { days: Backd
                 <p className="text-[10px] text-slate-400 mt-0.5">เวลาที่เข้างานจริง (ก่อนเวลาเข้ากะ)</p>
               </div>
             </div>
-            {msg && <p className={`text-sm ${msg.ok ? "text-emerald-600" : "text-rose-600"}`}>{msg.text}</p>}
+            {msg && (
+              <div className="flex items-center gap-2">
+                {msg.ok && <Mascot pose="cheer" size={56} />}
+                <p className={`text-sm ${msg.ok ? "text-emerald-600" : "text-rose-600"}`}>{msg.text}</p>
+              </div>
+            )}
             <ActionBar>
               <button type="button" disabled={busy || !selDate || !late} onClick={submit} className="btn-primary">
                 {busy ? "กำลังส่ง…" : "ส่งคำขอ OT"}

@@ -4,6 +4,7 @@ import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import BarcodeScanner from "@/app/components/BarcodeScanner";
+import EmptyState from "@/app/components/EmptyState";
 
 const NAVY = "#0B1F3A";
 const GOLD = "#C9A227";
@@ -130,7 +131,7 @@ export default function MealpassConfirmClient({ pending, config }: { pending: Pe
       <div>
         <div className="text-sm font-semibold mb-2" style={{ color: NAVY }}>รอยืนยันวันนี้ ({pending.length})</div>
         {pending.length === 0 ? (
-          <div className="card text-sm text-slate-400">ไม่มีรายการรอยืนยัน</div>
+          <EmptyState>ไม่มีรายการรอยืนยัน</EmptyState>
         ) : (
           <div className="space-y-2">
             {pending.map((p) => (

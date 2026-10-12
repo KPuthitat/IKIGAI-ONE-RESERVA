@@ -10,6 +10,7 @@ import { fmtMoney } from "@/lib/format";
 import CompanyReportActions from "./CompanyReportActions";
 import LaborCostPanel from "./LaborCostPanel";
 import SpecialDaysSend from "./SpecialDaysSend";
+import EmptyState from "@/app/components/EmptyState";
 
 // ANALYTICA · ภาพรวมบริษัท (รวมทุกสาขา) — owner 2026-09-21. ยอดขายรวมบริษัท +
 // เทียบรายสาขา + เทียบเดือนนี้↔เดือนก่อน (ช่วงเวลาเดียวกัน) + เป้าเดือน/ทั้งปี.
@@ -134,7 +135,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
       </div>
 
       {ov.branchCount === 0 ? (
-        <div className="card text-sm text-slate-400">ยังไม่มีสาขาในบริษัทนี้</div>
+        <EmptyState>ยังไม่มีสาขาในบริษัทนี้</EmptyState>
       ) : (
         <>
           {/* Company KPIs */}

@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
 import { humanizeApiError } from "@/lib/error-messages";
 import { useConfirm } from "@/app/components/useConfirm";
+import EmptyState from "@/app/components/EmptyState";
 
 type AccType = "cash" | "bank" | "ewallet" | "credit_card";
 type Account = {
@@ -279,7 +280,7 @@ export default function CashAccountsClient({
 
       {/* Accounts */}
       {accounts.length === 0 ? (
-        <div className="card text-sm text-slate-400">ยังไม่มีช่องทาง — กด “+ เพิ่มช่องทาง” เพื่อเริ่มตั้งค่าบัญชี/บัตร</div>
+        <EmptyState>ยังไม่มีช่องทาง — กด “+ เพิ่มช่องทาง” เพื่อเริ่มตั้งค่าบัญชี/บัตร</EmptyState>
       ) : (
         <div className="space-y-2">
           {accounts.map((a) => (
