@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import Mascot from "@/app/components/Mascot";
 import { humanizeApiError } from "@/lib/error-messages";
 import { useLang } from "@/lib/LangProvider";
 import { bkkHHMM, bkkDateIso, snapTo15 } from "@/lib/time";
@@ -1367,7 +1368,8 @@ function ClockAction({
   // ── Success ─────────────────────────────────
   if (phase === "success") {
     return (
-      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl py-6">
+      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl py-5 flex flex-col items-center gap-2">
+        <Mascot pose={actualAction === "in" ? "thumbs" : "wai"} size={88} />
         <div className="text-emerald-800 font-bold">
           {actualAction === "in" ? t("staff.persona.success.in") : t("staff.persona.success.out")}
         </div>

@@ -29,3 +29,22 @@ export function receiptChannelLabel(channel: string): string {
   const m = /\((.+)\)\s*$/.exec(c);
   return (m ? m[1] : c).trim() || c;
 }
+
+/** Percent change used only to pick the mascot's mood on the clinic month headline.
+ *  The printed MoM figure compares the (possibly part-way) month with the WHOLE
+ *  previous month, so early in a month it is always negative. For the current month
+ *  this compares the run-rate projection (net so far ÷ days elapsed × days in month)
+ *  with last month instead; a finished month uses the printed figure as-is. */
+export function clinicaMonthMoodPct(
+  c: { year: number; month: number; billNet: number; prevBillNet: number | null; billNetMomPct: number | null },
+  todayIso: string
+): number | null {
+  const [ty, tm, td] = todayIso.split("-").map(Number);
+  const cmp = c.year * 12 + c.month - (ty * 12 + tm);
+  if (cmp > 0) return null;                         // future month
+  if (cmp < 0) return c.billNetMomPct;              // finished month
+  if (!c.prevBillNet || c.prevBillNet <= 0) return null;
+  const dim = new Date(Date.UTC(c.year, c.month, 0)).getUTCDate();
+  const projected = (c.billNet / Math.max(1, td)) * dim;
+  return ((projected - c.prevBillNet) / c.prevBillNet) * 100;
+}
