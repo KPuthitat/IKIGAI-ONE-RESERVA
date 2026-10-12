@@ -45,7 +45,7 @@ export default function SegmentErrorRecovery({
       <div className="w-full max-w-md rounded-3xl border p-8 text-center"
         style={{ background: "#fcfbff", borderColor: "#ddd7f7", boxShadow: "0 8px 30px rgba(40,26,100,0.12)" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/owl-mascot.png" alt="" width={72} height={72} className="mx-auto mb-3" />
+        <img src="/mascot/wai.webp" alt="" width={104} height={104} className="mx-auto mb-3" style={{ objectFit: "contain" }} />
         <h1 className="text-xl font-bold" style={{ color: INK }}>เปิดหน้านี้ไม่สำเร็จ</h1>
         <p className="text-sm mt-2 leading-relaxed" style={{ color: "#6b5c49" }}>
           ถ้าเพิ่งกดเข้ามาจากลิงก์ เซสชันอาจหมดอายุค่ะ

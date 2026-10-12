@@ -7,7 +7,7 @@
 // self-contained HTML file that Nginx serves via `error_page 502
 // 503 504 = @maintenance` whenever the upstream is unreachable.
 //
-// "Self-contained" means: the page embeds the owl mascot + LINE
+// "Self-contained" means: the page embeds the Nong Plara mascot (apology pose) + LINE
 // Seed Sans TH font as base64 data URIs inside the HTML. No
 // external assets to fetch — even if the static folder is mid-
 // rebuild, the page renders perfectly. Page weight is ~150KB but
@@ -48,7 +48,7 @@ function readAssetBase64(relPath: string): string {
 }
 
 function getOwlB64(): string {
-  if (cachedOwl === null) cachedOwl = readAssetBase64("owl-mascot.png");
+  if (cachedOwl === null) cachedOwl = readAssetBase64("mascot/wai.webp");
   return cachedOwl;
 }
 
@@ -221,9 +221,9 @@ export function generateMaintenanceHtml(
 </head>
 <body>
   <main class="container" role="main">
-    ${owl ? `<img src="data:image/png;base64,${owl}" alt="" class="owl" aria-hidden="true">` : ""}
+    ${owl ? `<img src="data:image/webp;base64,${owl}" alt="" class="owl" aria-hidden="true">` : ""}
     <h1>กำลังอัพเดทระบบ</h1>
-    <p class="subtitle">น้องฮูกขออภัยที่รบกวนครับ</p>
+    <p class="subtitle">น้องปลาร้าขออภัยที่รบกวนครับ</p>
     <div class="message">${escapeHtml(msg)}</div>
     <div class="dots" aria-hidden="true">
       <span class="dot"></span>

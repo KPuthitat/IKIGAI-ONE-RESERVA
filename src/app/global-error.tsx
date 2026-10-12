@@ -70,17 +70,17 @@ export default function GlobalError({
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/owl-mascot.png"
+            src="/mascot/wai.webp"
             alt=""
-            width={76}
-            height={76}
-            style={{ display: "block", margin: "0 auto 14px" }}
+            width={108}
+            height={108}
+            style={{ display: "block", margin: "0 auto 14px", objectFit: "contain" }}
           />
           <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 8px", color: INK }}>
             อ๊ะ มีบางอย่างผิดพลาด
           </h1>
           <p style={{ fontSize: 14, color: "#6b5c49", margin: "0 0 24px", lineHeight: 1.6 }}>
-            น้องฮูกขออภัย — โหลดหน้านี้ไม่สำเร็จ
+            น้องปลาร้าขออภัย — โหลดหน้านี้ไม่สำเร็จ
             <br />
             ลองอีกครั้งหรือรีเฟรชหน้านี้ดูครับ
           </p>
