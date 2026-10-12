@@ -9,13 +9,13 @@
 // itself — which means the layout's next/font + globals.css are NOT in
 // scope here. So we inline an @font-face for LINE Seed Sans TH (the
 // woff2 files ship under /public/fonts/) and the IKIGAI CI palette
-// (cream + brown #a06820 + ink #281a0e) so the page matches the brand
+// (cream + brown #6B4FD8 + ink #281a0e) so the page matches the brand
 // instead of the old navy/pink default (owner 2026-06-10). The owl
 // MASCOT png is the same brand asset used elsewhere.
 
 import { useEffect } from "react";
 
-const BRAND = "#a06820";
+const BRAND = "#6B4FD8";
 const INK = "#281a0e";
 
 export default function GlobalError({

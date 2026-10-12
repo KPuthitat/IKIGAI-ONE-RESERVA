@@ -3,7 +3,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { irColleagues } from "@/lib/ir-db";
+import { irColleagues, irBranchIsClinic } from "@/lib/ir-db";
 import NewReportClient from "./NewReportClient";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export default function StaffIrNewPage() {
   return (
     <div className="space-y-4">
       <Link href="/staff/ir" className="text-sm text-slate-500 hover:text-brand">← ความเสี่ยง / IR</Link>
-      <NewReportClient colleagues={irColleagues()} selfUserId={user.id} />
+      <NewReportClient colleagues={irColleagues()} selfUserId={user.id} isClinic={irBranchIsClinic(user.activeBranchId)} />
     </div>
   );
 }

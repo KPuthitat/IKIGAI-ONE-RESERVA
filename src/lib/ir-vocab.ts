@@ -96,6 +96,14 @@ for (const g of IR_CATEGORY_GROUPS) {
     CATEGORY_GROUP.set(it.key, g.group);
   }
 }
+/** Category groups to offer for a branch. The clinic group is only for clinic branches; on any other branch it is
+ *  hidden — except the categories an existing report already uses (`keepKeys`), so an old report never shows a blank. */
+export function irCategoryGroupsFor(isClinic: boolean, keepKeys: string[] = []): typeof IR_CATEGORY_GROUPS {
+  const keep = new Set(keepKeys);
+  return IR_CATEGORY_GROUPS
+    .map((g) => (g.group === "คลินิก" && !isClinic ? { ...g, items: g.items.filter((it) => keep.has(it.key)) } : g))
+    .filter((g) => g.items.length > 0);
+}
 export const IR_CATEGORY_KEYS = [...CATEGORY_LABEL.keys()];
 export function categoryLabel(key: string): string {
   return CATEGORY_LABEL.get(key) ?? key;

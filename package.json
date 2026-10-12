@@ -14,6 +14,8 @@
     "test:mounjaro": "node --import tsx scripts/test-mounjaro.ts",
     "test:mealpass": "node --import tsx scripts/test-mealpass.ts",
     "test:rbac": "node --import tsx scripts/test-rbac.ts",
+    "test:ir-categories": "node --import tsx scripts/test-ir-categories.ts",
+    "test:ir-delete": "node --import tsx scripts/test-ir-delete.ts",
     "test:ir": "node --import tsx scripts/test-ir.ts",
     "test:df": "node --import tsx scripts/test-df.ts",
     "test:salesa": "node --import tsx scripts/test-salesa.ts",

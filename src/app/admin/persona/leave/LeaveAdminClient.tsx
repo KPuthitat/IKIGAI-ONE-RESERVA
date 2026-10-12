@@ -188,14 +188,10 @@ export default function LeaveAdminClient({
             <Link
               key={f}
               href={`/admin/persona/leave?status=${f}`}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium border transition ${
-                active
-                  ? "bg-brand text-white border-brand"
-                  : "bg-white text-slate-700 border-slate-200 hover:border-brand"
-              }`}
+              className={`chip ${active ? "chip-active" : ""}`}
             >
               {t(`admin.persona.leave.filter.${f}` as any)}
-              <span className={`ml-1.5 text-xs ${active ? "text-white/80" : "text-slate-400"}`}>
+              <span className="chip-count">
                 {n}
               </span>
             </Link>

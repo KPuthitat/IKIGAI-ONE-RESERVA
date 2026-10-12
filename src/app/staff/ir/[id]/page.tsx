@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { getReportDetail, canReporterEdit, irColleagues } from "@/lib/ir-db";
+import { getReportDetail, canReporterEdit, irColleagues, irBranchIsClinic } from "@/lib/ir-db";
 import StaffIrDetailClient from "./StaffIrDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,7 @@ export default function StaffIrDetailPage({ params, searchParams }: { params: { 
         canEdit={canEdit}
         colleagues={canEdit ? irColleagues() : []}
         selfUserId={user.id}
+        isClinic={irBranchIsClinic(branchId)}
       />
     </div>
   );

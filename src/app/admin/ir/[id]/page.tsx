@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth";
-import { getReportDetail, irColleagues } from "@/lib/ir-db";
+import { getReportDetail, irColleagues, irBranchIsClinic } from "@/lib/ir-db";
 import ReportDetailClient from "./ReportDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ export default function IrReportDetail({ params }: { params: { id: string } }) {
   return (
     <div className="space-y-4">
       <Link href="/admin/ir/reports" className="text-sm text-slate-500 hover:text-brand">← กลับรายการ</Link>
-      <ReportDetailClient initialReport={report} assignees={assignees} />
+      <ReportDetailClient initialReport={report} assignees={assignees} canDelete={user.role === "super_admin"} isClinic={irBranchIsClinic(branchId)} />
     </div>
   );
 }

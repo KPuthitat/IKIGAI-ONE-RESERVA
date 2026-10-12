@@ -9,6 +9,21 @@
    is a belt-and-braces fallback in case anything bypasses the
    variable. */
 
+/* ── UI tokens — OMNICHECK-style purple → teal palette (owner 2026-10-12).
+   Tailwind brand/ink/shadow utilities read these variables. ── */
+:root {
+  --brand: 107 79 216; --brand-dark: 79 54 176; --brand-light: 155 134 240;
+  --accent: 20 184 166;
+  --ink-900: 45 31 107; --ink-800: 33 22 80; --ink-700: 24 16 58;
+  --grad-ink: linear-gradient(160deg, #181040 0%, #21165a 60%, #2d1f6b 100%);
+  --grad-header: linear-gradient(100deg, #4C2FBF 0%, #6B4FD8 48%, #14B8A6 100%);
+  --shadow-card: 0 1px 2px rgba(60,40,140,.05), 0 10px 28px rgba(60,40,140,.10);
+  --shadow-card-lg: 0 2px 6px rgba(60,40,140,.08), 0 18px 40px rgba(60,40,140,.14);
+  --surface-field: #F6F4FF; --surface-field-border: #DDD7F7; --card-border: #E6E1F7;
+  --page-bg: #F6F5FC;
+  --brand-hex: #6B4FD8; --brand-glow: 107, 79, 216;
+  --radius-card: 1.25rem;
+}
 :root {
   font-family: var(--font-lineseed), ui-sans-serif, system-ui, sans-serif;
   /* Disable browser-side font weight/style synthesis. We only have
@@ -24,7 +39,8 @@
 
 html, body { height: 100%; }
 body {
-  @apply bg-slate-50 text-slate-800;
+  @apply text-slate-800;
+  background-color: var(--page-bg);
   font-family: var(--font-lineseed), ui-sans-serif, system-ui, sans-serif;
   font-synthesis: none;
   -webkit-font-synthesis: none;
@@ -147,10 +163,11 @@ input[type="week"]::-webkit-date-and-time-value {
    Used via <Field> (components/FormKit.tsx): pass a bare control (no .input
    class) as the child and these descendant rules style it. ── */
 .field {
-  @apply block bg-[#FAF6EF] border-[1.5px] border-[#E7DDCC] rounded-2xl px-3.5 pt-2 pb-2.5
+  @apply block border-[1.5px] rounded-2xl px-3.5 pt-2 pb-2.5
          transition-[border-color,background-color,box-shadow];
+  background-color: var(--surface-field); border-color: var(--surface-field-border);
 }
-.field:focus-within { @apply border-brand bg-white; box-shadow: 0 0 0 3px rgba(160,104,32,.12); }
+.field:focus-within { @apply border-brand bg-white; border-color: rgb(var(--brand)); box-shadow: 0 0 0 3px rgba(var(--brand-glow),.14); }
 .field > .field-label { @apply block text-[11.5px] font-medium text-[#8A7A63] mb-0.5 leading-tight; }
 .field .field-hint { @apply text-amber-700 ml-1.5 font-medium; }
 .field :is(input, select, textarea) {
@@ -169,7 +186,7 @@ input[type="week"]::-webkit-date-and-time-value {
 /* Card — soft elevation + a warm hairline border (owner redesign 2026-08).
    The border keeps cards legible against cream page backgrounds now that
    the drop shadow is subtle. */
-.card { @apply bg-white rounded-2xl shadow-card p-6 border border-[#EFE4D3]; }
+.card { @apply bg-white shadow-card p-6 border; border-radius: var(--radius-card); border-color: var(--card-border); }
 
 /* ── Brand wordmark used in headers ── */
 .brand-wordmark {
@@ -222,7 +239,7 @@ input[type="week"]::-webkit-date-and-time-value {
   width: 100%;
   overflow: hidden;
   border-radius: 9999px;
-  background: rgba(160, 104, 32, 0.12);
+  background: rgba(var(--brand-glow), 0.12);
 }
 .loadbar::after {
   content: "";
@@ -234,11 +251,11 @@ input[type="week"]::-webkit-date-and-time-value {
   border-radius: 9999px;
   background: linear-gradient(
     90deg,
-    rgba(160, 104, 32, 0.15),
-    #a06820,
-    rgba(160, 104, 32, 0.15)
+    rgba(var(--brand-glow), 0.15),
+    var(--brand-hex),
+    rgba(var(--brand-glow), 0.15)
   );
-  box-shadow: 0 0 10px rgba(160, 104, 32, 0.5);
+  box-shadow: 0 0 10px rgba(var(--brand-glow), 0.5);
   animation: ikigai-loadbar 1.15s ease-in-out infinite;
 }
 
@@ -263,3 +280,53 @@ input[type="week"]::-webkit-date-and-time-value {
    instead of having a thin grey rail next to it. */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+
+/* ── Layer 2: shared OMNICHECK-style components ── */
+/* KPI card: white, soft shadow, coloured top border (set --kpi: r g b). */
+.kpi {
+  --kpi: var(--brand);
+  @apply bg-white shadow-card px-4 py-3.5 border;
+  border-radius: var(--radius-card); border-color: var(--card-border);
+  border-top: 4px solid rgb(var(--kpi));
+}
+.kpi-label { @apply text-[12px] font-semibold text-slate-500; }
+.kpi-value { @apply text-2xl font-extrabold text-slate-800 tabular-nums leading-tight mt-0.5; }
+.kpi-sub { @apply text-[11.5px] text-slate-400 mt-0.5; }
+.kpi-ok   { --kpi: 16 185 129; }
+.kpi-warn { --kpi: 245 158 11; }
+.kpi-mute { --kpi: 203 213 225; }
+.kpi-bad  { --kpi: 239 68 68; }
+.kpi-info { --kpi: 59 130 246; }
+.kpi-accent { --kpi: var(--accent); }
+/* Filter chips (pills with a count) */
+.chip {
+  @apply inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-slate-200 bg-white
+         px-3.5 py-1.5 text-[13px] font-semibold text-slate-600 transition-colors whitespace-nowrap;
+}
+.chip:hover { @apply bg-slate-50; }
+.chip-active, .chip[aria-pressed="true"] { @apply text-white border-transparent; background: rgb(var(--brand)); }
+.chip-count { @apply rounded-full bg-black/10 px-1.5 text-[11px] font-bold; }
+/* Status tags */
+.tag { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-[11.5px] font-bold; }
+.tag-ok   { @apply bg-emerald-100 text-emerald-700; }
+.tag-warn { @apply bg-amber-100 text-amber-700; }
+.tag-bad  { @apply bg-red-100 text-red-700; }
+.tag-info { @apply bg-blue-100 text-blue-700; }
+.tag-mute { @apply bg-slate-100 text-slate-600; }
+.tag-brand { background: rgba(var(--brand-glow), .12); color: rgb(var(--brand-dark)); }
+/* Sticky bottom action bar (mobile forms) */
+.action-bar {
+  @apply sticky bottom-0 z-20 flex items-center gap-2 border-t bg-white/95 px-4 py-3 backdrop-blur;
+  border-color: var(--card-border); padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  box-shadow: 0 -6px 20px rgba(0,0,0,.05);
+}
+.action-bar > .btn { @apply flex-1; }
+/* Header capsule buttons (status / branch / lang) */
+.header-capsule {
+  @apply inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[12.5px] font-semibold text-white
+         border border-white/20 backdrop-blur-sm;
+}
+html .brand-wordmark { letter-spacing: 0.32em; }
+.btn-primary { background-image: linear-gradient(100deg, rgb(var(--brand)), rgb(var(--accent))); }
+.btn-primary { background-image: linear-gradient(100deg, rgb(var(--brand)), rgb(var(--accent))); }
+header.bg-coffee-gradient { border-radius: 0 0 1.5rem 1.5rem; }

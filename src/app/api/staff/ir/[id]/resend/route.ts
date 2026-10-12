@@ -26,5 +26,5 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
       : "ส่งไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
     return NextResponse.json({ error: r.skipped ?? r.error ?? "send_failed", message }, { status: 400 });
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, line_sent_at: getReport(id, branchId)?.line_sent_at ?? null });
 }

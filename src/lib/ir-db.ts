@@ -53,6 +53,7 @@ export type IrReport = {
   recommendations_json: string | null;
   self_involved: number;
   reporter_updated_at: string | null;
+  line_sent_at: string | null;       // last push to the RM LINE group (null = never sent)
 };
 
 // Another person named in the report. user_id is null for a non-employee.
@@ -152,6 +153,29 @@ export function getReport(id: number, branchId: number): IrReportView | null {
   const db = getDb();
   return (db.prepare(`${VIEW_SELECT} WHERE r.id = ? AND r.branch_id = ?`)
     .get(id, branchId) as IrReportView | undefined) ?? null;
+}
+
+/** Permanently delete one report and the people named in it (they cascade). Returns what was deleted so the
+ *  caller can write it to the audit log, or null when the report is not on this branch. */
+export function deleteReport(id: number, branchId: number): { code: string | null; status: string; severity: number; occurredAt: string } | null {
+  const db = getDb();
+  const r = db.prepare("SELECT code, status, severity, occurred_at AS occurredAt FROM ir_reports WHERE id = ? AND branch_id = ?")
+    .get(id, branchId) as { code: string | null; status: string; severity: number; occurredAt: string } | undefined;
+  if (!r) return null;
+  db.prepare("DELETE FROM ir_reports WHERE id = ? AND branch_id = ?").run(id, branchId);
+  return r;
+}
+
+/** A clinic branch (doctor-fee branch). Clinic-only incident categories are hidden everywhere else. */
+export function irBranchIsClinic(branchId: number): boolean {
+  const r = getDb().prepare("SELECT df_enabled FROM branches WHERE id = ?").get(branchId) as { df_enabled: number } | undefined;
+  return !!r && r.df_enabled === 1;
+}
+
+export function markLineSent(reportId: number): string {
+  const at = new Date().toISOString();
+  getDb().prepare("UPDATE ir_reports SET line_sent_at = ? WHERE id = ?").run(at, reportId);
+  return at;
 }
 
 export function listPeople(reportId: number): IrPerson[] {

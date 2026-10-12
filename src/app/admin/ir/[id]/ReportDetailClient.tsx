@@ -3,23 +3,28 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import { thDateBE } from "@/lib/th-month";
 import { humanizeApiError } from "@/lib/error-messages";
 import { nameWithPrefix } from "@/lib/name";
 import { FormSection, Field } from "@/app/components/FormKit";
 import IrReportView from "@/app/components/ir/IrReportView";
 import {
-  IR_SEVERITIES, IR_STATUSES, IR_CATEGORY_GROUPS,
+  IR_SEVERITIES, IR_STATUSES, irCategoryGroupsFor,
   type IrSeverity, type IrStatus
 } from "@/lib/ir-vocab";
 import type { IrReportDetail } from "@/lib/ir-db";
 
+const fmtSent = (iso: string) => thDateBE(new Date(iso), { time: true });
+
 export type AssigneeOption = { id: number; display_name: string; title_prefix: string | null };
 
 export default function ReportDetailClient({
-  initialReport, assignees
+  initialReport, assignees, canDelete = false, isClinic = true
 }: {
   initialReport: IrReportDetail;
   assignees: AssigneeOption[];
+  canDelete?: boolean;
+  isClinic?: boolean;
 }) {
   const router = useRouter();
   const [r, setR] = useState<IrReportDetail>(initialReport);
@@ -39,12 +44,30 @@ export default function ReportDetailClient({
   const [resendMsg, setResendMsg] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
 
+  // Delete — top executive only, PIN-gated (owner 2026-10-11).
+  const [delOpen, setDelOpen] = useState(false);
+  const [delPin, setDelPin] = useState("");
+  const [delBusy, setDelBusy] = useState(false);
+  const [delErr, setDelErr] = useState<string | null>(null);
+  async function remove() {
+    setDelBusy(true); setDelErr(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/ir/${r.id}`), { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ admin_pin: delPin }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setDelErr(j.message ?? humanizeApiError(j, "ลบไม่สำเร็จ")); return; }
+      router.push("/admin/ir/reports");
+      router.refresh();
+    } catch { setDelErr("เชื่อมต่อไม่สำเร็จ"); }
+    finally { setDelBusy(false); }
+  }
+
   async function resend() {
     setResending(true); setResendMsg(null);
     try {
       const res = await fetch(apiUrl(`/api/admin/ir/${r.id}/resend`), { method: "POST" });
       const j = await res.json().catch(() => ({}));
-      setResendMsg(res.ok && j.ok ? "ส่งเข้ากลุ่ม LINE ของทีมบริหารความเสี่ยงแล้ว" : humanizeApiError(j, "ส่งไม่สำเร็จ"));
+      if (res.ok && j.ok) setR((x) => ({ ...x, line_sent_at: j.line_sent_at ?? new Date().toISOString() }));
+      setResendMsg(res.ok && j.ok ? "ส่งรายงานเข้ากลุ่ม LINE ของทีมบริหารความเสี่ยงแล้ว" : humanizeApiError(j, "ส่งไม่สำเร็จ"));
     } catch { setResendMsg("เชื่อมต่อไม่สำเร็จ"); }
     finally { setResending(false); }
   }
@@ -106,7 +129,7 @@ export default function ReportDetailClient({
               </Field>
               <Field label="หมวด">
                 <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                  {IR_CATEGORY_GROUPS.map((g) => (
+                  {irCategoryGroupsFor(isClinic, [r.category]).map((g) => (
                     <optgroup key={g.group} label={g.group}>
                       {g.items.map((it) => <option key={it.key} value={it.key}>{it.labelTh}</option>)}
                     </optgroup>
@@ -155,11 +178,33 @@ export default function ReportDetailClient({
             </button>
           </div>
           <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
-            <span className="text-xs text-slate-500">{resendMsg ?? "ส่งรายงานนี้เข้ากลุ่ม LINE ของทีมบริหารความเสี่ยงอีกครั้ง"}</span>
+            <span className="text-xs text-slate-500">{resendMsg ?? (r.line_sent_at ? `ส่งเข้ากลุ่ม LINE ของทีมบริหารความเสี่ยงล่าสุดเมื่อ ${fmtSent(r.line_sent_at)}` : "ยังไม่ได้ส่งรายงานนี้เข้ากลุ่ม LINE ของทีมบริหารความเสี่ยง")}</span>
             <button type="button" className="btn btn-secondary text-sm" onClick={resend} disabled={resending}>
-              {resending ? "กำลังส่ง…" : "ส่งเข้ากลุ่ม LINE อีกครั้ง"}
+              {resending ? "กำลังส่ง…" : r.line_sent_at ? "ส่งอีกครั้ง" : "ส่งรายงาน"}
             </button>
           </div>
+          {canDelete && (
+            <div className="border-t border-slate-100 pt-3 space-y-2">
+              {!delOpen ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-slate-500">ลบเหตุการณ์นี้ออกจากระบบถาวร (เฉพาะผู้บริหารสูงสุด)</span>
+                  <button type="button" className="btn btn-secondary text-sm text-rose-700" onClick={() => { setDelOpen(true); setDelPin(""); setDelErr(null); }}>ลบเหตุการณ์</button>
+                </div>
+              ) : (
+                <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 space-y-2">
+                  <div className="text-sm text-rose-800">ลบเหตุการณ์ {r.code ?? `#${r.id}`} ถาวร กู้คืนไม่ได้ กรุณาใส่ PIN เพื่อยืนยัน</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input type="password" inputMode="numeric" autoFocus placeholder="PIN" value={delPin} onChange={(e) => setDelPin(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && delPin && !delBusy) { e.preventDefault(); void remove(); } }}
+                      className="border border-slate-300 rounded px-2 py-1 text-sm w-28 bg-white" />
+                    <button type="button" className="btn btn-primary text-sm whitespace-nowrap" disabled={delBusy || !delPin} onClick={remove}>{delBusy ? "กำลังลบ…" : "ยืนยันลบ"}</button>
+                    <button type="button" className="btn btn-secondary text-sm whitespace-nowrap" disabled={delBusy} onClick={() => setDelOpen(false)}>ยกเลิก</button>
+                  </div>
+                  {delErr && <div className="text-sm text-rose-700">{delErr}</div>}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
