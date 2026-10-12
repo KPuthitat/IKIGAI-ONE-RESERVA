@@ -12,6 +12,7 @@ import { useConfirm } from "@/app/components/useConfirm";
 import Switch from "@/app/components/Switch";
 import { nameWithPrefix } from "@/lib/name";
 import { thMonthLabel, thDayLabel, groupByMonthDay } from "@/lib/th-month";
+import EmptyState from "@/app/components/EmptyState";
 
 export type StaffOption = {
   id: number;
@@ -383,9 +384,7 @@ export default function LeaveAdminClient({
                 {t("admin.persona.leave.normalSectionTitle")} ({normalReqs.length})
               </h2>
               {normalReqs.length === 0 ? (
-                <p className="text-slate-500 text-sm py-6 text-center">
-                  {t("admin.persona.leave.empty")}
-                </p>
+                <EmptyState className="border-0 shadow-none">{t("admin.persona.leave.empty")}</EmptyState>
               ) : isHistoryView ? (
                 // History views (อนุมัติ/ไม่อนุมัติ/ยกเลิก/ทั้งหมด) — group by
                 // month → day so the log is easy to scan (owner 2026-06-17).

@@ -7,6 +7,7 @@ import { nameWithPrefix } from "@/lib/name";
 import { thMonthLabel, thDayLabel, groupByMonthDay } from "@/lib/th-month";
 import { snapTo15 } from "@/lib/time";
 import PinPromptModal from "@/app/components/PinPromptModal";
+import EmptyState from "@/app/components/EmptyState";
 
 type SegStatus = "pending" | "approved" | "rejected";
 
@@ -69,7 +70,7 @@ export default function OtApprovalsClient({ rows, staff }: { rows: OtRow[]; staf
       <div className="space-y-2">
         <h2 className="text-sm font-bold text-slate-700">ประวัติ OT (อนุมัติ/ไม่อนุมัติแล้ว)</h2>
         {decided.length === 0 ? (
-          <div className="card text-sm text-slate-400 text-center py-6">ยังไม่มีประวัติ</div>
+          <EmptyState>ยังไม่มีประวัติ</EmptyState>
         ) : groupByMonthDay(decided, (r) => r.work_date).map(({ mk, days }, i) => (
           <details key={mk} open={i === 0} className="card">
             <summary className="cursor-pointer font-semibold text-slate-700 text-sm select-none">

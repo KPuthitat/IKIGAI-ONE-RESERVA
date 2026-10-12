@@ -13,6 +13,7 @@ import {
   type IrSeverity, type IrStatus
 } from "@/lib/ir-vocab";
 import type { IrReportDetail } from "@/lib/ir-db";
+import Mascot from "@/app/components/Mascot";
 
 const fmtSent = (iso: string) => thDateBE(new Date(iso), { time: true });
 
@@ -100,6 +101,12 @@ export default function ReportDetailClient({
 
   return (
     <div className="grid lg:grid-cols-5 gap-4">
+      {r.severity >= 4 && (
+        <div className="lg:col-span-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 flex items-center gap-3 text-sm text-rose-800">
+          <Mascot pose="shock" size={64} className="flex-shrink-0" />
+          <span>เหตุการณ์ระดับรุนแรง — ควรทบทวนและมอบผู้รับผิดชอบโดยเร็ว</span>
+        </div>
+      )}
       {/* Left: the report as the reporter wrote it — facts, RCA, recommendations,
           people — through the SAME view staff see (owner 2026-10-01). */}
       <div className="lg:col-span-3">

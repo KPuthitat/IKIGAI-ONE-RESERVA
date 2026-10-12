@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { nameWithPrefix } from "@/lib/name";
 import type { ManagerReportRow } from "@/lib/manager-reports";
+import EmptyState from "@/app/components/EmptyState";
 
 const ERR_TH: Record<string, string> = {
   empty_report: "กรอกอย่างน้อย 1 ช่องก่อนบันทึก",
@@ -118,7 +119,7 @@ export default function ManagerReportsClient({
         <h2 className="text-sm font-bold text-slate-700 mb-2">รายงานล่าสุด (14 วัน)</h2>
         <div className="space-y-2">
           {reports.length === 0 ? (
-            <div className="card text-sm text-slate-400 text-center py-8">ยังไม่มีรายงาน</div>
+            <EmptyState>ยังไม่มีรายงาน</EmptyState>
           ) : reports.map((r) => (
             <div key={r.id} className="card space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">

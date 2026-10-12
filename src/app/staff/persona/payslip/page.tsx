@@ -8,6 +8,8 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
+import Mascot from "@/app/components/Mascot";
+import EmptyState from "@/app/components/EmptyState";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "สลิปเงินเดือนของฉัน · PERSONA" };
@@ -42,7 +44,7 @@ export default function StaffPayslipListPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-800">สลิปเงินเดือนของฉัน</h1>
+        <h1 className="flex items-center gap-2 text-xl font-bold text-slate-800"><Mascot pose="thumbs" size={56} />สลิปเงินเดือนของฉัน</h1>
         <Link href="/staff/persona" className="text-sm text-brand hover:underline">← ลงเวลา</Link>
       </div>
       <p className="text-sm text-slate-500 -mt-2">
@@ -51,7 +53,7 @@ export default function StaffPayslipListPage() {
 
       <div className="card overflow-x-auto">
         {rows.length === 0 ? (
-          <p className="text-sm text-slate-400 py-8 text-center">ยังไม่มีสลิปที่เปิดดูได้</p>
+          <EmptyState className="border-0 shadow-none">ยังไม่มีสลิปที่เปิดดูได้</EmptyState>
         ) : (
           <table className="w-full text-sm">
             <thead>

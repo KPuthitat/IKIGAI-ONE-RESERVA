@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { MyActionItem } from "@/lib/meetings";
+import EmptyState from "@/app/components/EmptyState";
 
 export default function MyTasksClient({ items }: { items: MyActionItem[] }) {
   const router = useRouter();
@@ -27,7 +28,7 @@ export default function MyTasksClient({ items }: { items: MyActionItem[] }) {
   const done = items.filter((i) => i.status === "done");
 
   if (items.length === 0) {
-    return <div className="card text-sm text-slate-400 text-center py-8">ยังไม่มีงานที่ได้รับมอบหมาย</div>;
+    return <EmptyState>ยังไม่มีงานที่ได้รับมอบหมาย</EmptyState>;
   }
 
   return (

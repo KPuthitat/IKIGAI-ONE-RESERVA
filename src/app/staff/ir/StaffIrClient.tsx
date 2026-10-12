@@ -6,6 +6,7 @@ import { nameWithPrefix } from "@/lib/name";
 import { severityMeta, statusMeta, categoryLabel, incidentTypeLabel, IR_OPEN_STATUSES } from "@/lib/ir-vocab";
 import type { IrReportView } from "@/lib/ir-db";
 import { fmtIrDateTime } from "@/app/components/ir/IrReportView";
+import EmptyState from "@/app/components/EmptyState";
 
 type Scope = "mine" | "open" | "all";
 
@@ -27,9 +28,9 @@ export default function StaffIrClient({ reports, mine }: { reports: IrReportView
         <span className="text-xs text-slate-400 ml-auto">{list.length} รายการ</span>
       </div>
       {list.length === 0 ? (
-        <div className="card text-sm text-slate-400">
+        <EmptyState>
           {scope === "mine" ? "ยังไม่มีรายงานของท่าน หากมีเหตุการณ์ กรุณาเลือก “+ แจ้งเหตุการณ์”" : "ไม่มีรายการ"}
-        </div>
+        </EmptyState>
       ) : (
         <div className="space-y-2">
           {list.map((r) => {

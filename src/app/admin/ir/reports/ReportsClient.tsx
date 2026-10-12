@@ -11,6 +11,7 @@ import {
   severityMeta, statusMeta, categoryLabel, incidentTypeLabel
 } from "@/lib/ir-vocab";
 import type { IrReportView } from "@/lib/ir-db";
+import EmptyState from "@/app/components/EmptyState";
 
 function fmtOccurred(s: string): string {
   const d = new Date(s);
@@ -85,7 +86,7 @@ export default function ReportsClient({ initialReports, colleagues, selfUserId, 
       )}
 
       {filtered.length === 0 ? (
-        <div className="card text-sm text-slate-400">ไม่มีเหตุการณ์ตามตัวกรองนี้</div>
+        <EmptyState>ไม่มีเหตุการณ์ตามตัวกรองนี้</EmptyState>
       ) : (
         <div className="space-y-2">
           {filtered.map((r) => {

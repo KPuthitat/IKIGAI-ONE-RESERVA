@@ -60,7 +60,7 @@ export default function ForecastPage({ searchParams }: { searchParams: { s?: str
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="kpi kpi-bad"><div className="kpi-label">ควรสั่งเพิ่ม</div><div className="kpi-value">{f.totals.reorder}</div><div className="kpi-sub">เหลือไม่ถึง {FORECAST_LEAD_DAYS} วัน</div></div>
+        <div className="kpi kpi-bad relative">{f.totals.reorder > 0 && <Mascot pose="fire" size={52} className="absolute right-2 top-2" />}<div className="kpi-label">ควรสั่งเพิ่ม</div><div className="kpi-value">{f.totals.reorder}</div><div className="kpi-sub">เหลือไม่ถึง {FORECAST_LEAD_DAYS} วัน</div></div>
         <div className="kpi kpi-warn"><div className="kpi-label">สต๊อกเกิน</div><div className="kpi-value">{f.totals.overstock}</div><div className="kpi-sub">เกิน {FORECAST_OVERSTOCK_DAYS} วัน</div></div>
         <div className="kpi kpi-mute"><div className="kpi-label">ไม่เคลื่อนไหว</div><div className="kpi-value">{f.totals.dead}</div><div className="kpi-sub">มีของแต่ขายไม่ออก</div></div>
         <div className="kpi kpi-info"><div className="kpi-label">เงินจมในสต๊อก</div><div className="kpi-value">{fmtMoney(f.totals.tiedUpValue)}</div><div className="kpi-sub">฿ ตามราคาทุน</div></div>

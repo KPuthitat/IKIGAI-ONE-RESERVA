@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { QUALITY_TYPE_LABEL, type StaffDocRow } from "@/lib/quality-docs";
+import EmptyState from "@/app/components/EmptyState";
 
 export default function StaffQualityClient({ docs }: { docs: StaffDocRow[] }) {
   const router = useRouter();
@@ -29,7 +30,7 @@ export default function StaffQualityClient({ docs }: { docs: StaffDocRow[] }) {
   }
 
   if (docs.length === 0) {
-    return <div className="card text-sm text-slate-400 text-center py-8">ยังไม่มีเอกสารที่ต้องอ่าน</div>;
+    return <EmptyState>ยังไม่มีเอกสารที่ต้องอ่าน</EmptyState>;
   }
 
   return (

@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n";
 import { fmtMoney } from "@/lib/format";
 import { wasteSummary } from "@/lib/inventa-waste-server";
 import { wasteReasonLabel } from "@/lib/inventa-waste";
+import EmptyState from "@/app/components/EmptyState";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export default function WasteReportPage({ searchParams }: { searchParams: { mont
       </div>
 
       {sum.totalEvents === 0 ? (
-        <div className="card text-sm text-slate-400 text-center py-6">{t(lang, "inv.waste.report.empty")}</div>
+        <EmptyState>{t(lang, "inv.waste.report.empty")}</EmptyState>
       ) : (
         <>
           <div className="card overflow-x-auto">

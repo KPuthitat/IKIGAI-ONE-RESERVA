@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
+import EmptyState from "@/app/components/EmptyState";
 
 type Dimension = { id: number; grp: string; name: string; description: string | null; default_target: number; sort_order: number };
 type CatalogItem = { id: number; track: string; grp: string; name: string };
@@ -133,7 +134,7 @@ export default function CompetencyClient({
       {msg && <p className="text-sm text-emerald-700">✓ {msg}</p>}
 
       {!initial ? (
-        <div className="card text-sm text-slate-400">เลือกพนักงานเพื่อเริ่มประเมิน</div>
+        <EmptyState>เลือกพนักงานเพื่อเริ่มประเมิน</EmptyState>
       ) : (
         <>
           <div className="flex items-center justify-between gap-2 flex-wrap">

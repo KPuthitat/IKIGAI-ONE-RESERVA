@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { nameWithPrefix } from "@/lib/name";
 import type { MeetingRow } from "@/lib/meetings";
+import EmptyState from "@/app/components/EmptyState";
 
 export type StaffOption = {
   id: number;
@@ -38,7 +39,7 @@ export default function MeetingsClient({ meetings, staff }: { meetings: MeetingR
 
       <div className="space-y-2">
         {meetings.length === 0 ? (
-          <div className="card text-sm text-slate-400 text-center py-8">ยังไม่มีบันทึกการประชุม</div>
+          <EmptyState>ยังไม่มีบันทึกการประชุม</EmptyState>
         ) : meetings.map((m) => (
           <Link key={m.id} href={`/admin/persona/meetings/${m.id}`}
             className="card block hover:bg-slate-50 transition">

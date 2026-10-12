@@ -28,6 +28,7 @@ import OwlMascot from "../../../components/OwlMascot";
 // same birthday + greeting flow. Staff is in read-only mode by
 // design (the admin component already disables edits).
 import RosterCalendarView from "../../../admin/persona/roster/RosterCalendarView";
+import Mascot from "../../../components/Mascot";
 
 export const dynamic = "force-dynamic";
 
@@ -78,6 +79,7 @@ export default function StaffCalendarPage({
   // Birthday layer for the calendar view. Same query as the admin
   // page — month-day slice from dob, scoped to this branch, exclude
   // disabled/resigned/test accounts.
+  const bkkMonthDay = new Date(Date.now() + 7 * 3600_000).toISOString().slice(5, 10);
   const birthdays = view === "calendar"
     ? (db.prepare(`
         SELECT u.id AS user_id, u.display_name, u.nickname_th,
@@ -95,6 +97,7 @@ export default function StaffCalendarPage({
         month_day: string;
       }>)
     : [];
+  const todaysBirthdays = birthdays.filter((b) => b.month_day === bkkMonthDay).map((b) => b.nickname_th || b.display_name);
 
   // Bucket assignments by date (a staff can be in multiple positions
   // on the same day — show them grouped). Explicit element type so
@@ -208,6 +211,13 @@ export default function StaffCalendarPage({
           </Link>
         </div>
       </div>
+
+      {view === "calendar" && todaysBirthdays.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 flex items-center gap-3 text-sm text-amber-900">
+          <Mascot pose="cheer" size={64} className="flex-shrink-0" />
+          <span>วันนี้วันเกิดของ <b>{todaysBirthdays.join(", ")}</b> — อย่าลืมอวยพรกันนะ</span>
+        </div>
+      )}
 
       {view === "calendar" ? (
         <RosterCalendarView

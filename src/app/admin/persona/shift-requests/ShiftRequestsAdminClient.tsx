@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/url";
 import { nameWithPrefix } from "@/lib/name";
 import { thMonthLabel, thDayLabel, groupByMonthDay } from "@/lib/th-month";
 import type { ShiftRequestRow, ShiftRequestLabels } from "@/lib/shift-requests";
+import EmptyState from "@/app/components/EmptyState";
 
 type Row = ShiftRequestRow & ShiftRequestLabels & {
   employee_name: string; title_prefix: string | null; employment_type: string | null;
@@ -70,7 +71,7 @@ export default function ShiftRequestsAdminClient({
       <div className="space-y-2">
         <h2 className="text-sm font-bold text-slate-700">รออนุมัติ</h2>
         {pending.length === 0 ? (
-          <div className="card text-sm text-slate-400 text-center py-8">ไม่มีคำขอที่รออนุมัติ</div>
+          <EmptyState>ไม่มีคำขอที่รออนุมัติ</EmptyState>
         ) : pending.map((r) => (
         <div key={r.id} className="card space-y-2">
           <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -123,7 +124,7 @@ export default function ShiftRequestsAdminClient({
       <div className="space-y-2">
         <h2 className="text-sm font-bold text-slate-700">ประวัติคำขอ (อนุมัติ/ไม่อนุมัติแล้ว)</h2>
         {historyGroups.length === 0 ? (
-          <div className="card text-sm text-slate-400 text-center py-6">ยังไม่มีประวัติ</div>
+          <EmptyState>ยังไม่มีประวัติ</EmptyState>
         ) : historyGroups.map(({ mk, days }, i) => (
           <details key={mk} open={i === 0} className="card">
             <summary className="cursor-pointer font-semibold text-slate-700 text-sm select-none">

@@ -9,6 +9,7 @@ import type { LeaveType, QuotaInfo, PublicHoliday } from "@/lib/leave-types";
 import { useConfirm } from "@/app/components/useConfirm";
 import Switch from "@/app/components/Switch";
 import ActionBar from "@/app/components/ActionBar";
+import Mascot from "@/app/components/Mascot";
 
 export type { LeaveType };
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled" | "revision_requested";
@@ -152,6 +153,7 @@ export default function LeaveClient({
   const [file, setFile] = useState<File | null>(null);
   const [isSpecial, setIsSpecial] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sentFlash, setSentFlash] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // Phase 1C v9 — ลิงก์คำขอใหม่กลับไปที่ revision_requested เดิม
   const [revisingId, setRevisingId] = useState<number | null>(null);
@@ -345,6 +347,8 @@ export default function LeaveClient({
       }
       reset();
       setFormOpen(false);
+      setSentFlash(true);
+      setTimeout(() => setSentFlash(false), 8000);
       startTransition(() => router.refresh());
     } catch {
       setErr(t("common.error"));
@@ -408,6 +412,13 @@ export default function LeaveClient({
           </ul>
         )}
       </div>
+
+      {sentFlash && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 flex items-center gap-3 text-sm text-emerald-800">
+          <Mascot pose="cheer" size={64} className="flex-shrink-0" />
+          <span>ส่งคำขอลาแล้ว รอหัวหน้าพิจารณา</span>
+        </div>
+      )}
 
       {/* Form — collapsible */}
       <div className="card">

@@ -7,6 +7,7 @@ import { apiUrl } from "@/lib/url";
 import { nameWithPrefix } from "@/lib/name";
 import type { ManagerReportRow } from "@/lib/manager-reports";
 import type { PrepSummaryRow } from "@/lib/meeting-prep";
+import EmptyState from "@/app/components/EmptyState";
 
 const fmtDateTime = (iso: string) => {
   const d = new Date(iso.endsWith("Z") || iso.includes("T") ? iso : iso.replace(" ", "T") + "Z");
@@ -146,7 +147,7 @@ export default function MeetingPrepClient({
         <h2 className="text-sm font-bold text-slate-700 mb-2">รายงานในช่วงนี้</h2>
         <div className="space-y-2">
           {reports.length === 0 ? (
-            <div className="card text-sm text-slate-400 text-center py-6">ไม่มีรายงาน</div>
+            <EmptyState>ไม่มีรายงาน</EmptyState>
           ) : reports.map((r) => (
             <div key={r.id} className="card space-y-1">
               <div className="flex items-center gap-2 flex-wrap">

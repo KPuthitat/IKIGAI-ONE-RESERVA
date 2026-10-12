@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useLang } from "@/lib/LangProvider";
 import { type OrderRow, STATUS_CLS, isPendingOrder } from "@/lib/inventa-orders";
 import { formatBkkDateTime } from "@/lib/time";
+import EmptyState from "@/app/components/EmptyState";
 
 function fmtBaht(n: number): string {
   return "฿" + n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -66,7 +67,7 @@ export default function OrdersListClient({ orders }: { orders: OrderRow[] }) {
       </div>
 
       {orders.length === 0 && (
-        <div className="card text-sm text-slate-400">{t("inv.ordList.allEmpty")}</div>
+        <EmptyState>{t("inv.ordList.allEmpty")}</EmptyState>
       )}
 
       {/* ── Pending (ยังค้าง) ───────────────────────────────────── */}
