@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getReportDetail, canReporterEdit, irColleagues, irBranchIsClinic } from "@/lib/ir-db";
 import StaffIrDetailClient from "./StaffIrDetailClient";
+import Mascot from "@/app/components/Mascot";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "รายละเอียดเหตุการณ์ · IR" };
@@ -30,8 +31,9 @@ export default function StaffIrDetailPage({ params, searchParams }: { params: { 
     <div className="space-y-4">
       <Link href="/staff/ir" className="text-sm text-slate-500 hover:text-brand">← ความเสี่ยง / IR</Link>
       {searchParams.sent === "1" && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm px-3 py-2">
-          ส่งรายงานเรียบร้อยแล้ว ขอบคุณที่แจ้ง ทีมบริหารความเสี่ยงจะทบทวนและแจ้งผลผ่านสถานะของรายงานนี้ ท่านยังแก้ไขเพิ่มเติมได้จนกว่าจะปิดเคส
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm px-3 py-2 flex items-center gap-3">
+          <Mascot pose="cheer" size={72} className="flex-shrink-0" />
+          <span>ส่งรายงานเรียบร้อยแล้ว ขอบคุณที่แจ้ง ทีมบริหารความเสี่ยงจะทบทวนและแจ้งผลผ่านสถานะของรายงานนี้ ท่านยังแก้ไขเพิ่มเติมได้จนกว่าจะปิดเคส</span>
         </div>
       )}
       <StaffIrDetailClient
