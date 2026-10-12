@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import OwlMascot from "./OwlMascot";
+import Mascot from "./Mascot";
 import BarcodeScanner from "./BarcodeScanner";
 import {
   FAQ_CATEGORIES,
@@ -74,15 +74,15 @@ function savePosition(p: { right: number; bottom: number }): void {
   } catch { /* ignore — non-essential */ }
 }
 
-// HookFab — น้องฮูก floating helper.
+// HookFab — น้องปลาร้า floating helper.
 //
 // Pinned bottom-right of the viewport. Click it → expands a chat
 // panel that shows:
-//   • A greeting from น้องฮูก
+//   • A greeting from น้องปลาร้า
 //   • Quick category chips
 //   • A search box that filters the FAQ list live
 //   • Up to 8 matching FAQ entries (collapsed by default; tap to expand)
-//   • A "เปิดห้องน้องฮูกแบบเต็ม" link to /help for the full experience
+//   • A "เปิดห้องน้องปลาร้าแบบเต็ม" link to /help for the full experience
 //
 // Audience-aware: the admin layout passes audience="admin", staff
 // layout passes "staff". The chat panel hides FAQ entries that
@@ -95,7 +95,7 @@ export default function HookFab({
   helpEnabled = false
 }: {
   audience?: FaqAudience;
-  /** Admin + owl_ai_enabled → show the natural-language "ถามน้องฮูก" box
+  /** Admin + owl_ai_enabled → show the natural-language "ถามน้องปลาร้า" box
    *  that answers finance/HR questions from real DB numbers. */
   aiEnabled?: boolean;
   /** owl_help_enabled → show the "ถามวิธีใช้งาน" box (all users, Claude
@@ -132,7 +132,7 @@ export default function HookFab({
     } catch { setClaimMsg({ kind: "err", text: "เชื่อมต่อไม่ได้ ลองใหม่" }); }
   }
 
-  // Smart น้องฮูก (AI) — admin-only natural-language Q&A (owner 2026-06-18).
+  // Smart น้องปลาร้า (AI) — admin-only natural-language Q&A (owner 2026-06-18).
   const [aiQ, setAiQ] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
@@ -238,7 +238,7 @@ export default function HookFab({
   // every 60s while the page is open so the badge stays current.
   // Skipped for non-admin audiences.
   const [pending, setPending] = useState<OwlPendingResponse | null>(null);
-  // Unread customer-chat count (owner 2026-09-26) — น้องฮูก is the reply point
+  // Unread customer-chat count (owner 2026-09-26) — น้องปลาร้า is the reply point
   // for the unified inbox, so it surfaces the unread badge here too. Same
   // admin-only, 60s cadence as the pending digest.
   const [inboxUnread, setInboxUnread] = useState(0);
@@ -390,16 +390,16 @@ export default function HookFab({
     }
     return Math.abs(h);
   })();
-  // น้องฮูก = junior boy assistant. Voice: warm, eager-to-help,
+  // น้องปลาร้า = junior boy assistant. Voice: warm, eager-to-help,
   // always polite with "ครับ" + "พี่" address. Avoid feminine
   // particles (ค่ะ/จ้า/ขา). Mix of "morning report", "checking
   // in", and "I prepared this for you" tones.
   const TH_INTROS: Array<(name: string) => string> = [
-    (name) => `สวัสดีครับพี่ ${name} น้องฮูกฝากพี่ช่วยจัดการต่อด้วยนะครับ`,
+    (name) => `สวัสดีครับพี่ ${name} น้องปลาร้าฝากพี่ช่วยจัดการต่อด้วยนะครับ`,
     (name) => `สวัสดีครับพี่ ${name} วันนี้น้องเตรียมงานไว้ให้พี่แล้วครับ`,
     (name) => `สวัสดีครับพี่ ${name} น้องเก็บงานค้างไว้รอพี่อยู่ครับ`,
     (name) => `พี่ ${name} ครับ รบกวนพี่ช่วยดูสิ่งที่ค้างอยู่หน่อยนะครับ`,
-    (name) => `หวัดดีครับพี่ ${name} น้องฮูกขออนุญาตเตือนความจำพี่นะครับ`,
+    (name) => `หวัดดีครับพี่ ${name} น้องปลาร้าขออนุญาตเตือนความจำพี่นะครับ`,
     (name) => `ขออภัยที่รบกวนพี่ ${name} ครับ — มีของฝากอยู่นิดเดียวเองครับ`,
     (name) => `เช้านี้พี่ ${name} เริ่มที่งานพวกนี้ก่อนเป็นไงครับ`,
     (name) => `สวัสดีครับพี่ ${name} อย่าลืมงานที่รอพี่อยู่นะครับ น้องช่วยไว้ตรงนี้`
@@ -442,12 +442,12 @@ export default function HookFab({
         }
       }
     : {
-        title: "สวัสดีครับ ผมน้องฮูก",
+        title: "สวัสดีครับ ผมน้องปลาร้า",
         sub: "เลือกหมวด หรือพิมพ์คำถาม",
         searchPh: "พิมพ์คำถามที่ต้องการ…",
         chipAll: "ทั้งหมด",
-        nope: "ยังไม่รู้คำตอบครับ ลองเปิดห้องน้องฮูกแบบเต็มดูครับ",
-        openHelp: "เปิดห้องน้องฮูกแบบเต็ม",
+        nope: "ยังไม่รู้คำตอบครับ ลองเปิดห้องน้องปลาร้าแบบเต็มดูครับ",
+        openHelp: "เปิดห้องน้องปลาร้าแบบเต็ม",
         seeAll: "ดูคำถามทั้งหมด",
         pendingTitle: "มีงานค้างฝากดูครับ",
         pendingIntro: TH_INTROS[greetingIndex % TH_INTROS.length],
@@ -488,7 +488,7 @@ export default function HookFab({
             : "hover:scale-110 active:scale-95"}
         `}
       >
-        <OwlMascot size={64} mood={open ? "smile" : "sleepy"} />
+        <Mascot pose={open ? "cheer" : "thumbs"} size={64} />
         {/* Badge — when admin has pending items OR unread customer chats,
             show the combined count instead of "?". The count badge uses
             amber for urgency so it stands out against the brand-red "?". */}
@@ -520,7 +520,7 @@ export default function HookFab({
         >
           {/* Header */}
           <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex items-start gap-3">
-            <OwlMascot size={52} mood="wink" showCoffee={false} />
+            <Mascot pose="notes" size={52} />
             <div className="flex-1 min-w-0">
               <div className="font-bold text-slate-800 text-sm">{T.title}</div>
               <div className="text-xs text-slate-500">{T.sub}</div>
@@ -556,7 +556,7 @@ export default function HookFab({
                 <span className="font-bold text-slate-600">ค่าใช้ Claude API เดือนนี้:</span>{" "}
                 {aiUsage.monthCount} ครั้ง ~฿{aiUsage.monthBaht.toFixed(2)}
                 <span className="text-slate-400">
-                  {" "}(สแกนบิล {aiUsage.ocr.monthCount} · ถามน้องฮูก {aiUsage.owl.monthCount}
+                  {" "}(สแกนบิล {aiUsage.ocr.monthCount} · ถามน้องปลาร้า {aiUsage.owl.monthCount}
                   {aiUsage.fin ? ` · วิเคราะห์การเงิน ${aiUsage.fin.monthCount}` : ""}) ·
                   รวมทั้งหมด ~฿{aiUsage.totalBaht.toFixed(2)}
                 </span>
@@ -567,7 +567,7 @@ export default function HookFab({
                 finance/HR questions in plain Thai from real DB numbers. */}
             {audience === "admin" && aiEnabled && (
               <div className="rounded-xl border border-brand/30 bg-brand/5 p-3 space-y-2">
-                <div className="text-sm font-bold text-slate-800">ถามน้องฮูก (ภาษาคน)</div>
+                <div className="text-sm font-bold text-slate-800">ถามน้องปลาร้า (ภาษาคน)</div>
                 <div className="text-[11px] text-slate-500 leading-relaxed">
                   เช่น “เดือนนี้สาขา NAMA จ่ายค่าอะไรเยอะสุด” · “มีบิลค้างจ่ายเท่าไร” · “ลากี่คนเดือนนี้”
                 </div>
@@ -643,7 +643,7 @@ export default function HookFab({
               </div>
             )}
 
-            {/* Customer-chat inbox (owner 2026-09-26) — admin only. น้องฮูก is
+            {/* Customer-chat inbox (owner 2026-09-26) — admin only. น้องปลาร้า is
                 the reply point for LINE OA messages; surface the unread count
                 and a jump into the full inbox. */}
             {audience === "admin" && (
@@ -730,7 +730,7 @@ export default function HookFab({
             {/* Results */}
             {results.length === 0 ? (
               <div className="text-center py-6">
-                <OwlMascot size={64} mood="thinking" />
+                <Mascot pose="sign" size={64} />
                 <p className="text-xs text-slate-500 mt-2">{T.nope}</p>
                 <Link href="/help" onClick={() => setOpen(false)}
                   className="inline-block mt-3 text-sm text-brand font-bold underline">
