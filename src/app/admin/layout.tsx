@@ -483,13 +483,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           wraps on narrow viewports so nothing is unreachable on mobile. */}
       <header className="bg-coffee-gradient text-white shadow-md">
         <div className="w-full max-w-screen-2xl mx-auto px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <div className="order-1 flex-shrink-0 min-w-0">
+          <div className="order-1 basis-full md:basis-auto flex-shrink-0 min-w-0">
             <HeaderBrand role="admin" />
           </div>
 
           {/* Branch + view-switch — its own row on mobile (equal widths for a
               balanced look), inline on md+ */}
-          <div className="order-3 md:order-2 basis-full md:basis-auto flex items-center gap-2 min-w-0">
+          <div className="order-2 basis-full md:basis-auto flex items-center gap-2 min-w-0">
             {activeBranch && (
               <TodaysBranchPill
                 branchName={activeBranch.name}
@@ -504,7 +504,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
 
           {/* Primary controls — equal 40×40 buttons, pinned right */}
-          <div className="order-2 md:order-3 ml-auto flex items-center gap-2 flex-shrink-0">
+          <div className="order-3 basis-full md:basis-auto justify-center md:justify-end md:ml-auto flex items-center gap-2 flex-shrink-0">
             <span className="hidden md:block text-xs text-white/60 truncate max-w-[180px]">
               {nameWithPrefix(user.title_prefix, user.display_name)} · {t(lang, "role.adminShort")}
             </span>
