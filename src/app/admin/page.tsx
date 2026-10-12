@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n";
 import { HubCard } from "@/components/HubCard";
 import { Icon } from "@/components/Icon";
 import { ADMIN_MODULES } from "@/lib/admin-modules";
+import Mascot from "@/app/components/Mascot";
 
 export const metadata: Metadata = { title: "ADMIN" };
 
@@ -26,9 +27,12 @@ export default function AdminHomePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">{t(lang, "portal.chooseModule")}</h1>
-        <p className="text-sm text-slate-500 mt-1">{t(lang, "portal.adminSubtitle")}</p>
+      <div className="flex items-center gap-3">
+        <Mascot pose="proud" size={84} className="flex-shrink-0" />
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-slate-800">{t(lang, "portal.chooseModule")}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t(lang, "portal.adminSubtitle")}</p>
+        </div>
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
