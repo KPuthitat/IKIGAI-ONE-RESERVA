@@ -92,7 +92,7 @@ function ChipBtn({ active, onClick, children }: { active: boolean; onClick: () =
       className={`text-[11px] rounded-full border px-2.5 py-1 transition-colors ${
         active
           ? "bg-brand text-white border-brand"
-          : "bg-white text-slate-600 border-[#EFE4D3] hover:border-brand hover:text-brand"
+          : "bg-white text-slate-600 border-[color:var(--card-border)] hover:border-brand hover:text-brand"
       }`}>
       {children}
     </button>
@@ -284,8 +284,8 @@ export default function ExecMeetingsClient({ staff, branches, meetings }: { staf
                 const list = staff.filter((s) => s.branchId === b.id);
                 const allIn = list.every((s) => invited.has(s.id));
                 return (
-                  <div key={b.id} className="rounded-lg border border-[#EFE4D3] bg-white/60 p-2">
-                    <div className="flex items-center justify-between px-1 pb-1.5 mb-1 border-b border-[#EFE4D3]">
+                  <div key={b.id} className="rounded-lg border border-[color:var(--card-border)] bg-white/60 p-2">
+                    <div className="flex items-center justify-between px-1 pb-1.5 mb-1 border-b border-[color:var(--card-border)]">
                       <span className="text-sm font-semibold text-brand">{b.name}</span>
                       <button type="button" className="text-[11px] text-slate-500 hover:text-brand"
                         onClick={() => toggleGroup(list.map((s) => s.id))}>
@@ -591,7 +591,7 @@ function MeetingDetailModal({ meetingId, staff, branches, onClose, onChanged }: 
 
             {/* Preset วาระ — editable until the meeting starts, read-only after. */}
             {d.status === "scheduled" ? (
-              <div className="rounded-xl border border-[#EFE4D3] bg-[#faf5ec] p-3 space-y-2">
+              <div className="rounded-xl border border-[color:var(--card-border)] bg-[color:var(--surface-field)] p-3 space-y-2">
                 {/* Reschedule (owner 2026-09-25): เลื่อนวัน/เวลาได้จนกว่าจะเปิดประชุม */}
                 <div>
                   <span className="text-xs font-semibold text-slate-600">วัน · เวลาประชุม (เลื่อนได้จนกว่าจะเปิดประชุม)</span>
@@ -634,7 +634,7 @@ function MeetingDetailModal({ meetingId, staff, branches, onClose, onChanged }: 
                 </div>
               </div>
             ) : d.agenda_topics.length > 0 ? (
-              <div className="rounded-xl border border-[#EFE4D3] bg-[#faf5ec] p-3">
+              <div className="rounded-xl border border-[color:var(--card-border)] bg-[color:var(--surface-field)] p-3">
                 <div className="text-xs font-semibold text-slate-600 mb-1">วาระที่กำหนด</div>
                 <ol className="text-sm text-slate-700 list-decimal pl-5 space-y-0.5">
                   {d.agenda_topics.map((t, i) => <li key={i}>{t}</li>)}

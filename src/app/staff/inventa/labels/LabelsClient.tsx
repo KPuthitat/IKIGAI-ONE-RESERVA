@@ -595,8 +595,8 @@ function LabelDesigner({
                   position: "absolute", left: `${el.x}%`, top: `${el.y}%`,
                   width: k === "qr" ? el.size * PXMM : `${el.w}%`,
                   cursor: "move",
-                  outline: sel === k ? "2px solid #a06820" : "1px dotted #cbd5e1",
-                  background: sel === k ? "rgba(160,104,32,0.08)" : "transparent"
+                  outline: sel === k ? "2px solid #6B4FD8" : "1px dotted #cbd5e1",
+                  background: sel === k ? "rgba(107,79,216,0.08)" : "transparent"
                 }}
               >
                 {content(k)}

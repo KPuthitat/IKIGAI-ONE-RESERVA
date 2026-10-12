@@ -9,14 +9,14 @@
 // itself — which means the layout's next/font + globals.css are NOT in
 // scope here. So we inline an @font-face for LINE Seed Sans TH (the
 // woff2 files ship under /public/fonts/) and the IKIGAI CI palette
-// (cream + brown #6B4FD8 + ink #281a0e) so the page matches the brand
+// (lavender + violet #6B4FD8 + ink #18103a) so the page matches the brand
 // instead of the old navy/pink default (owner 2026-06-10). The owl
 // MASCOT png is the same brand asset used elsewhere.
 
 import { useEffect } from "react";
 
 const BRAND = "#6B4FD8";
-const INK = "#281a0e";
+const INK = "#18103a";
 
 export default function GlobalError({
   error,
@@ -38,7 +38,7 @@ export default function GlobalError({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(135deg, #f7f1e6 0%, #efe3cf 100%)",
+          background: "linear-gradient(135deg, #f6f5fc 0%, #e6e1f7 100%)",
           color: INK,
           fontFamily: "'LINE Seed Sans TH', ui-sans-serif, system-ui, sans-serif",
           padding: "20px"
@@ -60,9 +60,9 @@ export default function GlobalError({
           style={{
             maxWidth: 460,
             width: "100%",
-            background: "#fffdf9",
-            border: "1px solid #e7d9c2",
-            boxShadow: "0 8px 30px rgba(40,26,14,0.10)",
+            background: "#fcfbff",
+            border: "1px solid #ddd7f7",
+            boxShadow: "0 8px 30px rgba(40,26,100,0.12)",
             borderRadius: 24,
             padding: "36px 32px",
             textAlign: "center"

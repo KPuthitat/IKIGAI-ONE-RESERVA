@@ -168,7 +168,7 @@ function MeetingCard({ m, onChanged }: { m: StaffMeetingView; onChanged: () => v
           ))}
 
           <button type="button" onClick={addExtra}
-            className="w-full rounded-xl border border-dashed border-[#d8c6ab] text-brand text-sm font-medium py-3 my-1 hover:bg-[#faf5ec] active:bg-[#f3e9d8]">
+            className="w-full rounded-xl border border-dashed border-[#cfc7ee] text-brand text-sm font-medium py-3 my-1 hover:bg-[color:var(--surface-field)] active:bg-[#ebe7fb]">
             + เพิ่มวาระ
           </button>
 
@@ -199,7 +199,7 @@ function AgendaBlock({ index, topic, item, attendees, locked, onTopic, onAnswer,
   onToggleOwner: (uid: number) => void; onRemove?: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-[#EFE4D3] bg-white/60 p-3 space-y-2">
+    <div className="rounded-xl border border-[color:var(--card-border)] bg-white/60 p-3 space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-semibold text-brand">วาระที่ {index}</span>
         {locked ? (
@@ -209,7 +209,7 @@ function AgendaBlock({ index, topic, item, attendees, locked, onTopic, onAnswer,
         ) : null}
       </div>
       {locked ? (
-        <div className="rounded-lg bg-[#f6efe3] px-3 py-2 text-sm font-medium text-[#4a3f30]">{topic}</div>
+        <div className="rounded-lg bg-[color:var(--surface-field)] px-3 py-2 text-sm font-medium text-[#4a3f30]">{topic}</div>
       ) : (
         <div>
           <label className="label">หัวข้อวาระ{topic.trim() ? "" : <span className="text-rose-400"> *</span>}</label>
@@ -233,7 +233,7 @@ function AgendaBlock({ index, topic, item, attendees, locked, onTopic, onAnswer,
                 <button key={p.user_id} type="button" onClick={() => onToggleOwner(p.user_id)}
                   className={`text-xs rounded-full px-2.5 py-1 border transition-colors ${on
                     ? "bg-brand text-white border-brand"
-                    : "bg-white text-slate-600 border-[#e3d6c0] hover:bg-[#faf5ec]"}`}>
+                    : "bg-white text-slate-600 border-[color:var(--card-border)] hover:bg-[color:var(--surface-field)]"}`}>
                   {on ? "✓ " : ""}{personLabel(p)}
                 </button>
               );

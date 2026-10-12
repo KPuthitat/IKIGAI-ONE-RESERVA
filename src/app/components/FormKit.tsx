@@ -23,7 +23,7 @@ export function FormSection({
 }) {
   return (
     <section className={className}>
-      <div className="flex items-center gap-2.5 pb-2.5 mb-3.5 border-b border-[#F0E8DA]">
+      <div className="flex items-center gap-2.5 pb-2.5 mb-3.5 border-b border-[color:var(--card-border)]">
         <span className="w-2.5 h-2.5 rounded-full bg-brand shrink-0" aria-hidden />
         <h3 className="flex-1 text-[15px] font-bold text-slate-800 leading-tight">{title}</h3>
         {action}

@@ -3,18 +3,19 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import ActionBar from "@/app/components/ActionBar";
 import type { BackdateDay } from "@/lib/ot-backdate";
 
 const STATUS: Record<string, { label: string; cls: string }> = {
-  pending: { label: "รออนุมัติ", cls: "bg-amber-100 text-amber-700" },
-  approved: { label: "อนุมัติแล้ว", cls: "bg-emerald-100 text-emerald-700" },
-  rejected: { label: "ไม่อนุมัติ", cls: "bg-rose-100 text-rose-700" },
+  pending: { label: "รออนุมัติ", cls: "tag-warn" },
+  approved: { label: "อนุมัติแล้ว", cls: "tag-ok" },
+  rejected: { label: "ไม่อนุมัติ", cls: "tag-bad" },
 };
 
 function StatusPill({ status }: { status: string | null }) {
   if (!status || !STATUS[status]) return <span className="text-slate-400">—</span>;
   const s = STATUS[status];
-  return <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${s.cls}`}>{s.label}</span>;
+  return <span className={`tag ${s.cls}`}>{s.label}</span>;
 }
 
 const hhmm = (n: number) => `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
@@ -101,12 +102,11 @@ export default function OtRequestClient({ days, hasActiveBranch }: { days: Backd
               </div>
             </div>
             {msg && <p className={`text-sm ${msg.ok ? "text-emerald-600" : "text-rose-600"}`}>{msg.text}</p>}
-            <div className="flex justify-end">
-              <button type="button" disabled={busy || !selDate || !late} onClick={submit}
-                className="text-sm px-4 py-2 rounded-lg bg-brand text-white font-medium disabled:opacity-40">
+            <ActionBar>
+              <button type="button" disabled={busy || !selDate || !late} onClick={submit} className="btn-primary">
                 {busy ? "กำลังส่ง…" : "ส่งคำขอ OT"}
               </button>
-            </div>
+            </ActionBar>
           </>
         )}
       </div>

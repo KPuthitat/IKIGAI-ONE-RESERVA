@@ -114,7 +114,7 @@ export default function ModuleSubnav({
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-haspopup="menu"
-          className="flex w-full items-center justify-between gap-2 rounded-2xl border border-[#EFE4D3] bg-white px-4 py-2.5 text-[13.5px] shadow-card"
+          className="flex w-full items-center justify-between gap-2 rounded-2xl border border-[color:var(--card-border)] bg-white px-4 py-2.5 text-[13.5px] shadow-card"
         >
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate font-semibold text-slate-800">{activeItem?.label ?? "เมนูย่อย"}</span>
@@ -132,7 +132,7 @@ export default function ModuleSubnav({
           <>
             {/* tap-away backdrop */}
             <button type="button" aria-hidden tabIndex={-1} onClick={() => setOpen(false)} className="fixed inset-0 z-20 cursor-default" />
-            <div role="menu" className="absolute left-0 right-0 z-30 mt-1.5 max-h-[65vh] overflow-y-auto rounded-2xl border border-[#EFE4D3] bg-white p-1.5 shadow-lg">
+            <div role="menu" className="absolute left-0 right-0 z-30 mt-1.5 max-h-[65vh] overflow-y-auto rounded-2xl border border-[color:var(--card-border)] bg-white p-1.5 shadow-lg">
               {chipItems.map((item) => {
                 const active = isActive(item.href);
                 return (
@@ -164,7 +164,7 @@ export default function ModuleSubnav({
 
   // Desktop: grouped vertical list in a card.
   return (
-    <nav className="rounded-2xl border border-[#EFE4D3] bg-white p-2.5 shadow-card" aria-label="เมนูย่อย">
+    <nav className="rounded-2xl border border-[color:var(--card-border)] bg-white p-2.5 shadow-card" aria-label="เมนูย่อย">
       {visible.map((s, i) => (
         <div key={i} className={i > 0 ? "mt-3" : ""}>
           {s.label && (

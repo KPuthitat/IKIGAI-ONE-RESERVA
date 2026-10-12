@@ -13,7 +13,7 @@
 import { useEffect } from "react";
 
 const BRAND = "#6B4FD8";
-const INK = "#281a0e";
+const INK = "#18103a";
 
 export default function SegmentErrorRecovery({
   error,
@@ -41,9 +41,9 @@ export default function SegmentErrorRecovery({
 
   return (
     <div className="min-h-screen flex items-center justify-center p-5"
-      style={{ background: "linear-gradient(135deg, #f7f1e6 0%, #efe3cf 100%)" }}>
+      style={{ background: "linear-gradient(135deg, #f6f5fc 0%, #e6e1f7 100%)" }}>
       <div className="w-full max-w-md rounded-3xl border p-8 text-center"
-        style={{ background: "#fffdf9", borderColor: "#e7d9c2", boxShadow: "0 8px 30px rgba(40,26,14,0.10)" }}>
+        style={{ background: "#fcfbff", borderColor: "#ddd7f7", boxShadow: "0 8px 30px rgba(40,26,100,0.12)" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/owl-mascot.png" alt="" width={72} height={72} className="mx-auto mb-3" />
         <h1 className="text-xl font-bold" style={{ color: INK }}>เปิดหน้านี้ไม่สำเร็จ</h1>
