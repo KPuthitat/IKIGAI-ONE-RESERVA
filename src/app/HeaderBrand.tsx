@@ -27,11 +27,11 @@ export default function HeaderBrand({ role }: { role: "admin" | "staff" }) {
   const portal = role === "admin" ? "ADMIN CONSOLE" : "STAFF PORTAL";
 
   return (
-    <Link href={`/${role}`} className="block leading-tight min-w-0">
-      <span className="block text-white text-[15px] sm:text-base font-normal tracking-[1.5px]">
+    <Link href={`/${role}`} className="block leading-tight min-w-0 text-center md:text-left">
+      <span className="block text-white text-[17px] md:text-base font-bold md:font-normal tracking-[0.32em] md:tracking-[1.5px]">
         NOKHOOK OS
       </span>
-      <span className="block text-[10px] sm:text-[11px] font-light tracking-[1px] text-white/60 truncate -mt-0.5">
+      <span className="block text-[10px] sm:text-[11px] font-light tracking-[0.2em] md:tracking-[1px] text-white/60 truncate -mt-0.5">
         {moduleName ? `${portal} · ${moduleName}` : portal}
       </span>
     </Link>
