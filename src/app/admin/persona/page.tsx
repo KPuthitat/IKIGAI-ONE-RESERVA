@@ -134,10 +134,16 @@ export default function AdminPersonaDashboard() {
       accent === "rose" ? "bg-rose-50 text-rose-600" :
       accent === "violet" ? "bg-violet-50 text-violet-600" :
       "bg-slate-100 text-slate-500";
+    const kpiTone =
+      !active ? "kpi-mute" :
+      accent === "amber" ? "kpi-warn" :
+      accent === "rose" ? "kpi-bad" :
+      accent === "violet" ? "" :
+      "kpi-info";
     return (
-      <Link href={href} className="card hover:shadow-md hover:-translate-y-0.5 transition block">
+      <Link href={href} className={`kpi ${kpiTone} hover:shadow-md hover:-translate-y-0.5 transition block`}>
         <div className="flex items-center justify-between gap-2">
-          <div className="text-xs text-slate-500">{label}</div>
+          <div className="kpi-label">{label}</div>
           <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${tileClass}`}>
             <Icon name={icon} className="h-4 w-4" />
           </span>

@@ -294,6 +294,7 @@ input[type="week"]::-webkit-date-and-time-value {
 .kpi-sub { @apply text-[11.5px] text-slate-400 mt-0.5; }
 .kpi-ok   { --kpi: 16 185 129; }
 .kpi-warn { --kpi: 245 158 11; }
+.kpi-mute { --kpi: 203 213 225; }
 .kpi-bad  { --kpi: 239 68 68; }
 .kpi-info { --kpi: 59 130 246; }
 .kpi-accent { --kpi: var(--accent); }

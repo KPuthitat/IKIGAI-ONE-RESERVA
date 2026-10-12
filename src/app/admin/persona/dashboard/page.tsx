@@ -451,8 +451,9 @@ function KPI({
     : tone === "sky" ? "text-sky-700"
     : tone === "rose" ? "text-rose-700"
     : "text-slate-800";
+  const kpiTone = tone === "emerald" ? "kpi-ok" : tone === "amber" ? "kpi-warn" : tone === "sky" ? "kpi-info" : tone === "rose" ? "kpi-bad" : "";
   return (
-    <div className="card">
+    <div className={`kpi ${kpiTone}`}>
       <div className="text-[11px] text-slate-500 uppercase tracking-[1px] flex items-center gap-1">
         {icon} {label}
       </div>
