@@ -20,6 +20,9 @@ import MaintenanceBanner from "../components/MaintenanceBanner";
 import ModuleVisitTracker from "../components/ModuleVisitTracker";
 import { currentImpersonationContext } from "@/lib/impersonation";
 import { nameWithPrefix } from "@/lib/name";
+import { pendingAckCount } from "@/lib/policy-notices";
+import Link from "next/link";
+import Mascot from "../components/Mascot";
 import { getMyEnrollment, type MjActor } from "@/lib/mounjaro-db";
 
 export const dynamic = "force-dynamic";
@@ -69,6 +72,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   // force admin mode. When unlocked, top-level module links point at /admin so the
   // admin can jump across console pages; INVENTA stays under /staff (its home).
   const adminView = isAdminUser && isAdminUnlocked(user);
+  const pendingPolicy = pendingAckCount(user.id);
   const modBase = adminView ? "/admin" : "/staff";
 
   // Branch-gate (owner 2026-06-11): block opening a module until a branch is
@@ -118,6 +122,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/persona/mealpass", label: "MEALPASS · อาหาร/เครื่องดื่ม" },
         { href: "/staff/persona/profile", label: t(lang, "staff.persona.nav.profile") },
         { href: "/staff/persona/orgchart", label: "ผังองค์กร" },
+        { href: "/staff/persona/policy-notices", label: "ประกาศนโยบาย" },
         { href: "/staff/persona/payslip", label: "สลิปเงินเดือน" },
         { href: "/staff/persona/discipline", label: t(lang, "staff.persona.nav.discipline") },
         { href: "/staff/persona/leave", label: t(lang, "staff.nav.leave") },
@@ -257,6 +262,14 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           impersonatorName={impCtx.impersonatorName}
           targetName={impCtx.targetName}
         />
+      )}
+      {/* Policy letters waiting for this employee's "รับทราบ" (owner 2026-10-12). */}
+      {pendingPolicy > 0 && (
+        <Link href="/staff/persona/policy-notices" className="flex items-center gap-2 bg-amber-50 border-b border-amber-200 px-4 py-1.5 text-sm text-amber-900">
+          <Mascot pose="notes" size={36} className="flex-shrink-0" />
+          <span className="flex-1 min-w-0 truncate">มีประกาศนโยบาย {pendingPolicy} เรื่องรอท่านกดรับทราบ</span>
+          <span className="font-bold underline flex-shrink-0">อ่านและรับทราบ</span>
+        </Link>
       )}
 
       {/* Topbar (mobile-tidy redesign 2026-08). Two clean rows on phones —

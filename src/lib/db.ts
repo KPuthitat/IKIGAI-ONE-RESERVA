@@ -3363,6 +3363,48 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_special_duty_audit_scope ON special_duty_audit(branch_id, year_month, at);
   `);
+  // ประกาศนโยบาย / หนังสือแจ้งหลังประชุม (owner 2026-10-12): an all-staff meeting is announced,
+  // and after it the admin publishes a letter of topics (heading, details, suggestions raised at
+  // the meeting) that every recipient only has to acknowledge. Content is locked once published.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS policy_notices (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      title         TEXT NOT NULL,
+      purpose       TEXT NOT NULL DEFAULT '',
+      meeting_at    TEXT,                       -- 'YYYY-MM-DDTHH:MM' Bangkok local
+      location      TEXT NOT NULL DEFAULT '',
+      branch_id     INTEGER REFERENCES branches(id),   -- NULL = every branch
+      status        TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','published','closed','cancelled')),
+      ack_deadline  TEXT,                       -- 'YYYY-MM-DD', informational
+      created_by    INTEGER REFERENCES users(id),
+      created_at    TEXT NOT NULL,
+      invited_at    TEXT,
+      published_at  TEXT,
+      closed_at     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_policy_notices_status ON policy_notices(status, created_at);
+    CREATE TABLE IF NOT EXISTS policy_notice_items (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      notice_id   INTEGER NOT NULL REFERENCES policy_notices(id) ON DELETE CASCADE,
+      sort_no     INTEGER NOT NULL,
+      topic       TEXT NOT NULL,
+      details     TEXT NOT NULL,
+      suggestions TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_policy_notice_items_notice ON policy_notice_items(notice_id, sort_no);
+    CREATE TABLE IF NOT EXISTS policy_notice_recipients (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      notice_id        INTEGER NOT NULL REFERENCES policy_notices(id) ON DELETE CASCADE,
+      user_id          INTEGER NOT NULL REFERENCES users(id),
+      added_at         TEXT NOT NULL,
+      invite_sent_at   TEXT,
+      letter_sent_at   TEXT,
+      last_reminded_at TEXT,
+      acked_at         TEXT,
+      UNIQUE (notice_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_policy_recipients_user ON policy_notice_recipients(user_id, acked_at);
+  `);
   // Review trail on a duty day: when the holder/substitute submitted evidence, and who approved or sent it back.
   const sddCols = new Set((db.prepare("PRAGMA table_info(special_duty_days)").all() as Array<{ name: string }>).map((c) => c.name));
   for (const [col, decl] of [["submitted_at", "TEXT"], ["reviewed_by", "INTEGER REFERENCES users(id)"], ["reviewed_at", "TEXT"], ["review_note", "TEXT"]] as const) {

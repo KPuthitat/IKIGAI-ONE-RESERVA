@@ -194,6 +194,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/manager-reports", label: "รายงานผู้จัดการ" },
         { href: "/admin/persona/exec-meetings", label: "ประชุมผู้บริหาร" },
         { href: "/admin/persona/special-duty", label: "ตำแหน่งงานค่าตอบแทนพิเศษ" },
+        { href: "/admin/persona/policy-notices", label: "ประกาศนโยบาย" },
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
         { href: "/admin/persona/holidays", label: t(lang, "admin.persona.nav.holidays") },
