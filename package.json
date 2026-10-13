@@ -14,6 +14,7 @@
     "test:mounjaro": "node --import tsx scripts/test-mounjaro.ts",
     "test:mealpass": "node --import tsx scripts/test-mealpass.ts",
     "test:rbac": "node --import tsx scripts/test-rbac.ts",
+    "test:recruita-offer": "node --import tsx scripts/test-recruita-offer.ts",
     "test:policy-notices": "node --import tsx scripts/test-policy-notices.ts",
     "test:inventa-forecast": "node --import tsx scripts/test-inventa-forecast.ts",
     "test:ir-categories": "node --import tsx scripts/test-ir-categories.ts",
