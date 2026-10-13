@@ -11,6 +11,7 @@ import { decideSwap, listPendingForManager, swapNotices, SwapError } from "@/lib
 import { dutyMonthSummary, dutyOwnerAlerts } from "@/lib/special-duty-payout";
 import { assignSubstitute, dayBelongsToBranch, EvidenceError, listEvidence, listSubstituteCandidates, markAbsent, reviewEvidence } from "@/lib/special-duty-evidence";
 import { EVIDENCE_TEXT, RULE_TEXT, SWAP_TEXT, viewerOf } from "@/lib/special-duty-viewer";
+import { sqlNameWithPrefix } from "@/lib/name";
 
 // Manager console for ตำแหน่งงานค่าตอบแทนพิเศษ (active branch).
 //   GET  ?month=YYYY-MM[&candidates=<positionId>:<date>]
@@ -45,7 +46,7 @@ export async function GET(req: Request) {
   const cand = q.get("candidates");
   if (cand) {
     const [pid, date] = cand.split(":");
-    const users = getDb().prepare(`SELECT u.id, u.display_name AS name FROM users u
+    const users = getDb().prepare(`SELECT u.id, ${sqlNameWithPrefix("u")} AS name FROM users u
         WHERE u.role IN ('staff','admin') AND u.status NOT IN ('disabled','resigned','terminated') AND COALESCE(u.is_test_account,0) = 0
           AND EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = u.id AND ub.branch_id = ?) ORDER BY u.display_name`).all(g.branchId) as Array<{ id: number; name: string }>;
     return NextResponse.json({ candidates: users.filter((u) => checkAssignment({ userId: u.id, branchId: g.branchId, yearMonth: month.data, positionId: Number(pid), date }).ok) });

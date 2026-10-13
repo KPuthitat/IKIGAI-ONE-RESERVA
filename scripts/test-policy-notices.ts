@@ -73,6 +73,8 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   // admin tracking + reminders
   const d = P.adminDetail(id)!;
   ok("admin sees who acknowledged and who is still pending", d.recipients.length === 5 && d.recipients.filter((r) => r.ackedAt).length === 1 && d.recipients[0].ackedAt === null);
+  db.prepare("UPDATE users SET title_prefix = 'นางสาว' WHERE id = ?").run(b);
+  ok("admin lists carry the title prefix (and people without one are shown plainly)", (() => { const r = P.adminDetail(id)!.recipients; return r.some((x) => x.name === "นางสาว b") && r.some((x) => x.name === "a"); })());
   const list = P.listForAdmin().find((n) => n.id === id)!;
   ok("admin list shows the acknowledged count", list.recipientCount === 5 && list.ackedCount === 1);
   const rem = P.remindPending(id);

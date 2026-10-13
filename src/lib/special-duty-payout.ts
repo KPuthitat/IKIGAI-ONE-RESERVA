@@ -9,6 +9,7 @@
 
 import { getDb } from "./db";
 import { cfgNum, daysInMonth, listPositions, monthBudget } from "./special-duty";
+import { sqlNameWithPrefix } from "./name";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -45,7 +46,7 @@ export function dutyMonthSummary(branchId: number, yearMonth: string): DutyMonth
   const db = getDb();
   const positions = listPositions(branchId, yearMonth, { activeOnly: true });
   const rows = db.prepare(`
-    SELECT d.status, d.user_id AS uid, COALESCE(d.performer_user_id, d.user_id) AS payee, p.daily_rate AS rate, u.display_name AS name
+    SELECT d.status, d.user_id AS uid, COALESCE(d.performer_user_id, d.user_id) AS payee, p.daily_rate AS rate, ${sqlNameWithPrefix("u")} AS name
       FROM special_duty_days d JOIN special_duty_positions p ON p.id = d.position_id JOIN users u ON u.id = d.user_id
      WHERE p.branch_id = ? AND p.year_month = ? AND p.active = 1
   `).all(branchId, yearMonth) as Array<{ status: string; uid: number; payee: number; rate: number; name: string }>;

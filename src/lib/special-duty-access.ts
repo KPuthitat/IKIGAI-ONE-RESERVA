@@ -15,6 +15,7 @@ import { getDb } from "./db";
 import { cfgNum, getMonth, listPositions, type DutyMonthStatus, type DutyPosition } from "./special-duty";
 import { isGroupEligible, isOnRoster } from "./special-duty-rules";
 import { wasPresent } from "./special-duty-evidence";
+import { sqlNameWithPrefix } from "./name";
 
 export type Viewer = { userId: number; role: "staff" | "admin" | "super_admin"; branchIds: number[]; adminBranchIds: number[]; department?: string | null };
 
@@ -112,8 +113,8 @@ export type ManagerRow = {
 export function getManagerView(viewer: Viewer, branchId: number, yearMonth: string): ManagerRow[] {
   if (!canManage(viewer, branchId)) throw new AccessError("forbidden");
   return (getDb().prepare(`
-    SELECT d.id, p.id AS pid, p.name AS pname, p.daily_rate AS rate, d.duty_date AS date, d.user_id AS uid, u.display_name AS uname,
-           d.source, d.status, d.performer_user_id AS perf, pu.display_name AS perfname,
+    SELECT d.id, p.id AS pid, p.name AS pname, p.daily_rate AS rate, d.duty_date AS date, d.user_id AS uid, ${sqlNameWithPrefix("u")} AS uname,
+           d.source, d.status, d.performer_user_id AS perf, ${sqlNameWithPrefix("pu")} AS perfname,
            d.submitted_at AS sub, d.review_note AS note, (SELECT COUNT(*) FROM special_duty_evidence e WHERE e.day_id = d.id AND e.deleted_at IS NULL) AS photos
       FROM special_duty_days d
       JOIN special_duty_positions p ON p.id = d.position_id

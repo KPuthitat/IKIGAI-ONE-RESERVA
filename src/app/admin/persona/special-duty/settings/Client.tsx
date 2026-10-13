@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiUrl } from "@/lib/url";
+import { FormSection, Field } from "@/app/components/FormKit";
+import Switch from "@/app/components/Switch";
 
 type Position = { id: number; slotNo: number; name: string; description: string | null; dailyRate: number; eligibleGroups: string[] | null; active: boolean };
 type Data = {
@@ -78,37 +80,37 @@ export default function Client({ month, branch }: { month: string; branch: numbe
   const go = (b: number, mo: string) => router.push(`?month=${mo}&branch=${b}`);
 
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="space-y-4">
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">ตั้งค่าตำแหน่งงานค่าตอบแทนพิเศษ</h1>
+          <h1 className="text-2xl font-bold text-slate-800">ตั้งค่าตำแหน่งงานค่าตอบแทนพิเศษ</h1>
           <p className="text-sm text-slate-500 mt-1">เปิดใช้รายเดือนของแต่ละสาขา กำหนดตำแหน่ง ค่าตอบแทน และกลุ่มงานที่ทำได้</p>
         </div>
         <div className="flex gap-2 text-sm">
-          <Link href={`/admin/persona/special-duty?month=${month}`} className="btn-secondary !py-1">หน้าผู้จัดการ</Link>
-          <Link href={`/admin/persona/special-duty/overview?month=${month}`} className="btn-secondary !py-1">ภาพรวมทุกสาขา</Link>
+          <Link href={`/admin/persona/special-duty?month=${month}`} className="btn-secondary !py-1.5">หน้าผู้จัดการ</Link>
+          <Link href={`/admin/persona/special-duty/overview?month=${month}`} className="btn-secondary !py-1.5">ภาพรวมทุกสาขา</Link>
         </div>
       </div>
       {msg && <div className={`card text-sm ${msg.ok ? "text-emerald-700" : "text-rose-700"}`}>{msg.text}</div>}
 
       <section className="card space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm">สาขา
-            <select className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2" value={data.branchId} onChange={(e) => go(Number(e.target.value), month)}>
+        <div className="grid sm:grid-cols-2 gap-2.5">
+          <Field label="สาขา">
+            <select value={data.branchId} onChange={(e) => go(Number(e.target.value), month)}>
               {data.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
-          </label>
-          <div className="text-sm">
-            <div>เดือน</div>
-            <div className="mt-1 flex items-center gap-1">
-              <button type="button" className="btn-secondary !py-1 !px-2" onClick={() => go(data.branchId, shift(month, -1))}>ก่อน</button>
-              <span className="flex-1 text-center font-medium whitespace-nowrap">{MONTHS[m - 1]} {y + 543}</span>
-              <button type="button" className="btn-secondary !py-1 !px-2" onClick={() => go(data.branchId, shift(month, 1))}>ถัดไป</button>
+          </Field>
+          <div className="field flex items-center justify-between gap-2 !py-2.5">
+            <button type="button" className="chip" onClick={() => go(data.branchId, shift(month, -1))} aria-label="เดือนก่อน">‹ ก่อน</button>
+            <div className="text-center leading-tight">
+              <div className="text-[11.5px] font-medium text-[#8A7A63]">เดือน</div>
+              <div className="font-bold text-slate-800 whitespace-nowrap">{MONTHS[m - 1]} {y + 543}</div>
             </div>
+            <button type="button" className="chip" onClick={() => go(data.branchId, shift(month, 1))} aria-label="เดือนถัดไป">ถัดไป ›</button>
           </div>
         </div>
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-sm"><span className="text-slate-500">สถานะ</span> <b className={data.month.enabled ? "text-emerald-700" : "text-slate-700"}>{STATUS_TH[data.month.status] ?? data.month.status}</b></div>
+          <div className="flex items-center gap-2 text-sm"><span className="text-slate-500">สถานะ</span> <span className={`tag ${data.month.enabled ? "tag-ok" : "tag-mute"}`}>{STATUS_TH[data.month.status] ?? data.month.status}</span></div>
           {!data.month.enabled
             ? <button type="button" className="btn-primary" disabled={busy || data.positions.length === 0} onClick={() => window.confirm("เปิดใช้ตำแหน่งงานค่าตอบแทนพิเศษของสาขานี้ในเดือนนี้ใช่หรือไม่ เมื่อประกาศตารางงานระบบจะเปิดให้พนักงานเลือกวันและแจ้งผ่าน LINE") && post({ action: "enable_month", branch_id: data.branchId, month }, "เปิดใช้เดือนนี้เรียบร้อยแล้ว")}>เปิดใช้เดือนนี้</button>
             : <button type="button" className="btn-secondary" disabled={busy} onClick={() => window.confirm("ปิดใช้เดือนนี้ใช่หรือไม่ (ทำได้เฉพาะเมื่อยังไม่มีการเลือกหรือมอบหมายวัน)") && post({ action: "disable_month", branch_id: data.branchId, month }, "ปิดใช้เดือนนี้แล้ว")}>ปิดใช้เดือนนี้</button>}
@@ -117,46 +119,50 @@ export default function Client({ month, branch }: { month: string; branch: numbe
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-semibold text-slate-800">ตำแหน่งของเดือนนี้ (ไม่เกิน 3 ตำแหน่ง)</h2>
-        {!editable && <p className="text-sm text-amber-800 card">แก้ตำแหน่งไม่ได้แล้ว เพราะเปิดให้พนักงานเลือกวันแล้ว เพื่อไม่ให้ค่าตอบแทนที่พนักงานเห็นและตกลงไว้เปลี่ยนไป</p>}
+        <h2 className="font-bold text-slate-800">ตำแหน่งของเดือนนี้ <span className="text-sm font-normal text-slate-500">(ไม่เกิน 3 ตำแหน่ง)</span></h2>
+        {!editable && <p className="card text-sm text-amber-800 bg-amber-50 border-amber-200">แก้ตำแหน่งไม่ได้แล้ว เพราะเปิดให้พนักงานเลือกวันแล้ว เพื่อไม่ให้ค่าตอบแทนที่พนักงานเห็นและตกลงไว้เปลี่ยนไป</p>}
+        <div className="grid lg:grid-cols-3 gap-3 items-start">
         {[1, 2, 3].map((slot) => {
           const dr = drafts[slot]; if (!dr) return null;
           const set = (patch: Partial<typeof dr>) => setDrafts((s) => ({ ...s, [slot]: { ...s[slot], ...patch } }));
           return (
-            <div key={slot} className="card space-y-2">
-              <div className="font-medium text-slate-800">ตำแหน่งที่ {slot}</div>
-              <input className="w-full border border-slate-300 rounded-lg px-3 py-2" disabled={!editable} placeholder="ชื่อตำแหน่ง เช่น ล้างห้องน้ำ" value={dr.name} onChange={(e) => set({ name: e.target.value })} />
-              <input className="w-full border border-slate-300 rounded-lg px-3 py-2" disabled={!editable} placeholder="รายละเอียดงาน (ไม่บังคับ)" value={dr.description} onChange={(e) => set({ description: e.target.value })} />
-              <label className="block text-sm">ค่าตอบแทนต่อวัน (บาท)
-                <input type="number" min="0" className="mt-1 w-40 border border-slate-300 rounded-lg px-3 py-2" disabled={!editable} value={dr.rate} onChange={(e) => set({ rate: e.target.value })} />
-              </label>
-              <div className="text-sm">
-                <div className="text-slate-600 mb-1">กลุ่มงานที่ทำได้ (ไม่เลือกเลย = ทุกกลุ่ม)</div>
-                <div className="flex flex-wrap gap-3">
-                  {data.workGroups.map((g) => (
-                    <label key={g} className="flex items-center gap-1">
-                      <input type="checkbox" disabled={!editable} checked={!!dr.groups?.includes(g)} onChange={(e) => { const cur = new Set(dr.groups ?? []); e.target.checked ? cur.add(g) : cur.delete(g); set({ groups: cur.size ? [...cur] : null }); }} />
-                      {GROUP_TH[g] ?? g}
-                    </label>
-                  ))}
+            <div key={slot} className={`card ${dr.active ? "" : "opacity-70"}`}>
+              <FormSection title={`ตำแหน่งที่ ${slot}`}
+                action={<span className="inline-flex items-center gap-1.5 text-xs text-slate-500"><Switch checked={dr.active} onChange={(v) => editable && set({ active: v })} />{dr.active ? "เปิดใช้" : "ปิด"}</span>}>
+                <Field label="ชื่อตำแหน่ง"><input disabled={!editable} placeholder="เช่น ล้างห้องน้ำ" value={dr.name} onChange={(e) => set({ name: e.target.value })} /></Field>
+                <Field label="รายละเอียดงาน" hint="ไม่บังคับ"><input disabled={!editable} value={dr.description} onChange={(e) => set({ description: e.target.value })} /></Field>
+                <Field label="ค่าตอบแทนต่อวัน (บาท)"><input type="number" min="0" disabled={!editable} value={dr.rate} onChange={(e) => set({ rate: e.target.value })} /></Field>
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5">กลุ่มงานที่ทำได้ <span className="text-slate-400">(ไม่เลือกเลย = ทุกกลุ่ม)</span></div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {data.workGroups.map((g) => {
+                      const on = !!dr.groups?.includes(g);
+                      return (
+                        <button key={g} type="button" disabled={!editable} aria-pressed={on} className={`chip ${on ? "chip-active" : ""} disabled:opacity-60`}
+                          onClick={() => { const cur = new Set(dr.groups ?? []); if (on) cur.delete(g); else cur.add(g); set({ groups: cur.size ? [...cur] : null }); }}>
+                          {GROUP_TH[g] ?? g}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={!editable} checked={dr.active} onChange={(e) => set({ active: e.target.checked })} /> เปิดใช้ตำแหน่งนี้</label>
-              {editable && <button type="button" className="btn-secondary" disabled={busy || !dr.name.trim()} onClick={() => post({ action: "save_position", branch_id: data.branchId, month, slot_no: slot, name: dr.name, description: dr.description || null, daily_rate: Number(dr.rate), eligible_groups: dr.groups, active: dr.active }, `บันทึกตำแหน่งที่ ${slot} แล้ว`)}>บันทึกตำแหน่งที่ {slot}</button>}
+                {editable && <button type="button" className="btn-primary w-full" disabled={busy || !dr.name.trim()} onClick={() => post({ action: "save_position", branch_id: data.branchId, month, slot_no: slot, name: dr.name, description: dr.description || null, daily_rate: Number(dr.rate), eligible_groups: dr.groups, active: dr.active }, `บันทึกตำแหน่งที่ ${slot} แล้ว`)}>บันทึกตำแหน่งที่ {slot}</button>}
+              </FormSection>
             </div>
           );
         })}
+        </div>
       </section>
 
       {data.isOwner && data.config && (
         <section className="card space-y-3">
-          <h2 className="font-semibold text-slate-800">เกณฑ์ของระบบ (เฉพาะเจ้าของ)</h2>
+          <h2 className="font-bold text-slate-800">เกณฑ์ของระบบ <span className="text-sm font-normal text-slate-500">(เฉพาะเจ้าของ)</span></h2>
           <p className="text-sm text-slate-500">ค่าเหล่านี้ใช้กับทุกสาขา การเปลี่ยนมีผลกับการคำนวณต่อจากนี้ และบันทึกประวัติไว้</p>
           {Object.keys(data.config).map((k) => (
-            <div key={k} className="flex items-center justify-between gap-3">
+            <div key={k} className="flex items-center justify-between gap-3 border-t border-[color:var(--card-border)] pt-2.5 first:border-0 first:pt-0">
               <label className="text-sm text-slate-700 flex-1" htmlFor={`cfg-${k}`}>{CONFIG_LABEL[k] ?? k}</label>
-              <input id={`cfg-${k}`} type="number" min="0" className="w-24 border border-slate-300 rounded-lg px-2 py-1 text-right" value={cfg[k] ?? ""} onChange={(e) => setCfg((s) => ({ ...s, [k]: e.target.value }))} />
-              <button type="button" className="btn-secondary !py-1 !px-3" disabled={busy || cfg[k] === String(data.config![k]) || cfg[k] === ""} onClick={() => post({ action: "set_config", key: k, value: Number(cfg[k]) }, "บันทึกเกณฑ์แล้ว")}>บันทึก</button>
+              <input id={`cfg-${k}`} type="number" min="0" className="input !w-24 !py-1.5 text-right" value={cfg[k] ?? ""} onChange={(e) => setCfg((s) => ({ ...s, [k]: e.target.value }))} />
+              <button type="button" className="btn-secondary !py-1.5 !px-4" disabled={busy || cfg[k] === String(data.config![k]) || cfg[k] === ""} onClick={() => post({ action: "set_config", key: k, value: Number(cfg[k]) }, "บันทึกเกณฑ์แล้ว")}>บันทึก</button>
             </div>
           ))}
         </section>

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import type { SpecialPayment } from "@/lib/special-payments";
+import { FormSection, Field } from "@/app/components/FormKit";
+import EmptyState from "@/app/components/EmptyState";
 
 export type StaffOption = { id: number; name: string; type: string | null };
 
@@ -79,49 +81,49 @@ export default function Client({ month, today, staff, payments }: { month: strin
         <p className="text-sm text-slate-500 mt-1">บันทึกการจ่ายเงินให้พนักงานนอกรอบเงินเดือน โดยเลือกว่าเป็นการช่วยเหลือหรือการเบิกล่วงหน้า พร้อมระบุเหตุผล ระบบจะนำไปรวมในรายได้และหักออกจากยอดโอนในรอบเงินเดือนให้โดยอัตโนมัติ</p>
       </div>
 
-      <section className="card space-y-3">
-        <h2 className="font-semibold text-slate-800">เพิ่มรอบจ่ายกรณีพิเศษ</h2>
-        <p className="text-sm text-slate-600">เลือกประเภทการจ่าย</p>
-        <div className="grid grid-cols-2 gap-2">
-          {(["aid", "advance"] as const).map((k) => (
-            <button key={k} type="button" onClick={() => setKind(k)}
-              className={`rounded-lg border px-3 py-2 text-sm text-left ${kind === k ? "border-amber-700 bg-amber-50 text-amber-900 font-semibold" : "border-slate-300 text-slate-700"}`}>
-              {KIND[k]}
-              <span className="block text-xs font-normal text-slate-500 mt-0.5">{k === "aid" ? "จ่ายเพิ่ม นับเป็นรายได้และคิดภาษีตามประเภทของพนักงาน" : "เบิกจากเงินที่ทำได้จริงแล้วในเดือนนี้ ภาษีคิดจากยอดเต็ม"}</span>
-            </button>
-          ))}
-        </div>
-        <label className="block text-sm">พนักงาน
-          <select className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2" value={userId} onChange={(e) => setUserId(e.target.value ? Number(e.target.value) : "")}>
-            <option value="">เลือกพนักงาน</option>
-            {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm">วันที่จ่ายเงิน
-            <input type="date" max={today} className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
-            <span className="text-xs text-slate-500">{paidOn ? fmtDate(paidOn) : ""}</span>
-          </label>
-          <label className="block text-sm">จำนวนเงิน (บาท)
-            <input type="number" inputMode="decimal" min="0" step="0.01" className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2" value={amount} onChange={(e) => setAmount(e.target.value)} />
-          </label>
-        </div>
-        {kind === "advance" && userId !== "" && (
-          <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            {!limit ? "กำลังคำนวณวงเงิน" : limit.basis === "none"
-              ? "ไม่สามารถคำนวณวงเงินได้ เนื่องจากพนักงานไม่มีเงินเดือนหรืออัตราค่าจ้างรายชั่วโมงที่ตั้งไว้"
-              : <>ทำงานแล้ว {limit.workedDays} วัน คิดเป็นรายได้ {money(limit.earned)} บาท เบิกไปแล้ว {money(limit.taken)} บาท <b>เบิกได้อีกไม่เกิน {money(limit.available)} บาท</b></>}
+      <section className="card">
+        <FormSection title="เพิ่มรอบจ่ายกรณีพิเศษ">
+          <p className="text-sm text-slate-500">เลือกประเภทการจ่าย</p>
+          <div className="grid sm:grid-cols-2 gap-2.5">
+            {(["aid", "advance"] as const).map((k) => (
+              <button key={k} type="button" onClick={() => setKind(k)} aria-pressed={kind === k}
+                className={`rounded-2xl border-[1.5px] px-4 py-3 text-left transition ${kind === k ? "border-brand bg-brand/10" : "border-[color:var(--card-border)] bg-white hover:bg-[color:var(--surface-field)]"}`}>
+                <span className={`block font-bold ${kind === k ? "text-brand-dark" : "text-slate-800"}`}>{KIND[k]}</span>
+                <span className="block text-xs font-normal text-slate-500 mt-0.5">{k === "aid" ? "จ่ายเพิ่ม นับเป็นรายได้และคิดภาษีตามประเภทของพนักงาน" : "เบิกจากเงินที่ทำได้จริงแล้วในเดือนนี้ ภาษีคิดจากยอดเต็ม"}</span>
+              </button>
+            ))}
           </div>
-        )}
-        <label className="block text-sm">เหตุผล
-          <textarea rows={2} maxLength={300} className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2" value={reason} onChange={(e) => setReason(e.target.value)}
-            placeholder={kind === "aid" ? "เช่น เงินช่วยเหลือพนักงานกรณีทางบ้านประสบอุทกภัย" : "เช่น ขอเบิกเงินล่วงหน้า หักจากเงินเดือนสิ้นเดือน"} />
-        </label>
-        <label className="block text-sm">PIN ผู้ดูแลระบบ
-          <input type="password" inputMode="numeric" className="mt-1 w-40 border border-slate-300 rounded-lg px-3 py-2" value={pin} onChange={(e) => setPin(e.target.value)} />
-        </label>
-        {msg && <div className={`text-sm ${msg.ok ? "text-emerald-700" : "text-rose-700"}`}>{msg.text}</div>}
-        <button type="button" className="btn-primary" disabled={!canSubmit} onClick={submit}>{busy ? "กำลังบันทึก" : "บันทึกรายการ"}</button>
+          <Field label="พนักงาน">
+            <select value={userId} onChange={(e) => setUserId(e.target.value ? Number(e.target.value) : "")}>
+              <option value="">เลือกพนักงาน</option>
+              {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </Field>
+          <div className="grid sm:grid-cols-2 gap-2.5">
+            <Field label="วันที่จ่ายเงิน" hint={paidOn ? fmtDate(paidOn) : undefined}>
+              <input type="date" max={today} value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
+            </Field>
+            <Field label="จำนวนเงิน (บาท)">
+              <input type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </Field>
+          </div>
+          {kind === "advance" && userId !== "" && (
+            <div className="rounded-2xl bg-[color:var(--surface-field)] border border-[color:var(--card-border)] px-4 py-3 text-sm text-slate-700">
+              {!limit ? "กำลังคำนวณวงเงิน" : limit.basis === "none"
+                ? "ไม่สามารถคำนวณวงเงินได้ เนื่องจากพนักงานไม่มีเงินเดือนหรืออัตราค่าจ้างรายชั่วโมงที่ตั้งไว้"
+                : <>ทำงานแล้ว {limit.workedDays} วัน คิดเป็นรายได้ {money(limit.earned)} บาท เบิกไปแล้ว {money(limit.taken)} บาท <b>เบิกได้อีกไม่เกิน {money(limit.available)} บาท</b></>}
+            </div>
+          )}
+          <Field label="เหตุผล">
+            <textarea rows={2} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)}
+              placeholder={kind === "aid" ? "เช่น เงินช่วยเหลือพนักงานกรณีทางบ้านประสบอุทกภัย" : "เช่น ขอเบิกเงินล่วงหน้า หักจากเงินเดือนสิ้นเดือน"} />
+          </Field>
+          <Field label="PIN ผู้ดูแลระบบ" className="sm:max-w-[14rem]">
+            <input type="password" inputMode="numeric" autoComplete="off" value={pin} onChange={(e) => setPin(e.target.value)} />
+          </Field>
+          {msg && <div className={`text-sm ${msg.ok ? "text-emerald-700" : "text-rose-700"}`}>{msg.text}</div>}
+          <button type="button" className="btn-primary" disabled={!canSubmit} onClick={submit}>{busy ? "กำลังบันทึก" : "บันทึกรายการ"}</button>
+        </FormSection>
       </section>
 
       <section className="card space-y-3">
@@ -131,10 +133,10 @@ export default function Client({ month, today, staff, payments }: { month: strin
           <button type="button" className="btn-secondary !py-1 !px-3 whitespace-nowrap" onClick={() => router.push(`?month=${shiftMonth(month, 1)}`)}>เดือนถัดไป</button>
         </div>
         <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-900">เงินช่วยเหลือพิเศษรวม<div className="font-bold">{money(totalAid)} บาท</div></div>
-          <div className="rounded-lg bg-violet-50 px-3 py-2 text-violet-900">เบิกล่วงหน้ารวม<div className="font-bold">{money(totalAdv)} บาท</div></div>
+          <div className="kpi kpi-ok"><div className="kpi-label">เงินช่วยเหลือพิเศษรวม</div><div className="text-lg font-extrabold tabular-nums text-slate-800">{money(totalAid)} บาท</div></div>
+          <div className="kpi kpi-info"><div className="kpi-label">เบิกล่วงหน้ารวม</div><div className="text-lg font-extrabold tabular-nums text-slate-800">{money(totalAdv)} บาท</div></div>
         </div>
-        {payments.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการในเดือนนี้</p> : (
+        {payments.length === 0 ? <EmptyState className="border-0 shadow-none">ยังไม่มีรายการในเดือนนี้</EmptyState> : (
           <ul className="divide-y divide-slate-100">
             {payments.map((p) => (
               <li key={p.id} className={`py-3 text-sm ${p.voidedAt ? "opacity-60" : ""}`}>

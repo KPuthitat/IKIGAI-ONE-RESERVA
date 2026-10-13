@@ -14,6 +14,7 @@
 //  - employees never see who else was notified or who acknowledged.
 
 import { getDb } from "./db";
+import { sqlNameWithPrefix } from "./name";
 
 export type NoticeStatus = "scheduled" | "published" | "closed" | "cancelled";
 
@@ -137,7 +138,7 @@ export function saveItems(id: number, items: NoticeItem[]): void {
 
 function audience(branchId: number | null): Recipient[] {
   const rows = getDb().prepare(`
-    SELECT u.id AS userId, u.display_name AS name, u.line_user_id AS lineUserId FROM users u
+    SELECT u.id AS userId, ${sqlNameWithPrefix("u")} AS name, u.line_user_id AS lineUserId FROM users u
      WHERE u.role IN ('staff','admin') AND u.status NOT IN ('disabled','resigned','terminated') AND COALESCE(u.is_test_account,0) = 0
        AND (? IS NULL OR EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = u.id AND ub.branch_id = ?))
      ORDER BY u.display_name`).all(branchId, branchId) as Recipient[];
@@ -156,7 +157,7 @@ export function syncRecipients(noticeId: number): number {
 
 export function recipientsOf(noticeId: number, only: "all" | "unacked" = "all"): Recipient[] {
   return getDb().prepare(`
-    SELECT u.id AS userId, u.display_name AS name, u.line_user_id AS lineUserId
+    SELECT u.id AS userId, ${sqlNameWithPrefix("u")} AS name, u.line_user_id AS lineUserId
       FROM policy_notice_recipients r JOIN users u ON u.id = r.user_id
      WHERE r.notice_id = ? ${only === "unacked" ? "AND r.acked_at IS NULL" : ""} ORDER BY u.display_name`).all(noticeId) as Recipient[];
 }
@@ -250,7 +251,7 @@ export function adminDetail(id: number): { notice: NoticeRow; items: NoticeItem[
   const notice = getNotice(id);
   if (!notice) return null;
   const recipients = getDb().prepare(`
-    SELECT r.user_id AS userId, u.display_name AS name, r.acked_at AS ackedAt, r.letter_sent_at AS letterSentAt, r.last_reminded_at AS lastRemindedAt
+    SELECT r.user_id AS userId, ${sqlNameWithPrefix("u")} AS name, r.acked_at AS ackedAt, r.letter_sent_at AS letterSentAt, r.last_reminded_at AS lastRemindedAt
       FROM policy_notice_recipients r JOIN users u ON u.id = r.user_id
      WHERE r.notice_id = ? ORDER BY (r.acked_at IS NULL) DESC, u.display_name`).all(id) as AdminAckRow[];
   return { notice, items: listItems(id), recipients };

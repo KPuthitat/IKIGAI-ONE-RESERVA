@@ -76,6 +76,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   })());
   ok("voiding the advance too restores the original line exactly", (() => { SP.voidPayment({ id: adv, reason: "ยกเลิก", actorId: owner }); const x = line(wht)!; return near(x.gross_pay, 12000) && near(x.tax_amount, 360) && near(x.net_pay, 11640) && x.special_paid_out === 0 && x.special_tax === 0; })());
   ok("a voided row cannot be voided again", throws(() => SP.voidPayment({ id: adv, reason: "ซ้ำ", actorId: owner }), "already_voided"));
+  ok("the ledger shows the employee's title prefix with the name", (() => { const display = (db.prepare("SELECT display_name FROM users WHERE id = ?").get(wht) as { display_name: string }).display_name; db.prepare("UPDATE users SET title_prefix = 'นาย' WHERE id = ?").run(wht); const n = SP.listPayments({ userId: wht })[0].userName; db.prepare("UPDATE users SET title_prefix = NULL WHERE id = ?").run(wht); return n === `นาย ${display}`; })());
   ok("voided rows stay in the ledger with their reason", (() => { const r = SP.listPayments({ userId: wht }); return r.length >= 2 && r.every((x) => x.voidedAt != null && (x.voidReason ?? "").length > 0); })());
 
   // ── social-security staff: aid is not taxed, SSO stays on salary only ──

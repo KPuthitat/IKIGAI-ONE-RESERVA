@@ -49,7 +49,7 @@ export function listPayments(filter: { yearMonth?: string; userId?: number } = {
   if (filter.yearMonth) { where.push("substr(p.paid_on, 1, 7) = ?"); args.push(filter.yearMonth); }
   if (filter.userId) { where.push("p.user_id = ?"); args.push(filter.userId); }
   return (getDb().prepare(`
-    SELECT p.id, p.user_id, COALESCE(u.display_name, '') AS name, p.kind, p.paid_on, p.amount, p.reason,
+    SELECT p.id, p.user_id, TRIM(COALESCE(u.title_prefix, '') || ' ' || COALESCE(u.display_name, '')) AS name, p.kind, p.paid_on, p.amount, p.reason,
            p.created_by, p.created_at, p.voided_at, p.void_reason
       FROM staff_special_payments p JOIN users u ON u.id = p.user_id
      ${where.length ? "WHERE " + where.join(" AND ") : ""}
