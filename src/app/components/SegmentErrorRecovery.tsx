@@ -41,9 +41,9 @@ export default function SegmentErrorRecovery({
 
   return (
     <div className="min-h-screen flex items-center justify-center p-5"
-      style={{ background: "linear-gradient(135deg, #f6f5fc 0%, #e6e1f7 100%)" }}>
+      style={{ background: "linear-gradient(135deg, #F6F7FA 0%, #E9ECF2 100%)" }}>
       <div className="w-full max-w-md rounded-3xl border p-8 text-center"
-        style={{ background: "#fcfbff", borderColor: "#ddd7f7", boxShadow: "0 8px 30px rgba(40,26,100,0.12)" }}>
+        style={{ background: "#ffffff", borderColor: "#E1E4EC", boxShadow: "0 8px 30px rgba(16,24,40,0.10)" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/mascot/wai.webp" alt="" width={104} height={104} className="mx-auto mb-3" style={{ objectFit: "contain" }} />
         <h1 className="text-xl font-bold" style={{ color: INK }}>เปิดหน้านี้ไม่สำเร็จ</h1>
