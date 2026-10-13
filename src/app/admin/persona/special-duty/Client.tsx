@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import EmptyState from "@/app/components/EmptyState";
 
 type Position = { id: number; slotNo: number; name: string; dailyRate: number };
 type Row = { id: number; positionId: number; date: string; userId: number; name: string; source: "booked" | "assigned"; status: string; performerName: string | null; reviewNote: string | null; evidenceCount: number; presentAtWork: boolean };
@@ -60,8 +61,8 @@ export default function Client({ month }: { month: string }) {
     if (row.status === "absent") { const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&substitutes=${row.id}`), { cache: "no-store" }); const j = await r.json(); setSubs(j.candidates ?? []); }
   };
 
-  if (err) return <div className="card text-sm text-rose-700">{err === "forbidden" ? "เฉพาะผู้ดูแลสาขาเท่านั้นที่ใช้หน้านี้ได้" : "ไม่สามารถแสดงข้อมูลได้"}</div>;
-  if (!data) return <div className="card text-sm text-slate-500">กำลังโหลด</div>;
+  if (err) return <div className="card tag-bad text-sm">{err === "forbidden" ? "เฉพาะผู้ดูแลสาขาเท่านั้นที่ใช้หน้านี้ได้" : "ไม่สามารถแสดงข้อมูลได้"}</div>;
+  if (!data) return <div className="card text-sm text-slate-500">กำลังโหลด...</div>;
   const st = data.month.status;
   const [y, m] = month.split("-").map(Number);
   const filling = st === "booking_closed" || st === "filling";
@@ -69,31 +70,31 @@ export default function Client({ month }: { month: string }) {
   const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
 
   return (
-    <div className="space-y-4 max-w-4xl">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">ตำแหน่งงานค่าตอบแทนพิเศษ</h1>
+        <h1 className="text-xl font-bold text-ink">ตำแหน่งงานค่าตอบแทนพิเศษ</h1>
         <p className="text-sm text-slate-500 mt-1">ดูผู้ที่เลือกวัน จัดวันที่ว่าง และประกาศตารางของสาขา</p>
         <div className="flex gap-2 mt-2 text-sm">
-          <a href={apiUrl(`/admin/persona/special-duty/settings?month=${month}`)} className="btn-secondary !py-1">ตั้งค่าตำแหน่ง</a>
-          <a href={apiUrl(`/admin/persona/special-duty/overview?month=${month}`)} className="btn-secondary !py-1">ภาพรวมทุกสาขา</a>
+          <a href={apiUrl(`/admin/persona/special-duty/settings?month=${month}`)} className="chip">ตั้งค่าตำแหน่ง</a>
+          <a href={apiUrl(`/admin/persona/special-duty/overview?month=${month}`)} className="chip">ภาพรวมทุกสาขา</a>
         </div>
       </div>
 
       <div className="card flex items-center justify-between gap-2">
-        <button type="button" className="btn-secondary !py-1 !px-3 whitespace-nowrap" onClick={() => router.push(`?month=${shiftMonth(month, -1)}`)}>เดือนก่อน</button>
+        <button type="button" className="chip whitespace-nowrap" onClick={() => router.push(`?month=${shiftMonth(month, -1)}`)}>เดือนก่อน</button>
         <div className="text-center">
-          <div className="font-semibold text-slate-900">เดือน{MONTHS[m - 1]} {y + 543}</div>
-          <div className="text-sm text-amber-800">{STATUS_TH[st] ?? st}{st === "booking_open" && data.month.bookingCloseDate ? ` · ปิดรับวันที่ ${fmtDate(data.month.bookingCloseDate)}` : ""}</div>
+          <div className="font-semibold text-ink">เดือน{MONTHS[m - 1]} {y + 543}</div>
+          <span className={`tag mt-1 ${st === "off" || st === "settled" ? "tag-mute" : st === "special_published" || st === "in_progress" ? "tag-ok" : "tag-warn"}`}>{STATUS_TH[st] ?? st}{st === "booking_open" && data.month.bookingCloseDate ? ` · ปิดรับวันที่ ${fmtDate(data.month.bookingCloseDate)}` : ""}</span>
         </div>
-        <button type="button" className="btn-secondary !py-1 !px-3 whitespace-nowrap" onClick={() => router.push(`?month=${shiftMonth(month, 1)}`)}>เดือนถัดไป</button>
+        <button type="button" className="chip whitespace-nowrap" onClick={() => router.push(`?month=${shiftMonth(month, 1)}`)}>เดือนถัดไป</button>
       </div>
 
       {msg && <div className={`card text-sm ${msg.ok ? "text-emerald-700" : "text-rose-700"}`}>{msg.text}</div>}
 
-      {!data.month.enabled ? <div className="card text-sm text-slate-600">เดือนนี้ยังไม่เปิดใช้ตำแหน่งงานค่าตอบแทนพิเศษ</div> : (
+      {!data.month.enabled ? <EmptyState>เดือนนี้ยังไม่เปิดใช้ตำแหน่งงานค่าตอบแทนพิเศษ</EmptyState> : (
         <>
           <div className="card space-y-2">
-            <h2 className="font-semibold text-slate-800">ขั้นตอน</h2>
+            <h2 className="font-bold text-ink">ขั้นตอน</h2>
             {st === "awaiting_roster" && <p className="text-sm text-slate-600">เมื่อประกาศตารางงานประจำเดือน ระบบจะเปิดให้พนักงานเลือกวันและแจ้งผ่าน LINE ให้โดยอัตโนมัติ</p>}
             {st === "booking_open" && (
               <>
@@ -118,16 +119,16 @@ export default function Client({ month }: { month: string }) {
           </div>
 
           {data.swaps.length > 0 && (
-            <div className="card space-y-2 border-amber-300">
-              <h2 className="font-semibold text-slate-800">คำขอสลับวันรออนุมัติ ({data.swaps.length})</h2>
+            <div className="card space-y-2 !border-brand/40">
+              <h2 className="font-bold text-ink">คำขอสลับวันรออนุมัติ ({data.swaps.length})</h2>
               {data.swaps.map((x) => (
-                <div key={x.id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm space-y-2">
+                <div key={x.id} className="rounded-xl border border-[var(--card-border)] bg-[var(--surface-field)] px-3 py-2 text-sm space-y-2">
                   <div className="text-slate-700">{x.fromName} ให้วันที่ {fmtDate(x.a.date)} ({x.a.positionName}) แลกกับวันที่ {fmtDate(x.b.date)} ({x.b.positionName}) ของ {x.toName}</div>
                   {x.note && <div className="text-slate-600">เหตุผลของผู้ขอ: {x.note}</div>}
                   <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" className="btn-primary !py-1" disabled={busy} onClick={async () => { const r = await act({ action: "approve_swap", swap_id: x.id }); r.ok ? done("อนุมัติการสลับวันแล้ว วันของทั้งสองคนเปลี่ยนเรียบร้อย") : setMsg({ ok: false, text: r.j.message ?? "อนุมัติไม่สำเร็จ" }); }}>อนุมัติ</button>
-                    <input className="flex-1 min-w-[10rem] border border-slate-300 rounded-lg px-3 py-1" placeholder="เหตุผลที่ไม่อนุมัติ" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
-                    <button type="button" className="btn-secondary !py-1" disabled={busy || rejectNote.trim().length < 3} onClick={async () => { const r = await act({ action: "reject_swap", swap_id: x.id, note: rejectNote }); r.ok ? done("ไม่อนุมัติการสลับวันแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>ไม่อนุมัติ</button>
+                    <button type="button" className="btn-primary" disabled={busy} onClick={async () => { const r = await act({ action: "approve_swap", swap_id: x.id }); r.ok ? done("อนุมัติการสลับวันแล้ว วันของทั้งสองคนเปลี่ยนเรียบร้อย") : setMsg({ ok: false, text: r.j.message ?? "อนุมัติไม่สำเร็จ" }); }}>อนุมัติ</button>
+                    <input className="input flex-1 min-w-[10rem]" placeholder="เหตุผลที่ไม่อนุมัติ" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
+                    <button type="button" className="btn-secondary" disabled={busy || rejectNote.trim().length < 3} onClick={async () => { const r = await act({ action: "reject_swap", swap_id: x.id, note: rejectNote }); r.ok ? done("ไม่อนุมัติการสลับวันแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>ไม่อนุมัติ</button>
                   </div>
                 </div>
               ))}
@@ -136,10 +137,10 @@ export default function Client({ month }: { month: string }) {
 
           {data.summary && ["special_published", "in_progress", "settled"].includes(st) && (
             <div className="card space-y-2">
-              <h2 className="font-semibold text-slate-800">ค่าตอบแทนของเดือนนี้</h2>
+              <h2 className="font-bold text-ink">ค่าตอบแทนของเดือนนี้</h2>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-900">ตรวจรับแล้ว {data.summary.approvedDays} วัน<div className="font-bold">{data.summary.approvedAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท</div></div>
-                <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900">ยังไม่ตรวจรับ {data.summary.pendingDays} วัน<div className="font-bold">ขาด {data.summary.absentDays} วัน</div></div>
+                <div className="kpi kpi-ok"><div className="kpi-label">ตรวจรับแล้ว {data.summary.approvedDays} วัน</div><div className="text-lg font-extrabold tabular-nums text-slate-800">{data.summary.approvedAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท</div></div>
+                <div className="kpi kpi-warn"><div className="kpi-label">ยังไม่ตรวจรับ {data.summary.pendingDays} วัน</div><div className="text-lg font-extrabold tabular-nums text-slate-800">ขาด {data.summary.absentDays} วัน</div></div>
               </div>
               <p className="text-sm text-slate-600">งบสูงสุดของเดือน {data.summary.budget.toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท (ทุกวัน ทุกตำแหน่ง) · วันที่ไม่มีผู้ปฏิบัติ {data.summary.unfilledDays} วัน</p>
               <p className="text-xs text-slate-500">จ่ายเฉพาะวันที่ตรวจรับแล้ว พร้อมค่าบริการวันที่ 20 ของเดือนถัดไป พนักงานที่หักภาษี ณ ที่จ่ายถูกหัก 3% พนักงานในประกันสังคมไม่ถูกหัก</p>
@@ -148,8 +149,8 @@ export default function Client({ month }: { month: string }) {
           )}
 
           {plan && (
-            <div className="card space-y-2 border-amber-300">
-              <h2 className="font-semibold text-slate-800">ข้อเสนอของระบบ (ยังไม่บันทึก)</h2>
+            <div className="card space-y-2 !border-brand/40">
+              <h2 className="font-bold text-ink">ข้อเสนอของระบบ (ยังไม่บันทึก)</h2>
               <p className="text-sm text-slate-600">แนะนำ {plan.suggestions.length} วัน{plan.unfillable.length ? ` · ไม่มีผู้ที่เลือกได้ ${plan.unfillable.length} วัน` : ""}</p>
               <ul className="text-sm text-slate-700 max-h-64 overflow-y-auto space-y-0.5">
                 {plan.suggestions.map((s, i) => <li key={i}>{fmtDate(s.date)} · {s.positionName} · {s.userName}</li>)}
@@ -162,8 +163,8 @@ export default function Client({ month }: { month: string }) {
           )}
 
           {pick && (
-            <div className="card space-y-2 border-amber-300">
-              <h2 className="font-semibold text-slate-800">เลือกผู้ปฏิบัติงาน</h2>
+            <div className="card space-y-2 !border-brand/40">
+              <h2 className="font-bold text-ink">เลือกผู้ปฏิบัติงาน</h2>
               <p className="text-sm text-slate-600">{pick.positionName} · {fmtDate(pick.date)}</p>
               {pick.list.length === 0 ? <p className="text-sm text-rose-700">ไม่มีพนักงานที่เลือกได้ในวันนี้ (ต้องมีตารางทำงาน ไม่ลา และอยู่ในกลุ่มงานที่กำหนด)</p> : (
                 <div className="flex flex-wrap gap-2">
@@ -180,10 +181,10 @@ export default function Client({ month }: { month: string }) {
           )}
 
           {selected && (
-            <div className="card space-y-2 border-amber-300">
-              <h2 className="font-semibold text-slate-800">{selected.name}</h2>
+            <div className="card space-y-2 !border-brand/40">
+              <h2 className="font-bold text-ink">{selected.name}</h2>
               <p className="text-sm text-slate-600">{fmtDate(selected.date)} · {selected.source === "booked" ? "เลือกเอง" : "ผู้จัดการมอบหมาย"} · {DAY_STATUS[selected.status] ?? selected.status}</p>
-              {selected.performerName && <p className="text-sm text-violet-800">ผู้ปฏิบัติแทน: {selected.performerName}</p>}
+              {selected.performerName && <p className="text-sm text-brand">ผู้ปฏิบัติแทน: {selected.performerName}</p>}
               {selected.reviewNote && <p className="text-sm text-rose-700">หมายเหตุ: {selected.reviewNote}</p>}
               {["submitted", "approved"].includes(selected.status) && (
                 <p className={`text-sm ${selected.presentAtWork ? "text-emerald-700" : "text-rose-700"}`}>
@@ -202,7 +203,7 @@ export default function Client({ month }: { month: string }) {
               )}
               {selected.status === "submitted" && (
                 <div className="space-y-2">
-                  <input className="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="เหตุผล (ต้องกรอกเมื่อส่งกลับ)" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
+                  <input className="input w-full" placeholder="เหตุผล (ต้องกรอกเมื่อส่งกลับ)" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
                   <div className="flex flex-wrap gap-2">
                     <button type="button" className="btn-primary" disabled={busy || !selected.presentAtWork} onClick={async () => { const r = await act({ action: "approve", day_id: selected.id }); r.ok ? done("ตรวจรับเรียบร้อยแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ตรวจรับไม่สำเร็จ" }); }}>ตรวจรับ</button>
                     <button type="button" className="btn-secondary" disabled={busy || rejectNote.trim().length < 3} onClick={async () => { const r = await act({ action: "reject", day_id: selected.id, note: rejectNote }); r.ok ? done("ส่งกลับให้แก้ไขแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>ส่งกลับให้แก้ไข</button>
@@ -235,7 +236,7 @@ export default function Client({ month }: { month: string }) {
             const cells: Array<number | null> = [...Array(first).fill(null), ...Array.from({ length: last }, (_, i) => i + 1)];
             return (
               <section key={p.id} className="card space-y-2">
-                <h2 className="font-semibold text-slate-900">{p.name}</h2>
+                <h2 className="font-bold text-ink">{p.name}</h2>
                 <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-500">{HEAD.map((h) => <div key={h}>{h}</div>)}</div>
                 <div className="grid grid-cols-7 gap-1">
                   {cells.map((d, i) => {
@@ -251,7 +252,7 @@ export default function Client({ month }: { month: string }) {
                           const j = await r.json(); setSelected(null);
                           setPick({ positionId: p.id, positionName: p.name, date, list: j.candidates ?? [] });
                         }}
-                        className={`rounded-md border px-0.5 py-1 text-center leading-tight min-h-[3.2rem] ${row ? (row.status === "approved" ? "border-emerald-600 bg-emerald-200" : row.status === "submitted" ? "border-amber-500 bg-amber-100" : row.status === "absent" ? "border-rose-600 bg-rose-200" : row.status === "covered" ? "border-violet-400 bg-violet-100" : row.source === "booked" ? "border-emerald-300 bg-emerald-50" : "border-sky-300 bg-sky-50") : isOpen ? "border-rose-300 bg-rose-50" : "border-slate-200 text-slate-300"}`}>
+                        className={`rounded-xl border px-0.5 py-1 text-center leading-tight min-h-[3.2rem] ${row ? (row.status === "approved" ? "border-emerald-600 bg-emerald-200" : row.status === "submitted" ? "border-amber-500 bg-amber-100" : row.status === "absent" ? "border-rose-600 bg-rose-200" : row.status === "covered" ? "border-brand/50 bg-brand/10" : row.source === "booked" ? "border-emerald-300 bg-emerald-50" : "border-sky-300 bg-sky-50") : isOpen ? "border-rose-300 bg-rose-50" : "border-[var(--card-border)] text-slate-300"}`}>
                         <div className="text-xs text-slate-500">{d}</div>
                         <div className="text-[10px] text-slate-800 break-words">{row ? row.name : isOpen ? "ว่าง" : ""}</div>
                       </button>

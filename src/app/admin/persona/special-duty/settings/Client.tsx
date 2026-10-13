@@ -100,10 +100,10 @@ export default function Client({ month, branch }: { month: string; branch: numbe
               {data.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </Field>
-          <div className="field flex items-center justify-between gap-2 !py-2.5">
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-[var(--card-border)] bg-[var(--surface-field)] px-3 py-2">
             <button type="button" className="chip" onClick={() => go(data.branchId, shift(month, -1))} aria-label="เดือนก่อน">‹ ก่อน</button>
             <div className="text-center leading-tight">
-              <div className="text-[11.5px] font-medium text-[#8A7A63]">เดือน</div>
+              <div className="text-[11.5px] font-medium text-slate-500">เดือน</div>
               <div className="font-bold text-slate-800 whitespace-nowrap">{MONTHS[m - 1]} {y + 543}</div>
             </div>
             <button type="button" className="chip" onClick={() => go(data.branchId, shift(month, 1))} aria-label="เดือนถัดไป">ถัดไป ›</button>
