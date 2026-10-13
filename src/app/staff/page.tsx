@@ -11,7 +11,6 @@ import { getMonthlyTargetFor, isSalesaBranch } from "@/lib/salesa-db";
 import { monthComparison, targetProgress } from "@/lib/salesa-analytics";
 import { clinicaRangeAgg } from "@/lib/clinica-db";
 import TeamGoalHero from "@/app/components/TeamGoalHero";
-import MascotHero from "@/app/components/MascotHero";
 
 export const dynamic = "force-dynamic";
 
@@ -131,8 +130,7 @@ export default function StaffHomePage({
     <div className="space-y-6">
       {goal && <TeamGoalHero {...goal} />}
       <div>
-        <MascotHero name={nameWithPrefix(user.title_prefix, user.display_name)} />
-        <h1 className="text-2xl font-bold text-slate-800 mt-5">{t(lang, "portal.chooseModule")}</h1>
+        <h1 className="text-2xl font-bold text-slate-800">{t(lang, "portal.chooseModule")}</h1>
         <p className="text-sm text-slate-500 mt-1">
           {t(lang, "portal.staffSubtitle", { name: nameWithPrefix(user.title_prefix, user.display_name) })}
         </p>

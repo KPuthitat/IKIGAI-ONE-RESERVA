@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Mascot from "./Mascot";
 
 // Shared team-goal banner at the top of the landing (owner 2026-09-20): the
 // branch's monthly sales target, how far along this month, a big % with a clear
@@ -100,8 +99,6 @@ export default function TeamGoalHero({
         </div>
 
         {/* Hero — the headline % */}
-        {/* Encouraging only — a staff-facing banner never shows the glum pose. */}
-        <Mascot pose={reached ? "cheer" : onTrack ? "thumbs" : "proud"} size={64} className="absolute right-0 top-9" />
         <div className="mt-3 flex items-baseline gap-2 flex-wrap">
           <span className={`text-4xl font-extrabold tracking-tight tabular-nums ${c.hero}`}>{pct.toFixed(0)}%</span>
           <span className="text-xs text-slate-500">ของเป้าเดือนนี้</span>
