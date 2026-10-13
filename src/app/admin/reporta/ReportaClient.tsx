@@ -1153,6 +1153,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
         <div className="card space-y-3">
           <div className="flex items-center justify-center sm:justify-between gap-2 flex-wrap">
             <h2 className="font-bold text-slate-800">สรุปรายสัปดาห์ (จันทร์–อาทิตย์)</h2>
+            <div className="flex flex-col items-end gap-1 max-sm:items-center">
             <div className="flex items-center gap-2 flex-wrap">
               <NavStepper eyebrow="สัปดาห์" label={clinicaWeekly?.label ?? "—"}
                 onPrev={() => setWeekStart(addDays(weekStart, -7))} onNext={() => setWeekStart(addDays(weekStart, 7))}
@@ -1171,6 +1172,8 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                   ส่งรายงานผู้บริหาร
                 </button>
               )}
+            </div>
+            {clinicaWeekly && <TrendMascot pct={clinicaWeekly.wowNetPct} size={128} className="sm:mr-3" />}
             </div>
           </div>
           {clinicaWeekly && <ClinicaWeekCard w={clinicaWeekly} />}
@@ -1274,6 +1277,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
       <div className="card space-y-3">
         <div className="flex items-center justify-center sm:justify-between gap-2 flex-wrap">
           <h2 className="font-bold text-slate-800">สรุปรายสัปดาห์ (จันทร์–อาทิตย์)</h2>
+          <div className="flex flex-col items-end gap-1 max-sm:items-center">
           <div className="flex items-center gap-2 flex-wrap">
             <NavStepper eyebrow="สัปดาห์" label={weekly?.label ?? "—"}
               onPrev={() => setWeekStart(addDays(weekStart, -7))} onNext={() => setWeekStart(addDays(weekStart, 7))}
@@ -1288,6 +1292,9 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                 {weeklySentAt ? "ส่งรายงานผู้บริหารอีกครั้ง" : "ส่งรายงานผู้บริหาร"}
               </button>
             )}
+          </div>
+          {/* Big mood mascot right under the green send button (owner 2026-10-13). */}
+          {weekly && <TrendMascot pct={weekly.wowNettPct} size={128} className="sm:mr-3" />}
           </div>
         </div>
         {weekly && (
@@ -1304,7 +1311,6 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                   <Kpi label="เฉลี่ยต่อวัน" value={weekly.avgPerDay != null ? baht(weekly.avgPerDay) : "—"} />
                 </div>
                 <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 flex flex-wrap items-center gap-x-6 gap-y-1">
-                  <TrendMascot pct={weekly.wowNettPct} size={88} />
                   <span className="font-semibold text-slate-700">เทียบสัปดาห์ก่อน:</span>
                   {weekly.wowNettPct == null ? (
                     <span className="text-slate-400">ยังไม่มีข้อมูลสัปดาห์ก่อน</span>
