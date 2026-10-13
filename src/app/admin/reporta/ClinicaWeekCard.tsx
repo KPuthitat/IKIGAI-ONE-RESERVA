@@ -38,7 +38,7 @@ export default function ClinicaWeekCard({ w }: { w: ClinicaWeek }) {
             <Kpi label="เฉลี่ยต่อวัน" value={w.avgPerDay != null ? baht(w.avgPerDay) : "—"} />
           </div>
           <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 flex flex-wrap items-center gap-x-6 gap-y-1">
-            <TrendMascot pct={w.wowNetPct} size={48} />
+            <TrendMascot pct={w.wowNetPct} size={88} />
             <span className="font-semibold text-slate-700">เทียบสัปดาห์ก่อน:</span>
             {w.prevWeekNet == null ? (
               // No prior-week bills at all. (A prior week that had bills but zero

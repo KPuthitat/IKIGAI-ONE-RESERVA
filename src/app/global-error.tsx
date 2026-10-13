@@ -38,7 +38,7 @@ export default function GlobalError({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(135deg, #f6f5fc 0%, #e6e1f7 100%)",
+          background: "linear-gradient(135deg, #F6F7FA 0%, #E9ECF2 100%)",
           color: INK,
           fontFamily: "'LINE Seed Sans TH', ui-sans-serif, system-ui, sans-serif",
           padding: "20px"
@@ -60,9 +60,9 @@ export default function GlobalError({
           style={{
             maxWidth: 460,
             width: "100%",
-            background: "#fcfbff",
-            border: "1px solid #ddd7f7",
-            boxShadow: "0 8px 30px rgba(40,26,100,0.12)",
+            background: "#ffffff",
+            border: "1px solid #E1E4EC",
+            boxShadow: "0 8px 30px rgba(16,24,40,0.10)",
             borderRadius: 24,
             padding: "36px 32px",
             textAlign: "center"

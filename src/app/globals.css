@@ -12,15 +12,17 @@
 /* ── UI tokens — OMNICHECK-style purple → teal palette (owner 2026-10-12).
    Tailwind brand/ink/shadow utilities read these variables. ── */
 :root {
+  /* v2 (owner 2026-10-13: "ม่วงไปหน่อย" vs OMNICHECK): purple only on the header, active
+     states and links; neutral white/grey surfaces; teal for the main action button. */
   --brand: 107 79 216; --brand-dark: 79 54 176; --brand-light: 155 134 240;
   --accent: 20 184 166;
-  --ink-900: 45 31 107; --ink-800: 33 22 80; --ink-700: 24 16 58;
-  --grad-ink: linear-gradient(160deg, #181040 0%, #21165a 60%, #2d1f6b 100%);
-  --grad-header: linear-gradient(100deg, #4C2FBF 0%, #6B4FD8 48%, #14B8A6 100%);
-  --shadow-card: 0 1px 2px rgba(60,40,140,.05), 0 10px 28px rgba(60,40,140,.10);
-  --shadow-card-lg: 0 2px 6px rgba(60,40,140,.08), 0 18px 40px rgba(60,40,140,.14);
-  --surface-field: #F6F4FF; --surface-field-border: #DDD7F7; --card-border: #E6E1F7;
-  --page-bg: #F6F5FC;
+  --ink-900: 37 43 82; --ink-800: 27 33 64; --ink-700: 20 24 48;
+  --grad-ink: linear-gradient(160deg, #161B36 0%, #1F2547 60%, #272E58 100%);
+  --grad-header: linear-gradient(100deg, #7A5AE6 0%, #5C86EA 48%, #33C6B5 100%);
+  --shadow-card: 0 1px 2px rgba(16,24,40,.04), 0 6px 20px rgba(16,24,40,.06);
+  --shadow-card-lg: 0 2px 6px rgba(16,24,40,.06), 0 14px 34px rgba(16,24,40,.10);
+  --surface-field: #F7F8FB; --surface-field-border: #E1E4EC; --card-border: #E9ECF2;
+  --page-bg: #F6F7FA;
   --brand-hex: #6B4FD8; --brand-glow: 107, 79, 216;
   --radius-card: 1.25rem;
 }
@@ -304,7 +306,9 @@ input[type="week"]::-webkit-date-and-time-value {
          px-3.5 py-1.5 text-[13px] font-semibold text-slate-600 transition-colors whitespace-nowrap;
 }
 .chip:hover { @apply bg-slate-50; }
-.chip-active, .chip[aria-pressed="true"] { @apply text-white border-transparent; background: rgb(var(--brand)); }
+/* Active chip: soft tint + purple text (OMNICHECK tabs), not a solid purple block. */
+.chip-active, .chip[aria-pressed="true"] { background: rgba(var(--brand-glow), .12); border-color: rgba(var(--brand-glow), .35); color: rgb(var(--brand-dark)); }
+.chip-active .chip-count { background: rgba(var(--brand-glow), .18); }
 .chip-count { @apply rounded-full bg-black/10 px-1.5 text-[11px] font-bold; }
 /* Status tags */
 .tag { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-[11.5px] font-bold; }
@@ -327,6 +331,7 @@ input[type="week"]::-webkit-date-and-time-value {
          border border-white/20 backdrop-blur-sm;
 }
 html .brand-wordmark { letter-spacing: 0.32em; }
-.btn-primary { background-image: linear-gradient(100deg, rgb(var(--brand)), rgb(var(--accent))); }
-.btn-primary { background-image: linear-gradient(100deg, rgb(var(--brand)), rgb(var(--accent))); }
 header.bg-coffee-gradient { border-radius: 0 0 1.5rem 1.5rem; }
+
+/* Main action = teal (OMNICHECK "บันทึก"); purple stays for links, active tabs and the header. */
+.btn-primary { background-color: #14B8A6; background-image: linear-gradient(100deg, #1CC4B1, #0FA596); }

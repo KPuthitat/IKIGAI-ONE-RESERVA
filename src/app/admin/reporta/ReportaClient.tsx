@@ -894,7 +894,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                 <span>เทียบเดือนก่อน (ช่วงเดียวกัน · POS) <PctChip pct={monthCompare.prevMonthPct} /></span>
                 <span>เทียบปีก่อน (เดือนเดียวกัน · POS) <PctChip pct={monthCompare.lastYearPct} /></span>
               </div>
-              <TrendMascot pct={monthCompare.prevMonthPct} />
+              <TrendMascot pct={monthCompare.prevMonthPct} size={96} />
             </div>
 
             {/* Monthly target progress (owner C) */}
@@ -1304,7 +1304,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                   <Kpi label="เฉลี่ยต่อวัน" value={weekly.avgPerDay != null ? baht(weekly.avgPerDay) : "—"} />
                 </div>
                 <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 flex flex-wrap items-center gap-x-6 gap-y-1">
-                  <TrendMascot pct={weekly.wowNettPct} size={48} />
+                  <TrendMascot pct={weekly.wowNettPct} size={88} />
                   <span className="font-semibold text-slate-700">เทียบสัปดาห์ก่อน:</span>
                   {weekly.wowNettPct == null ? (
                     <span className="text-slate-400">ยังไม่มีข้อมูลสัปดาห์ก่อน</span>

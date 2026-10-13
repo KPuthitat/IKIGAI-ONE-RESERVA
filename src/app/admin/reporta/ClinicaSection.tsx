@@ -296,7 +296,7 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
       {/* Headline */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="card col-span-2 md:col-span-1 relative">
-          <TrendMascot pct={clinicaMonthMoodPct(c, new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10))} size={60} className="absolute right-3 top-3" title="อารมณ์น้องปลาร้า: เทียบอัตราขายต่อวันของเดือนนี้ (คาดสิ้นเดือน) กับยอดเดือนก่อน" />
+          <TrendMascot pct={clinicaMonthMoodPct(c, new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10))} size={104} className="absolute right-3 top-2" title="อารมณ์น้องปลาร้า: เทียบอัตราขายต่อวันของเดือนนี้ (คาดสิ้นเดือน) กับยอดเดือนก่อน" />
           <div className="text-xs text-slate-500">ยอดบิลรวมเดือนนี้</div>
           <div className="text-xl font-bold text-slate-800 tabular-nums">{baht(c.billNet)}</div>
           <div className="text-[11px] text-slate-400">{c.billCount.toLocaleString("th-TH")} ครั้ง</div>

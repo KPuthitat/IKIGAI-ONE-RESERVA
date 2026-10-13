@@ -15,6 +15,7 @@
     "test:mealpass": "node --import tsx scripts/test-mealpass.ts",
     "test:rbac": "node --import tsx scripts/test-rbac.ts",
     "test:policy-notices": "node --import tsx scripts/test-policy-notices.ts",
+    "test:mascot-greeting": "node --import tsx scripts/test-mascot-greeting.ts",
     "test:trend-mascot": "node --import tsx scripts/test-trend-mascot.ts",
     "test:inventa-forecast": "node --import tsx scripts/test-inventa-forecast.ts",
     "test:ir-categories": "node --import tsx scripts/test-ir-categories.ts",

@@ -168,7 +168,7 @@ function MeetingCard({ m, onChanged }: { m: StaffMeetingView; onChanged: () => v
           ))}
 
           <button type="button" onClick={addExtra}
-            className="w-full rounded-xl border border-dashed border-[#cfc7ee] text-brand text-sm font-medium py-3 my-1 hover:bg-[color:var(--surface-field)] active:bg-[#ebe7fb]">
+            className="w-full rounded-xl border border-dashed border-[#cdd3df] text-brand text-sm font-medium py-3 my-1 hover:bg-[color:var(--surface-field)] active:bg-[#eef0f5]">
             + เพิ่มวาระ
           </button>
 
