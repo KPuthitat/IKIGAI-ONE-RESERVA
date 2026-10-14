@@ -386,7 +386,7 @@ export const ROLLUP_COLUMNS: DocColumn[] = [
   { key: "comp", header: "ค่าตอบแทน", kind: "money" },
   { key: "svcGross", header: "เซอร์วิสชาร์จ", kind: "money" },
   { key: "mtgGross", header: "เบี้ยประชุม", kind: "money" },
-  { key: "dutyGross", header: "ตำแหน่งงานค่าตอบแทนพิเศษ", kind: "money" },
+  { key: "dutyGross", header: "ค่าตอบแทนพิเศษ", kind: "money" },
   { key: "income", header: "ยอดก่อนหัก", kind: "money" },
   { key: "sso", header: "ประกันสังคม (หัก)", kind: "deduction" },
   { key: "tax", header: "ภาษี ณ ที่จ่าย (หัก)", kind: "deduction" },
@@ -453,7 +453,7 @@ export function renderPayrollSummaryCsv(
       if (bl.roundGroups.length === 0) { push("  (ไม่มีรอบจ่ายในเดือนนี้ — มีเฉพาะเซอร์วิสชาร์จ)"); lines.push(""); }
 
       // Final per-person rollup for this branch.
-      push("  สรุปรวมต่อคน (ทั้งเดือน · รวมเซอร์วิสชาร์จระดับบริษัท + เบี้ยประชุม + ตำแหน่งงานค่าตอบแทนพิเศษ)");
+      push("  สรุปรวมต่อคน (ทั้งเดือน · รวมเซอร์วิสชาร์จระดับบริษัท + เบี้ยประชุม + ค่าตอบแทนพิเศษ)");
       push(...ROLLUP_COLUMNS.map((col) => col.header));
       for (const r of bl.rollup) push(...ROLLUP_COLUMNS.map((col) => rollupCell(r, col)));
       const t = bl.totals;
