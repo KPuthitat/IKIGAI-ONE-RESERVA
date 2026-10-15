@@ -116,7 +116,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
 
   // manager assignment during filling
   const filler = mk("filler", "kitchen"); onRoster(filler, ALL);
-  ok("assigning while booking is still open is refused", codes(R.checkAssignment({ userId: filler, branchId: nama, yearMonth: YM, positionId: dish, date: date(28), asOf: NOW })).includes("not_open_for_assignment"));
+  ok("the back office can assign while booking is still open (checked, not saved)", R.checkAssignment({ userId: filler, branchId: nama, yearMonth: YM, positionId: dish, date: date(28), asOf: NOW }).ok === true);
   D.advanceMonth({ branchId: nama, yearMonth: YM, to: "booking_closed", actorId: owner });
   D.advanceMonth({ branchId: nama, yearMonth: YM, to: "filling", actorId: owner });
   ok("the manager can assign an open day to someone with 3 strikes (they may still be assigned)", R.assignDay({ userId: striker, branchId: nama, yearMonth: YM, positionId: dish, date: date(28), managerId: owner, asOf: NOW }).ok === true);

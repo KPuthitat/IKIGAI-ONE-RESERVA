@@ -124,7 +124,7 @@ export function managerAssign(args: { branchId: number; yearMonth: string; posit
 
 export type RemoveResult = { ok: true } | { ok: false; code: "not_found" | "not_removable" | "wrong_stage" };
 
-/** Free a booked/assigned day. Allowed while the month is being filled and before any evidence is submitted. */
+/** Free a booked/assigned day. Allowed until the schedule is published, and before any evidence is submitted. */
 export function removeDay(args: { dayId: number; branchId: number; managerId: number }): RemoveResult {
   const db = getDb();
   const row = db.prepare(`
@@ -133,7 +133,7 @@ export function removeDay(args: { dayId: number; branchId: number; managerId: nu
   `).get(args.dayId, args.branchId) as { id: number; status: string; uid: number; date: string; source: string; pid: number; ym: string } | undefined;
   if (!row) return { ok: false, code: "not_found" };
   const m = getMonth(args.branchId, row.ym);
-  if (!["booking_closed", "filling"].includes(m.status)) return { ok: false, code: "wrong_stage" };
+  if (!["booking_open", "booking_closed", "filling"].includes(m.status)) return { ok: false, code: "wrong_stage" };
   if (!["booked", "assigned"].includes(row.status)) return { ok: false, code: "not_removable" };
   db.prepare("DELETE FROM special_duty_days WHERE id = ?").run(row.id);
   audit({ actorId: args.managerId, branchId: args.branchId, yearMonth: row.ym, entity: "assignment", entityId: row.id, action: "remove",

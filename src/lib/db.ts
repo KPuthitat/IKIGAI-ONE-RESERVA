@@ -3418,6 +3418,21 @@ function runMigrations(db: Database.Database): void {
   // Who announces it (shown to staff as "ประกาศโดย"); blank = the account that created the notice.
   const pnCols = new Set((db.prepare("PRAGMA table_info(policy_notices)").all() as Array<{ name: string }>).map((c) => c.name));
   if (!pnCols.has("announcer")) db.exec("ALTER TABLE policy_notices ADD COLUMN announcer TEXT NOT NULL DEFAULT ''");
+  // Follow-up letters ("ฉบับแก้ไข") point at the notice they continue; the AI digest of the anonymous suggestions is kept on the notice.
+  if (!pnCols.has("parent_id")) db.exec("ALTER TABLE policy_notices ADD COLUMN parent_id INTEGER REFERENCES policy_notices(id)");
+  if (!pnCols.has("ai_summary")) db.exec("ALTER TABLE policy_notices ADD COLUMN ai_summary TEXT");
+  if (!pnCols.has("ai_summary_at")) db.exec("ALTER TABLE policy_notices ADD COLUMN ai_summary_at TEXT");
+  // Suggestions typed while acknowledging. Deliberately NO user_id and only the day (not the time), so a
+  // suggestion cannot be matched to the acknowledgement timestamp of whoever wrote it.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS policy_notice_suggestions (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      notice_id INTEGER NOT NULL REFERENCES policy_notices(id) ON DELETE CASCADE,
+      body      TEXT NOT NULL,
+      day       TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_policy_suggestions_notice ON policy_notice_suggestions(notice_id);
+  `);
   // Review trail on a duty day: when the holder/substitute submitted evidence, and who approved or sent it back.
   const sddCols = new Set((db.prepare("PRAGMA table_info(special_duty_days)").all() as Array<{ name: string }>).map((c) => c.name));
   for (const [col, decl] of [["submitted_at", "TEXT"], ["reviewed_by", "INTEGER REFERENCES users(id)"], ["reviewed_at", "TEXT"], ["review_note", "TEXT"]] as const) {

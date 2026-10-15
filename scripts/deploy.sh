@@ -102,6 +102,19 @@ if [[ "${FORCE:-0}" != "1" ]]; then
 fi
 
 echo "==> [1/6] git pull origin main"
+# package-lock.json is rewritten by every `npm install` on this server (step below), so the
+# working copy is always "modified" after a deploy. When the next pull also changes the lock
+# (a new npm package), git refuses with "Your local changes ... would be overwritten".
+# 2026-10-15: the server copy is only a by-product, GitHub's is the source of truth — drop it.
+# Only this one generated file is discarded; any other local edit still stops the pull (below).
+if ! git diff --quiet -- package-lock.json 2>/dev/null; then
+  echo "    discarding the server-side package-lock.json changes left by the last npm install"
+  git checkout -- package-lock.json
+fi
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+  echo "    ⚠ other tracked files were edited on the server — git pull may refuse:"
+  git status --porcelain --untracked-files=no | sed 's/^/      /'
+fi
 # Capture the pre-pull commit so we can tell if dependencies changed.
 PREV_HEAD="$(git rev-parse HEAD 2>/dev/null || echo '')"
 git pull origin main

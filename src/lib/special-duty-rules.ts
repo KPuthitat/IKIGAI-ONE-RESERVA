@@ -133,14 +133,15 @@ export function setUserBookings(args: { userId: number; branchId: number; yearMo
   return result;
 }
 
-/** Manager assigns an open day (filling stage). Same eligibility, no minimum, and
- *  strikes do not block it. */
+/** Manager assigns an open day — from the moment booking opens until the schedule is published
+ *  (owner 2026-10-15: the back office can add people itself, not only fill what is left).
+ *  Same eligibility, no minimum, and strikes do not block it. */
 export function checkAssignment(args: { userId: number; branchId: number; yearMonth: string; positionId: number; date: string; asOf?: string }): RuleResult {
   const { userId, branchId, yearMonth, positionId, date } = args;
   const asOf = args.asOf ?? bkkToday();
   const month = getMonth(branchId, yearMonth);
   if (!month.enabled) return { ok: false, errors: [{ code: "month_off" }] };
-  if (!["booking_closed", "filling"].includes(month.status)) return { ok: false, errors: [{ code: "not_open_for_assignment" }] };
+  if (!["booking_open", "booking_closed", "filling"].includes(month.status)) return { ok: false, errors: [{ code: "not_open_for_assignment" }] };
   const user = loadUser(userId, branchId);
   if (!user) return { ok: false, errors: [{ code: "not_in_branch" }] };
   const errs: Err[] = [];

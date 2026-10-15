@@ -25,7 +25,7 @@ export class PolicyError extends Error {
 }
 export type PolicyErrorCode =
   | "invalid_title" | "invalid_meeting_at" | "invalid_item" | "no_items" | "too_many_items"
-  | "invalid_image" | "image_too_large" | "too_many_images"
+  | "invalid_suggestion" | "invalid_image" | "image_too_large" | "too_many_images"
   | "not_found" | "locked" | "bad_status" | "not_recipient" | "not_published";
 
 export const POLICY_ERROR_TH: Record<PolicyErrorCode, string> = {
@@ -34,6 +34,7 @@ export const POLICY_ERROR_TH: Record<PolicyErrorCode, string> = {
   invalid_item: "ทุกหัวข้อต้องมีชื่อหัวข้อและรายละเอียด",
   no_items: "ต้องมีอย่างน้อย 1 หัวข้อหรือ 1 รูปก่อนส่งหนังสือ",
   too_many_items: "ใส่ได้ไม่เกิน 30 หัวข้อ",
+  invalid_suggestion: "ข้อเสนอแนะยาวเกินไป (ไม่เกิน 2,000 ตัวอักษร)",
   invalid_image: "รองรับเฉพาะรูป PNG / JPG / WebP",
   image_too_large: "ไฟล์รูปใหญ่เกิน 10 MB",
   too_many_images: "แนบรูปได้ไม่เกิน 10 รูป",
@@ -45,7 +46,7 @@ export const POLICY_ERROR_TH: Record<PolicyErrorCode, string> = {
 };
 
 export const MAX_ITEMS = 30;
-const MAX_TOPIC = 200, MAX_DETAILS = 4000, MAX_SUGGEST = 4000, MAX_TITLE = 200, MAX_PURPOSE = 1000, MAX_LOCATION = 200, MAX_ANNOUNCER = 120;
+const MAX_TOPIC = 200, MAX_DETAILS = 4000, MAX_SUGGEST = 4000, MAX_TITLE = 200, MAX_PURPOSE = 1000, MAX_LOCATION = 200, MAX_ANNOUNCER = 120, MAX_SUGGESTION = 2000;
 
 export const MAX_IMAGES = 10;
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;   // nginx must allow request bodies a little above this (deploy/nginx-reserva.conf)
@@ -56,7 +57,7 @@ export type NoticeItem = { topic: string; details: string; suggestions: string }
 export type NoticeRow = {
   id: number; title: string; purpose: string; meetingAt: string | null; location: string;
   branchId: number | null; branchName: string | null; status: NoticeStatus; ackDeadline: string | null;
-  announcer: string; createdAt: string; invitedAt: string | null; publishedAt: string | null; closedAt: string | null;
+  announcer: string; parentId: number | null; parentTitle: string | null; createdAt: string; invitedAt: string | null; publishedAt: string | null; closedAt: string | null;
 };
 export type Recipient = { userId: number; name: string; lineUserId: string | null };
 
@@ -67,14 +68,14 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 type RawNotice = {
   id: number; title: string; purpose: string; meeting_at: string | null; location: string; branch_id: number | null;
   branch_name: string | null; status: NoticeStatus; ack_deadline: string | null; created_at: string;
-  invited_at: string | null; published_at: string | null; closed_at: string | null; announcer: string; creator_name: string | null;
+  invited_at: string | null; published_at: string | null; closed_at: string | null; announcer: string; creator_name: string | null; parent_id: number | null; parent_title: string | null;
 };
 const toRow = (r: RawNotice): NoticeRow => ({
   id: r.id, title: r.title, purpose: r.purpose, meetingAt: r.meeting_at, location: r.location, branchId: r.branch_id,
-  branchName: r.branch_name, status: r.status, ackDeadline: r.ack_deadline, announcer: r.announcer || r.creator_name || "", createdAt: r.created_at,
+  branchName: r.branch_name, status: r.status, ackDeadline: r.ack_deadline, announcer: r.announcer || r.creator_name || "", parentId: r.parent_id, parentTitle: r.parent_title, createdAt: r.created_at,
   invitedAt: r.invited_at, publishedAt: r.published_at, closedAt: r.closed_at
 });
-const SELECT_NOTICE = `SELECT n.*, b.name AS branch_name, ${sqlNameWithPrefix("cu")} AS creator_name FROM policy_notices n LEFT JOIN branches b ON b.id = n.branch_id LEFT JOIN users cu ON cu.id = n.created_by`;
+const SELECT_NOTICE = `SELECT n.*, b.name AS branch_name, ${sqlNameWithPrefix("cu")} AS creator_name, pn.title AS parent_title FROM policy_notices n LEFT JOIN branches b ON b.id = n.branch_id LEFT JOIN users cu ON cu.id = n.created_by LEFT JOIN policy_notices pn ON pn.id = n.parent_id`;
 
 function load(id: number): NoticeRow {
   const r = getDb().prepare(`${SELECT_NOTICE} WHERE n.id = ?`).get(id) as RawNotice | undefined;
@@ -113,6 +114,19 @@ export function createNotice(input: NoticeInput, actorId: number): number {
   const r = getDb().prepare(`INSERT INTO policy_notices (title, purpose, meeting_at, location, branch_id, status, ack_deadline, announcer, created_by, created_at)
     VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?)`).run(c.title, c.purpose, c.meeting_at, c.location, c.branch_id, c.ack_deadline, c.announcer, actorId, nowIso());
   return Number(r.lastInsertRowid);
+}
+
+/** A follow-up letter ("ฉบับแก้ไข") continuing a notice that has gone out: starts as a blank draft for the same audience. */
+export function createFollowUp(parentId: number, actorId: number): number {
+  const p = load(parentId);
+  if (p.status !== "published" && p.status !== "closed") throw new PolicyError("bad_status");
+  const r = getDb().prepare(`INSERT INTO policy_notices (title, purpose, location, branch_id, status, parent_id, created_by, created_at)
+    VALUES (?, '', '', ?, 'scheduled', ?, ?, ?)`).run(`ฉบับแก้ไข: ${p.title}`.slice(0, MAX_TITLE), p.branchId, parentId, actorId, nowIso());
+  return Number(r.lastInsertRowid);
+}
+
+export function followUpsOf(noticeId: number): Array<{ id: number; title: string; status: NoticeStatus }> {
+  return getDb().prepare("SELECT id, title, status FROM policy_notices WHERE parent_id = ? AND status <> 'cancelled' ORDER BY id").all(noticeId) as Array<{ id: number; title: string; status: NoticeStatus }>;
 }
 
 /** Meeting details can change until the letter goes out; the letter's wording is locked after that. */
@@ -278,21 +292,41 @@ export function cancelNotice(id: number): void {
 // ── acknowledgement ───────────────────────────────────────────────────────────
 
 /** Record "รับทราบ". Idempotent: a second press keeps the first timestamp. */
-export function acknowledge(noticeId: number, userId: number): { ackedAt: string; already: boolean } {
+export function acknowledge(noticeId: number, userId: number, suggestion?: string): { ackedAt: string; already: boolean } {
   const n = load(noticeId);
   if (n.status === "scheduled" || n.status === "cancelled") throw new PolicyError("not_published");
   if (n.status === "closed") throw new PolicyError("bad_status");
+  const text = (suggestion ?? "").trim();
+  if (text.length > MAX_SUGGESTION) throw new PolicyError("invalid_suggestion");
   const db = getDb();
   const row = db.prepare("SELECT acked_at FROM policy_notice_recipients WHERE notice_id = ? AND user_id = ?").get(noticeId, userId) as { acked_at: string | null } | undefined;
   if (!row) throw new PolicyError("not_recipient");
   if (row.acked_at) return { ackedAt: row.acked_at, already: true };
   const at = nowIso();
-  const r = db.prepare("UPDATE policy_notice_recipients SET acked_at = ? WHERE notice_id = ? AND user_id = ? AND acked_at IS NULL").run(at, noticeId, userId);
+  // The suggestion is stored without the person (see policy_notice_suggestions) and only when this press is the one that counted.
+  const r = db.transaction(() => {
+    const u = db.prepare("UPDATE policy_notice_recipients SET acked_at = ? WHERE notice_id = ? AND user_id = ? AND acked_at IS NULL").run(at, noticeId, userId);
+    if (u.changes && text) db.prepare("INSERT INTO policy_notice_suggestions (notice_id, body, day) VALUES (?, ?, ?)").run(noticeId, text, at.slice(0, 10));
+    return u;
+  })();
   if (!r.changes) {
     const again = db.prepare("SELECT acked_at FROM policy_notice_recipients WHERE notice_id = ? AND user_id = ?").get(noticeId, userId) as { acked_at: string };
     return { ackedAt: again.acked_at, already: true };
   }
   return { ackedAt: at, already: false };
+}
+
+// ── anonymous suggestions + AI digest ─────────────────────────────────────────
+
+export type Suggestion = { id: number; body: string; day: string };
+
+/** Alphabetical, not chronological: the order must not reveal who acknowledged when. */
+export function listSuggestions(noticeId: number): Suggestion[] {
+  return getDb().prepare("SELECT id, body, day FROM policy_notice_suggestions WHERE notice_id = ? ORDER BY body COLLATE NOCASE, id").all(noticeId) as Suggestion[];
+}
+
+export function saveAiSummary(noticeId: number, summary: string): void {
+  getDb().prepare("UPDATE policy_notices SET ai_summary = ?, ai_summary_at = ? WHERE id = ?").run(summary, nowIso(), noticeId);
 }
 
 // ── read models ───────────────────────────────────────────────────────────────
@@ -308,34 +342,40 @@ export function listForAdmin(): AdminNoticeSummary[] {
 
 export type AdminAckRow = { userId: number; name: string; ackedAt: string | null; letterSentAt: string | null; lastRemindedAt: string | null };
 
-export function adminDetail(id: number): { notice: NoticeRow; items: NoticeItem[]; images: NoticeImage[]; recipients: AdminAckRow[] } | null {
+export type AdminDetail = {
+  notice: NoticeRow; items: NoticeItem[]; images: NoticeImage[]; recipients: AdminAckRow[];
+  suggestions: Suggestion[]; aiSummary: string | null; aiSummaryAt: string | null; followUps: Array<{ id: number; title: string; status: NoticeStatus }>;
+};
+
+export function adminDetail(id: number): AdminDetail | null {
   const notice = getNotice(id);
   if (!notice) return null;
   const recipients = getDb().prepare(`
     SELECT r.user_id AS userId, ${sqlNameWithPrefix("u")} AS name, r.acked_at AS ackedAt, r.letter_sent_at AS letterSentAt, r.last_reminded_at AS lastRemindedAt
       FROM policy_notice_recipients r JOIN users u ON u.id = r.user_id
      WHERE r.notice_id = ? ORDER BY (r.acked_at IS NULL) DESC, u.display_name`).all(id) as AdminAckRow[];
-  return { notice, items: listItems(id), images: listImages(id), recipients };
+  const ai = getDb().prepare("SELECT ai_summary, ai_summary_at FROM policy_notices WHERE id = ?").get(id) as { ai_summary: string | null; ai_summary_at: string | null };
+  return { notice, items: listItems(id), images: listImages(id), recipients, suggestions: listSuggestions(id), aiSummary: ai.ai_summary, aiSummaryAt: ai.ai_summary_at, followUps: followUpsOf(id) };
 }
 
 export type StaffNotice = {
   id: number; title: string; purpose: string; meetingAt: string | null; location: string; status: NoticeStatus;
-  ackDeadline: string | null; publishedAt: string | null; ackedAt: string | null; announcer: string; items: NoticeItem[] | null; images: NoticeImage[];
+  ackDeadline: string | null; publishedAt: string | null; ackedAt: string | null; announcer: string; parent: { id: number; title: string } | null; items: NoticeItem[] | null; images: NoticeImage[];
 };
 
 /** What one employee may see: meeting notices they were invited to, and letters that were sent. Never other people's data. */
 export function listForUser(userId: number): StaffNotice[] {
   const rows = getDb().prepare(`
     SELECT n.id, n.title, n.purpose, n.meeting_at, n.location, n.status, n.ack_deadline, n.published_at, r.acked_at,
-           COALESCE(NULLIF(n.announcer, ''), ${sqlNameWithPrefix("cu")}) AS announcer
-      FROM policy_notice_recipients r JOIN policy_notices n ON n.id = r.notice_id LEFT JOIN users cu ON cu.id = n.created_by
+           COALESCE(NULLIF(n.announcer, ''), ${sqlNameWithPrefix("cu")}) AS announcer, n.parent_id, pn.title AS parent_title
+      FROM policy_notice_recipients r JOIN policy_notices n ON n.id = r.notice_id LEFT JOIN users cu ON cu.id = n.created_by LEFT JOIN policy_notices pn ON pn.id = n.parent_id
      WHERE r.user_id = ? AND (n.status IN ('published','closed') OR (n.status = 'scheduled' AND r.invite_sent_at IS NOT NULL))
      ORDER BY (n.status = 'published' AND r.acked_at IS NULL) DESC, COALESCE(n.published_at, n.created_at) DESC, n.id DESC`).all(userId) as Array<{
-    id: number; title: string; purpose: string; meeting_at: string | null; location: string; status: NoticeStatus; ack_deadline: string | null; published_at: string | null; acked_at: string | null; announcer: string | null;
+    id: number; title: string; purpose: string; meeting_at: string | null; location: string; status: NoticeStatus; ack_deadline: string | null; published_at: string | null; acked_at: string | null; announcer: string | null; parent_id: number | null; parent_title: string | null;
   }>;
   return rows.map((r) => ({
     id: r.id, title: r.title, purpose: r.purpose, meetingAt: r.meeting_at, location: r.location, status: r.status,
-    ackDeadline: r.ack_deadline, publishedAt: r.published_at, ackedAt: r.acked_at, announcer: r.announcer ?? "",
+    ackDeadline: r.ack_deadline, publishedAt: r.published_at, ackedAt: r.acked_at, announcer: r.announcer ?? "", parent: r.parent_id && r.parent_title ? { id: r.parent_id, title: r.parent_title } : null,
     items: r.status === "scheduled" ? null : listItems(r.id),
     images: r.status === "scheduled" ? [] : listImages(r.id)
   }));

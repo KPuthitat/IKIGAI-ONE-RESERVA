@@ -84,6 +84,17 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   const dayRow = db.prepare("SELECT d.id FROM special_duty_days d WHERE d.position_id = ? AND d.duty_date = ?").get(toilet.id, date(20)) as { id: number };
   ok("manager can remove an assigned day", F.removeDay({ dayId: dayRow.id, branchId: nama, managerId: owner }).ok === true);
   ok("…and it is audited", !!db.prepare("SELECT 1 FROM special_duty_audit WHERE entity='assignment' AND action='remove'").get());
+  ok("a day can also be freed while booking is still open (back-office edits), but not after publishing", (() => {
+    const r = db.prepare("SELECT d.* FROM special_duty_days d WHERE d.position_id = ? AND d.duty_date = ?").get(toilet.id, date(23)) as { id: number; position_id: number; duty_date: string; user_id: number; source: string; status: string };
+    const setStatus = (st: string) => db.prepare("UPDATE special_duty_months SET status = ? WHERE branch_id = ? AND year_month = ?").run(st, nama, YM);
+    setStatus("special_published");
+    const refused = F.removeDay({ dayId: r.id, branchId: nama, managerId: owner });
+    setStatus("booking_open");
+    const allowed = F.removeDay({ dayId: r.id, branchId: nama, managerId: owner });
+    setStatus("filling");
+    db.prepare("INSERT INTO special_duty_days (position_id, duty_date, user_id, source, status) VALUES (?, ?, ?, ?, ?)").run(r.position_id, r.duty_date, r.user_id, r.source, r.status);   // put it back for the tests below
+    return refused.ok === false && refused.code === "wrong_stage" && allowed.ok === true;
+  })());
   ok("another branch's manager cannot remove it", (() => { const r = db.prepare("SELECT d.id FROM special_duty_days d WHERE d.position_id = ? AND d.duty_date = ?").get(toilet.id, date(21)) as { id: number }; const x = F.removeDay({ dayId: r.id, branchId: hypo, managerId: owner }); return x.ok === false && x.code === "not_found"; })());
   ok("a day with submitted evidence cannot be removed", (() => { const r = db.prepare("SELECT d.id FROM special_duty_days d WHERE d.position_id = ? AND d.duty_date = ?").get(toilet.id, date(22)) as { id: number }; db.prepare("UPDATE special_duty_days SET status='submitted' WHERE id=?").run(r.id); const x = F.removeDay({ dayId: r.id, branchId: nama, managerId: owner }); db.prepare("UPDATE special_duty_days SET status='assigned' WHERE id=?").run(r.id); return x.ok === false && x.code === "not_removable"; })());
   ok("manager assigns a freed day to a specific person", F.managerAssign({ branchId: nama, yearMonth: YM, positionId: toilet.id, date: date(20), userId: b, managerId: owner, asOf: ASOF }).ok === true);
