@@ -99,6 +99,16 @@ const IMG_DIR = path.join(process.cwd(), "data", "test-policy-images"); fs.rmSyn
   const flex = N.letterFlex({ title: "t", topics: Array.from({ length: 9 }, (_, i) => `หัวข้อ ${i + 1}`), ackDeadline: "2026-10-20", reminder: true, url: "https://x/y" });
   const body = JSON.stringify(flex);
   ok("the LINE card lists at most 6 topics and says how many more, with the deadline", body.includes("และอีก 3 หัวข้อ") && !body.includes("หัวข้อ 7") && body.includes("20/10/2026") && flex.altText.startsWith("เตือน"));
+  // announcer
+  db.prepare("UPDATE users SET title_prefix = 'นพ.' WHERE id = ?").run(owner);
+  const ann = P.createNotice({ title: "ผู้ประกาศ", meetingAt: TH }, owner);
+  ok("the announcer defaults to the creator, with title prefix", P.getNotice(ann)!.announcer === "นพ. owner");
+  P.updateNotice(ann, { title: "ผู้ประกาศ", meetingAt: TH, announcer: "  ผู้อำนวยการ  " });
+  ok("an announcer can be typed in and is trimmed", P.getNotice(ann)!.announcer === "ผู้อำนวยการ");
+  P.updateNotice(ann, { title: "ผู้ประกาศ", meetingAt: TH, announcer: "" });
+  ok("clearing it falls back to the creator again", P.getNotice(ann)!.announcer === "นพ. owner");
+  P.inviteMeeting(ann);
+  ok("employees see who announced", P.listForUser(a).find((n) => n.id === ann)?.announcer === "นพ. owner");
   // pictures (infographic)
   const id3 = P.createNotice({ title: "ภาพอินโฟกราฟิก", meetingAt: TH }, owner);
   const png = Buffer.from("89504e470d0a1a0a", "hex");

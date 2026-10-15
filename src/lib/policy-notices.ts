@@ -45,7 +45,7 @@ export const POLICY_ERROR_TH: Record<PolicyErrorCode, string> = {
 };
 
 export const MAX_ITEMS = 30;
-const MAX_TOPIC = 200, MAX_DETAILS = 4000, MAX_SUGGEST = 4000, MAX_TITLE = 200, MAX_PURPOSE = 1000, MAX_LOCATION = 200;
+const MAX_TOPIC = 200, MAX_DETAILS = 4000, MAX_SUGGEST = 4000, MAX_TITLE = 200, MAX_PURPOSE = 1000, MAX_LOCATION = 200, MAX_ANNOUNCER = 120;
 
 export const MAX_IMAGES = 10;
 export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;   // nginx accepts 5 MB request bodies
@@ -56,7 +56,7 @@ export type NoticeItem = { topic: string; details: string; suggestions: string }
 export type NoticeRow = {
   id: number; title: string; purpose: string; meetingAt: string | null; location: string;
   branchId: number | null; branchName: string | null; status: NoticeStatus; ackDeadline: string | null;
-  createdAt: string; invitedAt: string | null; publishedAt: string | null; closedAt: string | null;
+  announcer: string; createdAt: string; invitedAt: string | null; publishedAt: string | null; closedAt: string | null;
 };
 export type Recipient = { userId: number; name: string; lineUserId: string | null };
 
@@ -67,14 +67,14 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 type RawNotice = {
   id: number; title: string; purpose: string; meeting_at: string | null; location: string; branch_id: number | null;
   branch_name: string | null; status: NoticeStatus; ack_deadline: string | null; created_at: string;
-  invited_at: string | null; published_at: string | null; closed_at: string | null;
+  invited_at: string | null; published_at: string | null; closed_at: string | null; announcer: string; creator_name: string | null;
 };
 const toRow = (r: RawNotice): NoticeRow => ({
   id: r.id, title: r.title, purpose: r.purpose, meetingAt: r.meeting_at, location: r.location, branchId: r.branch_id,
-  branchName: r.branch_name, status: r.status, ackDeadline: r.ack_deadline, createdAt: r.created_at,
+  branchName: r.branch_name, status: r.status, ackDeadline: r.ack_deadline, announcer: r.announcer || r.creator_name || "", createdAt: r.created_at,
   invitedAt: r.invited_at, publishedAt: r.published_at, closedAt: r.closed_at
 });
-const SELECT_NOTICE = `SELECT n.*, b.name AS branch_name FROM policy_notices n LEFT JOIN branches b ON b.id = n.branch_id`;
+const SELECT_NOTICE = `SELECT n.*, b.name AS branch_name, ${sqlNameWithPrefix("cu")} AS creator_name FROM policy_notices n LEFT JOIN branches b ON b.id = n.branch_id LEFT JOIN users cu ON cu.id = n.created_by`;
 
 function load(id: number): NoticeRow {
   const r = getDb().prepare(`${SELECT_NOTICE} WHERE n.id = ?`).get(id) as RawNotice | undefined;
@@ -92,9 +92,9 @@ export function listItems(noticeId: number): NoticeItem[] {
 
 // ── create / edit ─────────────────────────────────────────────────────────────
 
-export type NoticeInput = { title: string; purpose?: string; meetingAt?: string | null; location?: string; branchId?: number | null; ackDeadline?: string | null };
+export type NoticeInput = { title: string; purpose?: string; meetingAt?: string | null; location?: string; branchId?: number | null; ackDeadline?: string | null; announcer?: string };
 
-function clean(input: NoticeInput): { title: string; purpose: string; meeting_at: string | null; location: string; branch_id: number | null; ack_deadline: string | null } {
+function clean(input: NoticeInput): { title: string; purpose: string; meeting_at: string | null; location: string; branch_id: number | null; ack_deadline: string | null; announcer: string } {
   const title = (input.title ?? "").trim();
   if (!title || title.length > MAX_TITLE) throw new PolicyError("invalid_title");
   const meetingAt = input.meetingAt ? input.meetingAt.trim() : null;
@@ -103,14 +103,15 @@ function clean(input: NoticeInput): { title: string; purpose: string; meeting_at
   if (deadline && !DAY.test(deadline)) throw new PolicyError("invalid_meeting_at");
   return {
     title, purpose: (input.purpose ?? "").trim().slice(0, MAX_PURPOSE), meeting_at: meetingAt,
-    location: (input.location ?? "").trim().slice(0, MAX_LOCATION), branch_id: input.branchId ?? null, ack_deadline: deadline
+    location: (input.location ?? "").trim().slice(0, MAX_LOCATION), branch_id: input.branchId ?? null, ack_deadline: deadline,
+    announcer: (input.announcer ?? "").trim().slice(0, MAX_ANNOUNCER)
   };
 }
 
 export function createNotice(input: NoticeInput, actorId: number): number {
   const c = clean(input);
-  const r = getDb().prepare(`INSERT INTO policy_notices (title, purpose, meeting_at, location, branch_id, status, ack_deadline, created_by, created_at)
-    VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, ?)`).run(c.title, c.purpose, c.meeting_at, c.location, c.branch_id, c.ack_deadline, actorId, nowIso());
+  const r = getDb().prepare(`INSERT INTO policy_notices (title, purpose, meeting_at, location, branch_id, status, ack_deadline, announcer, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?)`).run(c.title, c.purpose, c.meeting_at, c.location, c.branch_id, c.ack_deadline, c.announcer, actorId, nowIso());
   return Number(r.lastInsertRowid);
 }
 
@@ -119,8 +120,8 @@ export function updateNotice(id: number, input: NoticeInput): void {
   const n = load(id);
   if (n.status !== "scheduled") throw new PolicyError(n.status === "published" || n.status === "closed" ? "locked" : "bad_status");
   const c = clean(input);
-  getDb().prepare(`UPDATE policy_notices SET title = ?, purpose = ?, meeting_at = ?, location = ?, branch_id = ?, ack_deadline = ? WHERE id = ?`)
-    .run(c.title, c.purpose, c.meeting_at, c.location, c.branch_id, c.ack_deadline, id);
+  getDb().prepare(`UPDATE policy_notices SET title = ?, purpose = ?, meeting_at = ?, location = ?, branch_id = ?, ack_deadline = ?, announcer = ? WHERE id = ?`)
+    .run(c.title, c.purpose, c.meeting_at, c.location, c.branch_id, c.ack_deadline, c.announcer, id);
 }
 
 export function cleanItems(items: NoticeItem[]): NoticeItem[] {
@@ -319,21 +320,22 @@ export function adminDetail(id: number): { notice: NoticeRow; items: NoticeItem[
 
 export type StaffNotice = {
   id: number; title: string; purpose: string; meetingAt: string | null; location: string; status: NoticeStatus;
-  ackDeadline: string | null; publishedAt: string | null; ackedAt: string | null; items: NoticeItem[] | null; images: NoticeImage[];
+  ackDeadline: string | null; publishedAt: string | null; ackedAt: string | null; announcer: string; items: NoticeItem[] | null; images: NoticeImage[];
 };
 
 /** What one employee may see: meeting notices they were invited to, and letters that were sent. Never other people's data. */
 export function listForUser(userId: number): StaffNotice[] {
   const rows = getDb().prepare(`
-    SELECT n.id, n.title, n.purpose, n.meeting_at, n.location, n.status, n.ack_deadline, n.published_at, r.acked_at
-      FROM policy_notice_recipients r JOIN policy_notices n ON n.id = r.notice_id
+    SELECT n.id, n.title, n.purpose, n.meeting_at, n.location, n.status, n.ack_deadline, n.published_at, r.acked_at,
+           COALESCE(NULLIF(n.announcer, ''), ${sqlNameWithPrefix("cu")}) AS announcer
+      FROM policy_notice_recipients r JOIN policy_notices n ON n.id = r.notice_id LEFT JOIN users cu ON cu.id = n.created_by
      WHERE r.user_id = ? AND (n.status IN ('published','closed') OR (n.status = 'scheduled' AND r.invite_sent_at IS NOT NULL))
      ORDER BY (n.status = 'published' AND r.acked_at IS NULL) DESC, COALESCE(n.published_at, n.created_at) DESC, n.id DESC`).all(userId) as Array<{
-    id: number; title: string; purpose: string; meeting_at: string | null; location: string; status: NoticeStatus; ack_deadline: string | null; published_at: string | null; acked_at: string | null;
+    id: number; title: string; purpose: string; meeting_at: string | null; location: string; status: NoticeStatus; ack_deadline: string | null; published_at: string | null; acked_at: string | null; announcer: string | null;
   }>;
   return rows.map((r) => ({
     id: r.id, title: r.title, purpose: r.purpose, meetingAt: r.meeting_at, location: r.location, status: r.status,
-    ackDeadline: r.ack_deadline, publishedAt: r.published_at, ackedAt: r.acked_at,
+    ackDeadline: r.ack_deadline, publishedAt: r.published_at, ackedAt: r.acked_at, announcer: r.announcer ?? "",
     items: r.status === "scheduled" ? null : listItems(r.id),
     images: r.status === "scheduled" ? [] : listImages(r.id)
   }));

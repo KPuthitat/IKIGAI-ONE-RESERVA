@@ -39,6 +39,8 @@ export default function StaffPolicyNoticesPage() {
             {n.status !== "scheduled" && (n.ackedAt ? <span className="tag tag-ok flex-shrink-0">รับทราบแล้ว</span> : n.status === "closed" ? <span className="tag tag-mute flex-shrink-0">ปิดแล้ว</span> : <span className="tag tag-warn flex-shrink-0">รอรับทราบ</span>)}
           </div>
 
+          {n.announcer && <p className="text-xs text-slate-500">ประกาศโดย <b className="text-slate-700">{n.announcer}</b>{n.publishedAt ? ` · ${fmtTime(n.publishedAt)}` : ""}</p>}
+
           {n.purpose && <p className="text-sm text-slate-600 whitespace-pre-line">{n.purpose}</p>}
 
           {n.status === "scheduled" && (

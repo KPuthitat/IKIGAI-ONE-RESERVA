@@ -28,7 +28,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   try {
     const items = d.items.map((i) => ({ topic: i.topic, details: i.details, suggestions: i.suggestions ?? "" }));
     cleanItems(items);   // validate before touching anything, so a bad topic leaves the meeting details unchanged too
-    updateNotice(id, { title: d.title, purpose: d.purpose, meetingAt: d.meeting_at ?? null, location: d.location, branchId: d.branch_id ?? null, ackDeadline: d.ack_deadline ?? null });
+    updateNotice(id, { title: d.title, purpose: d.purpose, meetingAt: d.meeting_at ?? null, location: d.location, announcer: d.announcer, branchId: d.branch_id ?? null, ackDeadline: d.ack_deadline ?? null });
     saveItems(id, items);
     logPersonaAction(g.user.id, "policy_notice_save", id);
     return NextResponse.json({ ok: true });

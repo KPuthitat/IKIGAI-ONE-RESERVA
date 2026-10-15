@@ -88,6 +88,7 @@
     "better-sqlite3": "^11.3.0",
     "html5-qrcode": "^2.3.8",
     "next": "14.2.15",
+    "pdfjs-dist": "3.11.174",
     "pdfkit": "^0.15.2",
     "qrcode": "^1.5.4",
     "react": "18.3.1",
