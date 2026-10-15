@@ -11,10 +11,12 @@ import { thaiMeetingTime } from "@/lib/policy-notices-notify";
 type Status = "scheduled" | "published" | "closed" | "cancelled";
 type Summary = { id: number; title: string; announcer: string; meetingAt: string | null; status: Status; branchName: string | null; recipientCount: number; ackedCount: number; publishedAt: string | null };
 type Item = { topic: string; details: string; suggestions: string };
+type Suggestion = { id: number; body: string; day: string };
 type Ack = { userId: number; name: string; ackedAt: string | null; lastRemindedAt: string | null };
 type Detail = {
-  notice: { id: number; title: string; announcer: string; purpose: string; meetingAt: string | null; location: string; branchId: number | null; status: Status; ackDeadline: string | null; invitedAt: string | null };
+  notice: { id: number; title: string; announcer: string; parentId: number | null; parentTitle: string | null; purpose: string; meetingAt: string | null; location: string; branchId: number | null; status: Status; ackDeadline: string | null; invitedAt: string | null };
   items: Item[]; images: Array<{ id: number }>; recipients: Ack[];
+  suggestions: Suggestion[]; aiSummary: string | null; aiSummaryAt: string | null; followUps: Array<{ id: number; title: string; status: Status }>;
 };
 type Branch = { id: number; name: string };
 
@@ -76,6 +78,7 @@ export default function Client() {
       {openId != null && (
         <Editor key={String(openId)} id={openId} branches={branches} me={me}
           onClose={() => { setOpenId(null); void reload(); }}
+          onOpen={(nid) => { setMsg(null); setOpenId(nid); void reload(); }}
           onMessage={(m) => { setMsg(m); void reload(); }} />
       )}
 
@@ -106,7 +109,7 @@ export default function Client() {
   );
 }
 
-function Editor({ id, branches, me, onClose, onMessage }: { id: number | "new"; branches: Branch[]; me: string; onClose: () => void; onMessage: (m: { ok: boolean; text: string }) => void }) {
+function Editor({ id, branches, me, onClose, onOpen, onMessage }: { id: number | "new"; branches: Branch[]; me: string; onClose: () => void; onOpen: (id: number) => void; onMessage: (m: { ok: boolean; text: string }) => void }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [title, setTitle] = useState("");
   const [announcer, setAnnouncer] = useState(me);
@@ -117,6 +120,7 @@ function Editor({ id, branches, me, onClose, onMessage }: { id: number | "new"; 
   const [deadline, setDeadline] = useState("");
   const [items, setItems] = useState<Item[]>([blankItem()]);
   const [images, setImages] = useState<Array<{ id: number }>>([]);
+  const [aiBusy, setAiBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -212,6 +216,24 @@ function Editor({ id, branches, me, onClose, onMessage }: { id: number | "new"; 
       await load(id);
     } finally { setBusy(false); }
   }
+  async function summarize() {
+    if (id === "new") return;
+    setAiBusy(true); setErr(null);
+    try {
+      const r = await call(`/api/admin/persona/policy-notices/${id}/summary`, "POST", {});
+      if (!r.ok) { setErr(String(r.j.message ?? "สรุปไม่สำเร็จ")); return; }
+      await load(id);
+    } finally { setAiBusy(false); }
+  }
+  async function followUp() {
+    if (id === "new" || !window.confirm("สร้างประกาศฉบับแก้ไขต่อจากฉบับนี้?")) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await call(`/api/admin/persona/policy-notices/${id}/follow-up`, "POST", {});
+      if (!r.ok) { setErr(String(r.j.message ?? "สร้างไม่สำเร็จ")); return; }
+      onOpen(Number(r.j.id));
+    } finally { setBusy(false); }
+  }
   const setItem = (i: number, patch: Partial<Item>) => setItems((arr) => arr.map((x, k) => (k === i ? { ...x, ...patch } : x)));
   const move = (i: number, d: -1 | 1) => setItems((arr) => { const j = i + d; if (j < 0 || j >= arr.length) return arr; const c = arr.slice(); [c[i], c[j]] = [c[j], c[i]]; return c; });
 
@@ -228,6 +250,7 @@ function Editor({ id, branches, me, onClose, onMessage }: { id: number | "new"; 
         </div>
       </div>
 
+      {detail?.notice.parentId && <div className="rounded-2xl bg-brand/10 px-3 py-2 text-sm text-brand">ฉบับแก้ไข สืบเนื่องจาก “{detail.notice.parentTitle}” — พนักงานจะเห็นว่าประกาศนี้ต่อจากฉบับเดิม</div>}
       <FormSection title="1. นัดประชุม">
         <Field label="ชื่อเรื่อง"><input value={title} onChange={(e) => setTitle(e.target.value)} disabled={locked} placeholder="เช่น ตำแหน่งงานที่มีค่าตอบแทนพิเศษ" /></Field>
         <Field label="ผู้ประกาศ" hint="แสดงให้พนักงานเห็นว่าประกาศโดยใคร"><input value={announcer} onChange={(e) => setAnnouncer(e.target.value)} disabled={locked} /></Field>
@@ -268,7 +291,7 @@ function Editor({ id, branches, me, onClose, onMessage }: { id: number | "new"; 
           {!locked && !title.trim() && <p className="text-xs text-slate-500">ใส่ชื่อเรื่องก่อน จึงจะแนบรูปได้</p>}
           {!locked && <p className="text-xs text-slate-500">รูปจะแสดงให้พนักงานอ่านต่อจากวัตถุประสงค์ ก่อนหัวข้อต่างๆ รูปใหญ่เกิน 10 MB ระบบย่อให้อัตโนมัติ · ไฟล์ PDF ระบบแปลงแต่ละหน้าเป็นรูปให้</p>}
         </div>
-        <p className="text-xs text-slate-500">กรอกหลังประชุมเสร็จ — หนังสือจะส่งให้พนักงานกดรับทราบเท่านั้น (ไม่มีช่องให้พนักงานตอบ) ไม่ต้องใส่ชื่อผู้เสนอในช่องข้อเสนอแนะ</p>
+        <p className="text-xs text-slate-500">กรอกหลังประชุมเสร็จ — พนักงานอ่านแล้วกดรับทราบ และเขียนข้อเสนอแนะแบบไม่ระบุชื่อได้ตอนกดรับทราบ (ดูผลที่หัวข้อ “ข้อเสนอแนะจากพนักงาน” ด้านล่างหลังส่งหนังสือ)</p>
         {items.map((it, i) => (
           <div key={i} className="rounded-2xl border border-[color:var(--card-border)] p-3 space-y-2">
             <div className="flex items-center justify-between">
@@ -283,7 +306,7 @@ function Editor({ id, branches, me, onClose, onMessage }: { id: number | "new"; 
             </div>
             <Field label="หัวข้อ"><input value={it.topic} onChange={(e) => setItem(i, { topic: e.target.value })} disabled={locked} /></Field>
             <Field label="รายละเอียด"><textarea rows={4} value={it.details} onChange={(e) => setItem(i, { details: e.target.value })} disabled={locked} /></Field>
-            <Field label="ข้อเสนอแนะจากพนักงาน" hint="สรุปที่ได้จากที่ประชุม · ถ้ามี"><textarea rows={3} value={it.suggestions} onChange={(e) => setItem(i, { suggestions: e.target.value })} disabled={locked} /></Field>
+            {detail?.notice.parentId ? <Field label="ข้อเสนอแนะที่ได้รับ และการพิจารณาของฝ่ายบริหาร" hint="ยกมาเฉพาะที่ต้องการตอบ · ไม่ต้องใส่ชื่อ · ถ้ามี"><textarea rows={3} value={it.suggestions} onChange={(e) => setItem(i, { suggestions: e.target.value })} disabled={locked} /></Field> : null}
           </div>
         ))}
         {!locked && items.length < 30 && <button type="button" className="btn btn-secondary text-sm" onClick={() => setItems((a) => [...a, blankItem()])}>+ เพิ่มหัวข้อ</button>}
@@ -323,6 +346,56 @@ function Editor({ id, branches, me, onClose, onMessage }: { id: number | "new"; 
           </div>
         </FormSection>
       )}
+
+      {detail && (status === "published" || status === "closed") && (
+        <FormSection title={`4. ข้อเสนอแนะจากพนักงาน (${detail.suggestions.length} ข้อ · ไม่ระบุชื่อ)`}>
+          {detail.suggestions.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีข้อเสนอแนะ พนักงานเขียนได้ตอนกดรับทราบ</p> : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="btn btn-primary text-sm" disabled={aiBusy} onClick={() => void summarize()}>{aiBusy ? "AI กำลังสรุป…" : detail.aiSummary ? "ให้ AI สรุปใหม่" : "ให้ AI สรุป"}</button>
+              </div>
+              {detail.aiSummary && (
+                <div className="rounded-2xl border border-[color:var(--card-border)] bg-[color:var(--surface-field)] p-3">
+                  <div className="text-[11px] font-bold text-slate-500 mb-1">สรุปโดย AI{detail.aiSummaryAt ? ` · ${fmtTime(detail.aiSummaryAt)}` : ""}</div>
+                  <Markdownish text={detail.aiSummary} />
+                </div>
+              )}
+              <details className="rounded-2xl border border-[color:var(--card-border)]">
+                <summary className="cursor-pointer px-3 py-2 text-sm font-bold text-slate-700">ข้อความดิบทั้งหมด ({detail.suggestions.length})</summary>
+                <ul className="divide-y divide-[color:var(--card-border)] text-sm">
+                  {detail.suggestions.map((x) => <li key={x.id} className="px-3 py-2 whitespace-pre-line text-slate-700">{x.body}</li>)}
+                </ul>
+              </details>
+            </>
+          )}
+          <div className="border-t border-[color:var(--card-border)] pt-3 space-y-2">
+            <p className="text-xs text-slate-500">เมื่อทีมบริหารพิจารณาแล้วมีการปรับเปลี่ยน ให้ทำประกาศฉบับแก้ไขต่อจากฉบับนี้ ยกเฉพาะข้อเสนอที่ต้องการตอบมาใส่ได้</p>
+            <button type="button" className="btn btn-secondary text-sm" disabled={busy} onClick={() => void followUp()}>+ สร้างประกาศฉบับแก้ไข</button>
+            {detail.followUps.length > 0 && (
+              <div className="text-sm space-y-1">
+                <div className="text-xs font-bold text-slate-500">ฉบับแก้ไขที่มีแล้ว</div>
+                {detail.followUps.map((f) => <button key={f.id} type="button" className="block text-left text-brand hover:underline" onClick={() => onOpen(f.id)}>{f.title} · {STATUS_TAG[f.status].label}</button>)}
+              </div>
+            )}
+          </div>
+        </FormSection>
+      )}
+    </div>
+  );
+}
+
+/** Minimal rendering of the AI digest: ### / #### headings, "- " bullets, paragraphs. */
+function Markdownish({ text }: { text: string }) {
+  return (
+    <div className="text-sm text-slate-700 space-y-1">
+      {text.split(/\r?\n/).map((l, i) => {
+        const line = l.trimEnd();
+        if (!line.trim()) return null;
+        if (line.startsWith("####")) return <div key={i} className="font-bold text-slate-800 pt-1">{line.replace(/^#+\s*/, "")}</div>;
+        if (line.startsWith("#")) return <div key={i} className="font-bold text-slate-800 pt-2 border-t border-[color:var(--card-border)] mt-2">{line.replace(/^#+\s*/, "")}</div>;
+        if (/^\s*[-*•]\s+/.test(line)) return <div key={i} className="pl-3">• {line.replace(/^\s*[-*•]\s+/, "").replace(/\*\*/g, "")}</div>;
+        return <div key={i}>{line.replace(/\*\*/g, "")}</div>;
+      })}
     </div>
   );
 }

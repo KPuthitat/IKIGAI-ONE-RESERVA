@@ -35,10 +35,12 @@ export default function StaffPolicyNoticesPage() {
         <article key={n.id} className={`card space-y-3 ${n.status === "published" && !n.ackedAt ? "border-amber-300" : ""}`}>
           <div className="flex items-start justify-between gap-2">
             <h2 className="font-bold text-slate-800">{n.title}</h2>
+            {n.parent && n.status !== "scheduled" && <span className="tag tag-brand flex-shrink-0">ฉบับแก้ไข</span>}
             {n.status === "scheduled" && <span className="tag tag-info flex-shrink-0">นัดประชุม</span>}
             {n.status !== "scheduled" && (n.ackedAt ? <span className="tag tag-ok flex-shrink-0">รับทราบแล้ว</span> : n.status === "closed" ? <span className="tag tag-mute flex-shrink-0">ปิดแล้ว</span> : <span className="tag tag-warn flex-shrink-0">รอรับทราบ</span>)}
           </div>
 
+          {n.parent && <p className="text-xs text-brand">ฉบับแก้ไข สืบเนื่องจาก “{n.parent.title}”</p>}
           {n.announcer && <p className="text-xs text-slate-500">ประกาศโดย <b className="text-slate-700">{n.announcer}</b>{n.publishedAt ? ` · ${fmtTime(n.publishedAt)}` : ""}</p>}
 
           {n.purpose && <p className="text-sm text-slate-600 whitespace-pre-line">{n.purpose}</p>}
@@ -69,7 +71,7 @@ export default function StaffPolicyNoticesPage() {
               <p className="text-sm text-slate-700 whitespace-pre-line">{it.details}</p>
               {it.suggestions && (
                 <div className="rounded-xl bg-[color:var(--surface-field)] p-2.5 text-sm">
-                  <div className="text-[11px] font-bold text-slate-500 mb-0.5">ข้อเสนอแนะจากพนักงาน</div>
+                  <div className="text-[11px] font-bold text-slate-500 mb-0.5">{n.parent ? "ข้อเสนอแนะที่ได้รับ และการพิจารณาของฝ่ายบริหาร" : "ข้อเสนอแนะจากพนักงาน"}</div>
                   <p className="text-slate-700 whitespace-pre-line">{it.suggestions}</p>
                 </div>
               )}

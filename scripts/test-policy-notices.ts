@@ -109,6 +109,29 @@ const IMG_DIR = path.join(process.cwd(), "data", "test-policy-images"); fs.rmSyn
   ok("clearing it falls back to the creator again", P.getNotice(ann)!.announcer === "นพ. owner");
   P.inviteMeeting(ann);
   ok("employees see who announced", P.listForUser(a).find((n) => n.id === ann)?.announcer === "นพ. owner");
+  // anonymous suggestions + follow-up letters
+  const id5 = P.createNotice({ title: "ข้อเสนอแนะ", meetingAt: TH }, owner);
+  P.saveItems(id5, [{ topic: "หัวข้อ", details: "รายละเอียด", suggestions: "" }]);
+  P.publish(id5);
+  const cols = (db.prepare("PRAGMA table_info(policy_notice_suggestions)").all() as Array<{ name: string }>).map((c) => c.name);
+  ok("suggestions are stored without any user column", !cols.some((c) => /user|who|by/i.test(c)));
+  P.acknowledge(id5, a, "  อยากให้เลือกวันหยุดนักขัตฤกษ์ได้  ");
+  P.acknowledge(id5, b, "");
+  P.acknowledge(id5, c, "ขอให้ชี้แจงเรื่องภาษีเพิ่ม");
+  ok("only non-empty suggestions are kept, trimmed", P.listSuggestions(id5).map((x) => x.body).join("|") === "ขอให้ชี้แจงเรื่องภาษีเพิ่ม|อยากให้เลือกวันหยุดนักขัตฤกษ์ได้");
+  ok("a second press does not add a second suggestion", (() => { P.acknowledge(id5, a, "ซ้ำ"); return P.listSuggestions(id5).length === 2; })());
+  ok("a suggestion carries only the day, not a time that could be matched to an acknowledgement", P.listSuggestions(id5).every((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.day)));
+  ok("an over-long suggestion is refused and the acknowledgement is not recorded", code(() => P.acknowledge(id5, admin, "ก".repeat(2001))) === "invalid_suggestion" && P.adminDetail(id5)!.recipients.find((r) => r.userId === admin)!.ackedAt === null);
+  ok("the admin detail carries the suggestions and no AI digest yet", (() => { const d = P.adminDetail(id5)!; return d.suggestions.length === 2 && d.aiSummary === null; })());
+  P.saveAiSummary(id5, "### ภาพรวม\nทดสอบ");
+  ok("an AI digest is stored on the notice", P.adminDetail(id5)!.aiSummary?.includes("ภาพรวม") === true);
+  ok("a follow-up can only continue a notice that has been sent", code(() => P.createFollowUp(ann, owner)) === "bad_status");
+  const fu = P.createFollowUp(id5, owner);
+  ok("a follow-up starts as a draft for the same audience, pointing at the original", (() => { const n = P.getNotice(fu)!; return n.status === "scheduled" && n.parentId === id5 && n.title === "ฉบับแก้ไข: ข้อเสนอแนะ" && n.branchId === null; })());
+  ok("the original lists its follow-ups", P.adminDetail(id5)!.followUps.map((f) => f.id).join() === String(fu));
+  P.saveItems(fu, [{ topic: "ปรับเงื่อนไข", details: "ปรับตามข้อเสนอ", suggestions: "ข้อเสนอเรื่องวันหยุด — รับไปพิจารณาแล้ว" }]);
+  P.publish(fu);
+  ok("employees see the follow-up with its parent", (() => { const n = P.listForUser(a).find((x) => x.id === fu); return !!n && n.parent?.id === id5 && n.parent.title === "ข้อเสนอแนะ"; })());
   // pictures (infographic)
   const id3 = P.createNotice({ title: "ภาพอินโฟกราฟิก", meetingAt: TH }, owner);
   const png = Buffer.from("89504e470d0a1a0a", "hex");
