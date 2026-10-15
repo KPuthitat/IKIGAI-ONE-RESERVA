@@ -6,7 +6,8 @@ import { canManage, getManagerView } from "@/lib/special-duty-access";
 import { getMonth, listPositions, SpecialDutyError } from "@/lib/special-duty";
 import { checkAssignment } from "@/lib/special-duty-rules";
 import { closeBooking, fillOpenDays, managerAssign, openDays, publishSchedule, removeDay, startFilling } from "@/lib/special-duty-fill";
-import { noticeFlex, pushIndividually, schedulePublishedFlex } from "@/lib/special-duty-notify";
+import { bookingOpenFlex, noticeFlex, pushIndividually, schedulePublishedFlex } from "@/lib/special-duty-notify";
+import { bookingAudience } from "@/lib/special-duty-roster";
 import { decideSwap, listPendingForManager, swapNotices, SwapError } from "@/lib/special-duty-swap";
 import { dutyMonthSummary, dutyOwnerAlerts } from "@/lib/special-duty-payout";
 import { assignSubstitute, dayBelongsToBranch, EvidenceError, listEvidence, listSubstituteCandidates, markAbsent, reviewEvidence } from "@/lib/special-duty-evidence";
@@ -64,7 +65,7 @@ export async function GET(req: Request) {
 
 const Body = z.object({
   month: YM,
-  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute", "approve_swap", "reject_swap"]),
+  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute", "approve_swap", "reject_swap", "invite_booking"]),
   position_id: z.number().int().optional(), date: z.string().optional(), user_id: z.number().int().optional(),
   swap_id: z.number().int().optional(), day_id: z.number().int().optional(), allow_unfilled: z.boolean().optional(), note: z.string().max(300).optional()
 });
@@ -77,6 +78,17 @@ export async function POST(req: Request) {
   try {
     switch (d.action) {
       case "close_booking": closeBooking({ branchId, yearMonth: ym, actorId }); break;
+      case "invite_booking": {
+        // Send (or re-send) the "come and choose your days" card to everyone on the roster who may take a position.
+        const m = getMonth(branchId, ym);
+        if (!m.enabled || m.status !== "booking_open") return NextResponse.json({ ok: false, error: "booking_not_open" }, { status: 409 });
+        const branch = getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string };
+        const base = (process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || "").replace(/\/$/, "");
+        const aud = bookingAudience(branchId, ym);
+        const sent = await pushIndividually(aud.map((a) => a.lineUserId), bookingOpenFlex({ branchName: branch.name, yearMonth: ym, closeDate: m.bookingCloseDate, url: `${base}/staff/persona/special-duty?month=${ym}` }));
+        logPersonaAction(actorId, "special_duty.invite_booking", branchId);
+        return NextResponse.json({ ok: true, recipients: aud.length, sent, noLine: aud.filter((a) => !a.lineUserId).length });
+      }
       case "start_filling": startFilling({ branchId, yearMonth: ym, actorId }); break;
       case "suggest": return NextResponse.json({ ok: true, plan: fillOpenDays({ branchId, yearMonth: ym, managerId: actorId, commit: false }) });
       case "apply_suggestions": return NextResponse.json({ ok: true, plan: fillOpenDays({ branchId, yearMonth: ym, managerId: actorId, commit: true }) });

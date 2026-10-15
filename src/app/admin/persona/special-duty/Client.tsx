@@ -24,7 +24,7 @@ const HEAD = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 const DAY_STATUS: Record<string, string> = {
   booked: "รอปฏิบัติงาน", assigned: "รอปฏิบัติงาน", covered: "มีผู้แทน รอปฏิบัติงาน", submitted: "ส่งหลักฐานแล้ว รอตรวจ", approved: "ตรวจรับแล้ว", absent: "ขาดปฏิบัติงาน"
 };
-const ERR: Record<string, string> = { unfilled_days: "ยังมีวันที่ว่างอยู่", invalid_transition: "ขั้นตอนนี้ทำไม่ได้ในสถานะปัจจุบัน", not_removable: "ถอนไม่ได้ เพราะมีการส่งหลักฐานแล้ว", wrong_stage: "ถอนได้เฉพาะช่วงจัดวันที่ว่าง", not_found: "ไม่พบรายการ" };
+const ERR: Record<string, string> = { unfilled_days: "ยังมีวันที่ว่างอยู่", invalid_transition: "ขั้นตอนนี้ทำไม่ได้ในสถานะปัจจุบัน", not_removable: "ถอนไม่ได้ เพราะมีการส่งหลักฐานแล้ว", wrong_stage: "ถอนได้ก่อนประกาศตารางเท่านั้น", not_found: "ไม่พบรายการ" };
 
 export default function Client({ month }: { month: string }) {
   const router = useRouter();
@@ -66,6 +66,7 @@ export default function Client({ month }: { month: string }) {
   const st = data.month.status;
   const [y, m] = month.split("-").map(Number);
   const filling = st === "booking_closed" || st === "filling";
+  const canEdit = st === "booking_open" || filling;   // the back office may add or free days until the schedule is published
   const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
   const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
 
@@ -98,8 +99,17 @@ export default function Client({ month }: { month: string }) {
             {st === "awaiting_roster" && <p className="text-sm text-slate-600">เมื่อประกาศตารางงานประจำเดือน ระบบจะเปิดให้พนักงานเลือกวันและแจ้งผ่าน LINE ให้โดยอัตโนมัติ</p>}
             {st === "booking_open" && (
               <>
-                <p className="text-sm text-slate-600">ระบบจะปิดรับการเลือกวันเองเมื่อพ้นวันที่กำหนด หากต้องการปิดก่อนกำหนดกดปุ่มด้านล่าง</p>
+                <p className="text-sm text-slate-600">พนักงานเลือกวันเองได้จนถึงวันปิดรับ ท่านเพิ่มผู้ปฏิบัติงานเองได้ด้วยการกดช่อง “ว่าง” ในปฏิทินด้านล่าง ระบบจะปิดรับการเลือกวันเองเมื่อพ้นวันที่กำหนด</p>
+                <div className="flex flex-wrap gap-2">
+                <button type="button" className="btn-primary" disabled={busy} onClick={async () => {
+                  if (!window.confirm("ส่งข้อความ LINE ให้พนักงานที่มีสิทธิ์เข้ามาเลือกวันตำแหน่งงานค่าตอบแทนพิเศษตอนนี้เลยไหม")) return;
+                  const r = await act({ action: "invite_booking" });
+                  if (!r.ok) { setMsg({ ok: false, text: r.j.error === "booking_not_open" ? "ขณะนี้ไม่ได้อยู่ในช่วงเปิดให้เลือกวัน" : "ส่งไม่สำเร็จ" }); return; }
+                  const { recipients = 0, sent = 0, noLine = 0 } = r.j as { recipients?: number; sent?: number; noLine?: number };
+                  setMsg({ ok: true, text: `ส่งให้พนักงานเลือกวันแล้ว · LINE ${sent}/${recipients} คน${noLine ? ` (ไม่มี LINE ${noLine} คน — เข้าเลือกได้เองที่เมนูตำแหน่งงานค่าตอบแทนพิเศษ)` : ""}` });
+                }}>ส่งให้พนักงานเข้ามาเลือกวัน</button>
                 <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { const r = await act({ action: "close_booking" }); r.ok ? done("ปิดรับการเลือกวันแล้ว") : setMsg({ ok: false, text: ERR[r.j.error] ?? "ทำรายการไม่สำเร็จ" }); }}>ปิดรับการเลือกวันก่อนกำหนด</button>
+                </div>
               </>
             )}
             {filling && (
@@ -224,7 +234,7 @@ export default function Client({ month }: { month: string }) {
                 {["booked", "assigned", "submitted", "covered"].includes(selected.status) && ["special_published", "in_progress"].includes(st) && selected.date <= new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10) && (
                   <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { if (!window.confirm("บันทึกว่าผู้ปฏิบัติงานขาดในวันนี้ใช่หรือไม่ รายการนี้นับเป็นการขาดหนึ่งครั้งของผู้ที่ได้รับมอบหมาย")) return; const r = await act({ action: "absent", day_id: selected.id }); r.ok ? done("บันทึกการขาดแล้ว เลือกผู้ปฏิบัติแทนได้ที่ช่องวันนี้") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>บันทึกว่าขาด</button>
                 )}
-                {filling && <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { const r = await act({ action: "remove", day_id: selected.id }); r.ok ? done("ถอนวันนี้ออกแล้ว") : setMsg({ ok: false, text: ERR[r.j.error] ?? "ถอนไม่สำเร็จ" }); }}>ถอนออก</button>}
+                {canEdit && <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { const r = await act({ action: "remove", day_id: selected.id }); r.ok ? done("ถอนวันนี้ออกแล้ว") : setMsg({ ok: false, text: ERR[r.j.error] ?? "ถอนไม่สำเร็จ" }); }}>ถอนออก</button>}
                 <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>ปิด</button>
               </div>
             </div>
@@ -245,7 +255,7 @@ export default function Client({ month }: { month: string }) {
                     const row = byDate.get(date);
                     const isOpen = openSet.has(date);
                     return (
-                      <button key={date} type="button" disabled={!row && !(filling && isOpen)}
+                      <button key={date} type="button" disabled={!row && !(canEdit && isOpen)}
                         onClick={async () => {
                           if (row) { await open_(row); return; }
                           const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&candidates=${p.id}:${date}`), { cache: "no-store" });
