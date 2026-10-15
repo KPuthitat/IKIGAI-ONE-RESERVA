@@ -24,7 +24,7 @@ const STATUS_TAG: Record<Status, { cls: string; label: string }> = {
   closed: { cls: "tag-ok", label: "ปิดแล้ว" },
   cancelled: { cls: "tag-mute", label: "ยกเลิก" }
 };
-const MAX_UPLOAD = 4 * 1024 * 1024;   // the server refuses more; bigger pictures are re-encoded first
+const MAX_UPLOAD = 10 * 1024 * 1024;   // the server refuses more; bigger pictures are re-encoded first
 const KEEP_AS_IS = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 /** A picture the server will take: kept untouched when small enough, otherwise re-encoded as JPEG (long side ≤ 2400px). */
@@ -266,7 +266,7 @@ function Editor({ id, branches, me, onClose, onMessage }: { id: number | "new"; 
             </label>
           )}
           {!locked && !title.trim() && <p className="text-xs text-slate-500">ใส่ชื่อเรื่องก่อน จึงจะแนบรูปได้</p>}
-          {!locked && <p className="text-xs text-slate-500">รูปจะแสดงให้พนักงานอ่านต่อจากวัตถุประสงค์ ก่อนหัวข้อต่างๆ รูปใหญ่เกิน 4 MB ระบบย่อให้อัตโนมัติ · ไฟล์ PDF ระบบแปลงแต่ละหน้าเป็นรูปให้</p>}
+          {!locked && <p className="text-xs text-slate-500">รูปจะแสดงให้พนักงานอ่านต่อจากวัตถุประสงค์ ก่อนหัวข้อต่างๆ รูปใหญ่เกิน 10 MB ระบบย่อให้อัตโนมัติ · ไฟล์ PDF ระบบแปลงแต่ละหน้าเป็นรูปให้</p>}
         </div>
         <p className="text-xs text-slate-500">กรอกหลังประชุมเสร็จ — หนังสือจะส่งให้พนักงานกดรับทราบเท่านั้น (ไม่มีช่องให้พนักงานตอบ) ไม่ต้องใส่ชื่อผู้เสนอในช่องข้อเสนอแนะ</p>
         {items.map((it, i) => (

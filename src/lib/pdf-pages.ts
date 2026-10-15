@@ -1,6 +1,6 @@
 // Client-side only: turn a PDF into one JPEG per page, so a PDF infographic can be attached to a
 // notice like any other picture. Rendering happens in the admin's browser; the server never parses PDFs.
-const MAX_BYTES = 4 * 1024 * 1024;
+const MAX_BYTES = 10 * 1024 * 1024;
 
 export class PdfTooLong extends Error { constructor(public pages: number) { super("pdf_too_long"); } }
 

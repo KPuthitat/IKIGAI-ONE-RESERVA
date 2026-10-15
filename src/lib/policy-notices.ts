@@ -35,7 +35,7 @@ export const POLICY_ERROR_TH: Record<PolicyErrorCode, string> = {
   no_items: "ต้องมีอย่างน้อย 1 หัวข้อหรือ 1 รูปก่อนส่งหนังสือ",
   too_many_items: "ใส่ได้ไม่เกิน 30 หัวข้อ",
   invalid_image: "รองรับเฉพาะรูป PNG / JPG / WebP",
-  image_too_large: "ไฟล์รูปใหญ่เกิน 4 MB",
+  image_too_large: "ไฟล์รูปใหญ่เกิน 10 MB",
   too_many_images: "แนบรูปได้ไม่เกิน 10 รูป",
   not_found: "ไม่พบรายการนี้",
   locked: "ส่งหนังสือไปแล้ว แก้ไขเนื้อหาไม่ได้",
@@ -48,7 +48,7 @@ export const MAX_ITEMS = 30;
 const MAX_TOPIC = 200, MAX_DETAILS = 4000, MAX_SUGGEST = 4000, MAX_TITLE = 200, MAX_PURPOSE = 1000, MAX_LOCATION = 200, MAX_ANNOUNCER = 120;
 
 export const MAX_IMAGES = 10;
-export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;   // nginx accepts 5 MB request bodies
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;   // nginx must allow request bodies a little above this (deploy/nginx-reserva.conf)
 const IMAGE_EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 const imageDir = () => process.env.POLICY_IMAGE_DIR || path.join(process.cwd(), "data", "uploads", "policy-notices");
 
