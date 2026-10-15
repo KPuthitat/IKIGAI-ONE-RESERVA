@@ -4,6 +4,7 @@ import path from "node:path";
 const TMP = path.join(process.cwd(), "data", "test-policy-notices.db");
 function cleanup() { for (const f of [TMP, `${TMP}-wal`, `${TMP}-shm`]) { try { fs.rmSync(f, { force: true }); } catch { /* ignore */ } } }
 cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DATABASE_PATH = TMP;
+const IMG_DIR = path.join(process.cwd(), "data", "test-policy-images"); fs.rmSync(IMG_DIR, { recursive: true, force: true }); process.env.POLICY_IMAGE_DIR = IMG_DIR;
 
 (async () => {
   const { getDb } = await import("../src/lib/db");
@@ -73,6 +74,8 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   // admin tracking + reminders
   const d = P.adminDetail(id)!;
   ok("admin sees who acknowledged and who is still pending", d.recipients.length === 5 && d.recipients.filter((r) => r.ackedAt).length === 1 && d.recipients[0].ackedAt === null);
+  db.prepare("UPDATE users SET title_prefix = 'นางสาว' WHERE id = ?").run(b);
+  ok("admin lists carry the title prefix (and people without one are shown plainly)", (() => { const r = P.adminDetail(id)!.recipients; return r.some((x) => x.name === "นางสาว b") && r.some((x) => x.name === "a"); })());
   const list = P.listForAdmin().find((n) => n.id === id)!;
   ok("admin list shows the acknowledged count", list.recipientCount === 5 && list.ackedCount === 1);
   const rem = P.remindPending(id);
@@ -96,5 +99,33 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   const flex = N.letterFlex({ title: "t", topics: Array.from({ length: 9 }, (_, i) => `หัวข้อ ${i + 1}`), ackDeadline: "2026-10-20", reminder: true, url: "https://x/y" });
   const body = JSON.stringify(flex);
   ok("the LINE card lists at most 6 topics and says how many more, with the deadline", body.includes("และอีก 3 หัวข้อ") && !body.includes("หัวข้อ 7") && body.includes("20/10/2026") && flex.altText.startsWith("เตือน"));
+  // announcer
+  db.prepare("UPDATE users SET title_prefix = 'นพ.' WHERE id = ?").run(owner);
+  const ann = P.createNotice({ title: "ผู้ประกาศ", meetingAt: TH }, owner);
+  ok("the announcer defaults to the creator, with title prefix", P.getNotice(ann)!.announcer === "นพ. owner");
+  P.updateNotice(ann, { title: "ผู้ประกาศ", meetingAt: TH, announcer: "  ผู้อำนวยการ  " });
+  ok("an announcer can be typed in and is trimmed", P.getNotice(ann)!.announcer === "ผู้อำนวยการ");
+  P.updateNotice(ann, { title: "ผู้ประกาศ", meetingAt: TH, announcer: "" });
+  ok("clearing it falls back to the creator again", P.getNotice(ann)!.announcer === "นพ. owner");
+  P.inviteMeeting(ann);
+  ok("employees see who announced", P.listForUser(a).find((n) => n.id === ann)?.announcer === "นพ. owner");
+  // pictures (infographic)
+  const id3 = P.createNotice({ title: "ภาพอินโฟกราฟิก", meetingAt: TH }, owner);
+  const png = Buffer.from("89504e470d0a1a0a", "hex");
+  const img1 = P.addImage(id3, png, "image/png");
+  const img2 = P.addImage(id3, png, "image/jpeg");
+  ok("pictures attach to a draft in order", P.listImages(id3).map((i) => i.id).join() === `${img1},${img2}`);
+  ok("a non-image type and an oversized file are refused", code(() => P.addImage(id3, png, "application/pdf")) === "invalid_image" && code(() => P.addImage(id3, Buffer.alloc(P.MAX_IMAGE_BYTES + 1), "image/png")) === "image_too_large");
+  P.removeImage(id3, img2);
+  ok("a picture can be removed from a draft", P.listImages(id3).length === 1 && code(() => P.removeImage(id3, img2)) === "not_found");
+  const sent3 = P.publish(id3); ok("a letter with only a picture (no topics) can be sent", sent3.length === 6);
+  ok("pictures are locked once the letter is sent", code(() => P.addImage(id3, png, "image/png")) === "locked" && code(() => P.removeImage(id3, img1)) === "locked");
+  ok("an employee's list carries the pictures of a sent letter", P.listForUser(a).find((n) => n.id === id3)?.images.length === 1);
+  ok("a recipient and an admin may open the picture, an outsider may not", !!P.imageForViewer(img1, { userId: a, isAdmin: false }) && !!P.imageForViewer(img1, { userId: owner, isAdmin: true }) && P.imageForViewer(img1, { userId: gone, isAdmin: false }) === null);
+  const id4 = P.createNotice({ title: "ร่าง", meetingAt: TH }, owner);
+  const draftImg = P.addImage(id4, png, "image/png");
+  ok("a draft's picture is hidden from employees until the letter is sent", P.imageForViewer(draftImg, { userId: a, isAdmin: false }) === null);
+  ok("a letter with no topics and no pictures is still refused", code(() => P.publish(P.createNotice({ title: "ว่าง" }, owner))) === "no_items");
+  fs.rmSync(IMG_DIR, { recursive: true, force: true });
   cleanup(); process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); cleanup(); process.exit(1); });

@@ -11,6 +11,7 @@
 import { getDb } from "./db";
 import { audit, cfgNum, getMonth } from "./special-duty";
 import { isGroupEligible, isOnApprovedLeave, isOnRoster } from "./special-duty-rules";
+import { sqlNameWithPrefix } from "./name";
 
 export type SwapErrorCode =
   | "not_found" | "forbidden" | "wrong_stage" | "same_person" | "day_not_swappable" | "too_late" | "pair_invalid"
@@ -68,7 +69,7 @@ export type SwapView = {
 
 function view(r: { id: number; status: string; note: string | null; created_at: string; decision_note: string | null; from_user_id: number; to_user_id: number; day_a_id: number; day_b_id: number }): SwapView {
   const db = getDb();
-  const name = (id: number) => (db.prepare("SELECT display_name n FROM users WHERE id = ?").get(id) as { n: string } | undefined)?.n ?? "";
+  const name = (id: number) => (db.prepare("SELECT TRIM(COALESCE(title_prefix, '') || ' ' || display_name) n FROM users WHERE id = ?").get(id) as { n: string } | undefined)?.n ?? "";
   const dayInfo = (id: number) => (db.prepare("SELECT d.duty_date date, p.name pname FROM special_duty_days d JOIN special_duty_positions p ON p.id = d.position_id WHERE d.id = ?").get(id) as { date: string; pname: string });
   const a = dayInfo(r.day_a_id), b = dayInfo(r.day_b_id);
   return { id: r.id, status: r.status, note: r.note, createdAt: r.created_at, decisionNote: r.decision_note,
@@ -162,7 +163,7 @@ export function listPendingForManager(branchId: number, yearMonth: string): Swap
  *  visible to the branch once the schedule is published). */
 export function swappableDays(userId: number, branchId: number, yearMonth: string, today = bkkToday()): { mine: Array<{ dayId: number; date: string; positionName: string }>; others: Array<{ dayId: number; date: string; positionName: string; holderName: string; holderId: number }> } {
   const db = getDb();
-  const rows = db.prepare(`SELECT d.id, d.user_id AS uid, d.duty_date AS date, p.name AS pname, u.display_name AS holder FROM special_duty_days d
+  const rows = db.prepare(`SELECT d.id, d.user_id AS uid, d.duty_date AS date, p.name AS pname, ${sqlNameWithPrefix("u")} AS holder FROM special_duty_days d
       JOIN special_duty_positions p ON p.id = d.position_id JOIN users u ON u.id = d.user_id
      WHERE p.branch_id = ? AND p.year_month = ? AND d.status IN ('booked','assigned') AND d.performer_user_id IS NULL ORDER BY d.duty_date, p.slot_no`)
     .all(branchId, yearMonth) as Array<{ id: number; uid: number; date: string; pname: string; holder: string }>;

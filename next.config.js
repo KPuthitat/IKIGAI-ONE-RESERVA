@@ -30,6 +30,8 @@ const nextConfig = {
   },
   webpack: (config) => {
     config.resolve.alias['@'] = path.join(__dirname, 'src');
+    // pdfjs-dist (browser-side PDF → pictures) optionally requires node-canvas; the browser never needs it.
+    config.resolve.alias.canvas = false;
     return config;
   }
 };

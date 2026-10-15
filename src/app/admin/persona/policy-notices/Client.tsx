@@ -5,15 +5,16 @@ import { apiUrl } from "@/lib/url";
 import { FormSection, Field } from "@/app/components/FormKit";
 import EmptyState from "@/app/components/EmptyState";
 import Mascot from "@/app/components/Mascot";
+import { pdfToImages, PdfTooLong } from "@/lib/pdf-pages";
 import { thaiMeetingTime } from "@/lib/policy-notices-notify";
 
 type Status = "scheduled" | "published" | "closed" | "cancelled";
-type Summary = { id: number; title: string; meetingAt: string | null; status: Status; branchName: string | null; recipientCount: number; ackedCount: number; publishedAt: string | null };
+type Summary = { id: number; title: string; announcer: string; meetingAt: string | null; status: Status; branchName: string | null; recipientCount: number; ackedCount: number; publishedAt: string | null };
 type Item = { topic: string; details: string; suggestions: string };
 type Ack = { userId: number; name: string; ackedAt: string | null; lastRemindedAt: string | null };
 type Detail = {
-  notice: { id: number; title: string; purpose: string; meetingAt: string | null; location: string; branchId: number | null; status: Status; ackDeadline: string | null; invitedAt: string | null };
-  items: Item[]; recipients: Ack[];
+  notice: { id: number; title: string; announcer: string; purpose: string; meetingAt: string | null; location: string; branchId: number | null; status: Status; ackDeadline: string | null; invitedAt: string | null };
+  items: Item[]; images: Array<{ id: number }>; recipients: Ack[];
 };
 type Branch = { id: number; name: string };
 
@@ -23,18 +24,39 @@ const STATUS_TAG: Record<Status, { cls: string; label: string }> = {
   closed: { cls: "tag-ok", label: "ปิดแล้ว" },
   cancelled: { cls: "tag-mute", label: "ยกเลิก" }
 };
+const MAX_UPLOAD = 10 * 1024 * 1024;   // the server refuses more; bigger pictures are re-encoded first
+const KEEP_AS_IS = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+/** A picture the server will take: kept untouched when small enough, otherwise re-encoded as JPEG (long side ≤ 2400px). */
+async function prepareImage(file: File): Promise<File | null> {
+  if (KEEP_AS_IS.has(file.type) && file.size <= MAX_UPLOAD) return file;
+  if (!file.type.startsWith("image/")) return null;
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
+    for (const [edge, q] of [[2400, 0.9], [2000, 0.8], [1600, 0.7]] as const) {
+      const k = Math.min(1, edge / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d")?.drawImage(img, 0, 0, c.width, c.height);
+      const blob = await new Promise<Blob | null>((ok) => c.toBlob(ok, "image/jpeg", q));
+      if (blob && blob.size <= MAX_UPLOAD) return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+    }
+    return null;
+  } catch { return null; } finally { URL.revokeObjectURL(url); }
+}
 const blankItem = (): Item => ({ topic: "", details: "", suggestions: "" });
 const fmtTime = (iso: string) => new Date(iso).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Bangkok" });
 
 export default function Client() {
   const [list, setList] = useState<Summary[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [me, setMe] = useState("");
   const [openId, setOpenId] = useState<number | "new" | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const reload = useCallback(async () => {
     const r = await fetch(apiUrl("/api/admin/persona/policy-notices"), { cache: "no-store" });
-    if (r.ok) { const j = await r.json(); setList(j.notices); setBranches(j.branches); }
+    if (r.ok) { const j = await r.json(); setList(j.notices); setBranches(j.branches); setMe(j.me ?? ""); }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
 
@@ -52,7 +74,7 @@ export default function Client() {
       {msg && <div className={`card text-sm ${msg.ok ? "text-emerald-700" : "text-rose-600"}`}>{msg.text}</div>}
 
       {openId != null && (
-        <Editor key={String(openId)} id={openId} branches={branches}
+        <Editor key={String(openId)} id={openId} branches={branches} me={me}
           onClose={() => { setOpenId(null); void reload(); }}
           onMessage={(m) => { setMsg(m); void reload(); }} />
       )}
@@ -67,7 +89,7 @@ export default function Client() {
               <span className={`tag ${STATUS_TAG[n.status].cls}`}>{STATUS_TAG[n.status].label}</span>
             </div>
             <div className="text-xs text-slate-500 mt-1">
-              {n.meetingAt ? thaiMeetingTime(n.meetingAt) : "ยังไม่กำหนดวันประชุม"} · {n.branchName ?? "ทุกสาขา"}
+              {n.meetingAt ? thaiMeetingTime(n.meetingAt) : "ยังไม่กำหนดวันประชุม"} · {n.branchName ?? "ทุกสาขา"}{n.announcer ? ` · ประกาศโดย ${n.announcer}` : ""}
             </div>
             {n.status !== "scheduled" && n.status !== "cancelled" && (
               <div className="mt-2">
@@ -84,23 +106,26 @@ export default function Client() {
   );
 }
 
-function Editor({ id, branches, onClose, onMessage }: { id: number | "new"; branches: Branch[]; onClose: () => void; onMessage: (m: { ok: boolean; text: string }) => void }) {
+function Editor({ id, branches, me, onClose, onMessage }: { id: number | "new"; branches: Branch[]; me: string; onClose: () => void; onMessage: (m: { ok: boolean; text: string }) => void }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [title, setTitle] = useState("");
+  const [announcer, setAnnouncer] = useState(me);
   const [purpose, setPurpose] = useState("");
   const [meetingAt, setMeetingAt] = useState("");
   const [location, setLocation] = useState("");
   const [branchId, setBranchId] = useState<string>("");
   const [deadline, setDeadline] = useState("");
   const [items, setItems] = useState<Item[]>([blankItem()]);
+  const [images, setImages] = useState<Array<{ id: number }>>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const fill = useCallback((d: Detail) => {
     setDetail(d);
-    setTitle(d.notice.title); setPurpose(d.notice.purpose); setMeetingAt(d.notice.meetingAt ?? "");
+    setTitle(d.notice.title); setAnnouncer(d.notice.announcer); setPurpose(d.notice.purpose); setMeetingAt(d.notice.meetingAt ?? "");
     setLocation(d.notice.location); setBranchId(d.notice.branchId ? String(d.notice.branchId) : ""); setDeadline(d.notice.ackDeadline ?? "");
     setItems(d.items.length ? d.items : [blankItem()]);
+    setImages(d.images ?? []);
   }, []);
   const load = useCallback(async (nid: number) => {
     const r = await fetch(apiUrl(`/api/admin/persona/policy-notices/${nid}`), { cache: "no-store" });
@@ -110,7 +135,7 @@ function Editor({ id, branches, onClose, onMessage }: { id: number | "new"; bran
 
   const status: Status = detail?.notice.status ?? "scheduled";
   const locked = status !== "scheduled";
-  const fields = () => ({ title, purpose, meeting_at: meetingAt || null, location, branch_id: branchId ? Number(branchId) : null, ack_deadline: deadline || null });
+  const fields = () => ({ title, announcer, purpose, meeting_at: meetingAt || null, location, branch_id: branchId ? Number(branchId) : null, ack_deadline: deadline || null });
 
   async function call(url: string, method: string, body: unknown): Promise<{ ok: boolean; j: Record<string, unknown> }> {
     const r = await fetch(apiUrl(url), { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -147,6 +172,46 @@ function Editor({ id, branches, onClose, onMessage }: { id: number | "new"; bran
       if (action === "close" || action === "cancel") onClose(); else await load(nid!);
     } finally { setBusy(false); }
   }
+  async function addImages(files: File[]) {
+    if (files.length === 0) return;
+    setBusy(true); setErr(null);
+    try {
+      const nid = id === "new" ? await save() : id;   // a new notice needs to exist before pictures can hang off it
+      if (nid == null) return;
+      // A PDF becomes one picture per page, so everything is read the same way on a phone.
+      let room = 10 - images.length;
+      for (const f of files) {
+        let parts: File[] = [];
+        if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
+          try { parts = await pdfToImages(f, room); }
+          catch (e) { setErr(e instanceof PdfTooLong ? `ไฟล์ “${f.name}” มี ${e.pages} หน้า แนบได้อีก ${room} รูปเท่านั้น` : `เปิดไฟล์ PDF “${f.name}” ไม่ได้`); break; }
+        } else {
+          const one = await prepareImage(f);
+          if (!one) { setErr(`ใช้ไฟล์ “${f.name}” ไม่ได้ (รองรับ PNG / JPG / WebP / PDF)`); break; }
+          parts = [one];
+        }
+        if (parts.length > room) { setErr(`แนบได้ไม่เกิน 10 รูป`); break; }
+        let failed = false;
+        for (const part of parts) {
+          const fd = new FormData(); fd.append("file", part);
+          const r = await fetch(apiUrl(`/api/admin/persona/policy-notices/${nid}/images`), { method: "POST", body: fd });
+          if (!r.ok) { const j = await r.json().catch(() => ({})); setErr(String(j.message ?? "อัปโหลดรูปไม่สำเร็จ")); failed = true; break; }
+          room--;
+        }
+        if (failed) break;
+      }
+      await load(nid);
+    } finally { setBusy(false); }
+  }
+  async function removeImage(imageId: number) {
+    if (id === "new" || !window.confirm("ลบรูปนี้?")) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl(`/api/admin/persona/policy-notices/${id}/images?image=${imageId}`), { method: "DELETE" });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setErr(String(j.message ?? "ลบรูปไม่สำเร็จ")); return; }
+      await load(id);
+    } finally { setBusy(false); }
+  }
   const setItem = (i: number, patch: Partial<Item>) => setItems((arr) => arr.map((x, k) => (k === i ? { ...x, ...patch } : x)));
   const move = (i: number, d: -1 | 1) => setItems((arr) => { const j = i + d; if (j < 0 || j >= arr.length) return arr; const c = arr.slice(); [c[i], c[j]] = [c[j], c[i]]; return c; });
 
@@ -165,6 +230,7 @@ function Editor({ id, branches, onClose, onMessage }: { id: number | "new"; bran
 
       <FormSection title="1. นัดประชุม">
         <Field label="ชื่อเรื่อง"><input value={title} onChange={(e) => setTitle(e.target.value)} disabled={locked} placeholder="เช่น ตำแหน่งงานที่มีค่าตอบแทนพิเศษ" /></Field>
+        <Field label="ผู้ประกาศ" hint="แสดงให้พนักงานเห็นว่าประกาศโดยใคร"><input value={announcer} onChange={(e) => setAnnouncer(e.target.value)} disabled={locked} /></Field>
         <Field label="วัตถุประสงค์ / ที่มา" hint="ถ้ามี"><textarea rows={2} value={purpose} onChange={(e) => setPurpose(e.target.value)} disabled={locked} /></Field>
         <div className="grid sm:grid-cols-2 gap-2.5">
           <Field label="วันเวลาประชุม"><input type="datetime-local" value={meetingAt} onChange={(e) => setMeetingAt(e.target.value)} disabled={locked} /></Field>
@@ -179,7 +245,29 @@ function Editor({ id, branches, onClose, onMessage }: { id: number | "new"; bran
         </div>
       </FormSection>
 
-      <FormSection title={`2. หนังสือแจ้งหลังประชุม (${items.filter((i) => i.topic.trim()).length} หัวข้อ)`}>
+      <FormSection title={`2. หนังสือแจ้งหลังประชุม (${items.filter((i) => i.topic.trim()).length} หัวข้อ · ${images.length} รูป)`}>
+        <div className="space-y-2">
+          <div className="text-sm font-bold text-slate-700">รูปภาพประกอบ <span className="font-normal text-slate-500">(เช่น infographic · ไฟล์ JPG / PNG / PDF · ไม่บังคับ · ได้ไม่เกิน 10 รูป)</span></div>
+          {images.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {images.map((im, i) => (
+                <div key={im.id} className="relative rounded-xl border border-[color:var(--card-border)] overflow-hidden bg-[color:var(--surface-field)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={apiUrl(`/api/policy-notices/image/${im.id}`)} alt={`รูปที่ ${i + 1}`} className="w-full h-40 object-contain" />
+                  {!locked && <button type="button" className="absolute right-1 top-1 rounded-full bg-white/90 px-2 py-0.5 text-xs text-rose-600 shadow" onClick={() => void removeImage(im.id)} disabled={busy}>ลบ</button>}
+                </div>
+              ))}
+            </div>
+          )}
+          {!locked && images.length < 10 && (
+            <label className="btn btn-secondary text-sm cursor-pointer inline-flex">
+              + แนบรูป / ไฟล์ PDF
+              <input type="file" accept="image/*,application/pdf" multiple className="hidden" disabled={busy || !title.trim()} onChange={(e) => { const picked = Array.from(e.target.files ?? []); e.target.value = ""; void addImages(picked); }} />
+            </label>
+          )}
+          {!locked && !title.trim() && <p className="text-xs text-slate-500">ใส่ชื่อเรื่องก่อน จึงจะแนบรูปได้</p>}
+          {!locked && <p className="text-xs text-slate-500">รูปจะแสดงให้พนักงานอ่านต่อจากวัตถุประสงค์ ก่อนหัวข้อต่างๆ รูปใหญ่เกิน 10 MB ระบบย่อให้อัตโนมัติ · ไฟล์ PDF ระบบแปลงแต่ละหน้าเป็นรูปให้</p>}
+        </div>
         <p className="text-xs text-slate-500">กรอกหลังประชุมเสร็จ — หนังสือจะส่งให้พนักงานกดรับทราบเท่านั้น (ไม่มีช่องให้พนักงานตอบ) ไม่ต้องใส่ชื่อผู้เสนอในช่องข้อเสนอแนะ</p>
         {items.map((it, i) => (
           <div key={i} className="rounded-2xl border border-[color:var(--card-border)] p-3 space-y-2">
@@ -209,7 +297,7 @@ function Editor({ id, branches, onClose, onMessage }: { id: number | "new"; bran
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void save().then((n) => { if (n) onMessage({ ok: true, text: "บันทึกแล้ว" }); })}>บันทึก</button>
           <button type="button" className="btn btn-secondary" disabled={busy || !meetingAt || !title.trim()}
             onClick={() => void act("invite", "ส่งประกาศนัดประชุมให้พนักงานทางไลน์ตอนนี้เลยไหม")}>ส่งประกาศนัดประชุม</button>
-          <button type="button" className="btn btn-primary" disabled={busy || !title.trim() || !items.some((i) => i.topic.trim() && i.details.trim())}
+          <button type="button" className="btn btn-primary" disabled={busy || !title.trim() || !(images.length > 0 || items.some((i) => i.topic.trim() && i.details.trim()))}
             onClick={() => void act("publish", "ส่งหนังสือให้พนักงานกดรับทราบ? ส่งแล้วแก้เนื้อหาไม่ได้")}>ส่งหนังสือให้รับทราบ</button>
           {detail && <button type="button" className="text-sm text-rose-500 hover:underline ml-auto" disabled={busy} onClick={() => void act("cancel", "ยกเลิกประกาศนี้?")}>ยกเลิกประกาศ</button>}
         </div>

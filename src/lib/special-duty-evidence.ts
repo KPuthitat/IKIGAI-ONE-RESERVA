@@ -15,6 +15,7 @@ import path from "path";
 import { getDb } from "./db";
 import { advanceMonth, audit, cfgNum, getMonth } from "./special-duty";
 import { isGroupEligible, isOnApprovedLeave, isOnRoster } from "./special-duty-rules";
+import { sqlNameWithPrefix } from "./name";
 
 export type EvidenceErrorCode =
   | "not_found" | "forbidden" | "wrong_stage" | "too_early" | "deadline_passed" | "wrong_status" | "not_present"
@@ -182,7 +183,7 @@ function substituteProblem(d: DayRow, performerId: number): EvidenceErrorCode | 
 export function listSubstituteCandidates(dayId: number, branchId: number): Array<{ id: number; name: string }> {
   const d = loadDay(dayId);
   if (d.branch_id !== branchId) return [];
-  const users = getDb().prepare(`SELECT u.id, u.display_name AS name FROM users u WHERE u.role IN ('staff','admin') AND u.status NOT IN ('disabled','resigned','terminated')
+  const users = getDb().prepare(`SELECT u.id, ${sqlNameWithPrefix("u")} AS name FROM users u WHERE u.role IN ('staff','admin') AND u.status NOT IN ('disabled','resigned','terminated')
       AND COALESCE(u.is_test_account,0) = 0 AND EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = u.id AND ub.branch_id = ?) ORDER BY u.display_name`).all(branchId) as Array<{ id: number; name: string }>;
   return users.filter((u) => substituteProblem(d, u.id) === null);
 }

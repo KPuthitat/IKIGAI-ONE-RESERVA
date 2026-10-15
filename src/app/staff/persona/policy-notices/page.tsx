@@ -4,6 +4,7 @@ import { listForUser } from "@/lib/policy-notices";
 import { thaiMeetingTime } from "@/lib/policy-notices-notify";
 import EmptyState from "@/app/components/EmptyState";
 import Mascot from "@/app/components/Mascot";
+import { apiUrl } from "@/lib/url";
 import AckButton from "./AckButton";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,8 @@ export default function StaffPolicyNoticesPage() {
             {n.status !== "scheduled" && (n.ackedAt ? <span className="tag tag-ok flex-shrink-0">รับทราบแล้ว</span> : n.status === "closed" ? <span className="tag tag-mute flex-shrink-0">ปิดแล้ว</span> : <span className="tag tag-warn flex-shrink-0">รอรับทราบ</span>)}
           </div>
 
+          {n.announcer && <p className="text-xs text-slate-500">ประกาศโดย <b className="text-slate-700">{n.announcer}</b>{n.publishedAt ? ` · ${fmtTime(n.publishedAt)}` : ""}</p>}
+
           {n.purpose && <p className="text-sm text-slate-600 whitespace-pre-line">{n.purpose}</p>}
 
           {n.status === "scheduled" && (
@@ -45,6 +48,18 @@ export default function StaffPolicyNoticesPage() {
               {n.meetingAt && <div><b>วันเวลา:</b> {thaiMeetingTime(n.meetingAt)}</div>}
               {n.location && <div><b>สถานที่:</b> {n.location}</div>}
               <div className="text-xs text-slate-500 pt-1">หลังประชุมจะมีหนังสือสรุปให้ท่านอ่านและกดรับทราบที่หน้านี้</div>
+            </div>
+          )}
+
+          {n.images.length > 0 && (
+            <div className="space-y-2">
+              {n.images.map((im, i) => (
+                <a key={im.id} href={apiUrl(`/api/policy-notices/image/${im.id}`)} target="_blank" rel="noreferrer" className="block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={apiUrl(`/api/policy-notices/image/${im.id}`)} alt={`${n.title} รูปที่ ${i + 1}`} loading="lazy" className="w-full h-auto rounded-2xl border border-[color:var(--card-border)]" />
+                </a>
+              ))}
+              <p className="text-[11px] text-slate-400">แตะที่รูปเพื่อเปิดดูขนาดเต็ม</p>
             </div>
           )}
 

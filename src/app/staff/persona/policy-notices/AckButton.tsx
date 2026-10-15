@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
-import ActionBar from "@/app/components/ActionBar";
 
-// The one thing an employee does with a notice. Sits in the sticky bottom bar.
+// The one thing an employee does with a notice. It sits at the end of the letter, so it is pressed after reading.
 export default function AckButton({ noticeId }: { noticeId: number }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -22,11 +21,10 @@ export default function AckButton({ noticeId }: { noticeId: number }) {
   }
 
   return (
-    <>
+    <div className="space-y-2 border-t border-[color:var(--card-border)] pt-3">
       {err && <div className="text-sm text-rose-600">{err}</div>}
-      <ActionBar left="อ่านครบแล้วกดรับทราบ">
-        <button type="button" className="btn btn-primary" onClick={ack} disabled={busy}>{busy ? "กำลังบันทึก…" : "รับทราบ"}</button>
-      </ActionBar>
-    </>
+      <p className="text-sm text-slate-500 text-center">อ่านครบแล้ว กดรับทราบด้านล่าง</p>
+      <button type="button" className="btn btn-primary w-full" onClick={ack} disabled={busy}>{busy ? "กำลังบันทึก…" : "รับทราบ"}</button>
+    </div>
   );
 }

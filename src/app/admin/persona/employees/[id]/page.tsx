@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, userCanViewPayroll } from "@/lib/auth";
+import { hireOfferFor } from "@/lib/recruita-offer";
+import { fmtMoney } from "@/lib/format";
 import { getDb, type EmployeeProfile } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
@@ -88,6 +90,12 @@ export default function AdminEmployeeProfilePage({
   // shows blanks across the board, which previously looked like a
   // display bug. Surface a clear notice so admin knows it's a
   // data-not-filled situation, not a UI failure.
+  // The offer this person was hired on (RECRUITA). The pay figure follows the payroll-view
+  // permission; the special terms are shown to every admin who may open this profile.
+  const offer = hireOfferFor(id);
+  const showPay = userCanViewPayroll(user);
+  const fmtDate = (d: string) => { const [y, m, dd] = d.slice(0, 10).split("-"); return `${dd}/${m}/${Number(y) + 543}`; };
+
   const notFilled = !row.first_name_th && !row.last_name_th
     && !row.dob && !row.mobile_phone;
 
@@ -128,6 +136,32 @@ export default function AdminEmployeeProfilePage({
             /staff/persona/profile แล้วกรอกเองได้
           </p>
         </div>
+      )}
+
+      {offer && (
+        <section className={`card border-l-4 ${offer.conditions ? "border-amber-400" : "border-slate-200"}`}>
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <h2 className="font-bold text-slate-800">ข้อเสนอตอนรับเข้าทำงาน <span className="text-xs font-normal text-slate-400">· จาก RECRUITA</span></h2>
+            {offer.conditions ? <span className="tag tag-warn">มีเงื่อนไขพิเศษ</span> : <span className="tag tag-mute">ไม่มีเงื่อนไขพิเศษ</span>}
+          </div>
+          <dl className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            {offer.positionTitle && <div className="flex gap-2"><dt className="text-slate-500">ตำแหน่งที่สมัคร</dt><dd className="font-medium text-slate-800">{offer.positionTitle}</dd></div>}
+            {offer.offerStartDate && <div className="flex gap-2"><dt className="text-slate-500">วันเริ่มงานที่เสนอ</dt><dd className="font-medium text-slate-800">{fmtDate(offer.offerStartDate)}</dd></div>}
+            {showPay && offer.offerSalary != null && (
+              <div className="flex gap-2"><dt className="text-slate-500">ค่าตอบแทนที่เสนอ</dt>
+                <dd className="font-medium text-slate-800">{fmtMoney(offer.offerSalary)} บาท{offer.offerSalaryType === "hourly" ? "/ชั่วโมง" : offer.offerSalaryType === "monthly" ? "/เดือน" : ""}</dd></div>
+            )}
+            {offer.hiredAt && <div className="flex gap-2"><dt className="text-slate-500">รับเข้าทำงานเมื่อ</dt><dd className="font-medium text-slate-800">{fmtDate(offer.hiredAt)}</dd></div>}
+          </dl>
+          {offer.conditions ? (
+            <div className="mt-3 rounded-2xl bg-amber-50 border border-amber-200 p-3">
+              <div className="text-[11px] font-bold text-amber-800 mb-0.5">เงื่อนไขพิเศษที่เสนอไว้ตอนสมัคร</div>
+              <p className="text-sm text-slate-800 whitespace-pre-line">{offer.conditions}</p>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-400">ตอนเสนองานไม่ได้ระบุเงื่อนไขพิเศษไว้</p>
+          )}
+        </section>
       )}
 
       <ProfileForm mode="admin" profile={{ ...row, supervisor_user_ids: supervisorIds }} supervisors={supervisors}

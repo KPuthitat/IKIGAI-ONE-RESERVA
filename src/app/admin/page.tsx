@@ -6,8 +6,6 @@ import { t } from "@/lib/i18n";
 import { HubCard } from "@/components/HubCard";
 import { Icon } from "@/components/Icon";
 import { ADMIN_MODULES } from "@/lib/admin-modules";
-import MascotHero from "@/app/components/MascotHero";
-import { nameWithPrefix } from "@/lib/name";
 
 export const metadata: Metadata = { title: "ADMIN" };
 
@@ -28,8 +26,10 @@ export default function AdminHomePage() {
 
   return (
     <div className="space-y-6">
-      <MascotHero name={nameWithPrefix(user.title_prefix, user.display_name)}>{t(lang, "portal.adminSubtitle")}</MascotHero>
-      <h1 className="text-2xl font-bold text-slate-800">{t(lang, "portal.chooseModule")}</h1>
+      <div>
+        <h1 className="text-2xl font-bold text-slate-800">{t(lang, "portal.chooseModule")}</h1>
+        <p className="text-sm text-slate-500 mt-1">{t(lang, "portal.adminSubtitle")}</p>
+      </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {cards.map((m) => (

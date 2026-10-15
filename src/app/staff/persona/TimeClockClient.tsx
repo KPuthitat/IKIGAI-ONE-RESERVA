@@ -1369,7 +1369,7 @@ function ClockAction({
   if (phase === "success") {
     return (
       <div className="bg-emerald-50 border border-emerald-200 rounded-2xl py-5 flex flex-col items-center gap-2">
-        <Mascot pose={actualAction === "in" ? "thumbs" : "wai"} size={150} className="animate-owl-float" />
+        <Mascot pose={actualAction === "in" ? "thumbs" : "wai"} size={150} />
         <div className="text-emerald-800 font-bold">
           {actualAction === "in" ? t("staff.persona.success.in") : t("staff.persona.success.out")}
         </div>

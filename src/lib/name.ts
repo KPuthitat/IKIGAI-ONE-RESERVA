@@ -9,3 +9,8 @@ export function nameWithPrefix(
   const p = (prefix ?? "").trim();
   return p ? `${p} ${name}` : name;
 }
+
+/** SQL for the same thing as nameWithPrefix(), for a users alias: TRIM(prefix || ' ' || display_name). */
+export function sqlNameWithPrefix(alias: string): string {
+  return `TRIM(COALESCE(${alias}.title_prefix, '') || ' ' || ${alias}.display_name)`;
+}

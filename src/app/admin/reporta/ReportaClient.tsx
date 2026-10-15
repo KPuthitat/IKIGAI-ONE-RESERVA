@@ -10,7 +10,6 @@ import type { ClinicaWeek, ClinicaDailyReport } from "@/lib/clinica-analytics";
 import type { BranchForecast } from "@/lib/forecast";
 import { hourSpan, hoursLabel, type HoursWindow } from "@/lib/hours";
 import ClinicaImportClient from "./clinica/ClinicaImportClient";
-import TrendMascot from "@/app/components/TrendMascot";
 import { clinicaPaidPct } from "@/lib/clinica-shared";
 
 // REPORTA dashboard (owner 2026-09-16): import the POS files, review the day's
@@ -889,12 +888,9 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
               <span className="text-lg font-bold text-emerald-700">{baht(monthCompare.mtdNett + revshareIncome)}<span className="text-[11px] font-normal text-slate-400">{perTimes(revshareIncome > 0 ? null : mtdBills)}</span></span>
             </div>
             {revshareIncome > 0 && <div className="text-[10px] text-violet-600 -mt-1">รวมส่วนแบ่งยอดขายรายเดือน {baht(revshareIncome)} (นอก POS)</div>}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
-                <span>เทียบเดือนก่อน (ช่วงเดียวกัน · POS) <PctChip pct={monthCompare.prevMonthPct} /></span>
-                <span>เทียบปีก่อน (เดือนเดียวกัน · POS) <PctChip pct={monthCompare.lastYearPct} /></span>
-              </div>
-              <TrendMascot pct={monthCompare.prevMonthPct} size={96} />
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
+              <span>เทียบเดือนก่อน (ช่วงเดียวกัน · POS) <PctChip pct={monthCompare.prevMonthPct} /></span>
+              <span>เทียบปีก่อน (เดือนเดียวกัน · POS) <PctChip pct={monthCompare.lastYearPct} /></span>
             </div>
 
             {/* Monthly target progress (owner C) */}
@@ -1303,8 +1299,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
                   <Kpi label="ลูกค้ารวม" value={`${intTh(weekly.totalPax)} คน`} />
                   <Kpi label="เฉลี่ยต่อวัน" value={weekly.avgPerDay != null ? baht(weekly.avgPerDay) : "—"} />
                 </div>
-                <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 flex flex-wrap items-center gap-x-6 gap-y-1">
-                  <TrendMascot pct={weekly.wowNettPct} size={88} />
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 flex flex-wrap gap-x-6 gap-y-1">
                   <span className="font-semibold text-slate-700">เทียบสัปดาห์ก่อน:</span>
                   {weekly.wowNettPct == null ? (
                     <span className="text-slate-400">ยังไม่มีข้อมูลสัปดาห์ก่อน</span>

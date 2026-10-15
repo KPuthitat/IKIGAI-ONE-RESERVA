@@ -5,7 +5,6 @@ import { getDb } from "@/lib/db";
 import { bkkDateIso, formatLongDate } from "@/lib/time";
 import { getMealpassConfig, balanceForUser, monthlyEarned, projectedMonthlyCredits, ymOf, getDrinkCouponForDate, resolveHomeCompanyId, hasMealpassConsent } from "@/lib/mealpass";
 import MealpassClient, { type MealpassMenuItem, type MealpassHistoryRow, type SalaMenuItem } from "./MealpassClient";
-import Mascot from "@/app/components/Mascot";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "PERSONA · MEALPASS" };
@@ -113,8 +112,7 @@ export default function MealpassPage() {
       <Link href="/staff/persona" className="text-sm text-slate-500 hover:text-brand">← กลับหน้าลงเวลา</Link>
 
       {/* Navy header */}
-      <div className="relative overflow-hidden rounded-2xl p-5 text-white" style={{ background: "#0B1F3A" }}>
-        <Mascot pose="drumstick" size={88} className="absolute right-3 bottom-0 opacity-95" />
+      <div className="rounded-2xl p-5 text-white" style={{ background: "#0B1F3A" }}>
         <div className="flex items-center gap-2">
           <span className="text-lg font-extrabold tracking-wide">MEALPASS</span>
           <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: "#C9A227", color: "#0B1F3A" }}>2.0</span>

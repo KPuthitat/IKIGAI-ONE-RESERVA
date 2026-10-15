@@ -16,6 +16,7 @@ export const NoticeBody = z.object({
   purpose: z.string().max(1000).optional(),
   meeting_at: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).nullable().optional(),
   location: z.string().max(200).optional(),
+  announcer: z.string().max(120).optional(),
   branch_id: z.number().int().positive().nullable().optional(),
   ack_deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
 });

@@ -8,7 +8,6 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
-import Mascot from "@/app/components/Mascot";
 import EmptyState from "@/app/components/EmptyState";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +43,7 @@ export default function StaffPayslipListPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-xl font-bold text-slate-800"><Mascot pose="thumbs" size={56} />สลิปเงินเดือนของฉัน</h1>
+        <h1 className="text-xl font-bold text-slate-800">สลิปเงินเดือนของฉัน</h1>
         <Link href="/staff/persona" className="text-sm text-brand hover:underline">← ลงเวลา</Link>
       </div>
       <p className="text-sm text-slate-500 -mt-2">

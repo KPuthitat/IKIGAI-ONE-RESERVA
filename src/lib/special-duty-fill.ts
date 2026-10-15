@@ -85,7 +85,7 @@ export function fillOpenDays(args: { branchId: number; yearMonth: string; manage
   const month = getMonth(branchId, yearMonth);
   if (!month.enabled) throw new SpecialDutyError("month_off");
   if (month.status !== "booking_closed" && month.status !== "filling") throw new SpecialDutyError("invalid_transition", month.status);
-  const names = new Map((db.prepare("SELECT id, display_name AS n FROM users").all() as Array<{ id: number; n: string }>).map((r) => [r.id, r.n]));
+  const names = new Map((db.prepare("SELECT id, TRIM(COALESCE(title_prefix, '') || ' ' || display_name) AS n FROM users").all() as Array<{ id: number; n: string }>).map((r) => [r.id, r.n]));
   const pool = candidatePool(branchId);
   const plan: FillPlan = { suggestions: [], unfillable: [] };
   const ROLLBACK = new Error("rollback-preview");
