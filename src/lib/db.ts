@@ -3404,6 +3404,16 @@ function runMigrations(db: Database.Database): void {
       UNIQUE (notice_id, user_id)
     );
     CREATE INDEX IF NOT EXISTS idx_policy_recipients_user ON policy_notice_recipients(user_id, acked_at);
+    -- Pictures attached to a letter (an infographic made elsewhere), kept on disk; locked with the text.
+    CREATE TABLE IF NOT EXISTS policy_notice_images (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      notice_id  INTEGER NOT NULL REFERENCES policy_notices(id) ON DELETE CASCADE,
+      sort_no    INTEGER NOT NULL,
+      filename   TEXT NOT NULL,
+      mime       TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_policy_notice_images_notice ON policy_notice_images(notice_id, sort_no);
   `);
   // Review trail on a duty day: when the holder/substitute submitted evidence, and who approved or sent it back.
   const sddCols = new Set((db.prepare("PRAGMA table_info(special_duty_days)").all() as Array<{ name: string }>).map((c) => c.name));

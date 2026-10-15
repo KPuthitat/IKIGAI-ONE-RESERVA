@@ -13,6 +13,8 @@
 //    (staff who joined in between) but nobody is removed;
 //  - employees never see who else was notified or who acknowledged.
 
+import fs from "fs";
+import path from "path";
 import { getDb } from "./db";
 import { sqlNameWithPrefix } from "./name";
 
@@ -23,14 +25,18 @@ export class PolicyError extends Error {
 }
 export type PolicyErrorCode =
   | "invalid_title" | "invalid_meeting_at" | "invalid_item" | "no_items" | "too_many_items"
+  | "invalid_image" | "image_too_large" | "too_many_images"
   | "not_found" | "locked" | "bad_status" | "not_recipient" | "not_published";
 
 export const POLICY_ERROR_TH: Record<PolicyErrorCode, string> = {
   invalid_title: "กรุณาใส่ชื่อเรื่อง",
   invalid_meeting_at: "วันเวลาประชุมไม่ถูกต้อง",
   invalid_item: "ทุกหัวข้อต้องมีชื่อหัวข้อและรายละเอียด",
-  no_items: "ต้องมีอย่างน้อย 1 หัวข้อก่อนส่งหนังสือ",
+  no_items: "ต้องมีอย่างน้อย 1 หัวข้อหรือ 1 รูปก่อนส่งหนังสือ",
   too_many_items: "ใส่ได้ไม่เกิน 30 หัวข้อ",
+  invalid_image: "รองรับเฉพาะรูป PNG / JPG / WebP",
+  image_too_large: "ไฟล์รูปใหญ่เกิน 4 MB",
+  too_many_images: "แนบรูปได้ไม่เกิน 10 รูป",
   not_found: "ไม่พบรายการนี้",
   locked: "ส่งหนังสือไปแล้ว แก้ไขเนื้อหาไม่ได้",
   bad_status: "สถานะปัจจุบันทำรายการนี้ไม่ได้",
@@ -40,6 +46,11 @@ export const POLICY_ERROR_TH: Record<PolicyErrorCode, string> = {
 
 export const MAX_ITEMS = 30;
 const MAX_TOPIC = 200, MAX_DETAILS = 4000, MAX_SUGGEST = 4000, MAX_TITLE = 200, MAX_PURPOSE = 1000, MAX_LOCATION = 200;
+
+export const MAX_IMAGES = 10;
+export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;   // nginx accepts 5 MB request bodies
+const IMAGE_EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+const imageDir = () => process.env.POLICY_IMAGE_DIR || path.join(process.cwd(), "data", "uploads", "policy-notices");
 
 export type NoticeItem = { topic: string; details: string; suggestions: string };
 export type NoticeRow = {
@@ -134,6 +145,55 @@ export function saveItems(id: number, items: NoticeItem[]): void {
   })();
 }
 
+// ── pictures ──────────────────────────────────────────────────────────────────
+
+export type NoticeImage = { id: number };
+
+export function listImages(noticeId: number): NoticeImage[] {
+  return getDb().prepare("SELECT id FROM policy_notice_images WHERE notice_id = ? ORDER BY sort_no, id").all(noticeId) as NoticeImage[];
+}
+
+/** Attach a picture (e.g. an infographic). Only while the letter is still being drafted. */
+export function addImage(noticeId: number, buf: Buffer, mime: string): number {
+  const n = load(noticeId);
+  if (n.status !== "scheduled") throw new PolicyError(n.status === "published" || n.status === "closed" ? "locked" : "bad_status");
+  const ext = IMAGE_EXT[mime === "image/jpg" ? "image/jpeg" : mime];
+  if (!ext || buf.length === 0) throw new PolicyError("invalid_image");
+  if (buf.length > MAX_IMAGE_BYTES) throw new PolicyError("image_too_large");
+  const db = getDb();
+  const have = (db.prepare("SELECT COUNT(*) AS c, COALESCE(MAX(sort_no), 0) AS m FROM policy_notice_images WHERE notice_id = ?").get(noticeId) as { c: number; m: number });
+  if (have.c >= MAX_IMAGES) throw new PolicyError("too_many_images");
+  fs.mkdirSync(imageDir(), { recursive: true });
+  const filename = `${noticeId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  fs.writeFileSync(path.join(imageDir(), filename), buf);
+  return Number(db.prepare("INSERT INTO policy_notice_images (notice_id, sort_no, filename, mime, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(noticeId, have.m + 1, filename, ext === "jpg" ? "image/jpeg" : mime, nowIso()).lastInsertRowid);
+}
+
+export function removeImage(noticeId: number, imageId: number): void {
+  const n = load(noticeId);
+  if (n.status !== "scheduled") throw new PolicyError(n.status === "published" || n.status === "closed" ? "locked" : "bad_status");
+  const db = getDb();
+  const row = db.prepare("SELECT filename FROM policy_notice_images WHERE id = ? AND notice_id = ?").get(imageId, noticeId) as { filename: string } | undefined;
+  if (!row) throw new PolicyError("not_found");
+  db.prepare("DELETE FROM policy_notice_images WHERE id = ?").run(imageId);
+  try { fs.rmSync(path.join(imageDir(), row.filename), { force: true }); } catch { /* the row is gone; a stray file is harmless */ }
+}
+
+/** A picture's file, if this viewer may see it: admins always; an employee only for a letter that was sent to them. */
+export function imageForViewer(imageId: number, viewer: { userId: number; isAdmin: boolean }): { path: string; mime: string } | null {
+  const row = getDb().prepare(`SELECT i.filename, i.mime, n.status, n.id AS nid FROM policy_notice_images i JOIN policy_notices n ON n.id = i.notice_id WHERE i.id = ?`)
+    .get(imageId) as { filename: string; mime: string; status: NoticeStatus; nid: number } | undefined;
+  if (!row || /[\\/]|\.\./.test(row.filename)) return null;
+  if (!viewer.isAdmin) {
+    if (row.status !== "published" && row.status !== "closed") return null;
+    const rec = getDb().prepare("SELECT 1 FROM policy_notice_recipients WHERE notice_id = ? AND user_id = ?").get(row.nid, viewer.userId);
+    if (!rec) return null;
+  }
+  const full = path.join(imageDir(), row.filename);
+  return fs.existsSync(full) ? { path: full, mime: row.mime } : null;
+}
+
 // ── recipients ────────────────────────────────────────────────────────────────
 
 function audience(branchId: number | null): Recipient[] {
@@ -181,7 +241,7 @@ export function inviteMeeting(id: number): Recipient[] {
 export function publish(id: number): Recipient[] {
   const n = load(id);
   if (n.status !== "scheduled") throw new PolicyError("bad_status");
-  if (listItems(id).length === 0) throw new PolicyError("no_items");
+  if (listItems(id).length === 0 && listImages(id).length === 0) throw new PolicyError("no_items");
   syncRecipients(id);
   const db = getDb();
   const now = nowIso();
@@ -247,19 +307,19 @@ export function listForAdmin(): AdminNoticeSummary[] {
 
 export type AdminAckRow = { userId: number; name: string; ackedAt: string | null; letterSentAt: string | null; lastRemindedAt: string | null };
 
-export function adminDetail(id: number): { notice: NoticeRow; items: NoticeItem[]; recipients: AdminAckRow[] } | null {
+export function adminDetail(id: number): { notice: NoticeRow; items: NoticeItem[]; images: NoticeImage[]; recipients: AdminAckRow[] } | null {
   const notice = getNotice(id);
   if (!notice) return null;
   const recipients = getDb().prepare(`
     SELECT r.user_id AS userId, ${sqlNameWithPrefix("u")} AS name, r.acked_at AS ackedAt, r.letter_sent_at AS letterSentAt, r.last_reminded_at AS lastRemindedAt
       FROM policy_notice_recipients r JOIN users u ON u.id = r.user_id
      WHERE r.notice_id = ? ORDER BY (r.acked_at IS NULL) DESC, u.display_name`).all(id) as AdminAckRow[];
-  return { notice, items: listItems(id), recipients };
+  return { notice, items: listItems(id), images: listImages(id), recipients };
 }
 
 export type StaffNotice = {
   id: number; title: string; purpose: string; meetingAt: string | null; location: string; status: NoticeStatus;
-  ackDeadline: string | null; publishedAt: string | null; ackedAt: string | null; items: NoticeItem[] | null;
+  ackDeadline: string | null; publishedAt: string | null; ackedAt: string | null; items: NoticeItem[] | null; images: NoticeImage[];
 };
 
 /** What one employee may see: meeting notices they were invited to, and letters that were sent. Never other people's data. */
@@ -274,7 +334,8 @@ export function listForUser(userId: number): StaffNotice[] {
   return rows.map((r) => ({
     id: r.id, title: r.title, purpose: r.purpose, meetingAt: r.meeting_at, location: r.location, status: r.status,
     ackDeadline: r.ack_deadline, publishedAt: r.published_at, ackedAt: r.acked_at,
-    items: r.status === "scheduled" ? null : listItems(r.id)
+    items: r.status === "scheduled" ? null : listItems(r.id),
+    images: r.status === "scheduled" ? [] : listImages(r.id)
   }));
 }
 

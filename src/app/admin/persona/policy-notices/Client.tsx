@@ -13,7 +13,7 @@ type Item = { topic: string; details: string; suggestions: string };
 type Ack = { userId: number; name: string; ackedAt: string | null; lastRemindedAt: string | null };
 type Detail = {
   notice: { id: number; title: string; purpose: string; meetingAt: string | null; location: string; branchId: number | null; status: Status; ackDeadline: string | null; invitedAt: string | null };
-  items: Item[]; recipients: Ack[];
+  items: Item[]; images: Array<{ id: number }>; recipients: Ack[];
 };
 type Branch = { id: number; name: string };
 
@@ -23,6 +23,26 @@ const STATUS_TAG: Record<Status, { cls: string; label: string }> = {
   closed: { cls: "tag-ok", label: "ปิดแล้ว" },
   cancelled: { cls: "tag-mute", label: "ยกเลิก" }
 };
+const MAX_UPLOAD = 4 * 1024 * 1024;   // the server refuses more; bigger pictures are re-encoded first
+const KEEP_AS_IS = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+/** A picture the server will take: kept untouched when small enough, otherwise re-encoded as JPEG (long side ≤ 2400px). */
+async function prepareImage(file: File): Promise<File | null> {
+  if (KEEP_AS_IS.has(file.type) && file.size <= MAX_UPLOAD) return file;
+  if (!file.type.startsWith("image/")) return null;
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
+    for (const [edge, q] of [[2400, 0.9], [2000, 0.8], [1600, 0.7]] as const) {
+      const k = Math.min(1, edge / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d")?.drawImage(img, 0, 0, c.width, c.height);
+      const blob = await new Promise<Blob | null>((ok) => c.toBlob(ok, "image/jpeg", q));
+      if (blob && blob.size <= MAX_UPLOAD) return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+    }
+    return null;
+  } catch { return null; } finally { URL.revokeObjectURL(url); }
+}
 const blankItem = (): Item => ({ topic: "", details: "", suggestions: "" });
 const fmtTime = (iso: string) => new Date(iso).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Bangkok" });
 
@@ -93,6 +113,7 @@ function Editor({ id, branches, onClose, onMessage }: { id: number | "new"; bran
   const [branchId, setBranchId] = useState<string>("");
   const [deadline, setDeadline] = useState("");
   const [items, setItems] = useState<Item[]>([blankItem()]);
+  const [images, setImages] = useState<Array<{ id: number }>>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -101,6 +122,7 @@ function Editor({ id, branches, onClose, onMessage }: { id: number | "new"; bran
     setTitle(d.notice.title); setPurpose(d.notice.purpose); setMeetingAt(d.notice.meetingAt ?? "");
     setLocation(d.notice.location); setBranchId(d.notice.branchId ? String(d.notice.branchId) : ""); setDeadline(d.notice.ackDeadline ?? "");
     setItems(d.items.length ? d.items : [blankItem()]);
+    setImages(d.images ?? []);
   }, []);
   const load = useCallback(async (nid: number) => {
     const r = await fetch(apiUrl(`/api/admin/persona/policy-notices/${nid}`), { cache: "no-store" });
@@ -147,6 +169,31 @@ function Editor({ id, branches, onClose, onMessage }: { id: number | "new"; bran
       if (action === "close" || action === "cancel") onClose(); else await load(nid!);
     } finally { setBusy(false); }
   }
+  async function addImages(files: File[]) {
+    if (files.length === 0) return;
+    setBusy(true); setErr(null);
+    try {
+      const nid = id === "new" ? await save() : id;   // a new notice needs to exist before pictures can hang off it
+      if (nid == null) return;
+      for (const f of files) {
+        const ready = await prepareImage(f);
+        if (!ready) { setErr(`ใช้รูป “${f.name}” ไม่ได้ (รองรับ PNG / JPG / WebP)`); break; }
+        const fd = new FormData(); fd.append("file", ready);
+        const r = await fetch(apiUrl(`/api/admin/persona/policy-notices/${nid}/images`), { method: "POST", body: fd });
+        if (!r.ok) { const j = await r.json().catch(() => ({})); setErr(String(j.message ?? "อัปโหลดรูปไม่สำเร็จ")); break; }
+      }
+      await load(nid);
+    } finally { setBusy(false); }
+  }
+  async function removeImage(imageId: number) {
+    if (id === "new" || !window.confirm("ลบรูปนี้?")) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl(`/api/admin/persona/policy-notices/${id}/images?image=${imageId}`), { method: "DELETE" });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setErr(String(j.message ?? "ลบรูปไม่สำเร็จ")); return; }
+      await load(id);
+    } finally { setBusy(false); }
+  }
   const setItem = (i: number, patch: Partial<Item>) => setItems((arr) => arr.map((x, k) => (k === i ? { ...x, ...patch } : x)));
   const move = (i: number, d: -1 | 1) => setItems((arr) => { const j = i + d; if (j < 0 || j >= arr.length) return arr; const c = arr.slice(); [c[i], c[j]] = [c[j], c[i]]; return c; });
 
@@ -179,7 +226,29 @@ function Editor({ id, branches, onClose, onMessage }: { id: number | "new"; bran
         </div>
       </FormSection>
 
-      <FormSection title={`2. หนังสือแจ้งหลังประชุม (${items.filter((i) => i.topic.trim()).length} หัวข้อ)`}>
+      <FormSection title={`2. หนังสือแจ้งหลังประชุม (${items.filter((i) => i.topic.trim()).length} หัวข้อ · ${images.length} รูป)`}>
+        <div className="space-y-2">
+          <div className="text-sm font-bold text-slate-700">รูปภาพประกอบ <span className="font-normal text-slate-500">(เช่น infographic · ไม่บังคับ · ได้ไม่เกิน 10 รูป)</span></div>
+          {images.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {images.map((im, i) => (
+                <div key={im.id} className="relative rounded-xl border border-[color:var(--card-border)] overflow-hidden bg-[color:var(--surface-field)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={apiUrl(`/api/policy-notices/image/${im.id}`)} alt={`รูปที่ ${i + 1}`} className="w-full h-40 object-contain" />
+                  {!locked && <button type="button" className="absolute right-1 top-1 rounded-full bg-white/90 px-2 py-0.5 text-xs text-rose-600 shadow" onClick={() => void removeImage(im.id)} disabled={busy}>ลบ</button>}
+                </div>
+              ))}
+            </div>
+          )}
+          {!locked && images.length < 10 && (
+            <label className="btn btn-secondary text-sm cursor-pointer inline-flex">
+              + แนบรูป
+              <input type="file" accept="image/*" multiple className="hidden" disabled={busy || !title.trim()} onChange={(e) => { const picked = Array.from(e.target.files ?? []); e.target.value = ""; void addImages(picked); }} />
+            </label>
+          )}
+          {!locked && !title.trim() && <p className="text-xs text-slate-500">ใส่ชื่อเรื่องก่อน จึงจะแนบรูปได้</p>}
+          {!locked && <p className="text-xs text-slate-500">รูปจะแสดงให้พนักงานอ่านต่อจากวัตถุประสงค์ ก่อนหัวข้อต่างๆ รูปใหญ่เกิน 4 MB ระบบย่อให้อัตโนมัติ</p>}
+        </div>
         <p className="text-xs text-slate-500">กรอกหลังประชุมเสร็จ — หนังสือจะส่งให้พนักงานกดรับทราบเท่านั้น (ไม่มีช่องให้พนักงานตอบ) ไม่ต้องใส่ชื่อผู้เสนอในช่องข้อเสนอแนะ</p>
         {items.map((it, i) => (
           <div key={i} className="rounded-2xl border border-[color:var(--card-border)] p-3 space-y-2">
@@ -209,7 +278,7 @@ function Editor({ id, branches, onClose, onMessage }: { id: number | "new"; bran
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void save().then((n) => { if (n) onMessage({ ok: true, text: "บันทึกแล้ว" }); })}>บันทึก</button>
           <button type="button" className="btn btn-secondary" disabled={busy || !meetingAt || !title.trim()}
             onClick={() => void act("invite", "ส่งประกาศนัดประชุมให้พนักงานทางไลน์ตอนนี้เลยไหม")}>ส่งประกาศนัดประชุม</button>
-          <button type="button" className="btn btn-primary" disabled={busy || !title.trim() || !items.some((i) => i.topic.trim() && i.details.trim())}
+          <button type="button" className="btn btn-primary" disabled={busy || !title.trim() || !(images.length > 0 || items.some((i) => i.topic.trim() && i.details.trim()))}
             onClick={() => void act("publish", "ส่งหนังสือให้พนักงานกดรับทราบ? ส่งแล้วแก้เนื้อหาไม่ได้")}>ส่งหนังสือให้รับทราบ</button>
           {detail && <button type="button" className="text-sm text-rose-500 hover:underline ml-auto" disabled={busy} onClick={() => void act("cancel", "ยกเลิกประกาศนี้?")}>ยกเลิกประกาศ</button>}
         </div>
