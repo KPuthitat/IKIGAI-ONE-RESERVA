@@ -12,7 +12,7 @@ export type RuleCode =
   | "not_in_roster" | "group_not_eligible" | "on_leave" | "below_minimum_days" | "too_many_per_day" | "slot_taken"
   | "not_open_for_assignment";
 
-export type RuleResult = { ok: true } | { ok: false; errors: Array<{ code: RuleCode; positionId?: number; date?: string }> };
+export type RuleResult = { ok: true; overridden?: RuleCode[] } | { ok: false; errors: Array<{ code: RuleCode; positionId?: number; date?: string }> };
 
 const bkkToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 const prevMonth = (ym: string) => { const [y, m] = ym.split("-").map(Number); return new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7); };
@@ -136,7 +136,12 @@ export function setUserBookings(args: { userId: number; branchId: number; yearMo
 /** Manager assigns an open day — from the moment booking opens until the schedule is published
  *  (owner 2026-10-15: the back office can add people itself, not only fill what is left).
  *  Same eligibility, no minimum, and strikes do not block it. */
-export function checkAssignment(args: { userId: number; branchId: number; yearMonth: string; positionId: number; date: string; asOf?: string }): RuleResult {
+/** What a manager may knowingly step over (owner 2026-10-16): the person is not on the roster that day, is on leave,
+ *  is outside the position's group, or the day is already past. Never: a taken slot, the per-day limit, the person
+ *  not belonging to the branch, or a position that does not exist. */
+const OVERRIDABLE: ReadonlySet<RuleCode> = new Set<RuleCode>(["not_in_roster", "on_leave", "group_not_eligible", "date_in_past"]);
+
+export function checkAssignment(args: { userId: number; branchId: number; yearMonth: string; positionId: number; date: string; asOf?: string; override?: boolean }): RuleResult {
   const { userId, branchId, yearMonth, positionId, date } = args;
   const asOf = args.asOf ?? bkkToday();
   const month = getMonth(branchId, yearMonth);
@@ -152,10 +157,15 @@ export function checkAssignment(args: { userId: number; branchId: number; yearMo
   const others = (db.prepare("SELECT COUNT(*) AS n FROM special_duty_days WHERE user_id = ? AND duty_date = ? AND position_id != ?").get(userId, date, positionId) as { n: number }).n;
   if (others + 1 > cfgNum("max_positions_per_person_per_day")) errs.push({ code: "too_many_per_day", positionId, date });
   if (db.prepare("SELECT 1 FROM special_duty_days WHERE position_id = ? AND duty_date = ?").get(positionId, date)) errs.push({ code: "slot_taken", positionId, date });
+  if (args.override) {
+    const stepped = errs.filter((e) => OVERRIDABLE.has(e.code)).map((e) => e.code);
+    const hard = errs.filter((e) => !OVERRIDABLE.has(e.code));
+    return hard.length ? { ok: false, errors: hard } : { ok: true, overridden: stepped };
+  }
   return errs.length ? { ok: false, errors: errs } : { ok: true };
 }
 
-export function assignDay(args: { userId: number; branchId: number; yearMonth: string; positionId: number; date: string; managerId: number; asOf?: string }): RuleResult {
+export function assignDay(args: { userId: number; branchId: number; yearMonth: string; positionId: number; date: string; managerId: number; asOf?: string; override?: boolean }): RuleResult {
   const db = getDb();
   let result: RuleResult = { ok: true };
   db.transaction(() => {
@@ -163,7 +173,7 @@ export function assignDay(args: { userId: number; branchId: number; yearMonth: s
     if (!result.ok) return;
     const r = db.prepare("INSERT INTO special_duty_days (position_id, duty_date, user_id, source, status, assigned_by) VALUES (?, ?, ?, 'assigned', 'assigned', ?)")
       .run(args.positionId, args.date, args.userId, args.managerId);
-    audit({ actorId: args.managerId, branchId: args.branchId, yearMonth: args.yearMonth, entity: "assignment", entityId: Number(r.lastInsertRowid), action: "assign", after: { userId: args.userId, positionId: args.positionId, date: args.date } });
+    audit({ actorId: args.managerId, branchId: args.branchId, yearMonth: args.yearMonth, entity: "assignment", entityId: Number(r.lastInsertRowid), action: "assign", after: { userId: args.userId, positionId: args.positionId, date: args.date, ...(result.ok && result.overridden?.length ? { overridden: result.overridden } : {}) } });
   })();
   return result;
 }
