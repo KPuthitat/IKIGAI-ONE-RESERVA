@@ -123,6 +123,14 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("a service person cannot be assigned dish washing", codes(R.checkAssignment({ userId: waiter, branchId: nama, yearMonth: YM, positionId: dish, date: date(29), asOf: NOW })).includes("group_not_eligible"));
   ok("a person not on the roster that day cannot be assigned", codes(R.checkAssignment({ userId: owner, branchId: nama, yearMonth: YM, positionId: dish, date: date(29), asOf: NOW })).includes("not_in_roster"));
   ok("an already-held slot cannot be assigned", codes(R.checkAssignment({ userId: filler, branchId: nama, yearMonth: YM, positionId: dish, date: date(28), asOf: NOW })).includes("slot_taken"));
+  ok("a manager may knowingly override roster / group / past-day, and the audit says what was stepped over", (() => {
+    const args = { userId: owner, branchId: nama, yearMonth: YM, positionId: dish, date: date(26), managerId: owner, asOf: NOW };
+    const refused = codes(R.checkAssignment(args));
+    const forced = R.assignDay({ ...args, override: true });
+    const entry = db.prepare("SELECT after_json AS a FROM special_duty_audit WHERE entity='assignment' AND action='assign' ORDER BY id DESC LIMIT 1").get() as { a: string } | undefined;
+    return refused.includes("not_in_roster") && forced.ok === true && (entry?.a ?? "").includes("not_in_roster");
+  })());
+  ok("…but never over a taken slot", codes(R.checkAssignment({ userId: filler, branchId: nama, yearMonth: YM, positionId: dish, date: date(26), asOf: NOW, override: true })).includes("slot_taken"));
   ok("assignment respects the 2-positions-a-day limit", (() => {
     R.assignDay({ userId: filler, branchId: nama, yearMonth: YM, positionId: dish, date: date(30), managerId: owner, asOf: NOW });
     R.assignDay({ userId: filler, branchId: nama, yearMonth: YM, positionId: toilet, date: date(30), managerId: owner, asOf: NOW });

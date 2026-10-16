@@ -116,7 +116,7 @@ export function fillOpenDays(args: { branchId: number; yearMonth: string; manage
 }
 
 /** Manager assigns one open day (also moves booking_closed → filling). */
-export function managerAssign(args: { branchId: number; yearMonth: string; positionId: number; date: string; userId: number; managerId: number; asOf?: string }): RuleResult {
+export function managerAssign(args: { branchId: number; yearMonth: string; positionId: number; date: string; userId: number; managerId: number; asOf?: string; override?: boolean }): RuleResult {
   const r = assignDay(args);
   if (r.ok && getMonth(args.branchId, args.yearMonth).status === "booking_closed") startFilling({ branchId: args.branchId, yearMonth: args.yearMonth, actorId: args.managerId });
   return r;

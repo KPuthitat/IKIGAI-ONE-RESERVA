@@ -18,6 +18,13 @@ import { sqlNameWithPrefix } from "@/lib/name";
 //   GET  ?month=YYYY-MM[&candidates=<positionId>:<date>]
 //   POST {month, action: close_booking | start_filling | suggest | apply_suggestions | assign | remove | publish, ...}
 
+// Why a person does not fit a day, worded for the manager (RULE_TEXT is worded for the employee).
+const WHY_NOT: Record<string, string> = {
+  date_in_past: "เป็นวันที่ผ่านมาแล้ว", not_in_roster: "ไม่มีตารางทำงานวันนั้น", on_leave: "ลาในวันนั้น",
+  group_not_eligible: "อยู่นอกกลุ่มงานของตำแหน่งนี้", too_many_per_day: "ได้ตำแหน่งครบจำนวนต่อวันแล้ว", slot_taken: "มีผู้ได้วันนี้แล้ว",
+  not_in_branch: "ไม่ได้สังกัดสาขานี้"
+};
+
 const YM = z.string().regex(/^\d{4}-\d{2}$/);
 
 function gate() {
@@ -50,7 +57,13 @@ export async function GET(req: Request) {
     const users = getDb().prepare(`SELECT u.id, ${sqlNameWithPrefix("u")} AS name FROM users u
         WHERE u.role IN ('staff','admin') AND u.status NOT IN ('disabled','resigned','terminated') AND COALESCE(u.is_test_account,0) = 0
           AND EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = u.id AND ub.branch_id = ?) ORDER BY u.display_name`).all(g.branchId) as Array<{ id: number; name: string }>;
-    return NextResponse.json({ candidates: users.filter((u) => checkAssignment({ userId: u.id, branchId: g.branchId, yearMonth: month.data, positionId: Number(pid), date }).ok) });
+    // Everyone in the branch, with the reason when they do not fit — so the manager sees why a name is missing and may
+    // knowingly override the soft rules (roster / group / leave / past day).
+    const all = users.map((u) => {
+      const r = checkAssignment({ userId: u.id, branchId: g.branchId, yearMonth: month.data, positionId: Number(pid), date });
+      return { id: u.id, name: u.name, ok: r.ok, reasons: r.ok ? [] : [...new Set(r.errors.map((e) => WHY_NOT[e.code] ?? RULE_TEXT[e.code] ?? e.code))], overridable: r.ok ? true : checkAssignment({ userId: u.id, branchId: g.branchId, yearMonth: month.data, positionId: Number(pid), date, override: true }).ok };
+    });
+    return NextResponse.json({ candidates: all.filter((u) => u.ok).map(({ id, name }) => ({ id, name })), others: all.filter((u) => !u.ok) });
   }
   const filling = ["booking_closed", "filling"].includes(m.status);
   return NextResponse.json({
@@ -66,7 +79,7 @@ export async function GET(req: Request) {
 const Body = z.object({
   month: YM,
   action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute", "approve_swap", "reject_swap", "invite_booking"]),
-  position_id: z.number().int().optional(), date: z.string().optional(), user_id: z.number().int().optional(),
+  position_id: z.number().int().optional(), date: z.string().optional(), user_id: z.number().int().optional(), override: z.boolean().optional(),
   swap_id: z.number().int().optional(), day_id: z.number().int().optional(), allow_unfilled: z.boolean().optional(), note: z.string().max(300).optional()
 });
 
@@ -94,7 +107,7 @@ export async function POST(req: Request) {
       case "apply_suggestions": return NextResponse.json({ ok: true, plan: fillOpenDays({ branchId, yearMonth: ym, managerId: actorId, commit: true }) });
       case "assign": {
         if (!d.position_id || !d.date || !d.user_id) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
-        const r = managerAssign({ branchId, yearMonth: ym, positionId: d.position_id, date: d.date, userId: d.user_id, managerId: actorId });
+        const r = managerAssign({ branchId, yearMonth: ym, positionId: d.position_id, date: d.date, userId: d.user_id, managerId: actorId, override: d.override === true });
         if (!r.ok) return NextResponse.json({ ok: false, errors: r.errors.map((e) => ({ ...e, message: RULE_TEXT[e.code] ?? e.code })) }, { status: 422 });
         break;
       }

@@ -33,7 +33,7 @@ export default function Client({ month }: { month: string }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [plan, setPlan] = useState<Plan | null>(null);
-  const [pick, setPick] = useState<{ positionId: number; positionName: string; date: string; list: Array<{ id: number; name: string }> } | null>(null);
+  const [pick, setPick] = useState<{ positionId: number; positionName: string; date: string; list: Array<{ id: number; name: string }>; others: Array<{ id: number; name: string; reasons: string[]; overridable: boolean }> } | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
   const [photos, setPhotos] = useState<Array<{ id: number }>>([]);
   const [rejectNote, setRejectNote] = useState("");
@@ -176,7 +176,7 @@ export default function Client({ month }: { month: string }) {
             <div className="card space-y-2 !border-brand/40">
               <h2 className="font-bold text-ink">เลือกผู้ปฏิบัติงาน</h2>
               <p className="text-sm text-slate-600">{pick.positionName} · {fmtDate(pick.date)}</p>
-              {pick.list.length === 0 ? <p className="text-sm text-rose-700">ไม่มีพนักงานที่เลือกได้ในวันนี้ (ต้องมีตารางทำงาน ไม่ลา และอยู่ในกลุ่มงานที่กำหนด)</p> : (
+              {pick.list.length === 0 ? <p className="text-sm text-rose-700">ไม่มีพนักงานที่ตรงเงื่อนไขในวันนี้ (ต้องมีตารางทำงาน ไม่ลา และอยู่ในกลุ่มงานที่กำหนด) — เลือกจากรายชื่อด้านล่างแบบข้ามเงื่อนไขได้</p> : (
                 <div className="flex flex-wrap gap-2">
                   {pick.list.map((u) => (
                     <button key={u.id} type="button" className="btn-secondary" disabled={busy} onClick={async () => {
@@ -184,6 +184,25 @@ export default function Client({ month }: { month: string }) {
                       r.ok ? done("มอบหมายเรียบร้อยแล้ว") : setMsg({ ok: false, text: (r.j.errors ?? []).map((e: { message: string }) => e.message).join("\n") || "มอบหมายไม่สำเร็จ" });
                     }}>{u.name}</button>
                   ))}
+                </div>
+              )}
+              {pick.others.length > 0 && (
+                <div className="space-y-1.5 border-t border-[var(--card-border)] pt-2">
+                  <p className="text-xs font-bold text-slate-500">พนักงานที่ไม่ตรงเงื่อนไข — กดเพื่อมอบหมายแบบข้ามเงื่อนไข (ระบบจะถามยืนยันและบันทึกไว้)</p>
+                  <div className="flex flex-wrap gap-2">
+                    {pick.others.map((u) => (
+                      <button key={u.id} type="button" disabled={busy || !u.overridable} title={u.reasons.join(" · ")}
+                        className="chip !h-auto !flex-col !items-start !gap-0 !rounded-2xl !whitespace-normal !py-1.5 text-left disabled:opacity-40"
+                        onClick={async () => {
+                          if (!window.confirm(`มอบหมาย ${u.name} แบบข้ามเงื่อนไขใช่หรือไม่\n• ${u.reasons.join("\n• ")}`)) return;
+                          const r = await act({ action: "assign", position_id: pick.positionId, date: pick.date, user_id: u.id, override: true });
+                          r.ok ? done("มอบหมายเรียบร้อยแล้ว (ข้ามเงื่อนไข)") : setMsg({ ok: false, text: (r.j.errors ?? []).map((e: { message: string }) => e.message).join("\n") || "มอบหมายไม่สำเร็จ" });
+                        }}>
+                        <span className="font-semibold">{u.name}</span>
+                        <span className="text-[11px] font-normal text-slate-500">{u.reasons.join(" · ")}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
               <button type="button" className="btn-secondary" onClick={() => setPick(null)}>ปิด</button>
@@ -260,7 +279,7 @@ export default function Client({ month }: { month: string }) {
                           if (row) { await open_(row); return; }
                           const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&candidates=${p.id}:${date}`), { cache: "no-store" });
                           const j = await r.json(); setSelected(null);
-                          setPick({ positionId: p.id, positionName: p.name, date, list: j.candidates ?? [] });
+                          setPick({ positionId: p.id, positionName: p.name, date, list: j.candidates ?? [], others: j.others ?? [] });
                         }}
                         className={`rounded-xl border px-0.5 py-1 text-center leading-tight min-h-[3.2rem] ${row ? (row.status === "approved" ? "border-emerald-600 bg-emerald-200" : row.status === "submitted" ? "border-amber-500 bg-amber-100" : row.status === "absent" ? "border-rose-600 bg-rose-200" : row.status === "covered" ? "border-brand/50 bg-brand/10" : row.source === "booked" ? "border-emerald-300 bg-emerald-50" : "border-sky-300 bg-sky-50") : isOpen ? "border-rose-300 bg-rose-50" : "border-[var(--card-border)] text-slate-300"}`}>
                         <div className="text-xs text-slate-500">{d}</div>
