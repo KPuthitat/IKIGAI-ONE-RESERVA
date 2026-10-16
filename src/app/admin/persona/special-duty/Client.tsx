@@ -96,7 +96,18 @@ export default function Client({ month }: { month: string }) {
         <>
           <div className="card space-y-2">
             <h2 className="font-bold text-ink">ขั้นตอน</h2>
-            {st === "awaiting_roster" && <p className="text-sm text-slate-600">เมื่อประกาศตารางงานประจำเดือน ระบบจะเปิดให้พนักงานเลือกวันและแจ้งผ่าน LINE ให้โดยอัตโนมัติ</p>}
+            {st === "awaiting_roster" && (
+              <>
+                <p className="text-sm text-slate-600">เมื่อประกาศตารางงานประจำเดือนของสาขานี้ ระบบจะเปิดให้พนักงานเลือกวันและแจ้งผ่าน LINE ให้โดยอัตโนมัติ หรือกดปุ่มด้านล่างเพื่อเปิดให้เลือกวันของสาขานี้ทันที (แต่ละสาขาเปิดแยกกัน ไม่เกี่ยวกับสาขาอื่น)</p>
+                <button type="button" className="btn-primary" disabled={busy} onClick={async () => {
+                  if (!window.confirm("เปิดให้พนักงานสาขานี้เลือกวัน และส่งข้อความ LINE ให้พนักงานที่มีสิทธิ์ตอนนี้เลยไหม")) return;
+                  const r = await act({ action: "open_booking" });
+                  if (!r.ok) { setMsg({ ok: false, text: r.j.error === "no_roster" ? "สาขานี้ยังไม่มีตารางงานของเดือนนี้ ลงตารางงานก่อนจึงเปิดให้เลือกวันได้" : r.j.error === "not_awaiting_roster" ? "เดือนนี้เปิดให้เลือกวันไปแล้ว" : "เปิดไม่สำเร็จ" }); return; }
+                  const { recipients = 0, sent = 0, noLine = 0 } = r.j as { recipients?: number; sent?: number; noLine?: number };
+                  done(`เปิดให้เลือกวันแล้ว · ส่ง LINE ${sent}/${recipients} คน${noLine ? ` (ไม่มี LINE ${noLine} คน — เข้าเลือกได้เองในระบบ)` : ""}`);
+                }}>เปิดให้พนักงานสาขานี้เลือกวัน และส่ง LINE</button>
+              </>
+            )}
             {st === "booking_open" && (
               <>
                 <p className="text-sm text-slate-600">พนักงานเลือกวันเองได้จนถึงวันปิดรับ ท่านเพิ่มผู้ปฏิบัติงานเองได้ด้วยการกดช่อง “ว่าง” ในปฏิทินด้านล่าง ระบบจะปิดรับการเลือกวันเองเมื่อพ้นวันที่กำหนด</p>

@@ -7,7 +7,7 @@ import { getMonth, listPositions, SpecialDutyError } from "@/lib/special-duty";
 import { checkAssignment } from "@/lib/special-duty-rules";
 import { closeBooking, fillOpenDays, managerAssign, openDays, publishSchedule, removeDay, startFilling } from "@/lib/special-duty-fill";
 import { bookingOpenFlex, noticeFlex, pushIndividually, schedulePublishedFlex } from "@/lib/special-duty-notify";
-import { bookingAudience } from "@/lib/special-duty-roster";
+import { bookingAudience, branchHasRoster, openBookingOnPublish } from "@/lib/special-duty-roster";
 import { decideSwap, listPendingForManager, swapNotices, SwapError } from "@/lib/special-duty-swap";
 import { dutyMonthSummary, dutyOwnerAlerts } from "@/lib/special-duty-payout";
 import { assignSubstitute, dayBelongsToBranch, EvidenceError, listEvidence, listSubstituteCandidates, markAbsent, reviewEvidence } from "@/lib/special-duty-evidence";
@@ -78,7 +78,7 @@ export async function GET(req: Request) {
 
 const Body = z.object({
   month: YM,
-  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute", "approve_swap", "reject_swap", "invite_booking"]),
+  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute", "approve_swap", "reject_swap", "invite_booking", "open_booking"]),
   position_id: z.number().int().optional(), date: z.string().optional(), user_id: z.number().int().optional(), override: z.boolean().optional(),
   swap_id: z.number().int().optional(), day_id: z.number().int().optional(), allow_unfilled: z.boolean().optional(), note: z.string().max(300).optional()
 });
@@ -91,6 +91,19 @@ export async function POST(req: Request) {
   try {
     switch (d.action) {
       case "close_booking": closeBooking({ branchId, yearMonth: ym, actorId }); break;
+      case "open_booking": {
+        // This branch's own "open booking now" — for a branch whose roster was never "published" through the
+        // roster screen (each branch is opened on its own; Nama opening does not open Hypo).
+        const cur = getMonth(branchId, ym);
+        if (!cur.enabled || cur.status !== "awaiting_roster") return NextResponse.json({ ok: false, error: "not_awaiting_roster" }, { status: 409 });
+        if (!branchHasRoster(branchId, ym)) return NextResponse.json({ ok: false, error: "no_roster" }, { status: 409 });
+        const r = openBookingOnPublish({ branchId, yearMonth: ym, actorId });
+        const branch = getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string };
+        const base = (process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || "").replace(/\/$/, "");
+        const sent = await pushIndividually(r.audience.map((a) => a.lineUserId), bookingOpenFlex({ branchName: branch.name, yearMonth: ym, closeDate: r.closeDate, url: `${base}/staff/persona/special-duty?month=${ym}` }));
+        logPersonaAction(actorId, "special_duty.open_booking", branchId);
+        return NextResponse.json({ ok: true, recipients: r.audience.length, sent, noLine: r.audience.filter((a) => !a.lineUserId).length, gaps: r.gaps.length });
+      }
       case "invite_booking": {
         // Send (or re-send) the "come and choose your days" card to everyone on the roster who may take a position.
         const m = getMonth(branchId, ym);
