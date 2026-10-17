@@ -134,6 +134,42 @@ export function revshareDailyFlex(d: DailyCard): FlexMsg {
   };
 }
 
+// ── ยอดตกสำรวจ report (owner 2026-10-17): the missed sales found later, sent to the partner's group on its own ──
+export type CatchupCard = {
+  shop: string; sellerName: string; amount: number; vatRate: number; salesIncludesVat?: boolean;
+  salesLabel: string;        // the real day(s) the amount belongs to, or "ไม่ระบุ"
+  recordedLabel: string;     // the day it was recorded = the period it counts in
+  categories?: string;       // "จ้อจี้ - DESSERTS"
+  note?: string | null;
+};
+export function revshareCatchupFlex(d: CatchupCard): FlexMsg {
+  const v = salesVat(d.amount, d.vatRate, d.salesIncludesVat ?? false);
+  return {
+    type: "flex",
+    altText: `สรุปยอดตกสำรวจ · ${d.shop} · ${baht(v.total)}`,
+    contents: {
+      type: "bubble", size: "giga",
+      header: header("สรุปยอดตกสำรวจ", `บันทึกวันที่ ${d.recordedLabel}`),
+      body: {
+        type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px",
+        contents: [
+          { type: "text", text: d.shop, weight: "bold", size: "lg", wrap: true },
+          { type: "text", text: `สรุปโดย: ${d.sellerName}`, size: "xxs", color: "#999999", wrap: true },
+          sep,
+          kv("ยอดตกสำรวจ (รวม VAT)", baht(v.total), { bold: true }),
+          kv("ยอดก่อนภาษี", baht(v.base), { size: "xs" }),
+          kv("VAT 7%", baht(v.vat), { size: "xs" }),
+          sep,
+          kv("เป็นยอดขายของวันที่", d.salesLabel, { size: "xs" }),
+          ...(d.categories ? [kv("หมวดที่ตกสำรวจ", d.categories, { size: "xs" })] : []),
+          ...(d.note ? [{ type: "text", text: d.note, size: "xxs", color: "#999999", wrap: true }] : [])
+        ]
+      },
+      footer: footer("ยอดนี้ไม่เคยรวมในรอบก่อนหน้า จะนับรวมในยอดโอนรอบปัจจุบัน — ไม่แก้ยอดรอบที่โอน/วางบิลไปแล้ว")
+    }
+  };
+}
+
 // ── Weekly sales summary (the amount HYPOPLARAEMIA transfers back to the shop) ──
 export type WeeklyCard = {
   shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number;

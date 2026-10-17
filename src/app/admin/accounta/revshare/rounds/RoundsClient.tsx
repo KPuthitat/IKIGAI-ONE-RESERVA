@@ -10,7 +10,7 @@ import { roundLabel, mondayOf, matchMissingCategories, TH_MONTHS_FULL, salesBase
 import PinPromptModal from "@/app/components/PinPromptModal";
 import { useConfirm } from "@/app/components/useConfirm";
 import type { MonthSalesForecast, ShopShare } from "@/lib/revshare-forecast";
-import { DailyCardPreview, WeeklyCardPreview, DrinkWelfareCardPreview, SendPreviewModal } from "./CardPreviews";
+import { DailyCardPreview, CatchupCardPreview, WeeklyCardPreview, DrinkWelfareCardPreview, SendPreviewModal } from "./CardPreviews";
 
 // Calendar-day span (inclusive) between two ISO dates — mirrors the notify
 // route's daySpan so the weekly preview's "รวม N วัน" matches the sent card.
@@ -32,8 +32,14 @@ type Round = {
 type CatchupBreakdown = { dates: string[]; categories: Array<{ name: string; sales: number; share: number; allocated: number }>; analyticaMissing: boolean; exact?: Array<{ name: string; value: number }> | null };
 type Catchup = {
   id: number; sales_from: string | null; sales_to: string | null; counted_date: string; sales_amount: number;
-  source: "manual" | "pos_import"; source_filename: string | null; bill_count: number | null; note: string | null; sent_at: string | null; breakdown: CatchupBreakdown | null;
+  source: "manual" | "pos_import"; source_filename: string | null; bill_count: number | null; note: string | null; sent_at: string | null; reported_at: string | null; breakdown: CatchupBreakdown | null;
 };
+// "จ้อจี้ - DESSERTS" — the categories a catch-up came from (exact match first, else the ANALYTICA split), for the cards.
+function cuCats(c: Catchup): string {
+  const b = c.breakdown; if (!b) return "";
+  const list = b.exact?.length ? b.exact.map((e) => e.name) : b.analyticaMissing ? [] : b.categories.slice(0, 4).map((x) => x.name);
+  return [...new Set(list)].join(", ");
+}
 type PosCat = { category: string; qty: number; gross: number; afterDiscount: number; nett: number };
 type PosPreview = { filename: string; periodStart: string | null; periodEnd: string | null; label: string | null; categories: PosCat[] };
 const BASE_LABEL: Record<SalesBase, string> = { gross: "Gross (ก่อนส่วนลด)", after_discount: "หลังหักส่วนลด", nett: "Nett (รวม VAT)" };
@@ -254,6 +260,7 @@ export default function RoundsClient({
       setSentKey(key); setTimeout(() => setSentKey((k) => (k === key ? null : k)), 2200);
       // Daily sends lock the round — reflect sent_at locally so the appears
       // without a refresh (owner 2026-07-25).
+      if (sendModal.body.kind === "catchup") { const cid = sendModal.body.catchup_id as number; setCatchups((cs) => cs.map((x) => x.id === cid ? { ...x, reported_at: new Date().toISOString() } : x)); }
       const sentDate = sendModal.body.kind === "daily" ? (sendModal.body.date as string) : null;
       if (sentDate) setRounds((rs) => rs.map((x) => x.period_start === sentDate ? { ...x, sent_at: new Date().toISOString() } : x));
       setSendModal(null);
@@ -777,7 +784,20 @@ export default function RoundsClient({
                       )}
                     </td>
                     <td className="py-1 px-2 text-[11px]">{c.sent_at ? <span className="text-emerald-600">✓ รวมในรอบโอนแล้ว</span> : <span className="text-amber-700">รอรอบโอน</span>}</td>
-                    <td className="py-1 px-2 text-right">{!c.sent_at && <button type="button" onClick={() => delCatchup(c)} disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ</button>}</td>
+                    <td className="py-1 px-2 text-right whitespace-nowrap">
+                      {partner.line_group_id && (
+                        <button type="button" onClick={() => setSendModal({
+                          key: `c:${c.id}`, heading: "ส่งรายงานยอดตกสำรวจ",
+                          preview: <CatchupCardPreview shop={shop} sellerName={sellerName} amount={c.sales_amount} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)}
+                            salesLabel={c.sales_from ? roundLabel(c.sales_from, c.sales_to ?? c.sales_from) : "ไม่ระบุ"} recordedLabel={roundLabel(c.counted_date, c.counted_date)}
+                            categories={cuCats(c) || undefined} note={c.note} />,
+                          body: { kind: "catchup", catchup_id: c.id }
+                        })} className="text-[11px] text-emerald-600 hover:underline mr-3">
+                          {sentKey === `c:${c.id}` || c.reported_at ? "✓ ส่งรายงานแล้ว" : "ส่งรายงาน"}
+                        </button>
+                      )}
+                      {!c.sent_at && <button type="button" onClick={() => delCatchup(c)} disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ</button>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

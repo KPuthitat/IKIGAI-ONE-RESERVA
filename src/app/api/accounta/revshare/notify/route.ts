@@ -3,8 +3,8 @@ import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
-import { isRevshareBranch, getPartner, previewSettlement, listRounds, markRoundSent, markCatchupsSent, listCatchupsRange, catchupCategoryText, partnerCategorySales } from "@/lib/revshare-db";
-import { revshareSettlementFlex, revshareWeeklyFlex, revshareDailyFlex, revshareDrinkWelfareFlex, notifyRevsharePartner } from "@/lib/revshare-line";
+import { isRevshareBranch, getPartner, previewSettlement, listRounds, markRoundSent, markCatchupsSent, listCatchupsRange, catchupCategoryText, getCatchup, markCatchupReported, partnerCategorySales } from "@/lib/revshare-db";
+import { revshareSettlementFlex, revshareCatchupFlex, revshareWeeklyFlex, revshareDailyFlex, revshareDrinkWelfareFlex, notifyRevsharePartner } from "@/lib/revshare-line";
 import { postRevshareDailyIncome } from "@/lib/accounta-db";
 import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName, salesVat, roundLabel, mondayOf } from "@/lib/revshare";
 import { drinkWelfareSummary } from "@/lib/partner-drink-orders";
@@ -20,7 +20,8 @@ const Body = z.object({
   partner: z.number().int().positive(),
   year: z.number().int(),
   month: z.number().int().min(1).max(12),
-  kind: z.enum(["settlement", "weekly", "daily", "drink_welfare"]),
+  kind: z.enum(["settlement", "weekly", "daily", "drink_welfare", "catchup"]),
+  catchup_id: z.number().int().positive().optional(),
   week_start: z.string().regex(ISO).optional(),
   date: z.string().regex(ISO).optional(),
   months: z.array(z.string().regex(YM)).optional(),   // settlement: combined months (owner 2026-09-27)
@@ -40,14 +41,14 @@ export async function POST(req: Request) {
   }
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid_body", detail: parsed.error.flatten() }, { status: 400 });
-  const { partner: partnerId, year, month, kind, week_start, date, months, invoice_no, pin } = parsed.data;
+  const { partner: partnerId, year, month, kind, week_start, date, months, invoice_no, pin, catchup_id } = parsed.data;
 
   // Daily + weekly sends are PIN-gated (owner 2026-06-24: ตรวจสอบยอดแล้วกด PIN
   // ก่อนส่งเข้ากลุ่ม) — proves the operator verified the figure before it goes
   // out to the partner.
   // All partner-facing sends are PIN-gated (owner 2026-09-27: settlement joins
   // daily/weekly/drink — every card to a partner group is confirmed with a PIN).
-  if (kind === "daily" || kind === "weekly" || kind === "drink_welfare" || kind === "settlement") {
+  if (kind === "daily" || kind === "weekly" || kind === "drink_welfare" || kind === "settlement" || kind === "catchup") {
     const status = verifyAdminPin(user.id, pin ?? "");
     if (!status.ok) {
       return NextResponse.json({ error: status.reason }, { status: status.reason === "no_pin" ? 400 : 403 });
@@ -82,6 +83,7 @@ export async function POST(req: Request) {
   let dailyRoundId: number | null = null;
   let dailyIncomeAmount: number | null = null;
   let weeklyCatchupRange: { start: string; end: string } | null = null;
+  let catchupToReport: number | null = null;
   if (kind === "daily") {
     if (!date) return NextResponse.json({ error: "date_required" }, { status: 400 });
     const round = listRounds(partnerId, branchId, year, month).find((r) => r.period_start === date);
@@ -100,6 +102,18 @@ export async function POST(req: Request) {
     flex = revshareWeeklyFlex({ shop, sellerName: seller, weekLabel: w.label, transferAmount: w.sales, dayCount: daySpan(w.start, w.end), vatRate, salesIncludesVat, categories: cats, catchupAmount: w.catchup,
       catchupCategories: w.catchup > 0 ? catchupCategoryText(listCatchupsRange(partnerId, branchId, mondayOf(w.start), new Date(Date.parse(`${mondayOf(w.start)}T00:00:00Z`) + 6 * 86400000).toISOString().slice(0, 10))) : undefined });
     if (w.catchup > 0) { const mon = mondayOf(w.start); weeklyCatchupRange = { start: mon, end: new Date(Date.parse(`${mon}T00:00:00Z`) + 6 * 86400000).toISOString().slice(0, 10) }; }
+  } else if (kind === "catchup") {
+    // The catch-up's own report (owner 2026-10-17). Informational: it does not stamp the entry as transferred.
+    const c = catchup_id ? getCatchup(catchup_id, partnerId, branchId) : null;
+    if (!c) return NextResponse.json({ error: "catchup_not_found" }, { status: 404 });
+    catchupToReport = c.id;
+    flex = revshareCatchupFlex({
+      shop, sellerName: seller, amount: c.sales_amount, vatRate, salesIncludesVat,
+      salesLabel: c.sales_from ? roundLabel(c.sales_from, c.sales_to ?? c.sales_from) : "ไม่ระบุ",
+      recordedLabel: thaiDate(c.counted_date),
+      categories: catchupCategoryText([c]) || undefined,
+      note: c.note
+    });
   } else if (kind === "drink_welfare") {
     // Staff drink welfare read from redemptions (owner 2026-07-30). Period = a
     // week (week_start → +6d) or the whole month (month-end round).
@@ -150,6 +164,10 @@ export async function POST(req: Request) {
     }
     try { markRoundSent(dailyRoundId, partnerId, branchId, user.id); }
     catch (e) { console.error("revshare markRoundSent failed", e); }
+  }
+  if (catchupToReport != null) {
+    try { markCatchupReported(catchupToReport, partnerId, branchId); }
+    catch (e) { console.error("revshare markCatchupReported failed", e); }
   }
   // The catch-ups that rode in this weekly card are now transferred (locked from removal).
   if (weeklyCatchupRange) {

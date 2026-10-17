@@ -89,6 +89,27 @@ export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, 
   );
 }
 
+export function CatchupCardPreview({ shop, sellerName, amount, vatRate, salesIncludesVat = false, salesLabel, recordedLabel, categories, note }: {
+  shop: string; sellerName: string; amount: number; vatRate: number; salesIncludesVat?: boolean; salesLabel: string; recordedLabel: string; categories?: string; note?: string | null;
+}) {
+  const v = salesVat(amount, vatRate, salesIncludesVat);
+  return (
+    <Shell title="สรุปยอดตกสำรวจ" subtitle={`บันทึกวันที่ ${recordedLabel}`}>
+      <div className="text-[15px] font-bold text-slate-800 leading-tight">{shop}</div>
+      <div className="text-[10px] text-slate-400">สรุปโดย: {sellerName}</div>
+      <div className="border-t border-slate-100 my-1" />
+      <Row label="ยอดตกสำรวจ (รวม VAT)" value={baht(v.total)} bold />
+      <Row label="ยอดก่อนภาษี" value={baht(v.base)} />
+      <Row label="VAT 7%" value={baht(v.vat)} />
+      <div className="border-t border-slate-100 my-1" />
+      <Row label="เป็นยอดขายของวันที่" value={salesLabel} />
+      {categories && <Row label="หมวดที่ตกสำรวจ" value={categories} />}
+      {note && <div className="text-[10px] text-slate-400">{note}</div>}
+      <div className="text-[9px] text-slate-400 text-center pt-1">ยอดนี้ไม่เคยรวมในรอบก่อนหน้า จะนับรวมในยอดโอนรอบปัจจุบัน — ไม่แก้ยอดรอบที่โอน/วางบิลไปแล้ว</div>
+    </Shell>
+  );
+}
+
 export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount, dayCount, vatRate, salesIncludesVat = false, partnerId, start, end, showCategories = true, catchupAmount = 0, catchupCategories = "" }: {
   shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number; salesIncludesVat?: boolean; partnerId: number; start: string; end: string; showCategories?: boolean; catchupAmount?: number; catchupCategories?: string;
 }) {
