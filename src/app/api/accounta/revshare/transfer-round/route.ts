@@ -5,7 +5,7 @@ import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
 import {
   isRevshareBranch, getPartner,
-  previewTransferRound, sendTransferRound, lastTransferEnd, latestRoundDate
+  previewTransferRound, sendTransferRound, lastTransferEnd, latestRoundDate, listCatchupsRange, catchupCategoryText
 } from "@/lib/revshare-db";
 import { revshareWeeklyFlex, notifyRevsharePartner } from "@/lib/revshare-line";
 import { salesBaseIncludesVat } from "@/lib/revshare";
@@ -120,7 +120,8 @@ export async function POST(req: Request) {
       dayCount: preview.dayCount,
       vatRate: partner.vat_enabled ? partner.vat_rate : 0,
       salesIncludesVat: salesBaseIncludesVat(partner.sales_base),
-      catchupAmount: preview.catchupTotal
+      catchupAmount: preview.catchupTotal,
+      catchupCategories: preview.catchupTotal > 0 ? catchupCategoryText(listCatchupsRange(partnerId, branchId, start, end)) : undefined
     });
     const res = await notifyRevsharePartner(partner.line_group_id, flex);
     lineSent = res.ok;

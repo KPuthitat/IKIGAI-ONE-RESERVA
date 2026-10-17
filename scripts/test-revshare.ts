@@ -2,7 +2,7 @@
 // Covers acceptance criteria 1–5 (POS parser = test-revshare-pos via RS3).
 import {
   marginalGP, computeSettlement, computeRoundBreakdown, opMonthFor, floorFor,
-  DEFAULT_TIERS, DEFAULT_FLOORS, roundLabel, salesVat, salesBaseIncludesVat, partnerShopName, type Floor
+  DEFAULT_TIERS, DEFAULT_FLOORS, matchMissingCategories, roundLabel, salesVat, salesBaseIncludesVat, partnerShopName, type Floor
 } from "../src/lib/revshare";
 
 let failed = 0;
@@ -170,6 +170,21 @@ const F: Floor[] = [
     vatEnabled: false, vatRate: 0.07, whtRate: 0.03
   });
   eq("combine.floorOverride applies", floorWins.billedGP, 30_000);
+}
+
+// ยอดตกสำรวจ: which category adds up to the missing amount (owner 2026-10-17: 11,242 = DESSERTS)
+{
+  const cats = [
+    { name: "จ้อจี้ - COFFEE", value: 6830 }, { name: "จ้อจี้ - DESSERTS", value: 11242 }, { name: "จ้อจี้ - MATCHA", value: 5900 },
+    { name: "จ้อจี้ - REFRESHING", value: 2925 }, { name: "จ้อจี้ - COCKTAIL", value: 608 }
+  ];
+  const one = matchMissingCategories(cats, 11242);
+  ok("a shortfall equal to one category names that category", !!one && one.length === 1 && one[0].name === "จ้อจี้ - DESSERTS");
+  const two = matchMissingCategories(cats, 6830 + 608);
+  ok("a shortfall equal to two categories names both", !!two && two.map((x) => x.name).sort().join() === "จ้อจี้ - COCKTAIL,จ้อจี้ - COFFEE");
+  ok("no exact match → nothing is claimed", matchMissingCategories(cats, 12345.67) === null);
+  ok("two equally small sets → ambiguous → nothing is claimed", matchMissingCategories([{ name: "A", value: 100 }, { name: "B", value: 100 }], 100) === null);
+  ok("a zero or negative shortfall claims nothing", matchMissingCategories(cats, 0) === null && matchMissingCategories(cats, -5) === null);
 }
 
 if (failed > 0) {

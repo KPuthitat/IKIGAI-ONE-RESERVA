@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useRef, Fragment } from "react";
+import { useState, useRef, useEffect, Fragment } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import { humanizeApiError } from "@/lib/error-messages";
 import { fmtMoney } from "@/lib/format";
-import { roundLabel, mondayOf, TH_MONTHS_FULL, salesBaseIncludesVat, salesVat, partnerShopName, type Tier, type SalesBase } from "@/lib/revshare";
+import { roundLabel, mondayOf, matchMissingCategories, TH_MONTHS_FULL, salesBaseIncludesVat, salesVat, partnerShopName, type Tier, type SalesBase } from "@/lib/revshare";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import { useConfirm } from "@/app/components/useConfirm";
 import type { MonthSalesForecast, ShopShare } from "@/lib/revshare-forecast";
@@ -29,9 +29,10 @@ type Round = {
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null;
   sent_at: string | null; bill_count: number | null;
 };
+type CatchupBreakdown = { dates: string[]; categories: Array<{ name: string; sales: number; share: number; allocated: number }>; analyticaMissing: boolean; exact?: Array<{ name: string; value: number }> | null };
 type Catchup = {
   id: number; sales_from: string | null; sales_to: string | null; counted_date: string; sales_amount: number;
-  source: "manual" | "pos_import"; source_filename: string | null; bill_count: number | null; note: string | null; sent_at: string | null;
+  source: "manual" | "pos_import"; source_filename: string | null; bill_count: number | null; note: string | null; sent_at: string | null; breakdown: CatchupBreakdown | null;
 };
 type PosCat = { category: string; qty: number; gross: number; afterDiscount: number; nett: number };
 type PosPreview = { filename: string; periodStart: string | null; periodEnd: string | null; label: string | null; categories: PosCat[] };
@@ -48,7 +49,7 @@ export default function RoundsClient({
   // 'catchup' = the file being previewed is ยอดตกสำรวจ (a missed day found later), not today's daily row.
   const [importKind, setImportKind] = useState<"daily" | "catchup">("daily");
   // What is already recorded inside the catch-up file's span (daily rows + earlier catch-ups) — the file's total minus this is what is missing.
-  const [recon, setRecon] = useState<{ dailyTotal: number; dailyDays: number; catchupTotal: number; catchupCount: number } | null>(null);
+  const [recon, setRecon] = useState<{ dailyTotal: number; dailyDays: number; catchupTotal: number; catchupCount: number; missingDates: string[]; categories: Array<{ name: string; sales: number }>; analyticaMissing: boolean } | null>(null);
   const [cuOpen, setCuOpen] = useState(false);
   const [cuFrom, setCuFrom] = useState(""); const [cuTo, setCuTo] = useState("");
   const [cuAmount, setCuAmount] = useState(""); const [cuNote, setCuNote] = useState("");
@@ -70,7 +71,7 @@ export default function RoundsClient({
     totalSales: number; vatEnabled: boolean; vat: { base: number; vat: number; total: number };
     alreadySentCount: number; suggestedStart: string | null; suggestedEnd: string | null;
     catchups: Array<{ id: number; countedDate: string; salesFrom: string | null; salesTo: string | null; sales: number; sent: boolean; note: string | null }>;
-    catchupTotal: number;
+    catchupTotal: number; catchupCategories: string;
   };
   const [xferOpen, setXferOpen] = useState(false);
   const [xferStart, setXferStart] = useState("");
@@ -149,7 +150,9 @@ export default function RoundsClient({
     const dates = [...rs.map((r) => r.period_start), ...(rs.length ? [] : cs.map((c) => c.counted_date))].sort();
     const first = dates[0], last = dates[dates.length - 1];
     const cu = cs.reduce((s, c) => s + c.sales_amount, 0);
-    return { wk, rounds: rs, catchup: cu, first, last, total: rs.reduce((s, r) => s + r.sales_amount, 0) + cu, label: roundLabel(first, last) };
+    const cuNames: string[] = [];
+    for (const c of cs) { const b = c.breakdown; if (!b) continue; const list = b.exact?.length ? b.exact.map((e) => e.name) : b.analyticaMissing ? [] : b.categories.slice(0, 4).map((x) => x.name); for (const n of list) if (!cuNames.includes(n)) cuNames.push(n); }
+    return { wk, rounds: rs, catchup: cu, catchupCats: cuNames.join(", "), first, last, total: rs.reduce((s, r) => s + r.sales_amount, 0) + cu, label: roundLabel(first, last) };
   });
 
   function go(y: number, m: number) { router.push(`/admin/accounta/revshare/rounds?partner=${partner.id}&year=${y}&month=${m}`); }
@@ -272,11 +275,6 @@ export default function RoundsClient({
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "อ่านไฟล์ POS ไม่สำเร็จ")); return; }
       setImportKind(kind);
       setRecon(null);
-      if (kind === "catchup" && j.periodStart && j.periodEnd) {
-        const rr = await fetch(apiUrl(`/api/accounta/revshare/catchups?partner=${partner.id}&from=${j.periodStart}&to=${j.periodEnd}`));
-        const rj = await rr.json().catch(() => ({}));
-        if (rr.ok && rj.ok) setRecon({ dailyTotal: rj.dailyTotal, dailyDays: rj.dailyDays, catchupTotal: rj.catchupTotal, catchupCount: rj.catchupCount });
-      }
       setPreview({ filename: j.filename, periodStart: j.periodStart, periodEnd: j.periodEnd, label: j.label, categories: j.categories });
       const want = new Set(partner.pos_categories.map((s) => s.toLowerCase()));
       setSelCats(new Set(j.categories.filter((c: PosCat) => want.has(c.category.toLowerCase())).map((c: PosCat) => c.category)));
@@ -284,6 +282,18 @@ export default function RoundsClient({
       setCatsLocked(true);   // re-lock for every new file
     } finally { setBusy(false); }
   }
+  // Reconcile a catch-up file against what is already recorded; re-read when the category selection changes so the
+  // "which categories" split follows the ticked categories (owner 2026-10-17).
+  useEffect(() => {
+    if (importKind !== "catchup" || !preview?.periodStart || !preview?.periodEnd) return;
+    let alive = true;
+    const q = new URLSearchParams({ partner: String(partner.id), from: preview.periodStart, to: preview.periodEnd });
+    for (const c of selCats) q.append("cat", c);
+    void fetch(apiUrl(`/api/accounta/revshare/catchups?${q.toString()}`)).then((r) => r.json()).then((rj) => {
+      if (alive && rj.ok) setRecon({ dailyTotal: rj.dailyTotal, dailyDays: rj.dailyDays, catchupTotal: rj.catchupTotal, catchupCount: rj.catchupCount, missingDates: rj.missingDates ?? [], categories: rj.categories ?? [], analyticaMissing: !!rj.analyticaMissing });
+    }).catch(() => { /* leave the previous figures */ });
+    return () => { alive = false; };
+  }, [importKind, preview, selCats, partner.id]);
   function baseVal(c: PosCat): number { return base === "gross" ? c.gross : base === "after_discount" ? c.afterDiscount : c.nett; }
   const posTotal = preview ? preview.categories.filter((c) => selCats.has(c.category)).reduce((s, c) => s + baseVal(c), 0) : 0;
   // "จำนวนบิล" = Qty summed over the selected categories (owner 2026-07-25).
@@ -332,7 +342,7 @@ export default function RoundsClient({
     if (importKind === "catchup") {
       await guarded(async (pin) => {
         // The server subtracts what is already recorded for these days, so a whole-span file never double counts.
-        const r = await mutateCatchup("POST", { partner: partner.id, sales_from: ps, sales_to: pe, file_total: posTotal, source: "pos_import", source_filename: preview.filename, pin });
+        const r = await mutateCatchup("POST", { partner: partner.id, sales_from: ps, sales_to: pe, file_total: posTotal, source: "pos_import", source_filename: preview.filename, categories: [...selCats], category_values: preview.categories.filter((c) => selCats.has(c.category)).map((c) => ({ name: c.category, value: baseVal(c) })), pin });
         if (r.ok) setPreview(null);
         return r;
       }, { forcePrompt: true });
@@ -438,7 +448,45 @@ export default function RoundsClient({
                 {recon.catchupTotal > 0 && <div className="flex justify-between"><span className="text-slate-600">หัก ยอดตกสำรวจเดิมของช่วงนี้ ({recon.catchupCount} รายการ)</span><span className="font-mono">− ฿{fmtMoney(recon.catchupTotal)}</span></div>}
                 <div className="flex justify-between border-t border-amber-200 pt-1 font-bold"><span>ยอดที่ตกหล่น (จะบันทึกเป็นยอดตกสำรวจ)</span><span className="font-mono">฿{fmtMoney(Math.max(missing, 0))}</span></div>
                 {missing < 0.01 && <p className="text-[11px] text-rose-600">{missing < -0.009 ? "ยอดรายวันที่นำเข้าไว้แล้วมากกว่ายอดในไฟล์ — ตรวจหมวดสินค้า/ฐานยอดขายให้ตรงกับที่ใช้นำเข้ารายวัน" : "ไม่พบยอดที่ตกหล่นในช่วงนี้"}</p>}
-                <p className="text-[10px] text-slate-500">ระบบบอกได้แค่ยอดที่ขาด ไม่ได้บอกว่าขาดวันไหน · ยอดตกสำรวจเดิมที่ไม่ระบุวันไม่ถูกนำมาหัก</p>
+                {missing >= 0.01 && (() => {
+                  // The shortfall equals one (or a few) of the file's categories to the satang → that category was left
+                  // out of the daily imports. Stated first because it is the direct answer.
+                  const exact = matchMissingCategories(preview.categories.filter((c) => selCats.has(c.category)).map((c) => ({ name: c.category, value: baseVal(c) })), missing);
+                  return exact ? (
+                    <div className="mt-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-[12px] text-slate-800">
+                      <b>ตกสำรวจจากหมวด: {exact.map((e) => e.name).join(", ")}</b> — ยอดที่ขาด ฿{fmtMoney(missing)} ตรงกับยอดของหมวดนี้ในไฟล์พอดี ({exact.map((e) => `฿${fmtMoney(e.value)}`).join(" + ")}) น่าจะเป็นหมวดที่ไม่ได้เลือกตอนนำเข้ารายวัน
+                    </div>
+                  ) : null;
+                })()}
+                {missing >= 0.01 && (
+                  <div className="mt-2 border-t border-amber-200 pt-2 space-y-1">
+                    <div className="text-[11px] font-bold text-slate-700">ตกสำรวจจากวันและหมวดไหน (อ้างอิง ANALYTICA)</div>
+                    <div className="text-[11px] text-slate-600">
+                      วันที่ในช่วงนี้ที่ไม่มียอดรายวัน ({recon.missingDates.length} วัน): {recon.missingDates.length ? recon.missingDates.map((d) => roundLabel(d, d)).join(", ") : "ไม่มี — ผลต่างอาจมาจากยอดของวันที่นำเข้าไปไม่ครบ"}
+                    </div>
+                    {recon.analyticaMissing ? (
+                      <div className="text-[11px] text-slate-500">ANALYTICA ยังไม่มียอดขายแยกหมวดของวันเหล่านี้ จึงแยกหมวดให้ไม่ได้</div>
+                    ) : (() => {
+                      const total = recon.categories.reduce((s, c) => s + c.sales, 0);
+                      return (
+                        <table className="w-full text-[11px]">
+                          <thead><tr className="text-slate-400"><th className="text-left font-normal">หมวด</th><th className="text-right font-normal">ยอดขายวันที่ขาด (ANALYTICA)</th><th className="text-right font-normal">สัดส่วน</th><th className="text-right font-normal">ประมาณของยอดตกหล่น</th></tr></thead>
+                          <tbody>
+                            {recon.categories.map((c) => (
+                              <tr key={c.name} className="border-t border-amber-100">
+                                <td className="py-0.5 text-slate-700">{c.name}</td>
+                                <td className="py-0.5 text-right font-mono">฿{fmtMoney(c.sales)}</td>
+                                <td className="py-0.5 text-right tabular-nums">{total > 0 ? ((c.sales / total) * 100).toFixed(1) : "0.0"}%</td>
+                                <td className="py-0.5 text-right font-mono">฿{fmtMoney(total > 0 ? Math.max(missing, 0) * (c.sales / total) : 0)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      );
+                    })()}
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-500">วันและหมวดอ้างอิงจากข้อมูล ANALYTICA ของวันที่ไม่มียอดรายวัน (ยอด Nett) เป็นการประมาณสัดส่วน · ยอดตกสำรวจเดิมที่ไม่ระบุวันไม่ถูกนำมาหัก</p>
               </div>
             );
           })()}
@@ -519,7 +567,7 @@ export default function RoundsClient({
                         {partner.line_group_id && (
                           <button type="button" onClick={() => setSendModal({
                             key: `w:${w.first}`, heading: "ส่งสรุปยอดขายประจำสัปดาห์",
-                            preview: <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={w.label} transferAmount={w.total} catchupAmount={w.catchup} dayCount={daySpan(w.first, w.last)} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} partnerId={partner.id} start={w.rounds[0].period_start} end={w.rounds[w.rounds.length - 1].period_start} />,
+                            preview: <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={w.label} transferAmount={w.total} catchupAmount={w.catchup} catchupCategories={w.catchupCats} dayCount={daySpan(w.first, w.last)} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} partnerId={partner.id} start={w.rounds[0].period_start} end={w.rounds[w.rounds.length - 1].period_start} />,
                             body: { kind: "weekly", week_start: w.first }
                           })} className="ml-2 text-[11px] font-bold text-emerald-600 hover:underline">
                             {sentKey === `w:${w.first}` ? "✓ ส่งแล้ว" : "ส่งสรุปสัปดาห์"}
@@ -716,7 +764,18 @@ export default function RoundsClient({
                     <td className="py-1 px-2 text-slate-600 whitespace-nowrap">{roundLabel(c.counted_date, c.counted_date)}</td>
                     <td className="py-1 px-2 text-slate-600 whitespace-nowrap">{c.sales_from ? roundLabel(c.sales_from, c.sales_to ?? c.sales_from) : <span className="text-slate-400">ไม่ระบุ</span>}</td>
                     <td className="py-1 px-2 text-right font-mono">฿{fmtMoney(c.sales_amount)}</td>
-                    <td className="py-1 px-2 text-[11px] text-slate-500">{c.source === "pos_import" ? "นำเข้าไฟล์" : "กรอกเอง"}{c.bill_count != null && ` · ${c.bill_count} บิล`}{c.note && ` · ${c.note}`}</td>
+                    <td className="py-1 px-2 text-[11px] text-slate-500">
+                      {c.source === "pos_import" ? "นำเข้าไฟล์" : "กรอกเอง"}{c.bill_count != null && ` · ${c.bill_count} บิล`}{c.note && ` · ${c.note}`}
+                      {c.breakdown?.exact && c.breakdown.exact.length > 0 && (
+                        <div className="mt-0.5 font-bold text-amber-900">ตกสำรวจจากหมวด: {c.breakdown.exact.map((e) => e.name).join(", ")} (ตรงกับยอดของหมวดในไฟล์)</div>
+                      )}
+                      {c.breakdown && !c.breakdown.exact && !c.breakdown.analyticaMissing && c.breakdown.categories.length > 0 && (
+                        <div className="mt-0.5 text-amber-800">หมวด: {c.breakdown.categories.map((b) => `${b.name} ฿${fmtMoney(b.allocated)} (${(b.share * 100).toFixed(0)}%)`).join(" · ")}</div>
+                      )}
+                      {c.breakdown && c.breakdown.dates.length > 0 && c.breakdown.dates.length <= 10 && (
+                        <div className="text-slate-400">วันที่ไม่มียอดรายวัน: {c.breakdown.dates.map((d) => roundLabel(d, d)).join(", ")}</div>
+                      )}
+                    </td>
                     <td className="py-1 px-2 text-[11px]">{c.sent_at ? <span className="text-emerald-600">✓ รวมในรอบโอนแล้ว</span> : <span className="text-amber-700">รอรอบโอน</span>}</td>
                     <td className="py-1 px-2 text-right">{!c.sent_at && <button type="button" onClick={() => delCatchup(c)} disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ</button>}</td>
                   </tr>
@@ -872,7 +931,7 @@ export default function RoundsClient({
             {partner.line_group_id && xferPreview && (
               <div className="rounded-xl bg-slate-100 p-2">
                 <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={xferPreview.label}
-                  transferAmount={xferPreview.totalSales} catchupAmount={xferPreview.catchupTotal} dayCount={xferPreview.dayCount} vatRate={vatRate}
+                  transferAmount={xferPreview.totalSales} catchupAmount={xferPreview.catchupTotal} catchupCategories={xferPreview.catchupCategories} dayCount={xferPreview.dayCount} vatRate={vatRate}
                   salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} partnerId={partner.id}
                   start={xferPreview.start} end={xferPreview.end} showCategories={false} />
               </div>
