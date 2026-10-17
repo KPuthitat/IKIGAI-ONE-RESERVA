@@ -77,7 +77,7 @@ export default function Client({ month, branch }: { month: string; branch: numbe
   if (!data) return <div className="card text-sm text-slate-500">{msg?.text ?? "กำลังโหลด"}</div>;
   const [y, m] = month.split("-").map(Number);
   const editable = ["off", "awaiting_roster"].includes(data.month.status);
-  const go = (b: number, mo: string) => router.push(`?month=${mo}&branch=${b}`);
+  const go = (_b: number, mo: string) => router.push(`?month=${mo}`);
 
   return (
     <div className="space-y-4">
@@ -95,11 +95,10 @@ export default function Client({ month, branch }: { month: string; branch: numbe
 
       <section className="card space-y-3">
         <div className="grid sm:grid-cols-2 gap-2.5">
-          <Field label="สาขา">
-            <select value={data.branchId} onChange={(e) => go(Number(e.target.value), month)}>
-              {data.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </Field>
+          <div className="rounded-xl border border-[var(--card-border)] bg-[var(--surface-field)] px-3 py-2 leading-tight">
+            <div className="text-[11.5px] font-medium text-slate-500">สาขา (ตามสาขาที่เลือกอยู่ด้านบน)</div>
+            <div className="font-bold text-slate-800">{data.branches.find((b) => b.id === data.branchId)?.name ?? ""}</div>
+          </div>
           <div className="flex items-center justify-between gap-2 rounded-xl border border-[var(--card-border)] bg-[var(--surface-field)] px-3 py-2">
             <button type="button" className="chip" onClick={() => go(data.branchId, shift(month, -1))} aria-label="เดือนก่อน">‹ ก่อน</button>
             <div className="text-center leading-tight">
