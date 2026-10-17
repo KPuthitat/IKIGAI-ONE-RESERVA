@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
-import { isRevshareBranch, getPartner, previewSettlement, listRounds, markRoundSent, markCatchupsSent, partnerCategorySales } from "@/lib/revshare-db";
+import { isRevshareBranch, getPartner, previewSettlement, listRounds, markRoundSent, markCatchupsSent, listCatchupsRange, catchupCategoryText, partnerCategorySales } from "@/lib/revshare-db";
 import { revshareSettlementFlex, revshareWeeklyFlex, revshareDailyFlex, revshareDrinkWelfareFlex, notifyRevsharePartner } from "@/lib/revshare-line";
 import { postRevshareDailyIncome } from "@/lib/accounta-db";
 import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName, salesVat, roundLabel, mondayOf } from "@/lib/revshare";
@@ -97,7 +97,8 @@ export async function POST(req: Request) {
     const w = week_start ? preview.breakdown.find((b) => b.start === week_start) : preview.breakdown[preview.breakdown.length - 1];
     if (!w) return NextResponse.json({ error: "week_not_found" }, { status: 404 });
     const cats = partnerCategorySales(branchId, partner.pos_categories, w.start, w.end);
-    flex = revshareWeeklyFlex({ shop, sellerName: seller, weekLabel: w.label, transferAmount: w.sales, dayCount: daySpan(w.start, w.end), vatRate, salesIncludesVat, categories: cats, catchupAmount: w.catchup });
+    flex = revshareWeeklyFlex({ shop, sellerName: seller, weekLabel: w.label, transferAmount: w.sales, dayCount: daySpan(w.start, w.end), vatRate, salesIncludesVat, categories: cats, catchupAmount: w.catchup,
+      catchupCategories: w.catchup > 0 ? catchupCategoryText(listCatchupsRange(partnerId, branchId, mondayOf(w.start), new Date(Date.parse(`${mondayOf(w.start)}T00:00:00Z`) + 6 * 86400000).toISOString().slice(0, 10))) : undefined });
     if (w.catchup > 0) { const mon = mondayOf(w.start); weeklyCatchupRange = { start: mon, end: new Date(Date.parse(`${mon}T00:00:00Z`) + 6 * 86400000).toISOString().slice(0, 10) }; }
   } else if (kind === "drink_welfare") {
     // Staff drink welfare read from redemptions (owner 2026-07-30). Period = a

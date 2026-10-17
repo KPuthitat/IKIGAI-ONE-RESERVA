@@ -59,5 +59,12 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("the stored note explains the arithmetic and the entry is a range", (() => { const c = R.listCatchups(partner, branch, 2026, 10).find((x) => x.id === full.id)!; return c.sales_from === "2026-10-01" && c.sales_to === "2026-10-14" && (c.note ?? "").includes("12000.00"); })());
   ok("importing the same file again finds nothing missing", code(() => R.createCatchupFromFile(partner, branch, { from: "2026-10-01", to: "2026-10-14", fileTotal: 12000, counted_date: "2026-10-15" }, user)) === "nothing_missing");
   ok("a file that shows less than what is recorded is refused (wrong categories/base)", code(() => R.createCatchupFromFile(partner, branch, { from: "2026-10-01", to: "2026-10-14", fileTotal: 3000, counted_date: "2026-10-15" }, user)) === "daily_exceeds_file");
+  // category explanation stored with a whole-span catch-up (the shortfall equals the DESSERTS category)
+  const p2 = R.createPartner(branch, { name: "จ้อจี้ 2", start_date: "2026-06-01", vat_enabled: false })!;
+  R.createRound(p2, branch, { period_start: "2026-10-01", period_end: "2026-10-01", sales_amount: 1000 }, user);
+  const withCats = R.createCatchupFromFile(p2, branch, { from: "2026-10-01", to: "2026-10-03", fileTotal: 1000 + 250, categoryValues: [{ name: "X - COFFEE", value: 1000 }, { name: "X - DESSERTS", value: 250 }], categories: ["X - COFFEE", "X - DESSERTS"], counted_date: "2026-10-15" }, user)!;
+  ok("the catch-up records which category the shortfall equals", (() => { const c = R.listCatchups(p2, branch, 2026, 10).find((x) => x.id === withCats.id)!; return c.breakdown?.exact?.length === 1 && c.breakdown.exact[0].name === "X - DESSERTS" && c.breakdown.dates.join() === "2026-10-02,2026-10-03"; })());
+  ok("the partner card text names it", R.catchupCategoryText(R.listCatchups(p2, branch, 2026, 10)) === "X - DESSERTS");
+  ok("a transfer round preview carries the same text", R.previewTransferRound(p2, branch, "2026-10-14", "2026-10-16")!.catchupCategories === "X - DESSERTS");
   cleanup(); process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); cleanup(); process.exit(1); });

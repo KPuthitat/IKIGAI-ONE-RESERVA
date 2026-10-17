@@ -89,8 +89,8 @@ export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, 
   );
 }
 
-export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount, dayCount, vatRate, salesIncludesVat = false, partnerId, start, end, showCategories = true, catchupAmount = 0 }: {
-  shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number; salesIncludesVat?: boolean; partnerId: number; start: string; end: string; showCategories?: boolean; catchupAmount?: number;
+export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount, dayCount, vatRate, salesIncludesVat = false, partnerId, start, end, showCategories = true, catchupAmount = 0, catchupCategories = "" }: {
+  shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number; salesIncludesVat?: boolean; partnerId: number; start: string; end: string; showCategories?: boolean; catchupAmount?: number; catchupCategories?: string;
 }) {
   const v = salesVat(transferAmount, vatRate, salesIncludesVat);
   const cu = catchupAmount > 0 ? salesVat(catchupAmount, vatRate, salesIncludesVat) : null;
@@ -101,6 +101,7 @@ export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount,
       <div className="border-t border-slate-100 my-1" />
       {cu && <Row label="ยอดขายของสัปดาห์ (รวม VAT)" value={baht(v.total - cu.total)} />}
       {cu && <Row label="ยอดตกสำรวจ (ย้อนหลัง · รวม VAT)" value={baht(cu.total)} />}
+      {cu && catchupCategories && <div className="text-[10px] text-slate-400">หมวดที่ตกสำรวจ: {catchupCategories}</div>}
       <Row label="ยอดขายรวมสัปดาห์ (รวม VAT)" value={baht(v.total)} bold />
       <Row label="ยอดขายก่อนภาษี" value={baht(v.base)} />
       <Row label="VAT 7%" value={baht(v.vat)} />

@@ -1788,6 +1788,11 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
+  // revshare_catchups.breakdown — JSON {dates, categories:[{name,sales,share,allocated}]}: which days/categories the
+  // missing amount of a whole-span POS file came from (owner 2026-10-17).
+  const cuCols = db.prepare("PRAGMA table_info(revshare_catchups)").all() as Array<{ name: string }>;
+  if (!cuCols.some((c) => c.name === "breakdown")) db.exec("ALTER TABLE revshare_catchups ADD COLUMN breakdown TEXT");
+
   // ── IR — Incident Report / Risk Management ───────────────────────
   // Owner 2026-08: staff file an อุบัติการณ์/near-miss report (แนว รพ. IR),
   // the RM team reviews it weekly, records root cause + a corrective

@@ -256,3 +256,28 @@ export function groupDailyIntoWeeks(entries: Array<{ date: string; amount: numbe
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([wk, g]) => ({ weekStart: wk, start: g.start, end: g.end, label: roundLabel(g.start, g.end), sales: round2(g.sales) }));
 }
+
+
+/** Which of the file's categories add up exactly to the missing amount? (owner 2026-10-17: the shortfall of a
+ *  whole-span file was one category left out of the daily imports.) Works in whole satang; returns the smallest
+ *  set of categories whose values sum to `missing`, or null when none does or several equally small sets do
+ *  (then nothing is claimed). Pure — used by the preview and again by the server when it records the catch-up. */
+export function matchMissingCategories(values: Array<{ name: string; value: number }>, missing: number): Array<{ name: string; value: number }> | null {
+  const target = Math.round(missing * 100);
+  const items = values.map((v) => ({ name: v.name, value: v.value, c: Math.round(v.value * 100) })).filter((v) => v.c > 0).slice(0, 20);
+  if (target <= 0 || items.length === 0) return null;
+  let best: typeof items[] = [];
+  let bestSize = Infinity;
+  const walk = (i: number, sum: number, picked: typeof items) => {
+    if (sum === target) {
+      if (picked.length < bestSize) { best = [picked]; bestSize = picked.length; }
+      else if (picked.length === bestSize) best.push(picked);
+      return;
+    }
+    if (i >= items.length || sum > target || picked.length >= bestSize) return;
+    walk(i + 1, sum + items[i].c, [...picked, items[i]]);
+    walk(i + 1, sum, picked);
+  };
+  walk(0, 0, []);
+  return best.length === 1 ? best[0].map(({ name, value }) => ({ name, value })) : null;
+}

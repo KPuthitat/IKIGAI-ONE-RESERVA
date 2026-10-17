@@ -140,6 +140,8 @@ export type WeeklyCard = {
   salesIncludesVat?: boolean; categories?: CategorySale[];
   /** ยอดตกสำรวจ included in transferAmount — printed as its own line (owner 2026-10-17). */
   catchupAmount?: number;
+  /** which categories the ยอดตกสำรวจ came from, e.g. "จ้อจี้ - DESSERTS" */
+  catchupCategories?: string;
 };
 export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
   const v = salesVat(d.transferAmount, d.vatRate, d.salesIncludesVat ?? false);
@@ -159,7 +161,8 @@ export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
           sep,
           ...(cu ? [
             kv("ยอดขายของสัปดาห์ (รวม VAT)", baht(round2(v.total - cu.total))),
-            kv("ยอดตกสำรวจ (ย้อนหลัง · รวม VAT)", baht(cu.total))
+            kv("ยอดตกสำรวจ (ย้อนหลัง · รวม VAT)", baht(cu.total)),
+            ...(d.catchupCategories ? [{ type: "text", text: `หมวดที่ตกสำรวจ: ${d.catchupCategories}`, size: "xxs", color: "#999999", wrap: true }] : [])
           ] : []),
           kv("ยอดขายรวมสัปดาห์ (รวม VAT)", baht(v.total), { bold: true }),
           kv("ยอดขายก่อนภาษี", baht(v.base), { size: "xs" }),

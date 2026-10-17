@@ -7,7 +7,7 @@ import { getDb } from "./db";
 import { menuRange } from "./salesa-db";
 import {
   computeSettlement, computeRoundBreakdown, roundLabel, round2,
-  groupDailyIntoWeeks, mondayOf, salesVat, salesBaseIncludesVat, partnerShopName,
+  groupDailyIntoWeeks, mondayOf, matchMissingCategories, salesVat, salesBaseIncludesVat, partnerShopName,
   DEFAULT_TIERS, DEFAULT_FLOORS, TH_MONTHS_FULL,
   type Tier, type Floor, type SettlementResult
 } from "./revshare";
@@ -30,10 +30,19 @@ export type RsRound = {
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null;
   sent_at: string | null; bill_count: number | null;
 };
+/** Where a catch-up came from: the days of the span that have no daily row, and the partner categories sold on
+ *  those days (ANALYTICA nett). `allocated` spreads the catch-up amount over the categories by their share. */
+export type CatchupBreakdown = {
+  dates: string[];
+  categories: Array<{ name: string; sales: number; share: number; allocated: number }>;
+  analyticaMissing: boolean;   // ANALYTICA had no category sales for those days → no category split
+  /** Categories of the file whose values add up to the missing amount exactly (usually: left out of the daily imports). */
+  exact?: Array<{ name: string; value: number }> | null;
+};
 export type RsCatchup = {
   id: number; partner_id: number; sales_from: string | null; sales_to: string | null; counted_date: string;
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null; bill_count: number | null;
-  note: string | null; created_at: string; sent_at: string | null;
+  note: string | null; created_at: string; sent_at: string | null; breakdown: CatchupBreakdown | null;
 };
 export type RsSettlement = SettlementResult & {
   id: number; partner_id: number; settle_year: number; settle_month: number; op_month: number;
@@ -208,8 +217,12 @@ const bkkToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0
 const shapeCatchup = (r: any): RsCatchup => ({
   id: r.id, partner_id: r.partner_id, sales_from: r.sales_from ?? null, sales_to: r.sales_to ?? null, counted_date: r.counted_date,
   sales_amount: r.sales_amount, source: r.source, source_filename: r.source_filename ?? null, bill_count: r.bill_count ?? null,
-  note: r.note ?? null, created_at: r.created_at, sent_at: r.sent_at ?? null
+  note: r.note ?? null, created_at: r.created_at, sent_at: r.sent_at ?? null, breakdown: parseBreakdown(r.breakdown)
 });
+function parseBreakdown(s: string | null | undefined): CatchupBreakdown | null {
+  if (!s) return null;
+  try { const b = JSON.parse(s); return b && Array.isArray(b.dates) && Array.isArray(b.categories) ? b as CatchupBreakdown : null; } catch { return null; }
+}
 export function listCatchups(partnerId: number, branchId: number, year: number, month: number): RsCatchup[] {
   if (!partnerGuard(partnerId, branchId)) return [];
   return (getDb().prepare("SELECT * FROM revshare_catchups WHERE partner_id = ? AND period_year = ? AND period_month = ? ORDER BY counted_date, id").all(partnerId, year, month) as any[]).map(shapeCatchup);
@@ -218,27 +231,71 @@ export function listCatchupsRange(partnerId: number, branchId: number, startIso:
   if (!partnerGuard(partnerId, branchId)) return [];
   return (getDb().prepare("SELECT * FROM revshare_catchups WHERE partner_id = ? AND counted_date >= ? AND counted_date <= ? ORDER BY counted_date, id").all(partnerId, startIso, endIso) as any[]).map(shapeCatchup);
 }
+/** "DESSERTS" / "COFFEE, MATCHA" — the categories the given catch-ups came from, for the partner card. Exact matches
+ *  win; otherwise the ANALYTICA split (top 4). Empty when nothing is known. */
+export function catchupCategoryText(catchups: RsCatchup[]): string {
+  const names: string[] = [];
+  const add = (n: string) => { if (!names.includes(n)) names.push(n); };
+  for (const c of catchups) {
+    const b = c.breakdown;
+    if (!b) continue;
+    if (b.exact && b.exact.length) b.exact.forEach((e) => add(e.name));
+    else if (!b.analyticaMissing) b.categories.slice(0, 4).forEach((x) => add(x.name));
+  }
+  return names.join(", ");
+}
 export type CatchupInput = {
   sales_from?: string | null; sales_to?: string | null; sales_amount: number; source?: "manual" | "pos_import";
   source_filename?: string | null; bill_count?: number | null; note?: string | null; counted_date?: string;
 };
 export class CatchupError extends Error { constructor(public code: "invalid_amount" | "invalid_range" | "day_has_daily" | "nothing_missing" | "daily_exceeds_file") { super(code); } }
 
-export type CatchupReconcile = { dailyTotal: number; dailyDays: number; catchupTotal: number; catchupCount: number };
+export type CatchupReconcile = { dailyTotal: number; dailyDays: number; catchupTotal: number; catchupCount: number; missingDates: string[]; categories: Array<{ name: string; sales: number }>; analyticaMissing: boolean };
 /** What is ALREADY recorded inside [from, to]: the daily rows (by their day) and the catch-ups whose own
  *  real-day range lies inside it. A POS file for the whole span minus these = the sales that are missing. */
-export function reconcileRange(partnerId: number, branchId: number, fromIso: string, toIso: string): CatchupReconcile | null {
+export function reconcileRange(partnerId: number, branchId: number, fromIso: string, toIso: string, selectedCategories: string[] = []): CatchupReconcile | null {
   if (!partnerGuard(partnerId, branchId)) return null;
   const db = getDb();
   const d = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(sales_amount), 0) AS s FROM revshare_rounds WHERE partner_id = ? AND period_start >= ? AND period_start <= ?").get(partnerId, fromIso, toIso) as { n: number; s: number };
   const c = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(sales_amount), 0) AS s FROM revshare_catchups WHERE partner_id = ? AND sales_from IS NOT NULL AND sales_from >= ? AND sales_to <= ?").get(partnerId, fromIso, toIso) as { n: number; s: number };
-  return { dailyTotal: round2(d.s), dailyDays: d.n, catchupTotal: round2(c.s), catchupCount: c.n };
+  // The days of the span with no daily row — where the missing sales must sit — and what ANALYTICA says was sold
+  // in the partner's categories on exactly those days (nett; the file's own categories narrow it to the selection).
+  const have = new Set((db.prepare("SELECT period_start FROM revshare_rounds WHERE partner_id = ? AND period_start >= ? AND period_start <= ?").all(partnerId, fromIso, toIso) as Array<{ period_start: string }>).map((r) => r.period_start));
+  const missingDates: string[] = [];
+  for (let t = Date.parse(`${fromIso}T00:00:00Z`); t <= Date.parse(`${toIso}T00:00:00Z`) && missingDates.length < 400; t += 86400000) {
+    const iso = new Date(t).toISOString().slice(0, 10);
+    if (!have.has(iso)) missingDates.push(iso);
+  }
+  const norm = (x: string) => x.trim().toLowerCase().replace(/\s+/g, " ");
+  const want = new Set(selectedCategories.map(norm).filter(Boolean));
+  const sum = new Map<string, number>();
+  for (const day of missingDates) {
+    for (const row of menuRange(branchId, day, day, "category")) {
+      if (want.size && !want.has(norm(row.name))) continue;
+      if (row.nett > 0) sum.set(row.name, (sum.get(row.name) ?? 0) + row.nett);
+    }
+  }
+  const categories = [...sum].map(([name, sales]) => ({ name, sales: round2(sales) })).sort((a, b) => b.sales - a.sales);
+  return { dailyTotal: round2(d.s), dailyDays: d.n, catchupTotal: round2(c.s), catchupCount: c.n, missingDates, categories, analyticaMissing: categories.length === 0 };
+}
+
+/** Spread `amount` over the categories by their ANALYTICA share (last one takes the rounding remainder). */
+export function breakdownFor(recon: CatchupReconcile, amount: number): CatchupBreakdown {
+  const total = recon.categories.reduce((s, c) => s + c.sales, 0);
+  let left = round2(amount);
+  const categories = recon.categories.map((c, i) => {
+    const last = i === recon.categories.length - 1;
+    const allocated = last ? left : round2(amount * (c.sales / total));
+    left = round2(left - allocated);
+    return { name: c.name, sales: c.sales, share: total > 0 ? c.sales / total : 0, allocated };
+  });
+  return { dates: recon.missingDates, categories, analyticaMissing: recon.analyticaMissing };
 }
 /** Record the missing part of a whole-span POS file (e.g. 1st of the month → today): the file total minus what is
  *  already recorded for those days. Refused when nothing is missing, or when more is recorded than the file shows
  *  (usually the wrong categories / sales base). */
-export function createCatchupFromFile(partnerId: number, branchId: number, d: { from: string; to: string; fileTotal: number; filename?: string | null; billCount?: number | null; note?: string | null; counted_date?: string }, userId: number): { id: number; amount: number; recon: CatchupReconcile } | null {
-  const recon = reconcileRange(partnerId, branchId, d.from, d.to);
+export function createCatchupFromFile(partnerId: number, branchId: number, d: { from: string; to: string; fileTotal: number; filename?: string | null; billCount?: number | null; note?: string | null; counted_date?: string; categories?: string[]; categoryValues?: Array<{ name: string; value: number }> }, userId: number): { id: number; amount: number; recon: CatchupReconcile } | null {
+  const recon = reconcileRange(partnerId, branchId, d.from, d.to, d.categories ?? []);
   if (!recon) return null;
   if (d.from > d.to) throw new CatchupError("invalid_range");
   const amount = round2(d.fileTotal - recon.dailyTotal - recon.catchupTotal);
@@ -246,6 +303,7 @@ export function createCatchupFromFile(partnerId: number, branchId: number, d: { 
   if (amount < 0.01) throw new CatchupError("nothing_missing");
   const note = [d.note?.trim(), `ไฟล์รวมช่วง ${roundLabel(d.from, d.to)}: ฿${d.fileTotal.toFixed(2)} − รายวันที่มีแล้ว ${recon.dailyDays} วัน ฿${recon.dailyTotal.toFixed(2)}${recon.catchupTotal ? ` − ยอดตกสำรวจเดิม ฿${recon.catchupTotal.toFixed(2)}` : ""}`].filter(Boolean).join(" · ");
   const id = createCatchup(partnerId, branchId, { sales_from: d.from, sales_to: d.to, sales_amount: amount, source: "pos_import", source_filename: d.filename ?? null, bill_count: null, note, counted_date: d.counted_date }, userId);
+  if (id) getDb().prepare("UPDATE revshare_catchups SET breakdown = ? WHERE id = ?").run(JSON.stringify({ ...breakdownFor(recon, amount), exact: d.categoryValues ? matchMissingCategories(d.categoryValues, amount) : null }), id);
   return id ? { id, amount, recon } : null;
 }
 /** Record a catch-up. It counts today (Bangkok) unless `counted_date` is given (tests). A single real day that
@@ -330,6 +388,7 @@ export type TransferRoundPreview = {
   /** ยอดตกสำรวจ counted in this span — a separate line, included in totalSales. */
   catchups: Array<{ id: number; countedDate: string; salesFrom: string | null; salesTo: string | null; sales: number; sent: boolean; note: string | null }>;
   catchupTotal: number;
+  catchupCategories: string;
   totalSales: number;
   vatEnabled: boolean;
   vat: { base: number; vat: number; total: number };
@@ -361,7 +420,7 @@ export function previewTransferRound(
     dayCount: Math.round((Date.parse(`${endIso}T00:00:00Z`) - Date.parse(`${startIso}T00:00:00Z`)) / 86400000) + 1,
     rows: rows.map((r) => ({ date: r.period_start, sales: r.sales_amount, sent: !!r.sent_at, billCount: r.bill_count })),
     catchups: catchups.map((c) => ({ id: c.id, countedDate: c.counted_date, salesFrom: c.sales_from, salesTo: c.sales_to, sales: c.sales_amount, sent: !!c.sent_at, note: c.note })),
-    catchupTotal,
+    catchupTotal, catchupCategories: catchupCategoryText(catchups),
     totalSales, vatEnabled: partner.vat_enabled, vat,
     alreadySentCount: rows.filter((r) => r.sent_at).length + catchups.filter((c) => c.sent_at).length,
     suggestedStart: lastSent ? addDaysIso(lastSent, 1) : null,

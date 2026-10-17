@@ -21,6 +21,8 @@ const PostZ = z.object({
   bill_count: z.number().int().min(0).nullable().optional(),
   // A whole-span POS file (e.g. 1st of the month → today): store only what is missing = file total − already recorded.
   file_total: z.number().positive().optional(),
+  categories: z.array(z.string().max(120)).max(200).optional(),
+  category_values: z.array(z.object({ name: z.string().max(120), value: z.number() })).max(200).optional(),
   pin: z.string()
 });
 const CATCHUP_TEXT: Record<string, string> = {
@@ -46,7 +48,7 @@ export function GET(req: Request) {
   if (from && to) {
     // what is already recorded inside a span — for the whole-span file reconcile
     if (!ISO.test(from) || !ISO.test(to) || from > to || !Number.isInteger(partner)) return NextResponse.json({ error: "bad_params" }, { status: 400 });
-    const r = reconcileRange(partner, branchId!, from, to);
+    const r = reconcileRange(partner, branchId!, from, to, sp.getAll("cat"));
     return r ? NextResponse.json({ ok: true, ...r }) : NextResponse.json({ error: "not_found" }, { status: 404 });
   }
   const year = Number(sp.get("year")), month = Number(sp.get("month"));
@@ -67,7 +69,7 @@ export async function POST(req: Request) {
     let amount = d.sales_amount ?? 0;
     if (d.file_total != null) {
       if (!d.sales_from || !d.sales_to) return NextResponse.json({ error: "invalid_range", message: CATCHUP_TEXT.invalid_range }, { status: 422 });
-      const r = createCatchupFromFile(d.partner, branchId!, { from: d.sales_from, to: d.sales_to, fileTotal: d.file_total, filename: d.source_filename, note: d.note }, user.id);
+      const r = createCatchupFromFile(d.partner, branchId!, { from: d.sales_from, to: d.sales_to, fileTotal: d.file_total, filename: d.source_filename, note: d.note, categories: d.categories, categoryValues: d.category_values }, user.id);
       id = r?.id ?? null; amount = r?.amount ?? 0;
     } else {
       if (d.sales_amount == null) return NextResponse.json({ error: "invalid_amount", message: CATCHUP_TEXT.invalid_amount }, { status: 422 });
