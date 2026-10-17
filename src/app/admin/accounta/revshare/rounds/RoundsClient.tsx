@@ -29,17 +29,29 @@ type Round = {
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null;
   sent_at: string | null; bill_count: number | null;
 };
+type Catchup = {
+  id: number; sales_from: string | null; sales_to: string | null; counted_date: string; sales_amount: number;
+  source: "manual" | "pos_import"; source_filename: string | null; bill_count: number | null; note: string | null; sent_at: string | null;
+};
 type PosCat = { category: string; qty: number; gross: number; afterDiscount: number; nett: number };
 type PosPreview = { filename: string; periodStart: string | null; periodEnd: string | null; label: string | null; categories: PosCat[] };
 const BASE_LABEL: Record<SalesBase, string> = { gross: "Gross (ก่อนส่วนลด)", after_discount: "หลังหักส่วนลด", nett: "Nett (รวม VAT)" };
 const PIN_ERRORS = new Set(["wrong_pin", "pin_invalid", "no_pin", "user_not_found"]);
 
 export default function RoundsClient({
-  partner, rounds: initialRounds, year, month, operatorName, sellerName, drinkWelfare, monthForecast, shopShare
-}: { partner: Partner; tiers: Tier[]; rounds: Round[]; year: number; month: number; operatorName: string; sellerName: string; drinkWelfare: DrinkWelfareData | null; monthForecast: MonthSalesForecast | null; shopShare: ShopShare }) {
+  partner, rounds: initialRounds, catchups: initialCatchups, year, month, operatorName, sellerName, drinkWelfare, monthForecast, shopShare
+}: { partner: Partner; tiers: Tier[]; rounds: Round[]; catchups: Catchup[]; year: number; month: number; operatorName: string; sellerName: string; drinkWelfare: DrinkWelfareData | null; monthForecast: MonthSalesForecast | null; shopShare: ShopShare }) {
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
   const [rounds, setRounds] = useState<Round[]>(initialRounds);
+  const [catchups, setCatchups] = useState<Catchup[]>(initialCatchups);
+  // 'catchup' = the file being previewed is ยอดตกสำรวจ (a missed day found later), not today's daily row.
+  const [importKind, setImportKind] = useState<"daily" | "catchup">("daily");
+  // What is already recorded inside the catch-up file's span (daily rows + earlier catch-ups) — the file's total minus this is what is missing.
+  const [recon, setRecon] = useState<{ dailyTotal: number; dailyDays: number; catchupTotal: number; catchupCount: number } | null>(null);
+  const [cuOpen, setCuOpen] = useState(false);
+  const [cuFrom, setCuFrom] = useState(""); const [cuTo, setCuTo] = useState("");
+  const [cuAmount, setCuAmount] = useState(""); const [cuNote, setCuNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   // LINE notify (daily / weekly) — owner 2026-06-24: preview the card in a modal,
@@ -57,6 +69,8 @@ export default function RoundsClient({
     rows: Array<{ date: string; sales: number; sent: boolean; billCount: number | null }>;
     totalSales: number; vatEnabled: boolean; vat: { base: number; vat: number; total: number };
     alreadySentCount: number; suggestedStart: string | null; suggestedEnd: string | null;
+    catchups: Array<{ id: number; countedDate: string; salesFrom: string | null; salesTo: string | null; sales: number; sent: boolean; note: string | null }>;
+    catchupTotal: number;
   };
   const [xferOpen, setXferOpen] = useState(false);
   const [xferStart, setXferStart] = useState("");
@@ -124,10 +138,19 @@ export default function RoundsClient({
     const wk = mondayOf(r.period_start);
     (weekMap.get(wk) ?? weekMap.set(wk, []).get(wk)!).push(r);
   }
-  const weeks = [...weekMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([wk, rs]) => ({
-    wk, rounds: rs, total: rs.reduce((s, r) => s + r.sales_amount, 0),
-    label: roundLabel(rs[0].period_start, rs[rs.length - 1].period_start)
-  }));
+  // ยอดตกสำรวจ join the week they were recorded in, as a separate amount (never mixed into the daily rows).
+  const catchupTotal = catchups.reduce((s, c) => s + c.sales_amount, 0);
+  const cuByWeek = new Map<string, Catchup[]>();
+  for (const c of catchups) { const wk = mondayOf(c.counted_date); (cuByWeek.get(wk) ?? cuByWeek.set(wk, []).get(wk)!).push(c); }
+  const weekKeys = [...new Set([...weekMap.keys(), ...cuByWeek.keys()])].sort();
+  const weeks = weekKeys.map((wk) => {
+    const rs = weekMap.get(wk) ?? [];
+    const cs = cuByWeek.get(wk) ?? [];
+    const dates = [...rs.map((r) => r.period_start), ...(rs.length ? [] : cs.map((c) => c.counted_date))].sort();
+    const first = dates[0], last = dates[dates.length - 1];
+    const cu = cs.reduce((s, c) => s + c.sales_amount, 0);
+    return { wk, rounds: rs, catchup: cu, first, last, total: rs.reduce((s, r) => s + r.sales_amount, 0) + cu, label: roundLabel(first, last) };
+  });
 
   function go(y: number, m: number) { router.push(`/admin/accounta/revshare/rounds?partner=${partner.id}&year=${y}&month=${m}`); }
   function shift(delta: number) { const d = new Date(Date.UTC(year, month - 1 + delta, 1)); go(d.getUTCFullYear(), d.getUTCMonth() + 1); }
@@ -237,7 +260,7 @@ export default function RoundsClient({
     return { ok: false, message: humanizeApiError(j, "ส่ง LINE ไม่สำเร็จ") };
   }
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>, kind: "daily" | "catchup" = "daily") {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
@@ -247,6 +270,13 @@ export default function RoundsClient({
       const res = await fetch(apiUrl("/api/accounta/revshare/pos-import"), { method: "POST", body: fd });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "อ่านไฟล์ POS ไม่สำเร็จ")); return; }
+      setImportKind(kind);
+      setRecon(null);
+      if (kind === "catchup" && j.periodStart && j.periodEnd) {
+        const rr = await fetch(apiUrl(`/api/accounta/revshare/catchups?partner=${partner.id}&from=${j.periodStart}&to=${j.periodEnd}`));
+        const rj = await rr.json().catch(() => ({}));
+        if (rr.ok && rj.ok) setRecon({ dailyTotal: rj.dailyTotal, dailyDays: rj.dailyDays, catchupTotal: rj.catchupTotal, catchupCount: rj.catchupCount });
+      }
       setPreview({ filename: j.filename, periodStart: j.periodStart, periodEnd: j.periodEnd, label: j.label, categories: j.categories });
       const want = new Set(partner.pos_categories.map((s) => s.toLowerCase()));
       setSelCats(new Set(j.categories.filter((c: PosCat) => want.has(c.category.toLowerCase())).map((c: PosCat) => c.category)));
@@ -260,9 +290,54 @@ export default function RoundsClient({
   const posBills = preview ? preview.categories.filter((c) => selCats.has(c.category)).reduce((s, c) => s + c.qty, 0) : 0;
   const posMultiDay = !!preview && preview.periodStart !== preview.periodEnd;
 
+  // ยอดตกสำรวจ API (own table). On success the list for the CURRENT view is re-read from the server.
+  async function mutateCatchup(method: "POST" | "DELETE", body?: unknown, qs?: string): Promise<{ ok: boolean; pinError?: boolean }> {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl(`/api/accounta/revshare/catchups${qs ?? ""}`), {
+        method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.ok) {
+        const list = await fetch(apiUrl(`/api/accounta/revshare/catchups?partner=${partner.id}&year=${year}&month=${month}`));
+        const lj = await list.json().catch(() => ({}));
+        if (list.ok && lj.catchups) setCatchups(lj.catchups);
+        router.refresh();
+        return { ok: true };
+      }
+      const pinError = PIN_ERRORS.has(j.error);
+      if (!pinError) setErr(j.message ?? humanizeApiError(j, "ทำรายการไม่สำเร็จ"));
+      return { ok: false, pinError };
+    } finally { setBusy(false); }
+  }
+  async function addManualCatchup() {
+    const amount = Number(cuAmount.replace(/,/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) { setErr("กรอกยอดตกสำรวจให้ถูกต้อง"); return; }
+    if ((cuFrom && !cuTo) || (!cuFrom && cuTo)) { setErr("กรอกทั้งวันเริ่มและวันจบ หรือเว้นว่างทั้งคู่ถ้ายังไม่แน่ใจวันที่"); return; }
+    await guarded(async (pin) => {
+      const r = await mutateCatchup("POST", { partner: partner.id, sales_amount: amount, sales_from: cuFrom || null, sales_to: cuTo || null, note: cuNote || null, source: "manual", pin });
+      if (r.ok) { setCuOpen(false); setCuFrom(""); setCuTo(""); setCuAmount(""); setCuNote(""); }
+      return r;
+    }, { forcePrompt: true });
+  }
+  async function delCatchup(c: Catchup) {
+    const ok = await confirm({ title: "ลบยอดตกสำรวจ", body: `ลบยอดตกสำรวจ ฿${fmtMoney(c.sales_amount)} ที่บันทึกวันที่ ${roundLabel(c.counted_date, c.counted_date)} ?`, confirmLabel: "ลบ", cancelLabel: "ยกเลิก", variant: "danger" });
+    if (ok === null) return;
+    await guarded((pin) => mutateCatchup("DELETE", undefined, `?id=${c.id}&partner=${partner.id}&pin=${encodeURIComponent(pin)}`), { forcePrompt: true });
+  }
+
   async function confirmImport() {
     if (!preview || !preview.periodStart || !preview.periodEnd) { setErr("ไฟล์ไม่มีวันที่ที่อ่านได้"); return; }
     const ps = preview.periodStart, pe = preview.periodEnd;
+    if (importKind === "catchup") {
+      await guarded(async (pin) => {
+        // The server subtracts what is already recorded for these days, so a whole-span file never double counts.
+        const r = await mutateCatchup("POST", { partner: partner.id, sales_from: ps, sales_to: pe, file_total: posTotal, source: "pos_import", source_filename: preview.filename, pin });
+        if (r.ok) setPreview(null);
+        return r;
+      }, { forcePrompt: true });
+      return;
+    }
     await guarded(async (pin) => {
       const r = await mutate("POST", {
         partner: partner.id, period_start: ps, period_end: pe,
@@ -292,7 +367,7 @@ export default function RoundsClient({
       <div className="card flex flex-wrap items-center gap-2">
         <label className="btn-secondary text-sm cursor-pointer">
           นำเข้าไฟล์ยอดขายประจำวัน
-          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={onFile} disabled={busy} />
+          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => onFile(e, "daily")} disabled={busy} />
         </label>
         <span className="text-[11px] text-slate-400">
           1 วัน/ไฟล์ · นำเข้าจากไฟล์เท่านั้น (เพิ่มยอดเองไม่ได้) · ยอดจากไฟล์ล็อกไว้ แก้ต้องใส่ PIN
@@ -313,8 +388,8 @@ export default function RoundsClient({
       {preview && (
         <div className="card space-y-3 ring-1 ring-brand/30">
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="text-sm font-bold text-slate-800">นำเข้ายอดขาย · {preview.label ?? "(ไม่พบวันที่)"} <span className="text-[11px] font-normal text-slate-400">{preview.filename}</span></div>
-            <button type="button" onClick={() => setPreview(null)} className="text-xs text-slate-400 hover:text-slate-700">✕ ยกเลิก</button>
+            <div className="text-sm font-bold text-slate-800">{importKind === "catchup" ? "นำเข้ายอดตกสำรวจ" : "นำเข้ายอดขาย"} · {preview.label ?? "(ไม่พบวันที่)"} <span className="text-[11px] font-normal text-slate-400">{preview.filename}</span></div>
+            <button type="button" onClick={() => { setPreview(null); setRecon(null); }} className="text-xs text-slate-400 hover:text-slate-700">✕ ยกเลิก</button>
           </div>
           {posMultiDay && <p className="text-[11px] text-amber-700">ไฟล์นี้ครอบหลายวัน ({preview.label}) — จะบันทึกเป็นรายการเดียว ถ้าต้องการรายวันให้ส่งออกจาก POS แบบ 1 วัน/ไฟล์</p>}
           <div className="flex items-center justify-between gap-2 flex-wrap rounded-md bg-slate-50 px-3 py-2">
@@ -354,9 +429,22 @@ export default function RoundsClient({
               </tbody>
             </table>
           </div>
+          {importKind === "catchup" && recon && (() => {
+            const missing = Math.round((posTotal - recon.dailyTotal - recon.catchupTotal) * 100) / 100;
+            return (
+              <div className={`rounded-xl border px-3 py-2 text-sm space-y-0.5 ${missing >= 0.01 ? "border-amber-300 bg-amber-50" : "border-rose-200 bg-rose-50"}`}>
+                <div className="flex justify-between"><span className="text-slate-600">ยอดรวมในไฟล์ (หมวด/ฐานที่เลือก)</span><span className="font-mono">฿{fmtMoney(posTotal)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-600">หัก ยอดรายวันที่นำเข้าแล้วในช่วงนี้ ({recon.dailyDays} วัน)</span><span className="font-mono">− ฿{fmtMoney(recon.dailyTotal)}</span></div>
+                {recon.catchupTotal > 0 && <div className="flex justify-between"><span className="text-slate-600">หัก ยอดตกสำรวจเดิมของช่วงนี้ ({recon.catchupCount} รายการ)</span><span className="font-mono">− ฿{fmtMoney(recon.catchupTotal)}</span></div>}
+                <div className="flex justify-between border-t border-amber-200 pt-1 font-bold"><span>ยอดที่ตกหล่น (จะบันทึกเป็นยอดตกสำรวจ)</span><span className="font-mono">฿{fmtMoney(Math.max(missing, 0))}</span></div>
+                {missing < 0.01 && <p className="text-[11px] text-rose-600">{missing < -0.009 ? "ยอดรายวันที่นำเข้าไว้แล้วมากกว่ายอดในไฟล์ — ตรวจหมวดสินค้า/ฐานยอดขายให้ตรงกับที่ใช้นำเข้ารายวัน" : "ไม่พบยอดที่ตกหล่นในช่วงนี้"}</p>}
+                <p className="text-[10px] text-slate-500">ระบบบอกได้แค่ยอดที่ขาด ไม่ได้บอกว่าขาดวันไหน · ยอดตกสำรวจเดิมที่ไม่ระบุวันไม่ถูกนำมาหัก</p>
+              </div>
+            );
+          })()}
           <div className="flex items-center justify-between">
-            <div className="text-sm">ยอดที่จะบันทึก: <b className="text-brand">฿{fmtMoney(posTotal)}</b> <span className="text-[11px] text-slate-400">({BASE_LABEL[base]})</span> <span className="text-[11px] text-slate-500">· จำนวนบิล <b>{posBills}</b></span></div>
-            <button type="button" onClick={confirmImport} disabled={busy || posTotal <= 0} className="btn-primary text-sm disabled:opacity-50">ยืนยันบันทึกยอดวันนี้</button>
+            <div className="text-sm">{importKind === "catchup" && recon ? "ยอดตกหล่นที่จะบันทึก:" : "ยอดที่จะบันทึก:"} <b className="text-brand">฿{fmtMoney(importKind === "catchup" && recon ? Math.max(posTotal - recon.dailyTotal - recon.catchupTotal, 0) : posTotal)}</b> <span className="text-[11px] text-slate-400">({BASE_LABEL[base]})</span> <span className="text-[11px] text-slate-500">· จำนวนบิล <b>{posBills}</b></span></div>
+            <button type="button" onClick={confirmImport} disabled={busy || posTotal <= 0 || (importKind === "catchup" && (!recon || posTotal - recon.dailyTotal - recon.catchupTotal < 0.01))} className="btn-primary text-sm disabled:opacity-50">{importKind === "catchup" ? "ยืนยันบันทึกเป็นยอดตกสำรวจ" : "ยืนยันบันทึกยอดวันนี้"}</button>
           </div>
         </div>
       )}
@@ -364,7 +452,7 @@ export default function RoundsClient({
       {/* Daily entries grouped by week (weekly transfer subtotal) */}
       <div className="card space-y-2">
         <div className="text-sm font-bold text-slate-800">ยอดขายรายวัน + ยอดโอนรายสัปดาห์</div>
-        {rounds.length === 0 ? (
+        {rounds.length === 0 && catchups.length === 0 ? (
           <p className="text-xs text-slate-400">ยังไม่มีข้อมูล — กดปุ่ม “นำเข้าไฟล์ยอดขายประจำวัน” ด้านบน</p>
         ) : (
           <div className="overflow-x-auto">
@@ -421,17 +509,20 @@ export default function RoundsClient({
                       </tr>
                     ))}
                     <tr className="bg-slate-50 border-b border-slate-200">
-                      <td className="py-1 px-2 text-[11px] font-bold text-slate-600">ยอดโอนสัปดาห์ {w.label}</td>
+                      <td className="py-1 px-2 text-[11px] font-bold text-slate-600">
+                        ยอดโอนสัปดาห์ {w.label}
+                        {w.catchup > 0 && <div className="text-[10px] font-normal text-amber-700">รวมยอดตกสำรวจ ฿{fmtMoney(w.catchup)} (บรรทัดแยก)</div>}
+                      </td>
                       <td className="py-1 px-2 text-right font-mono font-bold text-brand">฿{fmtMoney(w.total)}</td>
                       <td colSpan={3} className="py-1 px-2 text-[10px] text-slate-400">
                         โอนเต็มจำนวนให้คู่ค้า
                         {partner.line_group_id && (
                           <button type="button" onClick={() => setSendModal({
-                            key: `w:${w.rounds[0].period_start}`, heading: "ส่งสรุปยอดขายประจำสัปดาห์",
-                            preview: <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={w.label} transferAmount={w.total} dayCount={daySpan(w.rounds[0].period_start, w.rounds[w.rounds.length - 1].period_start)} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} partnerId={partner.id} start={w.rounds[0].period_start} end={w.rounds[w.rounds.length - 1].period_start} />,
-                            body: { kind: "weekly", week_start: w.rounds[0].period_start }
+                            key: `w:${w.first}`, heading: "ส่งสรุปยอดขายประจำสัปดาห์",
+                            preview: <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={w.label} transferAmount={w.total} catchupAmount={w.catchup} dayCount={daySpan(w.first, w.last)} vatRate={vatRate} salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} partnerId={partner.id} start={w.rounds[0].period_start} end={w.rounds[w.rounds.length - 1].period_start} />,
+                            body: { kind: "weekly", week_start: w.first }
                           })} className="ml-2 text-[11px] font-bold text-emerald-600 hover:underline">
-                            {sentKey === `w:${w.rounds[0].period_start}` ? "✓ ส่งแล้ว" : "ส่งสรุปสัปดาห์"}
+                            {sentKey === `w:${w.first}` ? "✓ ส่งแล้ว" : "ส่งสรุปสัปดาห์"}
                           </button>
                         )}
                       </td>
@@ -441,19 +532,20 @@ export default function RoundsClient({
               </tbody>
               <tfoot><tr className="border-t-2 border-slate-300 font-bold">
                 <td className="py-1.5 px-2 text-slate-700">รวมทั้งเดือน</td>
-                <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(totalSales)}</td>
+                <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(totalSales + catchupTotal)}</td>
                 <td className="py-1.5 px-2 text-right tabular-nums text-xs text-sky-700 whitespace-nowrap">{shopShare.cumulative ? `${shopShare.cumulative.pct.toFixed(2)}%` : "—"}</td>
                 <td colSpan={2} className="py-1.5 px-2 text-[11px] text-slate-400">ส่วนแบ่งคำนวณรายเดือนที่หน้าสรุปยอด</td>
               </tr></tfoot>
             </table>
           </div>
         )}
-        {rounds.length > 0 && (() => {
+        {(rounds.length > 0 || catchups.length > 0) && (() => {
           // ยอดขายรายวันที่กรอก = ยอดก่อนภาษี (gross) — แยก VAT + ยอดรวมให้เห็น
           // (owner 2026-07-27). ทำตาม sales_base ของคู่ค้า (nett = ถอด VAT ออก).
-          const v = salesVat(totalSales, vatRate, salesBaseIncludesVat(partner.sales_base));
+          const v = salesVat(totalSales + catchupTotal, vatRate, salesBaseIncludesVat(partner.sales_base));
           return (
             <div className="mt-3 ml-auto max-w-xs rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm space-y-1">
+              {catchupTotal > 0 && <div className="flex justify-between text-[11px] text-amber-700"><span>รวมยอดตกสำรวจ</span><span className="font-mono">฿{fmtMoney(catchupTotal)}</span></div>}
               <div className="flex justify-between"><span className="text-slate-500">ยอดก่อนภาษี</span><span className="font-mono">฿{fmtMoney(v.base)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">ภาษีมูลค่าเพิ่ม {Math.round(vatRate * 100)}%</span><span className="font-mono">฿{fmtMoney(v.vat)}</span></div>
               <div className="flex justify-between border-t border-slate-200 pt-1 font-bold"><span>ยอดรวม</span><span className="font-mono text-brand">฿{fmtMoney(v.total)}</span></div>
@@ -568,6 +660,78 @@ export default function RoundsClient({
         </p>
       </div>
 
+      {/* ยอดตกสำรวจ — its own round (owner 2026-10-17): sales found after their day was imported/sent/settled.
+          Never edits a past round; counts in the period it is recorded and shows as a separate transfer line. */}
+      <div className="card space-y-3 border-amber-200">
+        <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div>
+            <div className="text-sm font-bold text-slate-800">รอบยอดตกสำรวจ</div>
+            <p className="text-[11px] text-slate-500 mt-0.5">ยอดขายที่ตกหล่น ไม่ได้นำเข้าตามวัน พบทีหลัง — บันทึกแยกจากยอดรายวัน <b>ไม่แก้รอบที่ผ่านมาแล้ว</b> นับรวมในช่วงที่บันทึก (ยอดโอนสัปดาห์นี้ และส่วนแบ่ง/ขั้นบันไดของเดือนนี้) และขึ้นเป็นบรรทัดแยกในการ์ดโอน</p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <label className="btn-secondary text-sm cursor-pointer">
+              นำเข้าไฟล์ยอดตกสำรวจ
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => onFile(e, "catchup")} disabled={busy} />
+            </label>
+            <button type="button" className="btn-secondary text-sm" onClick={() => setCuOpen((o) => !o)}>{cuOpen ? "ปิดแบบกรอก" : "กรอกยอดตกสำรวจเอง"}</button>
+          </div>
+        </div>
+        {cuOpen && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-2">
+            <div className="grid sm:grid-cols-2 gap-2.5">
+              <label className="text-xs text-slate-600">ยอดตกสำรวจ (ฐานเดียวกับยอดรายวัน)
+                <input inputMode="decimal" className="input mt-1" placeholder="เช่น 12,500.00" value={cuAmount} onChange={(e) => setCuAmount(e.target.value)} />
+              </label>
+              <label className="text-xs text-slate-600">หมายเหตุ <span className="text-slate-400">(ถ้ามี)</span>
+                <input className="input mt-1" maxLength={300} placeholder="เช่น ยอดขายที่ไม่ได้ส่งออกจาก POS" value={cuNote} onChange={(e) => setCuNote(e.target.value)} />
+              </label>
+              <label className="text-xs text-slate-600">ยอดนี้เป็นของวันที่ — เริ่ม <span className="text-slate-400">(เว้นว่างถ้ายังไม่แน่ใจ)</span>
+                <input type="date" className="input mt-1" value={cuFrom} max={cuTo || undefined} onChange={(e) => setCuFrom(e.target.value)} />
+              </label>
+              <label className="text-xs text-slate-600">ถึงวันที่
+                <input type="date" className="input mt-1" value={cuTo} min={cuFrom || undefined} onChange={(e) => setCuTo(e.target.value)} />
+              </label>
+            </div>
+            <div className="flex justify-end">
+              <button type="button" className="btn-primary text-sm" disabled={busy || !cuAmount.trim()} onClick={addManualCatchup}>บันทึกยอดตกสำรวจ (PIN)</button>
+            </div>
+          </div>
+        )}
+        {catchups.length === 0 ? (
+          <p className="text-xs text-slate-400">ยังไม่มียอดตกสำรวจในเดือนนี้</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-[11px] text-slate-400 border-b border-slate-200">
+                <th className="text-left py-1.5 px-2">บันทึกเมื่อ</th>
+                <th className="text-left py-1.5 px-2">เป็นยอดของวันที่</th>
+                <th className="text-right py-1.5 px-2">ยอด</th>
+                <th className="text-left py-1.5 px-2">ที่มา / หมายเหตุ</th>
+                <th className="text-left py-1.5 px-2">สถานะ</th>
+                <th></th>
+              </tr></thead>
+              <tbody>
+                {catchups.map((c) => (
+                  <tr key={c.id} className="border-b border-slate-50">
+                    <td className="py-1 px-2 text-slate-600 whitespace-nowrap">{roundLabel(c.counted_date, c.counted_date)}</td>
+                    <td className="py-1 px-2 text-slate-600 whitespace-nowrap">{c.sales_from ? roundLabel(c.sales_from, c.sales_to ?? c.sales_from) : <span className="text-slate-400">ไม่ระบุ</span>}</td>
+                    <td className="py-1 px-2 text-right font-mono">฿{fmtMoney(c.sales_amount)}</td>
+                    <td className="py-1 px-2 text-[11px] text-slate-500">{c.source === "pos_import" ? "นำเข้าไฟล์" : "กรอกเอง"}{c.bill_count != null && ` · ${c.bill_count} บิล`}{c.note && ` · ${c.note}`}</td>
+                    <td className="py-1 px-2 text-[11px]">{c.sent_at ? <span className="text-emerald-600">✓ รวมในรอบโอนแล้ว</span> : <span className="text-amber-700">รอรอบโอน</span>}</td>
+                    <td className="py-1 px-2 text-right">{!c.sent_at && <button type="button" onClick={() => delCatchup(c)} disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ</button>}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr className="border-t border-slate-200 font-bold">
+                <td className="py-1.5 px-2 text-slate-700" colSpan={2}>รวมยอดตกสำรวจเดือนนี้</td>
+                <td className="py-1.5 px-2 text-right font-mono text-amber-700">฿{fmtMoney(catchupTotal)}</td>
+                <td colSpan={3}></td>
+              </tr></tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+
       {drinkWelfare && drinkWelfare.month.count > 0 && (
         <div className="card space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -656,7 +820,7 @@ export default function RoundsClient({
             {xferPreview && !xferLoading && (
               <div className="rounded-lg border border-slate-200 overflow-hidden">
                 <div className="bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
-                  รอบโอน {xferPreview.label} · {xferPreview.rows.length} วัน
+                  รอบโอน {xferPreview.label} · {xferPreview.rows.length} วัน{xferPreview.catchups.length > 0 ? ` + ยอดตกสำรวจ ${xferPreview.catchups.length} รายการ` : ""}
                   {xferPreview.alreadySentCount > 0 &&
                     <span className="ml-1 font-normal text-amber-600">({xferPreview.alreadySentCount} วันเคยโอนแล้ว จะไม่โอนซ้ำ)</span>}
                 </div>
@@ -668,9 +832,15 @@ export default function RoundsClient({
                         <td className="px-3 py-1 text-right tabular-nums">฿{fmtMoney(r.sales)}</td>
                       </tr>
                     ))}
-                    {xferPreview.rows.length === 0 && (
+                    {xferPreview.rows.length === 0 && xferPreview.catchups.length === 0 && (
                       <tr><td className="px-3 py-2 text-slate-400" colSpan={2}>ช่วงนี้ไม่มียอดขาย</td></tr>
                     )}
+                    {xferPreview.catchups.map((c) => (
+                      <tr key={`cu${c.id}`} className="border-t border-slate-100 bg-amber-50/60">
+                        <td className="px-3 py-1 text-amber-800">ยอดตกสำรวจ{c.salesFrom ? ` (ของวันที่ ${roundLabel(c.salesFrom, c.salesTo ?? c.salesFrom)})` : ""}{c.sent && <span className="ml-1 text-[10px] text-amber-500">โอนแล้ว</span>}</td>
+                        <td className="px-3 py-1 text-right tabular-nums">฿{fmtMoney(c.sales)}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
                 <div className="border-t border-slate-200 px-3 py-2 space-y-0.5 text-xs">
@@ -685,7 +855,7 @@ export default function RoundsClient({
 
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={() => setXferOpen(false)} className="btn-secondary text-sm">ปิด</button>
-              <button type="button" disabled={!xferPreview || xferPreview.rows.length === 0 || xferLoading}
+              <button type="button" disabled={!xferPreview || (xferPreview.rows.length === 0 && xferPreview.catchups.length === 0) || xferLoading}
                 onClick={() => setXferPinOpen(true)}
                 className="rounded-full bg-brand text-white px-4 py-2 text-sm font-bold hover:opacity-90 disabled:opacity-50">
                 ยืนยันโอน + ส่งรายงาน (PIN)
@@ -702,7 +872,7 @@ export default function RoundsClient({
             {partner.line_group_id && xferPreview && (
               <div className="rounded-xl bg-slate-100 p-2">
                 <WeeklyCardPreview shop={shop} sellerName={sellerName} weekLabel={xferPreview.label}
-                  transferAmount={xferPreview.totalSales} dayCount={xferPreview.dayCount} vatRate={vatRate}
+                  transferAmount={xferPreview.totalSales} catchupAmount={xferPreview.catchupTotal} dayCount={xferPreview.dayCount} vatRate={vatRate}
                   salesIncludesVat={salesBaseIncludesVat(partner.sales_base)} partnerId={partner.id}
                   start={xferPreview.start} end={xferPreview.end} showCategories={false} />
               </div>

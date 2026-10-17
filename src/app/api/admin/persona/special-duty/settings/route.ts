@@ -24,7 +24,8 @@ export async function GET(req: Request) {
   if (branches.length === 0) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const q = new URL(req.url).searchParams;
   const month = YM.safeParse(q.get("month"));
-  const branchId = branches.find((b) => b.id === Number(q.get("branch")))?.id ?? branches[0].id;
+  // The branch is the one the admin is working in (the switcher in the header); an explicit ?branch= still wins.
+  const branchId = branches.find((b) => b.id === Number(q.get("branch")))?.id ?? branches.find((b) => b.id === user.activeBranchId)?.id ?? branches[0].id;
   if (!month.success) return NextResponse.json({ error: "invalid_month" }, { status: 400 });
   return NextResponse.json({
     isOwner: user.role === "super_admin",

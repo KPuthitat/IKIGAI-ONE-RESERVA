@@ -99,7 +99,7 @@ export async function POST(req: Request) {
 
   const preview = previewTransferRound(partnerId, branchId, start, end);
   if (!preview) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  if (preview.rows.length === 0) {
+  if (preview.rows.length === 0 && preview.catchups.length === 0) {
     return NextResponse.json({ error: "no_data", message: "ช่วงนี้ไม่มียอดขาย" }, { status: 400 });
   }
 
@@ -119,7 +119,8 @@ export async function POST(req: Request) {
       transferAmount: preview.totalSales,
       dayCount: preview.dayCount,
       vatRate: partner.vat_enabled ? partner.vat_rate : 0,
-      salesIncludesVat: salesBaseIncludesVat(partner.sales_base)
+      salesIncludesVat: salesBaseIncludesVat(partner.sales_base),
+      catchupAmount: preview.catchupTotal
     });
     const res = await notifyRevsharePartner(partner.line_group_id, flex);
     lineSent = res.ok;
