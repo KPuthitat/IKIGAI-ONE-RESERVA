@@ -51,5 +51,13 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("an unsent catch-up can be removed", (() => { const n = R.createCatchup(partner, branch, { sales_amount: 5, counted_date: "2026-10-15" }, user)!; return R.deleteCatchup(n, partner, branch) === "ok"; })());
   ok("another branch cannot touch it", R.deleteCatchup(id, partner, branch + 99) === "not_found" && R.listCatchups(partner, branch + 99, 2026, 10).length === 0);
 
+  // whole-span file (start of the month → today) reconcile: file total − recorded daily − earlier catch-ups inside the span
+  const rc = R.reconcileRange(partner, branch, "2026-10-01", "2026-10-14")!;
+  ok("reconcile counts the daily rows and the catch-ups already inside the span", rc.dailyDays === 2 && rc.dailyTotal === 5000 && rc.catchupTotal === 510);  // 500 (2 Oct) + 10 (3 Oct); the one with no known day is not counted
+  const full = R.createCatchupFromFile(partner, branch, { from: "2026-10-01", to: "2026-10-14", fileTotal: 12000, filename: "oct.xlsx", counted_date: "2026-10-15" }, user)!;
+  ok("only the missing part is stored: 12,000 − 5,000 daily − 510 earlier catch-ups = 6,490", full.amount === 6490);
+  ok("the stored note explains the arithmetic and the entry is a range", (() => { const c = R.listCatchups(partner, branch, 2026, 10).find((x) => x.id === full.id)!; return c.sales_from === "2026-10-01" && c.sales_to === "2026-10-14" && (c.note ?? "").includes("12000.00"); })());
+  ok("importing the same file again finds nothing missing", code(() => R.createCatchupFromFile(partner, branch, { from: "2026-10-01", to: "2026-10-14", fileTotal: 12000, counted_date: "2026-10-15" }, user)) === "nothing_missing");
+  ok("a file that shows less than what is recorded is refused (wrong categories/base)", code(() => R.createCatchupFromFile(partner, branch, { from: "2026-10-01", to: "2026-10-14", fileTotal: 3000, counted_date: "2026-10-15" }, user)) === "daily_exceeds_file");
   cleanup(); process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); cleanup(); process.exit(1); });

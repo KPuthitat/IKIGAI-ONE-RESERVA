@@ -47,6 +47,8 @@ export default function RoundsClient({
   const [catchups, setCatchups] = useState<Catchup[]>(initialCatchups);
   // 'catchup' = the file being previewed is ยอดตกสำรวจ (a missed day found later), not today's daily row.
   const [importKind, setImportKind] = useState<"daily" | "catchup">("daily");
+  // What is already recorded inside the catch-up file's span (daily rows + earlier catch-ups) — the file's total minus this is what is missing.
+  const [recon, setRecon] = useState<{ dailyTotal: number; dailyDays: number; catchupTotal: number; catchupCount: number } | null>(null);
   const [cuOpen, setCuOpen] = useState(false);
   const [cuFrom, setCuFrom] = useState(""); const [cuTo, setCuTo] = useState("");
   const [cuAmount, setCuAmount] = useState(""); const [cuNote, setCuNote] = useState("");
@@ -269,6 +271,12 @@ export default function RoundsClient({
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.ok) { setErr(humanizeApiError(j, "อ่านไฟล์ POS ไม่สำเร็จ")); return; }
       setImportKind(kind);
+      setRecon(null);
+      if (kind === "catchup" && j.periodStart && j.periodEnd) {
+        const rr = await fetch(apiUrl(`/api/accounta/revshare/catchups?partner=${partner.id}&from=${j.periodStart}&to=${j.periodEnd}`));
+        const rj = await rr.json().catch(() => ({}));
+        if (rr.ok && rj.ok) setRecon({ dailyTotal: rj.dailyTotal, dailyDays: rj.dailyDays, catchupTotal: rj.catchupTotal, catchupCount: rj.catchupCount });
+      }
       setPreview({ filename: j.filename, periodStart: j.periodStart, periodEnd: j.periodEnd, label: j.label, categories: j.categories });
       const want = new Set(partner.pos_categories.map((s) => s.toLowerCase()));
       setSelCats(new Set(j.categories.filter((c: PosCat) => want.has(c.category.toLowerCase())).map((c: PosCat) => c.category)));
@@ -323,7 +331,8 @@ export default function RoundsClient({
     const ps = preview.periodStart, pe = preview.periodEnd;
     if (importKind === "catchup") {
       await guarded(async (pin) => {
-        const r = await mutateCatchup("POST", { partner: partner.id, sales_from: ps, sales_to: pe, sales_amount: posTotal, bill_count: posBills, source: "pos_import", source_filename: preview.filename, pin });
+        // The server subtracts what is already recorded for these days, so a whole-span file never double counts.
+        const r = await mutateCatchup("POST", { partner: partner.id, sales_from: ps, sales_to: pe, file_total: posTotal, source: "pos_import", source_filename: preview.filename, pin });
         if (r.ok) setPreview(null);
         return r;
       }, { forcePrompt: true });
@@ -380,7 +389,7 @@ export default function RoundsClient({
         <div className="card space-y-3 ring-1 ring-brand/30">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="text-sm font-bold text-slate-800">{importKind === "catchup" ? "นำเข้ายอดตกสำรวจ" : "นำเข้ายอดขาย"} · {preview.label ?? "(ไม่พบวันที่)"} <span className="text-[11px] font-normal text-slate-400">{preview.filename}</span></div>
-            <button type="button" onClick={() => setPreview(null)} className="text-xs text-slate-400 hover:text-slate-700">✕ ยกเลิก</button>
+            <button type="button" onClick={() => { setPreview(null); setRecon(null); }} className="text-xs text-slate-400 hover:text-slate-700">✕ ยกเลิก</button>
           </div>
           {posMultiDay && <p className="text-[11px] text-amber-700">ไฟล์นี้ครอบหลายวัน ({preview.label}) — จะบันทึกเป็นรายการเดียว ถ้าต้องการรายวันให้ส่งออกจาก POS แบบ 1 วัน/ไฟล์</p>}
           <div className="flex items-center justify-between gap-2 flex-wrap rounded-md bg-slate-50 px-3 py-2">
@@ -420,9 +429,22 @@ export default function RoundsClient({
               </tbody>
             </table>
           </div>
+          {importKind === "catchup" && recon && (() => {
+            const missing = Math.round((posTotal - recon.dailyTotal - recon.catchupTotal) * 100) / 100;
+            return (
+              <div className={`rounded-xl border px-3 py-2 text-sm space-y-0.5 ${missing >= 0.01 ? "border-amber-300 bg-amber-50" : "border-rose-200 bg-rose-50"}`}>
+                <div className="flex justify-between"><span className="text-slate-600">ยอดรวมในไฟล์ (หมวด/ฐานที่เลือก)</span><span className="font-mono">฿{fmtMoney(posTotal)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-600">หัก ยอดรายวันที่นำเข้าแล้วในช่วงนี้ ({recon.dailyDays} วัน)</span><span className="font-mono">− ฿{fmtMoney(recon.dailyTotal)}</span></div>
+                {recon.catchupTotal > 0 && <div className="flex justify-between"><span className="text-slate-600">หัก ยอดตกสำรวจเดิมของช่วงนี้ ({recon.catchupCount} รายการ)</span><span className="font-mono">− ฿{fmtMoney(recon.catchupTotal)}</span></div>}
+                <div className="flex justify-between border-t border-amber-200 pt-1 font-bold"><span>ยอดที่ตกหล่น (จะบันทึกเป็นยอดตกสำรวจ)</span><span className="font-mono">฿{fmtMoney(Math.max(missing, 0))}</span></div>
+                {missing < 0.01 && <p className="text-[11px] text-rose-600">{missing < -0.009 ? "ยอดรายวันที่นำเข้าไว้แล้วมากกว่ายอดในไฟล์ — ตรวจหมวดสินค้า/ฐานยอดขายให้ตรงกับที่ใช้นำเข้ารายวัน" : "ไม่พบยอดที่ตกหล่นในช่วงนี้"}</p>}
+                <p className="text-[10px] text-slate-500">ระบบบอกได้แค่ยอดที่ขาด ไม่ได้บอกว่าขาดวันไหน · ยอดตกสำรวจเดิมที่ไม่ระบุวันไม่ถูกนำมาหัก</p>
+              </div>
+            );
+          })()}
           <div className="flex items-center justify-between">
-            <div className="text-sm">ยอดที่จะบันทึก: <b className="text-brand">฿{fmtMoney(posTotal)}</b> <span className="text-[11px] text-slate-400">({BASE_LABEL[base]})</span> <span className="text-[11px] text-slate-500">· จำนวนบิล <b>{posBills}</b></span></div>
-            <button type="button" onClick={confirmImport} disabled={busy || posTotal <= 0} className="btn-primary text-sm disabled:opacity-50">{importKind === "catchup" ? "ยืนยันบันทึกเป็นยอดตกสำรวจ" : "ยืนยันบันทึกยอดวันนี้"}</button>
+            <div className="text-sm">{importKind === "catchup" && recon ? "ยอดตกหล่นที่จะบันทึก:" : "ยอดที่จะบันทึก:"} <b className="text-brand">฿{fmtMoney(importKind === "catchup" && recon ? Math.max(posTotal - recon.dailyTotal - recon.catchupTotal, 0) : posTotal)}</b> <span className="text-[11px] text-slate-400">({BASE_LABEL[base]})</span> <span className="text-[11px] text-slate-500">· จำนวนบิล <b>{posBills}</b></span></div>
+            <button type="button" onClick={confirmImport} disabled={busy || posTotal <= 0 || (importKind === "catchup" && (!recon || posTotal - recon.dailyTotal - recon.catchupTotal < 0.01))} className="btn-primary text-sm disabled:opacity-50">{importKind === "catchup" ? "ยืนยันบันทึกเป็นยอดตกสำรวจ" : "ยืนยันบันทึกยอดวันนี้"}</button>
           </div>
         </div>
       )}

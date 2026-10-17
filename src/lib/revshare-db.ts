@@ -222,7 +222,32 @@ export type CatchupInput = {
   sales_from?: string | null; sales_to?: string | null; sales_amount: number; source?: "manual" | "pos_import";
   source_filename?: string | null; bill_count?: number | null; note?: string | null; counted_date?: string;
 };
-export class CatchupError extends Error { constructor(public code: "invalid_amount" | "invalid_range" | "day_has_daily") { super(code); } }
+export class CatchupError extends Error { constructor(public code: "invalid_amount" | "invalid_range" | "day_has_daily" | "nothing_missing" | "daily_exceeds_file") { super(code); } }
+
+export type CatchupReconcile = { dailyTotal: number; dailyDays: number; catchupTotal: number; catchupCount: number };
+/** What is ALREADY recorded inside [from, to]: the daily rows (by their day) and the catch-ups whose own
+ *  real-day range lies inside it. A POS file for the whole span minus these = the sales that are missing. */
+export function reconcileRange(partnerId: number, branchId: number, fromIso: string, toIso: string): CatchupReconcile | null {
+  if (!partnerGuard(partnerId, branchId)) return null;
+  const db = getDb();
+  const d = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(sales_amount), 0) AS s FROM revshare_rounds WHERE partner_id = ? AND period_start >= ? AND period_start <= ?").get(partnerId, fromIso, toIso) as { n: number; s: number };
+  const c = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(sales_amount), 0) AS s FROM revshare_catchups WHERE partner_id = ? AND sales_from IS NOT NULL AND sales_from >= ? AND sales_to <= ?").get(partnerId, fromIso, toIso) as { n: number; s: number };
+  return { dailyTotal: round2(d.s), dailyDays: d.n, catchupTotal: round2(c.s), catchupCount: c.n };
+}
+/** Record the missing part of a whole-span POS file (e.g. 1st of the month → today): the file total minus what is
+ *  already recorded for those days. Refused when nothing is missing, or when more is recorded than the file shows
+ *  (usually the wrong categories / sales base). */
+export function createCatchupFromFile(partnerId: number, branchId: number, d: { from: string; to: string; fileTotal: number; filename?: string | null; billCount?: number | null; note?: string | null; counted_date?: string }, userId: number): { id: number; amount: number; recon: CatchupReconcile } | null {
+  const recon = reconcileRange(partnerId, branchId, d.from, d.to);
+  if (!recon) return null;
+  if (d.from > d.to) throw new CatchupError("invalid_range");
+  const amount = round2(d.fileTotal - recon.dailyTotal - recon.catchupTotal);
+  if (amount < -0.009) throw new CatchupError("daily_exceeds_file");
+  if (amount < 0.01) throw new CatchupError("nothing_missing");
+  const note = [d.note?.trim(), `ไฟล์รวมช่วง ${roundLabel(d.from, d.to)}: ฿${d.fileTotal.toFixed(2)} − รายวันที่มีแล้ว ${recon.dailyDays} วัน ฿${recon.dailyTotal.toFixed(2)}${recon.catchupTotal ? ` − ยอดตกสำรวจเดิม ฿${recon.catchupTotal.toFixed(2)}` : ""}`].filter(Boolean).join(" · ");
+  const id = createCatchup(partnerId, branchId, { sales_from: d.from, sales_to: d.to, sales_amount: amount, source: "pos_import", source_filename: d.filename ?? null, bill_count: null, note, counted_date: d.counted_date }, userId);
+  return id ? { id, amount, recon } : null;
+}
 /** Record a catch-up. It counts today (Bangkok) unless `counted_date` is given (tests). A single real day that
  *  already has its own daily row is refused: that is a duplicate, not a missed day. */
 export function createCatchup(partnerId: number, branchId: number, d: CatchupInput, userId: number): number | null {
