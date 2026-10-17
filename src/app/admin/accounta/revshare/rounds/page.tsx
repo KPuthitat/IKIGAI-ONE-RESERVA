@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { isRevshareBranch, getPartner, getTiers, listRounds, listRoundsRange } from "@/lib/revshare-db";
+import { isRevshareBranch, getPartner, getTiers, listRounds, listRoundsRange, listCatchups } from "@/lib/revshare-db";
 import { projectMonthSales, shopShareStats } from "@/lib/revshare-forecast";
 import { listMonth as listShopMonth, listRange as listShopRange } from "@/lib/salesa-db";
 import { salesBaseIncludesVat, salesVat } from "@/lib/revshare";
@@ -101,6 +101,7 @@ export default function RevshareRoundsPage({ searchParams }: { searchParams: { p
         partner={partner}
         tiers={getTiers(partner.id)}
         rounds={listRounds(partner.id, branchId, year, month)}
+        catchups={listCatchups(partner.id, branchId, year, month)}
         year={year} month={month}
         operatorName={user.display_name}
         sellerName={sellerName}

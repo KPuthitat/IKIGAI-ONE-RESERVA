@@ -7,7 +7,7 @@ import { getDb } from "./db";
 import { menuRange } from "./salesa-db";
 import {
   computeSettlement, computeRoundBreakdown, roundLabel, round2,
-  groupDailyIntoWeeks, salesVat, salesBaseIncludesVat, partnerShopName,
+  groupDailyIntoWeeks, mondayOf, salesVat, salesBaseIncludesVat, partnerShopName,
   DEFAULT_TIERS, DEFAULT_FLOORS, TH_MONTHS_FULL,
   type Tier, type Floor, type SettlementResult
 } from "./revshare";
@@ -29,6 +29,11 @@ export type RsRound = {
   period_start: string; period_end: string; label: string | null;
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null;
   sent_at: string | null; bill_count: number | null;
+};
+export type RsCatchup = {
+  id: number; partner_id: number; sales_from: string | null; sales_to: string | null; counted_date: string;
+  sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null; bill_count: number | null;
+  note: string | null; created_at: string; sent_at: string | null;
 };
 export type RsSettlement = SettlementResult & {
   id: number; partner_id: number; settle_year: number; settle_month: number; op_month: number;
@@ -195,6 +200,62 @@ export function markRoundSent(roundId: number, partnerId: number, branchId: numb
     "UPDATE revshare_rounds SET sent_at = CURRENT_TIMESTAMP, sent_by = ? WHERE id = ? AND partner_id = ?"
   ).run(userId, roundId, partnerId).changes > 0;
 }
+// ── ยอดตกสำรวจ (owner 2026-10-17) ───────────────────────────────────
+// Sales found after their day was already imported/sent/settled. They live in their own table and are
+// counted in the period they are RECORDED in (counted_date), so a past round — possibly already paid or
+// rolled into a settlement — is never changed. Shown as a separate line in the weekly transfer.
+const bkkToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+const shapeCatchup = (r: any): RsCatchup => ({
+  id: r.id, partner_id: r.partner_id, sales_from: r.sales_from ?? null, sales_to: r.sales_to ?? null, counted_date: r.counted_date,
+  sales_amount: r.sales_amount, source: r.source, source_filename: r.source_filename ?? null, bill_count: r.bill_count ?? null,
+  note: r.note ?? null, created_at: r.created_at, sent_at: r.sent_at ?? null
+});
+export function listCatchups(partnerId: number, branchId: number, year: number, month: number): RsCatchup[] {
+  if (!partnerGuard(partnerId, branchId)) return [];
+  return (getDb().prepare("SELECT * FROM revshare_catchups WHERE partner_id = ? AND period_year = ? AND period_month = ? ORDER BY counted_date, id").all(partnerId, year, month) as any[]).map(shapeCatchup);
+}
+export function listCatchupsRange(partnerId: number, branchId: number, startIso: string, endIso: string): RsCatchup[] {
+  if (!partnerGuard(partnerId, branchId)) return [];
+  return (getDb().prepare("SELECT * FROM revshare_catchups WHERE partner_id = ? AND counted_date >= ? AND counted_date <= ? ORDER BY counted_date, id").all(partnerId, startIso, endIso) as any[]).map(shapeCatchup);
+}
+export type CatchupInput = {
+  sales_from?: string | null; sales_to?: string | null; sales_amount: number; source?: "manual" | "pos_import";
+  source_filename?: string | null; bill_count?: number | null; note?: string | null; counted_date?: string;
+};
+export class CatchupError extends Error { constructor(public code: "invalid_amount" | "invalid_range" | "day_has_daily") { super(code); } }
+/** Record a catch-up. It counts today (Bangkok) unless `counted_date` is given (tests). A single real day that
+ *  already has its own daily row is refused: that is a duplicate, not a missed day. */
+export function createCatchup(partnerId: number, branchId: number, d: CatchupInput, userId: number): number | null {
+  if (!partnerGuard(partnerId, branchId)) return null;
+  const amount = round2(d.sales_amount);
+  if (!(amount > 0)) throw new CatchupError("invalid_amount");
+  const from = d.sales_from || null, to = d.sales_to || d.sales_from || null;
+  if ((from && !to) || (to && !from) || (from && to && from > to)) throw new CatchupError("invalid_range");
+  const db = getDb();
+  if (from && to && from === to && db.prepare("SELECT 1 FROM revshare_rounds WHERE partner_id = ? AND period_start = ?").get(partnerId, from)) throw new CatchupError("day_has_daily");
+  const counted = d.counted_date ?? bkkToday();
+  const [y, m] = counted.split("-").map(Number);
+  return Number(db.prepare(`
+    INSERT INTO revshare_catchups (partner_id, sales_from, sales_to, counted_date, period_year, period_month, sales_amount, source, source_filename, bill_count, note, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(partnerId, from, to, counted, y, m, amount, d.source ?? "manual", d.source_filename ?? null, d.bill_count ?? null, d.note?.trim() || null, userId).lastInsertRowid);
+}
+/** Only a catch-up that has not gone out in a transfer can be removed. */
+export function deleteCatchup(id: number, partnerId: number, branchId: number): "ok" | "sent" | "not_found" {
+  if (!partnerGuard(partnerId, branchId)) return "not_found";
+  const row = getDb().prepare("SELECT sent_at FROM revshare_catchups WHERE id = ? AND partner_id = ?").get(id, partnerId) as { sent_at: string | null } | undefined;
+  if (!row) return "not_found";
+  if (row.sent_at) return "sent";
+  getDb().prepare("DELETE FROM revshare_catchups WHERE id = ?").run(id);
+  return "ok";
+}
+/** Stamp every catch-up counted in [start, end] as transferred. */
+export function markCatchupsSent(partnerId: number, branchId: number, startIso: string, endIso: string, userId: number): number {
+  if (!partnerGuard(partnerId, branchId)) return 0;
+  return getDb().prepare(`UPDATE revshare_catchups SET sent_at = COALESCE(sent_at, CURRENT_TIMESTAMP), sent_by = COALESCE(sent_by, ?)
+    WHERE partner_id = ? AND counted_date >= ? AND counted_date <= ?`).run(userId, partnerId, startIso, endIso).changes;
+}
+
 export function listRounds(partnerId: number, branchId: number, year: number, month: number): RsRound[] {
   if (!partnerGuard(partnerId, branchId)) return [];
   return (getDb().prepare(
@@ -241,6 +302,9 @@ export type TransferRoundPreview = {
   partnerName: string; shop: string; label: string;
   start: string; end: string; dayCount: number;
   rows: Array<{ date: string; sales: number; sent: boolean; billCount: number | null }>;
+  /** ยอดตกสำรวจ counted in this span — a separate line, included in totalSales. */
+  catchups: Array<{ id: number; countedDate: string; salesFrom: string | null; salesTo: string | null; sales: number; sent: boolean; note: string | null }>;
+  catchupTotal: number;
   totalSales: number;
   vatEnabled: boolean;
   vat: { base: number; vat: number; total: number };
@@ -259,7 +323,9 @@ export function previewTransferRound(
   const partner = getPartner(partnerId, branchId);
   if (!partner) return null;
   const rows = listRoundsRange(partnerId, branchId, startIso, endIso);
-  const totalSales = round2(rows.reduce((s, r) => s + r.sales_amount, 0));
+  const catchups = listCatchupsRange(partnerId, branchId, startIso, endIso);
+  const catchupTotal = round2(catchups.reduce((s, c) => s + c.sales_amount, 0));
+  const totalSales = round2(rows.reduce((s, r) => s + r.sales_amount, 0) + catchupTotal);
   const vatRate = partner.vat_enabled ? partner.vat_rate : 0;
   const vat = salesVat(totalSales, vatRate, salesBaseIncludesVat(partner.sales_base));
   const lastSent = lastTransferEnd(partnerId, branchId);
@@ -269,8 +335,10 @@ export function previewTransferRound(
     label: roundLabel(startIso, endIso), start: startIso, end: endIso,
     dayCount: Math.round((Date.parse(`${endIso}T00:00:00Z`) - Date.parse(`${startIso}T00:00:00Z`)) / 86400000) + 1,
     rows: rows.map((r) => ({ date: r.period_start, sales: r.sales_amount, sent: !!r.sent_at, billCount: r.bill_count })),
+    catchups: catchups.map((c) => ({ id: c.id, countedDate: c.counted_date, salesFrom: c.sales_from, salesTo: c.sales_to, sales: c.sales_amount, sent: !!c.sent_at, note: c.note })),
+    catchupTotal,
     totalSales, vatEnabled: partner.vat_enabled, vat,
-    alreadySentCount: rows.filter((r) => r.sent_at).length,
+    alreadySentCount: rows.filter((r) => r.sent_at).length + catchups.filter((c) => c.sent_at).length,
     suggestedStart: lastSent ? addDaysIso(lastSent, 1) : null,
     suggestedEnd: latest
   };
@@ -282,11 +350,12 @@ export function sendTransferRound(
   partnerId: number, branchId: number, startIso: string, endIso: string, userId: number
 ): number {
   if (!partnerGuard(partnerId, branchId)) return 0;
-  return getDb().prepare(`
+  const n = getDb().prepare(`
     UPDATE revshare_rounds
     SET sent_at = COALESCE(sent_at, CURRENT_TIMESTAMP), sent_by = COALESCE(sent_by, ?)
     WHERE partner_id = ? AND period_start >= ? AND period_start <= ?
   `).run(userId, partnerId, startIso, endIso).changes;
+  return n + markCatchupsSent(partnerId, branchId, startIso, endIso, userId);
 }
 
 export type RoundInput = {
@@ -364,7 +433,7 @@ export function generateAutoRounds(partnerId: number, branchId: number, year: nu
 }
 
 // ── settlement ──────────────────────────────────────────────────────
-export type WeekBreakdown = { label: string; start: string; end: string; sales: number; roundGP: number; gpPct: number };
+export type WeekBreakdown = { label: string; start: string; end: string; sales: number; roundGP: number; gpPct: number; /** ยอดตกสำรวจ inside `sales` (counted in this week) */ catchup: number };
 export type SettlementPreview = {
   result: SettlementResult;
   breakdown: WeekBreakdown[];   // weekly transfer + GP (owner 2026-06-23: daily → weekly → monthly)
@@ -469,7 +538,7 @@ export function monthPickerOptions(
   for (let i = 0; i <= lookback; i++) {
     const b = monthsBefore(anchorY, anchorM, i);
     const ym = monthKey(b.y, b.m);
-    const sales = round2(listRounds(partnerId, branchId, b.y, b.m).reduce((s, r) => s + r.sales_amount, 0));
+    const sales = round2(listRounds(partnerId, branchId, b.y, b.m).reduce((s, r) => s + r.sales_amount, 0) + listCatchups(partnerId, branchId, b.y, b.m).reduce((s, c) => s + c.sales_amount, 0));
     opts.push({
       ym, year: b.y, month: b.m, label: `${TH_MONTHS_FULL[b.m]} พ.ศ. ${b.y + 543}`,
       sales, settled: i > 0 && blocked.has(ym), isAnchor: i === 0
@@ -519,7 +588,10 @@ export function previewSettlement(
   const rounds: RsRound[] = [];
   for (const k of covered) { const p = parseMonthKey(k)!; rounds.push(...listRounds(partnerId, branchId, p.y, p.m)); }
   rounds.sort((a, b) => (a.period_start < b.period_start ? -1 : 1));
-  const totalSales = rounds.reduce((sum, r) => sum + r.sales_amount, 0);
+  // ยอดตกสำรวจ counts in the month it was recorded (never in a closed past month) — owner 2026-10-17.
+  const catchups: RsCatchup[] = [];
+  for (const k of covered) { const p = parseMonthKey(k)!; catchups.push(...listCatchups(partnerId, branchId, p.y, p.m)); }
+  const totalSales = rounds.reduce((sum, r) => sum + r.sales_amount, 0) + catchups.reduce((sum, c) => sum + c.sales_amount, 0);
   // Staff drink welfare is NOT part of the monthly GP settlement (owner
   // 2026-07-30) — it is its own report/card read from the redemptions, on the
   // weekly-transfer cadence. So this settlement stays GP-only (no drink line).
@@ -530,11 +602,24 @@ export function previewSettlement(
   // Group the covered daily entries into ISO weeks (= the weekly transfer),
   // then split GP per week via cumulative-difference so weeks sum to the
   // combined tier GP.
-  const weeks = groupDailyIntoWeeks(rounds.map((r) => ({ date: r.period_start, amount: r.sales_amount })));
+  const dailyWeeks = groupDailyIntoWeeks(rounds.map((r) => ({ date: r.period_start, amount: r.sales_amount })));
+  // Catch-ups join the week of the day they were recorded. The week's label/start/end keep following the daily
+  // rows, so existing weekly sends still match; a week that only has catch-ups gets its own entry.
+  const weeks = dailyWeeks.map((w) => ({ ...w, catchup: 0 }));
+  for (const c of catchups) {
+    const wk = mondayOf(c.counted_date);
+    let g = weeks.find((w) => w.weekStart === wk);
+    if (!g) { g = { weekStart: wk, start: c.counted_date, end: c.counted_date, label: roundLabel(c.counted_date, c.counted_date), sales: 0, catchup: 0 }; weeks.push(g); }
+    if (c.counted_date < g.start && !dailyWeeks.some((w) => w.weekStart === wk)) g.start = c.counted_date;
+    if (c.counted_date > g.end && !dailyWeeks.some((w) => w.weekStart === wk)) g.end = c.counted_date;
+    g.sales = round2(g.sales + c.sales_amount); g.catchup = round2(g.catchup + c.sales_amount);
+  }
+  weeks.sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  for (const g of weeks) if (!dailyWeeks.some((w) => w.weekStart === g.weekStart)) g.label = roundLabel(g.start, g.end);
   const rb = computeRoundBreakdown(weeks.map((w) => w.sales), tiers);
   const breakdown: WeekBreakdown[] = rb.map((row, i) => ({
     label: weeks[i].label, start: weeks[i].start, end: weeks[i].end,
-    sales: row.sales, roundGP: row.roundGP, gpPct: row.gpPct
+    sales: row.sales, roundGP: row.roundGP, gpPct: row.gpPct, catchup: weeks[i].catchup
   }));
   const stale = !!stored &&
     (round2(stored.totalSales) !== result.totalSales || !sameKeySet(stored.covered_months, covered));

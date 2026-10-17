@@ -4,7 +4,7 @@
 
 import { sendLinePush } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
-import { salesVat } from "./revshare";
+import { salesVat, round2 } from "./revshare";
 
 type FlexMsg = { type: "flex"; altText: string; contents: unknown };
 
@@ -138,10 +138,13 @@ export function revshareDailyFlex(d: DailyCard): FlexMsg {
 export type WeeklyCard = {
   shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number;
   salesIncludesVat?: boolean; categories?: CategorySale[];
+  /** ยอดตกสำรวจ included in transferAmount — printed as its own line (owner 2026-10-17). */
+  catchupAmount?: number;
 };
 export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
   const v = salesVat(d.transferAmount, d.vatRate, d.salesIncludesVat ?? false);
   const catBox = categoryBox(d.categories);
+  const cu = d.catchupAmount && d.catchupAmount > 0 ? salesVat(d.catchupAmount, d.vatRate, d.salesIncludesVat ?? false) : null;
   return {
     type: "flex",
     altText: `สรุปยอดขายประจำสัปดาห์ ${d.weekLabel} · ${d.shop} · ${baht(d.transferAmount)}`,
@@ -154,6 +157,10 @@ export function revshareWeeklyFlex(d: WeeklyCard): FlexMsg {
           { type: "text", text: d.shop, weight: "bold", size: "lg", wrap: true },
           { type: "text", text: `สรุปโดย: ${d.sellerName} · รวม ${d.dayCount} วัน`, size: "xxs", color: "#999999", wrap: true },
           sep,
+          ...(cu ? [
+            kv("ยอดขายของสัปดาห์ (รวม VAT)", baht(round2(v.total - cu.total))),
+            kv("ยอดตกสำรวจ (ย้อนหลัง · รวม VAT)", baht(cu.total))
+          ] : []),
           kv("ยอดขายรวมสัปดาห์ (รวม VAT)", baht(v.total), { bold: true }),
           kv("ยอดขายก่อนภาษี", baht(v.base), { size: "xs" }),
           kv("VAT 7%", baht(v.vat), { size: "xs" }),

@@ -16,7 +16,7 @@ type Result = {
   avgGpPct: number; vatAmount: number; whtAmount: number; netAmount: number;
   drinkPassthrough: number; drinkInputVat: number; netAfterDrinks: number;
 };
-type BreakRow = { label: string; start: string; end: string; sales: number; roundGP: number; gpPct: number };
+type BreakRow = { label: string; start: string; end: string; sales: number; roundGP: number; gpPct: number; catchup?: number };
 type Stored = { status: "draft" | "issued" | "paid"; invoice_no: string | null; issued_at: string | null; paid_at: string | null } | null;
 type Preview = { result: Result; breakdown: BreakRow[]; opMonth: number; months: string[]; stored: Stored; stale: boolean };
 type MonthOption = { ym: string; year: number; month: number; label: string; sales: number; settled: boolean; isAnchor: boolean };
@@ -229,7 +229,7 @@ export default function SettlementClient({
               <tbody>
                 {pv.breakdown.map((b, i) => (
                   <tr key={i} className="border-b border-slate-50">
-                    <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">{b.label}</td>
+                    <td className="py-1.5 px-2 text-slate-600 whitespace-nowrap">{b.label}{!!b.catchup && b.catchup > 0 && <div className="text-[10px] text-amber-700">รวมยอดตกสำรวจ ฿{fmtMoney(b.catchup)}</div>}</td>
                     <td className="py-1.5 px-2 text-right font-mono">{fmtMoney(b.sales)}</td>
                     <td className="py-1.5 px-2 text-right font-mono text-emerald-700">{fmtMoney(b.roundGP)}</td>
                     <td className="py-1.5 px-2 text-right font-mono text-slate-500">{(b.gpPct * 100).toFixed(1)}%</td>

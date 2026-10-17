@@ -1740,6 +1740,29 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_revshare_rounds_partner
       ON revshare_rounds(partner_id, period_year, period_month);
 
+    -- ยอดตกสำรวจ (owner 2026-10-17): sales found AFTER their day/round was already imported, sent, paid or
+    -- settled. Kept apart from revshare_rounds so past rounds are never touched; it counts in the period it is
+    -- RECORDED (counted_date) — the weekly transfer, the monthly share/tier calculation and the transfer round.
+    CREATE TABLE IF NOT EXISTS revshare_catchups (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      partner_id      INTEGER NOT NULL REFERENCES revshare_partners(id) ON DELETE CASCADE,
+      sales_from      TEXT,                                 -- real sales day(s) the amount belongs to; NULL = unknown
+      sales_to        TEXT,
+      counted_date    TEXT NOT NULL,                        -- YYYY-MM-DD (Bangkok) it was recorded = the period it counts in
+      period_year     INTEGER NOT NULL,
+      period_month    INTEGER NOT NULL,
+      sales_amount    REAL NOT NULL,
+      source          TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','pos_import')),
+      source_filename TEXT,
+      bill_count      INTEGER,
+      note            TEXT,
+      created_by      INTEGER REFERENCES users(id),
+      created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      sent_at         TEXT,
+      sent_by         INTEGER REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_revshare_catchups_partner ON revshare_catchups(partner_id, counted_date);
+
     CREATE TABLE IF NOT EXISTS revshare_settlements (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       partner_id    INTEGER NOT NULL REFERENCES revshare_partners(id) ON DELETE CASCADE,

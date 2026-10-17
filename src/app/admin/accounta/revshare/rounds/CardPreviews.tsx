@@ -89,15 +89,18 @@ export function DailyCardPreview({ shop, sellerName, dateLabel, sales, vatRate, 
   );
 }
 
-export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount, dayCount, vatRate, salesIncludesVat = false, partnerId, start, end, showCategories = true }: {
-  shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number; salesIncludesVat?: boolean; partnerId: number; start: string; end: string; showCategories?: boolean;
+export function WeeklyCardPreview({ shop, sellerName, weekLabel, transferAmount, dayCount, vatRate, salesIncludesVat = false, partnerId, start, end, showCategories = true, catchupAmount = 0 }: {
+  shop: string; sellerName: string; weekLabel: string; transferAmount: number; dayCount: number; vatRate: number; salesIncludesVat?: boolean; partnerId: number; start: string; end: string; showCategories?: boolean; catchupAmount?: number;
 }) {
   const v = salesVat(transferAmount, vatRate, salesIncludesVat);
+  const cu = catchupAmount > 0 ? salesVat(catchupAmount, vatRate, salesIncludesVat) : null;
   return (
     <Shell title="สรุปยอดขายประจำสัปดาห์" subtitle={weekLabel}>
       <div className="text-[15px] font-bold text-slate-800 leading-tight">{shop}</div>
       <div className="text-[10px] text-slate-400">สรุปโดย: {sellerName} · รวม {dayCount} วัน</div>
       <div className="border-t border-slate-100 my-1" />
+      {cu && <Row label="ยอดขายของสัปดาห์ (รวม VAT)" value={baht(v.total - cu.total)} />}
+      {cu && <Row label="ยอดตกสำรวจ (ย้อนหลัง · รวม VAT)" value={baht(cu.total)} />}
       <Row label="ยอดขายรวมสัปดาห์ (รวม VAT)" value={baht(v.total)} bold />
       <Row label="ยอดขายก่อนภาษี" value={baht(v.base)} />
       <Row label="VAT 7%" value={baht(v.vat)} />
