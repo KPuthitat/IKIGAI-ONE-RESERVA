@@ -42,7 +42,7 @@ export type CatchupBreakdown = {
 export type RsCatchup = {
   id: number; partner_id: number; sales_from: string | null; sales_to: string | null; counted_date: string;
   sales_amount: number; source: "manual" | "pos_import"; source_filename: string | null; bill_count: number | null;
-  note: string | null; created_at: string; sent_at: string | null; breakdown: CatchupBreakdown | null;
+  note: string | null; created_at: string; sent_at: string | null; reported_at: string | null; breakdown: CatchupBreakdown | null;
 };
 export type RsSettlement = SettlementResult & {
   id: number; partner_id: number; settle_year: number; settle_month: number; op_month: number;
@@ -217,7 +217,7 @@ const bkkToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0
 const shapeCatchup = (r: any): RsCatchup => ({
   id: r.id, partner_id: r.partner_id, sales_from: r.sales_from ?? null, sales_to: r.sales_to ?? null, counted_date: r.counted_date,
   sales_amount: r.sales_amount, source: r.source, source_filename: r.source_filename ?? null, bill_count: r.bill_count ?? null,
-  note: r.note ?? null, created_at: r.created_at, sent_at: r.sent_at ?? null, breakdown: parseBreakdown(r.breakdown)
+  note: r.note ?? null, created_at: r.created_at, sent_at: r.sent_at ?? null, reported_at: r.reported_at ?? null, breakdown: parseBreakdown(r.breakdown)
 });
 function parseBreakdown(s: string | null | undefined): CatchupBreakdown | null {
   if (!s) return null;
@@ -322,6 +322,16 @@ export function createCatchup(partnerId: number, branchId: number, d: CatchupInp
     INSERT INTO revshare_catchups (partner_id, sales_from, sales_to, counted_date, period_year, period_month, sales_amount, source, source_filename, bill_count, note, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(partnerId, from, to, counted, y, m, amount, d.source ?? "manual", d.source_filename ?? null, d.bill_count ?? null, d.note?.trim() || null, userId).lastInsertRowid);
+}
+export function getCatchup(id: number, partnerId: number, branchId: number): RsCatchup | null {
+  if (!partnerGuard(partnerId, branchId)) return null;
+  const r = getDb().prepare("SELECT * FROM revshare_catchups WHERE id = ? AND partner_id = ?").get(id, partnerId);
+  return r ? shapeCatchup(r) : null;
+}
+/** Stamp that the catch-up's own report card went to the partner's group (re-sending just moves the stamp). */
+export function markCatchupReported(id: number, partnerId: number, branchId: number): boolean {
+  if (!partnerGuard(partnerId, branchId)) return false;
+  return getDb().prepare("UPDATE revshare_catchups SET reported_at = CURRENT_TIMESTAMP WHERE id = ? AND partner_id = ?").run(id, partnerId).changes > 0;
 }
 /** Only a catch-up that has not gone out in a transfer can be removed. */
 export function deleteCatchup(id: number, partnerId: number, branchId: number): "ok" | "sent" | "not_found" {

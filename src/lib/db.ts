@@ -1792,6 +1792,8 @@ function runMigrations(db: Database.Database): void {
   // missing amount of a whole-span POS file came from (owner 2026-10-17).
   const cuCols = db.prepare("PRAGMA table_info(revshare_catchups)").all() as Array<{ name: string }>;
   if (!cuCols.some((c) => c.name === "breakdown")) db.exec("ALTER TABLE revshare_catchups ADD COLUMN breakdown TEXT");
+  // reported_at — when its own report card was pushed to the partner's LINE group (owner 2026-10-17); NOT the same as sent_at (= transferred).
+  if (!cuCols.some((c) => c.name === "reported_at")) db.exec("ALTER TABLE revshare_catchups ADD COLUMN reported_at TEXT");
 
   // ── IR — Incident Report / Risk Management ───────────────────────
   // Owner 2026-08: staff file an อุบัติการณ์/near-miss report (แนว รพ. IR),

@@ -66,5 +66,16 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("the catch-up records which category the shortfall equals", (() => { const c = R.listCatchups(p2, branch, 2026, 10).find((x) => x.id === withCats.id)!; return c.breakdown?.exact?.length === 1 && c.breakdown.exact[0].name === "X - DESSERTS" && c.breakdown.dates.join() === "2026-10-02,2026-10-03"; })());
   ok("the partner card text names it", R.catchupCategoryText(R.listCatchups(p2, branch, 2026, 10)) === "X - DESSERTS");
   ok("a transfer round preview carries the same text", R.previewTransferRound(p2, branch, "2026-10-14", "2026-10-16")!.catchupCategories === "X - DESSERTS");
+  // report to the partner group: its own card, stamps reported_at but never "transferred"
+  const L = await import("../src/lib/revshare-line");
+  const cu = R.getCatchup(withCats.id, p2, branch)!;
+  const card = JSON.stringify(L.revshareCatchupFlex({ shop: "X", sellerName: "HYPO", amount: cu.sales_amount, vatRate: 0.07, salesLabel: "1–3 ต.ค.", recordedLabel: "15 ต.ค.", categories: R.catchupCategoryText([cu]), note: cu.note }));
+  ok("the catch-up report card carries the amount with VAT, the days and the category", card.includes("ยอดตกสำรวจ") && card.includes("267.50") && card.includes("1–3 ต.ค.") && card.includes("X - DESSERTS"));
+  ok("another branch cannot read a catch-up to report it", R.getCatchup(withCats.id, p2, branch + 99) === null);
+  ok("sending the report stamps reported_at but leaves it untransferred and removable", (() => {
+    R.markCatchupReported(withCats.id, p2, branch);
+    const c = R.getCatchup(withCats.id, p2, branch)!;
+    return c.reported_at !== null && c.sent_at === null && R.deleteCatchup(withCats.id, p2, branch) === "ok";
+  })());
   cleanup(); process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); cleanup(); process.exit(1); });
