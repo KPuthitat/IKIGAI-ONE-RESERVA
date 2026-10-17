@@ -43,6 +43,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   // switch on → waits for the roster
   D.enableMonth({ branchId: nama, yearMonth: YM, actorId: owner, asOf: NOW });
   ok("on but unpublished: still awaiting the roster", D.getMonth(nama, YM).status === "awaiting_roster");
+  ok("a branch with shifts on its roster for the month is ready to open; one without is not", H.branchHasRoster(nama, YM) === true && H.branchHasRoster(nama, "2027-03") === false);
   const pub = H.openBookingOnPublish({ branchId: nama, yearMonth: YM, actorId: owner, nowIso: "2026-11-27T03:00:00.000Z" });
   ok("publishing opens booking", pub.opened && D.getMonth(nama, YM).status === "booking_open");
   ok("a late publication still gives the minimum window (27th + 3 days)", pub.closeDate === "2026-11-30" && D.getMonth(nama, YM).bookingCloseDate === "2026-11-30");

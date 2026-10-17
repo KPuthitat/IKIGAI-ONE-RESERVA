@@ -43,6 +43,12 @@ export function releaseInvalidDutyDays(branchId: number, date: string): Released
   return out;
 }
 
+/** Has this branch put any working shift on its roster for the month? */
+export function branchHasRoster(branchId: number, ym: string): boolean {
+  return !!getDb().prepare(`SELECT 1 FROM roster_assignments a JOIN shift_codes s ON s.id = a.shift_code_id
+     WHERE a.branch_id = ? AND substr(a.assignment_date, 1, 7) = ? AND s.kind = 'work' LIMIT 1`).get(branchId, ym);
+}
+
 /** People on this branch's roster in the month who may take at least one active position. */
 export function bookingAudience(branchId: number, ym: string): Array<{ userId: number; lineUserId: string | null }> {
   const positions = listPositions(branchId, ym, { activeOnly: true });
