@@ -49,6 +49,15 @@ export default function ClinicaImportClient({ onImported }: { onImported?: (targ
         const fd = new FormData();
         fd.append("file", f);
         const res = await fetch(apiUrl("/api/admin/reporta/clinica-import"), { method: "POST", body: fd });
+        // A lapsed login (or an account without the REPORTA permission) is answered with a redirect to a page, which
+        // fetch follows — it arrives as "200 + HTML", not as JSON. Say what happened instead of "รหัส 200".
+        if (res.redirected || !(res.headers.get("content-type") ?? "").includes("json")) {
+          failed.push(f);
+          if (!firstErr) firstErr = res.url.includes("forbidden_module")
+            ? `${f.name}: บัญชีนี้ไม่มีสิทธิ์นำเข้าข้อมูล REPORTA ของสาขานี้`
+            : `${f.name}: หมดเวลาเข้าสู่ระบบ — รีเฟรชหน้า (Ctrl+F5) แล้วเข้าสู่ระบบใหม่ จากนั้นลองนำเข้าอีกครั้ง`;
+          continue;
+        }
         const j = await res.json().catch(() => ({}));
         if (res.ok && j.ok) {
           imported.push(...((j.imported ?? []) as Result[]));
