@@ -9,7 +9,7 @@ import Switch from "@/app/components/Switch";
 
 type Position = { id: number; slotNo: number; name: string; description: string | null; dailyRate: number; eligibleGroups: string[] | null; active: boolean };
 type Data = {
-  isOwner: boolean; config: Record<string, number> | null; branches: Array<{ id: number; name: string }>; branchId: number;
+  isOwner: boolean; config: Record<string, number> | null; branchConfig: Record<string, { value: number; global: number; overridden: boolean }>; branches: Array<{ id: number; name: string }>; branchId: number;
   month: { enabled: boolean; status: string; bookingCloseDate: string | null }; positions: Position[]; workGroups: string[];
 };
 
@@ -49,6 +49,7 @@ export default function Client({ month, branch }: { month: string; branch: numbe
   const [busy, setBusy] = useState(false);
   const [drafts, setDrafts] = useState<Record<number, { name: string; description: string; rate: string; groups: string[] | null; active: boolean }>>({});
   const [cfg, setCfg] = useState<Record<string, string>>({});
+  const [bcfg, setBcfg] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const r = await fetch(apiUrl(`/api/admin/persona/special-duty/settings?month=${month}${branch ? `&branch=${branch}` : ""}`), { cache: "no-store" });
@@ -58,9 +59,10 @@ export default function Client({ month, branch }: { month: string; branch: numbe
     const d: typeof drafts = {};
     for (const slot of [1, 2, 3]) {
       const p = (j as Data).positions.find((x) => x.slotNo === slot);
-      d[slot] = { name: p?.name ?? "", description: p?.description ?? "", rate: String(p?.dailyRate ?? j.config?.default_daily_rate ?? 150), groups: p?.eligibleGroups ?? null, active: p?.active ?? true };
+      d[slot] = { name: p?.name ?? "", description: p?.description ?? "", rate: String(p?.dailyRate ?? j.branchConfig?.default_daily_rate?.value ?? j.config?.default_daily_rate ?? 150), groups: p?.eligibleGroups ?? null, active: p?.active ?? true };
     }
     setDrafts(d);
+    if (j.branchConfig) setBcfg(Object.fromEntries(Object.entries(j.branchConfig as Data["branchConfig"]).map(([k, v]) => [k, String(v.value)])));
     if (j.config) setCfg(Object.fromEntries(Object.entries(j.config as Record<string, number>).map(([k, v]) => [k, String(v)])));
   }, [month, branch]);
   useEffect(() => { load(); }, [load]);
@@ -153,10 +155,31 @@ export default function Client({ month, branch }: { month: string; branch: numbe
         </div>
       </section>
 
+      <section className="card space-y-3">
+        <h2 className="font-bold text-slate-800">เกณฑ์ของสาขานี้ <span className="text-sm font-normal text-slate-500">({data.branches.find((b) => b.id === data.branchId)?.name})</span></h2>
+        <p className="text-sm text-slate-500">แต่ละสาขาตั้งค่าของตัวเองได้ ไม่กระทบสาขาอื่น ถ้าไม่ตั้ง สาขานี้ใช้ค่ากลางที่แสดงข้างล่างแต่ละรายการ การเปลี่ยนมีผลกับการคำนวณต่อจากนี้ และบันทึกประวัติไว้</p>
+        {Object.keys(data.branchConfig).map((k) => {
+          const c = data.branchConfig[k];
+          return (
+            <div key={k} className="flex items-center justify-between gap-3 border-t border-[color:var(--card-border)] pt-2.5 first:border-0 first:pt-0">
+              <label className="text-sm text-slate-700 flex-1" htmlFor={`bcfg-${k}`}>
+                {CONFIG_LABEL[k] ?? k}
+                <span className={`ml-2 tag ${c.overridden ? "tag-brand" : "tag-mute"}`}>{c.overridden ? `ตั้งเอง (ค่ากลาง ${c.global})` : `ใช้ค่ากลาง ${c.global}`}</span>
+              </label>
+              <input id={`bcfg-${k}`} type="number" min="0" className="input !w-24 !py-1.5 text-right" value={bcfg[k] ?? ""} onChange={(e) => setBcfg((s) => ({ ...s, [k]: e.target.value }))} />
+              <button type="button" className="btn-secondary !py-1.5 !px-4" disabled={busy || bcfg[k] === String(c.value) || bcfg[k] === ""}
+                onClick={() => post({ action: "set_branch_config", branch_id: data.branchId, key: k, value: Number(bcfg[k]) }, "บันทึกเกณฑ์ของสาขาแล้ว")}>บันทึก</button>
+              {c.overridden && <button type="button" className="text-xs text-slate-500 hover:text-brand hover:underline whitespace-nowrap" disabled={busy}
+                onClick={() => post({ action: "set_branch_config", branch_id: data.branchId, key: k, value: null }, "กลับไปใช้ค่ากลางแล้ว")}>ใช้ค่ากลาง</button>}
+            </div>
+          );
+        })}
+      </section>
+
       {data.isOwner && data.config && (
         <section className="card space-y-3">
-          <h2 className="font-bold text-slate-800">เกณฑ์ของระบบ <span className="text-sm font-normal text-slate-500">(เฉพาะเจ้าของ)</span></h2>
-          <p className="text-sm text-slate-500">ค่าเหล่านี้ใช้กับทุกสาขา การเปลี่ยนมีผลกับการคำนวณต่อจากนี้ และบันทึกประวัติไว้</p>
+          <h2 className="font-bold text-slate-800">ค่ากลาง <span className="text-sm font-normal text-slate-500">(เฉพาะเจ้าของ)</span></h2>
+          <p className="text-sm text-slate-500">ใช้กับสาขาที่ไม่ได้ตั้งค่าของตัวเอง การเปลี่ยนมีผลกับการคำนวณต่อจากนี้ และบันทึกประวัติไว้</p>
           {Object.keys(data.config).map((k) => (
             <div key={k} className="flex items-center justify-between gap-3 border-t border-[color:var(--card-border)] pt-2.5 first:border-0 first:pt-0">
               <label className="text-sm text-slate-700 flex-1" htmlFor={`cfg-${k}`}>{CONFIG_LABEL[k] ?? k}</label>

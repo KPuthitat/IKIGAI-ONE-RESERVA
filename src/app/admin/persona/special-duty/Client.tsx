@@ -24,7 +24,7 @@ const HEAD = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 const DAY_STATUS: Record<string, string> = {
   booked: "รอปฏิบัติงาน", assigned: "รอปฏิบัติงาน", covered: "มีผู้แทน รอปฏิบัติงาน", submitted: "ส่งหลักฐานแล้ว รอตรวจ", approved: "ตรวจรับแล้ว", absent: "ขาดปฏิบัติงาน"
 };
-const ERR: Record<string, string> = { unfilled_days: "ยังมีวันที่ว่างอยู่", invalid_transition: "ขั้นตอนนี้ทำไม่ได้ในสถานะปัจจุบัน", not_removable: "ถอนไม่ได้ เพราะมีการส่งหลักฐานแล้ว", wrong_stage: "ถอนได้ก่อนประกาศตารางเท่านั้น", not_found: "ไม่พบรายการ" };
+const ERR: Record<string, string> = { invalid_date: "วันปิดรับไม่ถูกต้อง (ต้องไม่เป็นวันที่ผ่านมาแล้ว และอยู่ภายในเดือนนั้น)", unfilled_days: "ยังมีวันที่ว่างอยู่", invalid_transition: "ขั้นตอนนี้ทำไม่ได้ในสถานะปัจจุบัน", not_removable: "ถอนไม่ได้ เพราะมีการส่งหลักฐานแล้ว", wrong_stage: "ถอนได้ก่อนประกาศตารางเท่านั้น", not_found: "ไม่พบรายการ" };
 
 export default function Client({ month }: { month: string }) {
   const router = useRouter();
@@ -38,6 +38,7 @@ export default function Client({ month }: { month: string }) {
   const [photos, setPhotos] = useState<Array<{ id: number }>>([]);
   const [rejectNote, setRejectNote] = useState("");
   const [subs, setSubs] = useState<Array<{ id: number; name: string }> | null>(null);
+  const [closeDate, setCloseDate] = useState("");   // this branch's own closing day (booking stage)
 
   const load = useCallback(async () => {
     const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}`), { cache: "no-store" });
@@ -54,7 +55,7 @@ export default function Client({ month }: { month: string }) {
     setBusy(false);
     return { ok: r.ok, j };
   }
-  const done = async (text: string) => { setMsg({ ok: true, text }); setPlan(null); setPick(null); setSelected(null); setPhotos([]); setRejectNote(""); setSubs(null); await load(); router.refresh(); };
+  const done = async (text: string) => { setMsg({ ok: true, text }); setCloseDate(""); setPlan(null); setPick(null); setSelected(null); setPhotos([]); setRejectNote(""); setSubs(null); await load(); router.refresh(); };
   const open_ = async (row: Row) => {
     setSelected(row); setPick(null); setPhotos([]); setRejectNote(""); setSubs(null);
     if (row.evidenceCount > 0) { const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&photos=${row.id}`), { cache: "no-store" }); const j = await r.json(); setPhotos(j.photos ?? []); }
@@ -99,9 +100,10 @@ export default function Client({ month }: { month: string }) {
             {st === "awaiting_roster" && (
               <>
                 <p className="text-sm text-slate-600">เมื่อประกาศตารางงานประจำเดือนของสาขานี้ ระบบจะเปิดให้พนักงานเลือกวันและแจ้งผ่าน LINE ให้โดยอัตโนมัติ หรือกดปุ่มด้านล่างเพื่อเปิดให้เลือกวันของสาขานี้ทันที (แต่ละสาขาเปิดแยกกัน ไม่เกี่ยวกับสาขาอื่น)</p>
+                <label className="field !w-auto max-w-[16rem]"><span>วันปิดรับของสาขานี้ <span className="text-slate-400">(เว้นว่าง = ตามเกณฑ์ของสาขา)</span></span><input type="date" value={closeDate} onChange={(e) => setCloseDate(e.target.value)} /></label>
                 <button type="button" className="btn-primary" disabled={busy} onClick={async () => {
                   if (!window.confirm("เปิดให้พนักงานสาขานี้เลือกวัน และส่งข้อความ LINE ให้พนักงานที่มีสิทธิ์ตอนนี้เลยไหม")) return;
-                  const r = await act({ action: "open_booking" });
+                  const r = await act({ action: "open_booking", ...(closeDate ? { close_date: closeDate } : {}) });
                   if (!r.ok) { setMsg({ ok: false, text: r.j.error === "no_roster" ? "สาขานี้ยังไม่มีตารางงานของเดือนนี้ ลงตารางงานก่อนจึงเปิดให้เลือกวันได้" : r.j.error === "not_awaiting_roster" ? "เดือนนี้เปิดให้เลือกวันไปแล้ว" : "เปิดไม่สำเร็จ" }); return; }
                   const { recipients = 0, sent = 0, noLine = 0 } = r.j as { recipients?: number; sent?: number; noLine?: number };
                   done(`เปิดให้เลือกวันแล้ว · ส่ง LINE ${sent}/${recipients} คน${noLine ? ` (ไม่มี LINE ${noLine} คน — เข้าเลือกได้เองในระบบ)` : ""}`);
@@ -111,6 +113,13 @@ export default function Client({ month }: { month: string }) {
             {st === "booking_open" && (
               <>
                 <p className="text-sm text-slate-600">พนักงานเลือกวันเองได้จนถึงวันปิดรับ ท่านเพิ่มผู้ปฏิบัติงานเองได้ด้วยการกดช่อง “ว่าง” ในปฏิทินด้านล่าง ระบบจะปิดรับการเลือกวันเองเมื่อพ้นวันที่กำหนด</p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="field !w-auto max-w-[16rem]"><span>วันปิดรับของสาขานี้</span><input type="date" value={closeDate || data.month.bookingCloseDate || ""} onChange={(e) => setCloseDate(e.target.value)} /></label>
+                  <button type="button" className="btn-secondary" disabled={busy || !closeDate || closeDate === data.month.bookingCloseDate} onClick={async () => {
+                    const r = await act({ action: "set_close_date", close_date: closeDate });
+                    r.ok ? done(`ตั้งวันปิดรับเป็น ${fmtDate(closeDate)} แล้ว`) : setMsg({ ok: false, text: ERR[r.j.error] ?? "ตั้งวันปิดรับไม่สำเร็จ" });
+                  }}>ตั้งวันปิดรับ</button>
+                </div>
                 <div className="flex flex-wrap gap-2">
                 <button type="button" className="btn-primary" disabled={busy} onClick={async () => {
                   if (!window.confirm("ส่งข้อความ LINE ให้พนักงานที่มีสิทธิ์เข้ามาเลือกวันตำแหน่งงานค่าตอบแทนพิเศษตอนนี้เลยไหม")) return;

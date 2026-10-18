@@ -3291,6 +3291,17 @@ function runMigrations(db: Database.Database): void {
       ('evidence_max_photos', '5'),
       ('evidence_deadline_days', '1');
 
+    -- Per-branch overrides of the criteria above (owner 2026-10-18: "ตั้งค่าสาขาใครสาขามัน"). A branch without a row
+    -- for a key uses the global value in special_duty_config.
+    CREATE TABLE IF NOT EXISTS special_duty_branch_config (
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      updated_by INTEGER REFERENCES users(id),
+      updated_at TEXT,
+      PRIMARY KEY (branch_id, key)
+    );
+
     CREATE TABLE IF NOT EXISTS special_duty_months (
       branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
       year_month TEXT NOT NULL,

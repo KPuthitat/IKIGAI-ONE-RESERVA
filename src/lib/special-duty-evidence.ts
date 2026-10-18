@@ -83,7 +83,7 @@ const performerOf = (d: DayRow) => d.performer_user_id ?? d.user_id;
 /** Last day evidence may be sent: the day after the duty — or, after the manager sent it back, the day after that. */
 function submitDeadline(d: DayRow): string {
   const base = d.reviewed_at && d.reviewed_at.slice(0, 10) > d.duty_date ? new Date(Date.parse(d.reviewed_at) + 7 * 3600_000).toISOString().slice(0, 10) : d.duty_date;
-  return addDays(base, cfgNum("evidence_deadline_days"));
+  return addDays(base, cfgNum("evidence_deadline_days", d.branch_id));
 }
 
 const WORKING = ["special_published", "in_progress"];
@@ -103,8 +103,8 @@ export function submitEvidence(args: { dayId: number; userId: number; photos: st
   if (today > submitDeadline(d)) throw new EvidenceError("deadline_passed");
   if (!args.noPeopleConfirmed) throw new EvidenceError("no_people_not_confirmed");
   const photos = args.photos ?? [];
-  if (photos.length < cfgNum("evidence_min_photos")) throw new EvidenceError("photos_required");
-  if (photos.length > cfgNum("evidence_max_photos")) throw new EvidenceError("too_many_photos");
+  if (photos.length < cfgNum("evidence_min_photos", d.branch_id)) throw new EvidenceError("photos_required");
+  if (photos.length > cfgNum("evidence_max_photos", d.branch_id)) throw new EvidenceError("too_many_photos");
   for (const p of photos) decodePhoto(p);   // format and size first, so a bad file is reported as such
   if (!wasPresent(args.userId, d.branch_id, d.duty_date)) throw new EvidenceError("not_present");
 
@@ -175,7 +175,7 @@ function substituteProblem(d: DayRow, performerId: number): EvidenceErrorCode | 
   if (!u || !eligible || !isOnRoster(u.id, d.branch_id, d.duty_date) || isOnApprovedLeave(u.id, d.duty_date)) return "substitute_invalid";
   const busy = (db.prepare(`SELECT COUNT(*) n FROM special_duty_days WHERE duty_date = ? AND id != ? AND status != 'absent' AND (user_id = ? OR performer_user_id = ?)`)
     .get(d.duty_date, d.id, u.id, u.id) as { n: number }).n;
-  if (busy + 1 > cfgNum("max_positions_per_person_per_day")) return "substitute_busy";
+  if (busy + 1 > cfgNum("max_positions_per_person_per_day", d.branch_id)) return "substitute_busy";
   return null;
 }
 
@@ -195,7 +195,7 @@ export function assignSubstitute(args: { dayId: number; branchId: number; perfor
   const month = getMonth(d.branch_id, d.year_month);
   if (!WORKING.includes(month.status)) throw new EvidenceError("wrong_stage");
   const today = args.today ?? bkkToday();
-  if (today > addDays(d.duty_date, cfgNum("evidence_deadline_days"))) throw new EvidenceError("deadline_passed");
+  if (today > addDays(d.duty_date, cfgNum("evidence_deadline_days", d.branch_id))) throw new EvidenceError("deadline_passed");
   const problem = substituteProblem(d, args.performerId);
   if (problem) throw new EvidenceError(problem);
   getDb().prepare("UPDATE special_duty_days SET status = 'covered', performer_user_id = ? WHERE id = ?").run(args.performerId, d.id);
@@ -231,15 +231,18 @@ export function photoForViewer(photoId: number, viewer: { userId: number; manage
 /** Delete photos older than the retention window (the row stays, marked deleted). Returns how many. */
 export function sweepEvidence(today = bkkToday()): number {
   const db = getDb();
-  const cutoff = new Date(Date.parse(`${addDays(today, -cfgNum("evidence_retention_days"))}T00:00:00+07:00`)).toISOString();
-  const rows = db.prepare("SELECT id, branch_id AS b, filename AS f FROM special_duty_evidence WHERE deleted_at IS NULL AND uploaded_at < ?")
-    .all(cutoff) as Array<{ id: number; b: number; f: string }>;
+  // each branch keeps photos for its own number of days
   let n = 0;
-  for (const r of rows) {
-    const p = evidencePhotoPath(r.b, r.f);
-    if (p) { try { fs.unlinkSync(p); } catch { /* already gone */ } }
-    db.prepare("UPDATE special_duty_evidence SET deleted_at = ? WHERE id = ?").run(new Date().toISOString(), r.id);
-    n++;
+  for (const { b: branch } of db.prepare("SELECT DISTINCT branch_id AS b FROM special_duty_evidence WHERE deleted_at IS NULL").all() as Array<{ b: number }>) {
+    const cutoff = new Date(Date.parse(`${addDays(today, -cfgNum("evidence_retention_days", branch))}T00:00:00+07:00`)).toISOString();
+    const rows = db.prepare("SELECT id, branch_id AS b, filename AS f FROM special_duty_evidence WHERE deleted_at IS NULL AND branch_id = ? AND uploaded_at < ?")
+      .all(branch, cutoff) as Array<{ id: number; b: number; f: string }>;
+    for (const r of rows) {
+      const p = evidencePhotoPath(r.b, r.f);
+      if (p) { try { fs.unlinkSync(p); } catch { /* already gone */ } }
+      db.prepare("UPDATE special_duty_evidence SET deleted_at = ? WHERE id = ?").run(new Date().toISOString(), r.id);
+      n++;
+    }
   }
   return n;
 }
