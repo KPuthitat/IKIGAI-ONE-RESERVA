@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logPersonaAction } from "@/lib/db";
-import { adminDetail, cleanItems, saveItems, updateNotice } from "@/lib/policy-notices";
+import { adminDetail, cleanItems, recipientIdsFor, saveItems, saveRecipients, updateNotice } from "@/lib/policy-notices";
 import { adminGate, errorResponse, NoticeBody } from "@/lib/policy-notices-api";
 
 // GET → notice + topics + per-person acknowledgement state (admin only)
@@ -12,7 +12,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const g = adminGate(); if ("error" in g) return g.error;
   const d = adminDetail(Number(params.id));
   if (!d) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  return NextResponse.json({ ok: true, ...d });
+  return NextResponse.json({ ok: true, ...d, recipientIds: recipientIdsFor(d.notice.id) });
 }
 
 const Body = NoticeBody.extend({
@@ -30,6 +30,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     cleanItems(items);   // validate before touching anything, so a bad topic leaves the meeting details unchanged too
     updateNotice(id, { title: d.title, purpose: d.purpose, meetingAt: d.meeting_at ?? null, location: d.location, announcer: d.announcer, branchId: d.branch_id ?? null, ackDeadline: d.ack_deadline ?? null });
     saveItems(id, items);
+    if (d.recipient_ids) saveRecipients(id, d.recipient_ids);
     logPersonaAction(g.user.id, "policy_notice_save", id);
     return NextResponse.json({ ok: true });
   } catch (e) { return errorResponse(e); }

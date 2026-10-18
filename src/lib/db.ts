@@ -3460,6 +3460,9 @@ function runMigrations(db: Database.Database): void {
   const pnCols = new Set((db.prepare("PRAGMA table_info(policy_notices)").all() as Array<{ name: string }>).map((c) => c.name));
   if (!pnCols.has("announcer")) db.exec("ALTER TABLE policy_notices ADD COLUMN announcer TEXT NOT NULL DEFAULT ''");
   // Follow-up letters ("ฉบับแก้ไข") point at the notice they continue; the AI digest of the anonymous suggestions is kept on the notice.
+  // audience_mode: 'scope' = everyone in the notice's branch (or every branch), topped up automatically (the original behaviour);
+  // 'custom' = exactly the people the admin picked (owner 2026-10-18: pick the audience like an executive meeting).
+  if (!pnCols.has("audience_mode")) db.exec("ALTER TABLE policy_notices ADD COLUMN audience_mode TEXT NOT NULL DEFAULT 'scope'");
   if (!pnCols.has("parent_id")) db.exec("ALTER TABLE policy_notices ADD COLUMN parent_id INTEGER REFERENCES policy_notices(id)");
   if (!pnCols.has("ai_summary")) db.exec("ALTER TABLE policy_notices ADD COLUMN ai_summary TEXT");
   if (!pnCols.has("ai_summary_at")) db.exec("ALTER TABLE policy_notices ADD COLUMN ai_summary_at TEXT");

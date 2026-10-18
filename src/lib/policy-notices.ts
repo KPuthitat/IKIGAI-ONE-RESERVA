@@ -25,7 +25,7 @@ export class PolicyError extends Error {
 }
 export type PolicyErrorCode =
   | "invalid_title" | "invalid_meeting_at" | "invalid_item" | "no_items" | "too_many_items"
-  | "invalid_suggestion" | "invalid_image" | "image_too_large" | "too_many_images"
+  | "invalid_recipient" | "no_recipients" | "invalid_suggestion" | "invalid_image" | "image_too_large" | "too_many_images"
   | "not_found" | "locked" | "bad_status" | "not_recipient" | "not_published";
 
 export const POLICY_ERROR_TH: Record<PolicyErrorCode, string> = {
@@ -34,6 +34,8 @@ export const POLICY_ERROR_TH: Record<PolicyErrorCode, string> = {
   invalid_item: "ทุกหัวข้อต้องมีชื่อหัวข้อและรายละเอียด",
   no_items: "ต้องมีอย่างน้อย 1 หัวข้อหรือ 1 รูปก่อนส่งหนังสือ",
   too_many_items: "ใส่ได้ไม่เกิน 30 หัวข้อ",
+  invalid_recipient: "รายชื่อผู้รับมีคนที่ส่งไม่ได้ (ลาออก/ปิดบัญชี หรือไม่ใช่พนักงาน)",
+  no_recipients: "ต้องเลือกผู้รับอย่างน้อย 1 คน",
   invalid_suggestion: "ข้อเสนอแนะยาวเกินไป (ไม่เกิน 2,000 ตัวอักษร)",
   invalid_image: "รองรับเฉพาะรูป PNG / JPG / WebP",
   image_too_large: "ไฟล์รูปใหญ่เกิน 10 MB",
@@ -57,7 +59,7 @@ export type NoticeItem = { topic: string; details: string; suggestions: string }
 export type NoticeRow = {
   id: number; title: string; purpose: string; meetingAt: string | null; location: string;
   branchId: number | null; branchName: string | null; status: NoticeStatus; ackDeadline: string | null;
-  announcer: string; parentId: number | null; parentTitle: string | null; createdAt: string; invitedAt: string | null; publishedAt: string | null; closedAt: string | null;
+  announcer: string; audienceMode: "scope" | "custom"; parentId: number | null; parentTitle: string | null; createdAt: string; invitedAt: string | null; publishedAt: string | null; closedAt: string | null;
 };
 export type Recipient = { userId: number; name: string; lineUserId: string | null };
 
@@ -68,11 +70,11 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 type RawNotice = {
   id: number; title: string; purpose: string; meeting_at: string | null; location: string; branch_id: number | null;
   branch_name: string | null; status: NoticeStatus; ack_deadline: string | null; created_at: string;
-  invited_at: string | null; published_at: string | null; closed_at: string | null; announcer: string; creator_name: string | null; parent_id: number | null; parent_title: string | null;
+  invited_at: string | null; published_at: string | null; closed_at: string | null; announcer: string; audience_mode: string; creator_name: string | null; parent_id: number | null; parent_title: string | null;
 };
 const toRow = (r: RawNotice): NoticeRow => ({
   id: r.id, title: r.title, purpose: r.purpose, meetingAt: r.meeting_at, location: r.location, branchId: r.branch_id,
-  branchName: r.branch_name, status: r.status, ackDeadline: r.ack_deadline, announcer: r.announcer || r.creator_name || "", parentId: r.parent_id, parentTitle: r.parent_title, createdAt: r.created_at,
+  branchName: r.branch_name, status: r.status, ackDeadline: r.ack_deadline, announcer: r.announcer || r.creator_name || "", audienceMode: r.audience_mode === "custom" ? "custom" : "scope", parentId: r.parent_id, parentTitle: r.parent_title, createdAt: r.created_at,
   invitedAt: r.invited_at, publishedAt: r.published_at, closedAt: r.closed_at
 });
 const SELECT_NOTICE = `SELECT n.*, b.name AS branch_name, ${sqlNameWithPrefix("cu")} AS creator_name, pn.title AS parent_title FROM policy_notices n LEFT JOIN branches b ON b.id = n.branch_id LEFT JOIN users cu ON cu.id = n.created_by LEFT JOIN policy_notices pn ON pn.id = n.parent_id`;
@@ -122,7 +124,14 @@ export function createFollowUp(parentId: number, actorId: number): number {
   if (p.status !== "published" && p.status !== "closed") throw new PolicyError("bad_status");
   const r = getDb().prepare(`INSERT INTO policy_notices (title, purpose, location, branch_id, status, parent_id, created_by, created_at)
     VALUES (?, '', '', ?, 'scheduled', ?, ?, ?)`).run(`ฉบับแก้ไข: ${p.title}`.slice(0, MAX_TITLE), p.branchId, parentId, actorId, nowIso());
-  return Number(r.lastInsertRowid);
+  const id = Number(r.lastInsertRowid);
+  // a picked audience carries over to the follow-up (same people, fresh invitation state)
+  if (p.audienceMode === "custom") {
+    const db = getDb();
+    db.prepare("UPDATE policy_notices SET audience_mode = 'custom' WHERE id = ?").run(id);
+    db.prepare("INSERT OR IGNORE INTO policy_notice_recipients (notice_id, user_id, added_at) SELECT ?, user_id, ? FROM policy_notice_recipients WHERE notice_id = ?").run(id, nowIso(), parentId);
+  }
+  return id;
 }
 
 export function followUpsOf(noticeId: number): Array<{ id: number; title: string; status: NoticeStatus }> {
@@ -211,6 +220,40 @@ export function imageForViewer(imageId: number, viewer: { userId: number; isAdmi
 
 // ── recipients ────────────────────────────────────────────────────────────────
 
+/** Is every id a person who may receive a notice (staff/admin, still employed, not a test account)? */
+function eligibleIds(ids: number[]): number[] {
+  if (ids.length === 0) return [];
+  const q = ids.map(() => "?").join(",");
+  return (getDb().prepare(`SELECT u.id FROM users u WHERE u.id IN (${q}) AND u.role IN ('staff','admin') AND u.status NOT IN ('disabled','resigned','terminated') AND COALESCE(u.is_test_account,0) = 0`).all(...ids) as Array<{ id: number }>).map((r) => r.id);
+}
+
+/** The audience is exactly these people (owner 2026-10-18). Only while the letter is still a draft; people already
+ *  on the list keep their invitation stamps, anyone left out is dropped, and from now on nobody is added automatically. */
+export function saveRecipients(noticeId: number, userIds: number[]): void {
+  const n = load(noticeId);
+  if (n.status !== "scheduled") throw new PolicyError(n.status === "published" || n.status === "closed" ? "locked" : "bad_status");
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) throw new PolicyError("no_recipients");
+  if (eligibleIds(ids).length !== ids.length) throw new PolicyError("invalid_recipient");
+  const db = getDb();
+  db.transaction(() => {
+    db.prepare("UPDATE policy_notices SET audience_mode = 'custom', branch_id = NULL WHERE id = ?").run(noticeId);
+    const keep = new Set(ids);
+    for (const r of db.prepare("SELECT user_id FROM policy_notice_recipients WHERE notice_id = ?").all(noticeId) as Array<{ user_id: number }>)
+      if (!keep.has(r.user_id)) db.prepare("DELETE FROM policy_notice_recipients WHERE notice_id = ? AND user_id = ?").run(noticeId, r.user_id);
+    const ins = db.prepare("INSERT OR IGNORE INTO policy_notice_recipients (notice_id, user_id, added_at) VALUES (?, ?, ?)");
+    for (const uid of ids) ins.run(noticeId, uid, nowIso());
+  })();
+}
+
+/** The people currently picked (custom) — or, for an older branch-scoped draft, who that scope covers right now. */
+export function recipientIdsFor(noticeId: number): number[] {
+  const n = load(noticeId);
+  const rows = getDb().prepare("SELECT user_id FROM policy_notice_recipients WHERE notice_id = ?").all(noticeId) as Array<{ user_id: number }>;
+  if (rows.length > 0 || n.audienceMode === "custom") return rows.map((r) => r.user_id);
+  return audience(n.branchId).map((r) => r.userId);
+}
+
 function audience(branchId: number | null): Recipient[] {
   const rows = getDb().prepare(`
     SELECT u.id AS userId, ${sqlNameWithPrefix("u")} AS name, u.line_user_id AS lineUserId FROM users u
@@ -223,6 +266,7 @@ function audience(branchId: number | null): Recipient[] {
 /** Add anyone in the audience who is not on the list yet (never removes). Returns how many were added. */
 export function syncRecipients(noticeId: number): number {
   const n = load(noticeId);
+  if (n.audienceMode === "custom") return 0;   // a picked audience is never topped up
   const db = getDb();
   const ins = db.prepare("INSERT OR IGNORE INTO policy_notice_recipients (notice_id, user_id, added_at) VALUES (?, ?, ?)");
   let added = 0;
@@ -245,6 +289,7 @@ export function inviteMeeting(id: number): Recipient[] {
   if (n.status !== "scheduled") throw new PolicyError("bad_status");
   if (!n.meetingAt) throw new PolicyError("invalid_meeting_at");
   syncRecipients(id);
+  if (n.audienceMode === "custom" && recipientsOf(id).length === 0) throw new PolicyError("no_recipients");
   const db = getDb();
   const now = nowIso();
   db.prepare("UPDATE policy_notices SET invited_at = COALESCE(invited_at, ?) WHERE id = ?").run(now, id);
@@ -258,6 +303,7 @@ export function publish(id: number): Recipient[] {
   if (n.status !== "scheduled") throw new PolicyError("bad_status");
   if (listItems(id).length === 0 && listImages(id).length === 0) throw new PolicyError("no_items");
   syncRecipients(id);
+  if (n.audienceMode === "custom" && recipientsOf(id).length === 0) throw new PolicyError("no_recipients");
   const db = getDb();
   const now = nowIso();
   db.transaction(() => {

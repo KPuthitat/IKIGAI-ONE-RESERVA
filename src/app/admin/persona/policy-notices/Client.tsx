@@ -6,19 +6,19 @@ import { FormSection, Field } from "@/app/components/FormKit";
 import EmptyState from "@/app/components/EmptyState";
 import Mascot from "@/app/components/Mascot";
 import { pdfToImages, PdfTooLong } from "@/lib/pdf-pages";
+import StaffPicker, { type PickerStaff, type PickerBranch } from "@/app/components/StaffPicker";
 import { thaiMeetingTime } from "@/lib/policy-notices-notify";
 
 type Status = "scheduled" | "published" | "closed" | "cancelled";
-type Summary = { id: number; title: string; announcer: string; meetingAt: string | null; status: Status; branchName: string | null; recipientCount: number; ackedCount: number; publishedAt: string | null };
+type Summary = { id: number; title: string; announcer: string; meetingAt: string | null; status: Status; branchName: string | null; audienceMode: "scope" | "custom"; recipientCount: number; ackedCount: number; publishedAt: string | null };
 type Item = { topic: string; details: string; suggestions: string };
 type Suggestion = { id: number; body: string; day: string };
 type Ack = { userId: number; name: string; ackedAt: string | null; lastRemindedAt: string | null };
 type Detail = {
   notice: { id: number; title: string; announcer: string; parentId: number | null; parentTitle: string | null; purpose: string; meetingAt: string | null; location: string; branchId: number | null; status: Status; ackDeadline: string | null; invitedAt: string | null };
-  items: Item[]; images: Array<{ id: number }>; recipients: Ack[];
+  items: Item[]; images: Array<{ id: number }>; recipients: Ack[]; recipientIds: number[];
   suggestions: Suggestion[]; aiSummary: string | null; aiSummaryAt: string | null; followUps: Array<{ id: number; title: string; status: Status }>;
 };
-type Branch = { id: number; name: string };
 
 const STATUS_TAG: Record<Status, { cls: string; label: string }> = {
   scheduled: { cls: "tag-info", label: "นัดประชุม" },
@@ -51,14 +51,15 @@ const fmtTime = (iso: string) => new Date(iso).toLocaleString("th-TH", { dateSty
 
 export default function Client() {
   const [list, setList] = useState<Summary[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branches, setBranches] = useState<PickerBranch[]>([]);
+  const [staff, setStaff] = useState<PickerStaff[]>([]);
   const [me, setMe] = useState("");
   const [openId, setOpenId] = useState<number | "new" | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const reload = useCallback(async () => {
     const r = await fetch(apiUrl("/api/admin/persona/policy-notices"), { cache: "no-store" });
-    if (r.ok) { const j = await r.json(); setList(j.notices); setBranches(j.branches); setMe(j.me ?? ""); }
+    if (r.ok) { const j = await r.json(); setList(j.notices); setBranches(j.branches); setStaff(j.staff ?? []); setMe(j.me ?? ""); }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
 
@@ -76,7 +77,7 @@ export default function Client() {
       {msg && <div className={`card text-sm ${msg.ok ? "text-emerald-700" : "text-rose-600"}`}>{msg.text}</div>}
 
       {openId != null && (
-        <Editor key={String(openId)} id={openId} branches={branches} me={me}
+        <Editor key={String(openId)} id={openId} branches={branches} staff={staff} me={me}
           onClose={() => { setOpenId(null); void reload(); }}
           onOpen={(nid) => { setMsg(null); setOpenId(nid); void reload(); }}
           onMessage={(m) => { setMsg(m); void reload(); }} />
@@ -92,7 +93,7 @@ export default function Client() {
               <span className={`tag ${STATUS_TAG[n.status].cls}`}>{STATUS_TAG[n.status].label}</span>
             </div>
             <div className="text-xs text-slate-500 mt-1">
-              {n.meetingAt ? thaiMeetingTime(n.meetingAt) : "ยังไม่กำหนดวันประชุม"} · {n.branchName ?? "ทุกสาขา"}{n.announcer ? ` · ประกาศโดย ${n.announcer}` : ""}
+              {n.meetingAt ? thaiMeetingTime(n.meetingAt) : "ยังไม่กำหนดวันประชุม"} · {n.audienceMode === "custom" ? `ผู้รับ ${n.recipientCount} คน` : n.branchName ?? "ทุกสาขา"}{n.announcer ? ` · ประกาศโดย ${n.announcer}` : ""}
             </div>
             {n.status !== "scheduled" && n.status !== "cancelled" && (
               <div className="mt-2">
@@ -109,14 +110,14 @@ export default function Client() {
   );
 }
 
-function Editor({ id, branches, me, onClose, onOpen, onMessage }: { id: number | "new"; branches: Branch[]; me: string; onClose: () => void; onOpen: (id: number) => void; onMessage: (m: { ok: boolean; text: string }) => void }) {
+function Editor({ id, branches, staff, me, onClose, onOpen, onMessage }: { id: number | "new"; branches: PickerBranch[]; staff: PickerStaff[]; me: string; onClose: () => void; onOpen: (id: number) => void; onMessage: (m: { ok: boolean; text: string }) => void }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [title, setTitle] = useState("");
   const [announcer, setAnnouncer] = useState(me);
   const [purpose, setPurpose] = useState("");
   const [meetingAt, setMeetingAt] = useState("");
   const [location, setLocation] = useState("");
-  const [branchId, setBranchId] = useState<string>("");
+  const [picked, setPicked] = useState<Set<number>>(new Set(staff.map((s) => s.id)));
   const [deadline, setDeadline] = useState("");
   const [items, setItems] = useState<Item[]>([blankItem()]);
   const [images, setImages] = useState<Array<{ id: number }>>([]);
@@ -127,7 +128,7 @@ function Editor({ id, branches, me, onClose, onOpen, onMessage }: { id: number |
   const fill = useCallback((d: Detail) => {
     setDetail(d);
     setTitle(d.notice.title); setAnnouncer(d.notice.announcer); setPurpose(d.notice.purpose); setMeetingAt(d.notice.meetingAt ?? "");
-    setLocation(d.notice.location); setBranchId(d.notice.branchId ? String(d.notice.branchId) : ""); setDeadline(d.notice.ackDeadline ?? "");
+    setLocation(d.notice.location); setPicked(new Set(d.recipientIds)); setDeadline(d.notice.ackDeadline ?? "");
     setItems(d.items.length ? d.items : [blankItem()]);
     setImages(d.images ?? []);
   }, []);
@@ -139,7 +140,7 @@ function Editor({ id, branches, me, onClose, onOpen, onMessage }: { id: number |
 
   const status: Status = detail?.notice.status ?? "scheduled";
   const locked = status !== "scheduled";
-  const fields = () => ({ title, announcer, purpose, meeting_at: meetingAt || null, location, branch_id: branchId ? Number(branchId) : null, ack_deadline: deadline || null });
+  const fields = () => ({ title, announcer, purpose, meeting_at: meetingAt || null, location, ack_deadline: deadline || null, recipient_ids: [...picked] });
 
   async function call(url: string, method: string, body: unknown): Promise<{ ok: boolean; j: Record<string, unknown> }> {
     const r = await fetch(apiUrl(url), { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -258,14 +259,9 @@ function Editor({ id, branches, me, onClose, onOpen, onMessage }: { id: number |
         <div className="grid sm:grid-cols-2 gap-2.5">
           <Field label="วันเวลาประชุม"><input type="datetime-local" value={meetingAt} onChange={(e) => setMeetingAt(e.target.value)} disabled={locked} /></Field>
           <Field label="สถานที่" hint="ถ้ามี"><input value={location} onChange={(e) => setLocation(e.target.value)} disabled={locked} /></Field>
-          <Field label="ส่งถึง">
-            <select value={branchId} onChange={(e) => setBranchId(e.target.value)} disabled={locked}>
-              <option value="">พนักงานทุกสาขา</option>
-              {branches.map((b) => <option key={b.id} value={b.id}>เฉพาะสาขา {b.name}</option>)}
-            </select>
-          </Field>
           <Field label="ให้กดรับทราบภายใน" hint="ถ้ามี"><input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} disabled={locked} /></Field>
         </div>
+        <StaffPicker label="เลือกผู้รับประกาศ" staff={staff} branches={branches} value={picked} onChange={setPicked} disabled={locked} />
       </FormSection>
 
       <FormSection title={`2. หนังสือแจ้งหลังประชุม (${items.filter((i) => i.topic.trim()).length} หัวข้อ · ${images.length} รูป)`}>
