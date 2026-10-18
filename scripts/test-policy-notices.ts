@@ -149,6 +149,23 @@ const IMG_DIR = path.join(process.cwd(), "data", "test-policy-images"); fs.rmSyn
   const draftImg = P.addImage(id4, png, "image/png");
   ok("a draft's picture is hidden from employees until the letter is sent", P.imageForViewer(draftImg, { userId: a, isAdmin: false }) === null);
   ok("a letter with no topics and no pictures is still refused", code(() => P.publish(P.createNotice({ title: "ว่าง" }, owner))) === "no_items");
+  // picked audience (owner 2026-10-18)
+  const cu = P.createNotice({ title: "เลือกกลุ่มส่ง", meetingAt: TH }, owner);
+  ok("a custom audience needs at least one person", code(() => P.saveRecipients(cu, [])) === "no_recipients");
+  ok("a custom audience refuses people who are not eligible", code(() => P.saveRecipients(cu, [a, gone])) === "invalid_recipient");
+  P.saveRecipients(cu, [a]);
+  ok("only the picked person is on the list", P.recipientIdsFor(cu).join() === String(a) && P.getNotice(cu)!.audienceMode === "custom");
+  ok("a picked audience is never topped up", P.syncRecipients(cu) === 0 && P.recipientIdsFor(cu).length === 1);
+  P.saveRecipients(cu, [a, admin]);
+  ok("the pick can be changed while it is a draft", P.recipientIdsFor(cu).length === 2);
+  P.saveRecipients(cu, [admin]);
+  ok("someone left out is dropped", P.recipientIdsFor(cu).join() === String(admin));
+  const cuItems = [{ topic: "หัวข้อ", details: "รายละเอียด", suggestions: "" }];
+  P.saveItems(cu, cuItems);
+  ok("sending reaches exactly the picked people", P.publish(cu).length === 1);
+  ok("the pick is locked once sent", code(() => P.saveRecipients(cu, [a])) === "locked");
+  const cuFu = P.createFollowUp(cu, owner);
+  ok("a follow-up inherits the picked audience", P.recipientIdsFor(cuFu).join() === String(admin) && P.getNotice(cuFu)!.audienceMode === "custom");
   fs.rmSync(IMG_DIR, { recursive: true, force: true });
   cleanup(); process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); cleanup(); process.exit(1); });

@@ -1,7 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { loadPickerStaff } from "@/lib/staff-picker";
 import { listExecMeetings } from "@/lib/exec-meetings";
-import ExecMeetingsClient, { type StaffLite, type BranchLite } from "./ExecMeetingsClient";
+import ExecMeetingsClient from "./ExecMeetingsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -11,63 +11,7 @@ export const dynamic = "force-dynamic";
 // the whole team is visible at once.
 export default function ExecMeetingsPage() {
   const user = requireAdmin();
-  const db = getDb();
-
-  // Company of the admin's active branch → show all its branches, each with its
-  // own staff column. Each person appears once, under their primary branch.
-  const companyId = user.activeBranchId
-    ? (db.prepare("SELECT company_id FROM branches WHERE id = ?").get(user.activeBranchId) as { company_id: number | null } | undefined)?.company_id ?? null
-    : null;
-
-  const branches: BranchLite[] = companyId != null
-    ? (db.prepare("SELECT id, name FROM branches WHERE company_id = ? ORDER BY display_order, name").all(companyId) as BranchLite[])
-    : user.activeBranchId
-      ? (db.prepare("SELECT id, name FROM branches WHERE id = ?").all(user.activeBranchId) as BranchLite[])
-      : [];
-
-  const branchIds = branches.map((b) => b.id);
-  const staffRows = branchIds.length > 0
-    ? (db.prepare(`
-        SELECT u.id, u.display_name, u.title_prefix, u.role,
-               COALESCE(u.meeting_fee_exempt, 0) AS fee_exempt,
-               COALESCE(u.is_c_level, 0) AS is_c_level,
-               COALESCE(
-                 (SELECT ub.branch_id FROM user_branches ub WHERE ub.user_id = u.id AND ub.is_primary = 1
-                    AND ub.branch_id IN (${branchIds.map(() => "?").join(",")}) LIMIT 1),
-                 (SELECT MIN(ub.branch_id) FROM user_branches ub WHERE ub.user_id = u.id
-                    AND ub.branch_id IN (${branchIds.map(() => "?").join(",")}))
-               ) AS branch_id
-        FROM users u
-        WHERE u.status NOT IN ('disabled', 'resigned', 'terminated')
-          AND u.is_test_account = 0
-          AND u.role IN ('staff', 'admin')
-          AND EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = u.id
-                      AND ub.branch_id IN (${branchIds.map(() => "?").join(",")}))
-        ORDER BY u.display_name COLLATE NOCASE
-      `).all(...branchIds, ...branchIds, ...branchIds) as Array<{ id: number; display_name: string; title_prefix: string | null; role: string; fee_exempt: number; is_c_level: number; branch_id: number | null }>)
-    : [];
-
-  // Department (แผนก) = the person's org-chart placement at that branch, so the
-  // picker can group by แผนก inside each branch (owner 2026-09-02: ดูถนัดว่าดึงคน
-  // จากแผนกไหนมาบ้าง). Keyed `${userId}|${branchId}`.
-  const deptOf = new Map<string, string>();
-  if (branchIds.length > 0) {
-    for (const n of db.prepare(
-      `SELECT user_id, branch_id, department FROM org_chart_nodes WHERE branch_id IN (${branchIds.map(() => "?").join(",")})`
-    ).all(...branchIds) as Array<{ user_id: number; branch_id: number; department: string | null }>) {
-      if (n.department && n.department.trim()) deptOf.set(`${n.user_id}|${n.branch_id}`, n.department.trim());
-    }
-  }
-
-  const staff: StaffLite[] = staffRows.map((s) => {
-    const branchId = s.branch_id ?? (branchIds[0] ?? 0);
-    return {
-      id: s.id, display_name: s.display_name, title_prefix: s.title_prefix,
-      fee_exempt: s.fee_exempt === 1, isCLevel: s.is_c_level === 1, isAdmin: s.role === "admin",
-      branchId,
-      department: deptOf.get(`${s.id}|${branchId}`) ?? null
-    };
-  });
+  const { staff, branches } = loadPickerStaff(user.activeBranchId ?? null);
 
   const meetings = listExecMeetings();
 

@@ -18,7 +18,8 @@ export const NoticeBody = z.object({
   location: z.string().max(200).optional(),
   announcer: z.string().max(120).optional(),
   branch_id: z.number().int().positive().nullable().optional(),
-  ack_deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+  ack_deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  recipient_ids: z.array(z.number().int().positive()).max(500).optional()
 });
 
 export function errorResponse(e: unknown) {
