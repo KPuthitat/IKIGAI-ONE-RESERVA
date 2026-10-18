@@ -22,7 +22,7 @@ const STATUS_TH: Record<string, string> = {
 const CONFIG_LABEL: Record<string, string> = {
   max_positions_per_branch: "จำนวนตำแหน่งสูงสุดต่อสาขา (ไม่เกิน 3)",
   default_daily_rate: "ค่าตอบแทนต่อวันเริ่มต้น (บาท)",
-  min_days_per_position: "จำนวนวันขั้นต่ำที่ต้องเลือกต่อหนึ่งตำแหน่ง",
+  min_days_per_position: "จำนวนวันที่แนะนำต่อหนึ่งตำแหน่ง (ไม่บังคับ — เลือกน้อยกว่านี้ได้)",
   max_positions_per_person_per_day: "จำนวนตำแหน่งสูงสุดที่คนเดียวทำได้ในหนึ่งวัน",
   absence_strike_limit: "จำนวนครั้งที่ขาดได้ก่อนเสียสิทธิ์เลือกวันเองในเดือนถัดไป",
   booking_close_day_of_previous_month: "วันที่ปิดรับการเลือกวัน (ของเดือนก่อนหน้า)",

@@ -70,7 +70,8 @@ function checkSlot(user: UserRow, branchId: number, ym: string, pos: DutyPositio
 }
 
 /** The user's whole wanted set of days for ONE position (replacing what they hold there).
- *  Either empty (cancel / not booking) or at least min_days_per_position. */
+ *  Any number of days is accepted (owner 2026-10-18: "ไม่น้อยกว่า 6 ครั้ง" is NOT a lock — someone rostered on fewer than
+ *  6 days could never reach it). min_days_per_position is only the recommended number shown to staff. */
 export function checkBookingSet(args: { userId: number; branchId: number; yearMonth: string; positionId: number; dates: string[]; asOf?: string }): RuleResult {
   const { userId, branchId, yearMonth, positionId } = args;
   const asOf = args.asOf ?? bkkToday();
@@ -89,7 +90,6 @@ export function checkBookingSet(args: { userId: number; branchId: number; yearMo
   for (const d of dates) checkSlot(user, branchId, yearMonth, pos, d, asOf, errs);
   if (!pos || !pos.active) return { ok: false, errors: errs };
 
-  if (dates.length > 0 && dates.length < cfgNum("min_days_per_position")) errs.push({ code: "below_minimum_days", positionId });
 
   // at most N positions per person per day, counting every row they hold (booked or assigned) in OTHER positions
   const db = getDb();
