@@ -87,18 +87,22 @@ export async function runSpecialDutyDaily(args: { today: string; hhmm: string; p
       await once(f.b, f.ym, "reminder_day", `${f.uid}:${tomorrow}`, [f.line],
         noticeFlex({ title: "พรุ่งนี้ท่านมีตำแหน่งงานค่าตอบแทนพิเศษ", lines: [branchName(f.b), `${thaiDate(tomorrow)} · ${rows.map((r) => r.pname).join(", ")}`, "เมื่อทำเสร็จให้ถ่ายภาพพื้นที่ทำงาน (ไม่มีบุคคลในภาพ) แล้วส่งหลักฐานในระบบ"], url: `${baseUrl()}/staff/persona/special-duty?month=${f.ym}`, button: "เปิดระบบ" }));
     }
-    const lastDay = addDays(args.today, -cfgNum("evidence_deadline_days"));
-    for (const rows of group(dutyRows(lastDay)).values()) {
-      const f = rows[0];
-      await once(f.b, f.ym, "evidence_due", `${f.uid}:${lastDay}`, [f.line],
-        noticeFlex({ title: "วันนี้เป็นวันสุดท้ายในการส่งหลักฐาน", lines: [branchName(f.b), `${thaiDate(lastDay)} · ${rows.map((r) => r.pname).join(", ")}`, "ถ้าไม่ส่งภายในวันนี้ วันดังกล่าวจะไม่ได้รับค่าตอบแทน"], url: `${baseUrl()}/staff/persona/special-duty?month=${f.ym}`, button: "ส่งหลักฐาน" }));
+    // the last day to send evidence is each branch's own setting
+    const dutyBranches = (db.prepare("SELECT DISTINCT branch_id AS b FROM special_duty_months WHERE enabled = 1 AND status IN ('special_published','in_progress')").all() as Array<{ b: number }>).map((r) => r.b);
+    for (const bId of dutyBranches) {
+      const lastDay = addDays(args.today, -cfgNum("evidence_deadline_days", bId));
+      for (const rows of group(dutyRows(lastDay).filter((r) => r.b === bId)).values()) {
+        const f = rows[0];
+        await once(f.b, f.ym, "evidence_due", `${f.uid}:${lastDay}`, [f.line],
+          noticeFlex({ title: "วันนี้เป็นวันสุดท้ายในการส่งหลักฐาน", lines: [branchName(f.b), `${thaiDate(lastDay)} · ${rows.map((r) => r.pname).join(", ")}`, "ถ้าไม่ส่งภายในวันนี้ วันดังกล่าวจะไม่ได้รับค่าตอบแทน"], url: `${baseUrl()}/staff/persona/special-duty?month=${f.ym}`, button: "ส่งหลักฐาน" }));
+      }
     }
 
     // 4. one digest a day per branch for the managers + owner alerts
     const months = db.prepare("SELECT branch_id AS b, year_month AS ym, status FROM special_duty_months WHERE enabled = 1 AND status IN ('booking_closed','filling','special_published','in_progress')").all() as Array<{ b: number; ym: string; status: string }>;
     const owners = (db.prepare("SELECT line_user_id AS l FROM users WHERE role = 'super_admin' AND status = 'active' AND line_user_id IS NOT NULL").all() as Array<{ l: string }>).map((r) => r.l);
     for (const m of months) {
-      const deadline = addDays(args.today, -cfgNum("evidence_deadline_days") - 1);
+      const deadline = addDays(args.today, -cfgNum("evidence_deadline_days", m.b) - 1);
       const waiting = (db.prepare("SELECT COUNT(*) n FROM special_duty_days d JOIN special_duty_positions p ON p.id = d.position_id WHERE p.branch_id = ? AND p.year_month = ? AND d.status = 'submitted'").get(m.b, m.ym) as { n: number }).n;
       const missing = (db.prepare("SELECT COUNT(*) n FROM special_duty_days d JOIN special_duty_positions p ON p.id = d.position_id WHERE p.branch_id = ? AND p.year_month = ? AND d.status IN ('booked','assigned','covered') AND d.duty_date <= ?").get(m.b, m.ym, deadline) as { n: number }).n;
       const swaps = (db.prepare("SELECT COUNT(*) n FROM special_duty_swaps WHERE branch_id = ? AND year_month = ? AND status = 'pending_manager'").get(m.b, m.ym) as { n: number }).n;

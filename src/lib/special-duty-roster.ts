@@ -98,7 +98,7 @@ export function openBookingOnPublish(args: { branchId: number; yearMonth: string
   const month = getMonth(branchId, yearMonth);
   if (!month.enabled || month.status !== "awaiting_roster") return { opened: false, closeDate: month.bookingCloseDate, audience: [], gaps: [] };
   const nowIso = args.nowIso ?? new Date().toISOString();
-  const closeDate = bookingCloseDateFor(yearMonth, nowIso);
+  const closeDate = bookingCloseDateFor(yearMonth, nowIso, branchId);
   getDb().prepare("UPDATE special_duty_months SET booking_close_date = ? WHERE branch_id = ? AND year_month = ?").run(closeDate, branchId, yearMonth);
   advanceMonth({ branchId, yearMonth, to: "booking_open", actorId: args.actorId });
   const gaps = coverageGaps(branchId, yearMonth);

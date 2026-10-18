@@ -45,7 +45,7 @@ function canTake(userId: number, target: DayRow, giving: DayRow): boolean {
   if (!isOnRoster(userId, target.branch_id, target.duty_date) || isOnApprovedLeave(userId, target.duty_date)) return false;
   const others = (getDb().prepare(`SELECT COUNT(*) n FROM special_duty_days WHERE duty_date = ? AND id != ? AND id != ? AND status != 'absent' AND COALESCE(performer_user_id, user_id) = ?`)
     .get(target.duty_date, target.id, giving.id, userId) as { n: number }).n;
-  return others + 1 <= cfgNum("max_positions_per_person_per_day");
+  return others + 1 <= cfgNum("max_positions_per_person_per_day", target.branch_id);
 }
 
 /** Everything that must hold for the pair to be traded right now (null = fine). */
@@ -56,7 +56,7 @@ function pairProblem(a: DayRow, b: DayRow, today: string): SwapErrorCode | null 
   const m = getMonth(a.branch_id, a.year_month);
   if (!m.enabled || !WORKING.includes(m.status) || a.year_month !== b.year_month) return "wrong_stage";
   const earliest = a.duty_date < b.duty_date ? a.duty_date : b.duty_date;
-  if (today > addDays(earliest, -cfgNum("swap_notice_days"))) return "too_late";
+  if (today > addDays(earliest, -cfgNum("swap_notice_days", a.branch_id))) return "too_late";
   if (!canTake(a.user_id, b, a) || !canTake(b.user_id, a, b)) return "not_eligible";
   return null;
 }
@@ -167,7 +167,7 @@ export function swappableDays(userId: number, branchId: number, yearMonth: strin
       JOIN special_duty_positions p ON p.id = d.position_id JOIN users u ON u.id = d.user_id
      WHERE p.branch_id = ? AND p.year_month = ? AND d.status IN ('booked','assigned') AND d.performer_user_id IS NULL ORDER BY d.duty_date, p.slot_no`)
     .all(branchId, yearMonth) as Array<{ id: number; uid: number; date: string; pname: string; holder: string }>;
-  const notice = cfgNum("swap_notice_days");
+  const notice = cfgNum("swap_notice_days", branchId);
   const ok = rows.filter((r) => today <= addDays(r.date, -notice));
   return {
     mine: ok.filter((r) => r.uid === userId).map((r) => ({ dayId: r.id, date: r.date, positionName: r.pname })),

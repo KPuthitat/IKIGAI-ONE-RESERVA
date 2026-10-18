@@ -27,6 +27,18 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("the position cap cannot be raised above 3", throws(() => D.setConfig("max_positions_per_branch", 4, owner), "max_positions_capped"));
   ok("unknown config key rejected", throws(() => D.setConfig("nope", 1, owner), "unknown_config_key"));
 
+  // per-branch criteria (owner 2026-10-18: "ตั้งค่าสาขาใครสาขามัน")
+  ok("a branch without its own setting uses the global value", D.cfgNum("booking_close_day_of_previous_month", hypo) === 25 && D.listBranchConfig(hypo).booking_close_day_of_previous_month.overridden === false);
+  D.setBranchConfig(hypo, "booking_close_day_of_previous_month", 20, owner);
+  ok("a branch's own value applies to that branch only", D.cfgNum("booking_close_day_of_previous_month", hypo) === 20 && D.cfgNum("booking_close_day_of_previous_month", nama) === 25 && D.cfgNum("booking_close_day_of_previous_month") === 25);
+  ok("the branch's closing day feeds the default close date", D.bookingCloseDateFor("2026-12", null, hypo) === "2026-11-20" && D.bookingCloseDateFor("2026-12", null, nama) === "2026-11-25");
+  ok("listBranchConfig shows effective, global and overridden", (() => { const c = D.listBranchConfig(hypo).booking_close_day_of_previous_month; return c.value === 20 && c.global === 25 && c.overridden; })());
+  ok("a branch change is audited with the branch", !!db.prepare("SELECT 1 FROM special_duty_audit WHERE entity='branch_config' AND action='update' AND branch_id = ?").get(hypo));
+  D.setBranchConfig(hypo, "booking_close_day_of_previous_month", null, owner);
+  ok("clearing returns the branch to the global value", D.cfgNum("booking_close_day_of_previous_month", hypo) === 25 && !D.listBranchConfig(hypo).booking_close_day_of_previous_month.overridden);
+  ok("the position cap still cannot exceed 3 for a branch", throws(() => D.setBranchConfig(hypo, "max_positions_per_branch", 4, owner), "max_positions_capped"));
+  ok("an unknown key is rejected for a branch too", throws(() => D.setBranchConfig(hypo, "nope", 1, owner), "unknown_config_key"));
+
   // positions: at most 3 per branch
   const P = (branchId: number, ym: string, slotNo: number, name: string, extra: Partial<Parameters<typeof D.savePosition>[0]> = {}) =>
     D.savePosition({ branchId, yearMonth: ym, slotNo, name, actorId: owner, asOf: NOW, ...extra });
@@ -84,6 +96,16 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   // late roster publication shortens the window to at least the configured days
   ok("a roster published after the 25th still gives the configured minimum window", D.bookingCloseDateFor("2026-12", "2026-11-27T03:00:00.000Z") === "2026-11-30" && D.bookingCloseDateFor("2026-12", "2026-11-10T03:00:00.000Z") === "2026-11-25");
 
+  // each branch's own closing day while booking is open
+  ok("a closing day can be set while booking is open, and is audited", (() => {
+    D.enableMonth({ branchId: nama, yearMonth: "2026-12", actorId: owner, asOf: NOW });
+    db.prepare("UPDATE special_duty_months SET status = 'booking_open' WHERE branch_id = ? AND year_month = '2026-12'").run(nama);
+    const m = D.setBookingCloseDate({ branchId: nama, yearMonth: "2026-12", date: "2026-11-28", actorId: owner, asOf: NOW });
+    return m.bookingCloseDate === "2026-11-28" && !!db.prepare("SELECT 1 FROM special_duty_audit WHERE action='set_close_date' AND branch_id = ?").get(nama);
+  })());
+  ok("a closing day in the past or after the month is refused", throws(() => D.setBookingCloseDate({ branchId: nama, yearMonth: "2026-12", date: "2026-10-01", actorId: owner, asOf: NOW }), "invalid_date") && throws(() => D.setBookingCloseDate({ branchId: nama, yearMonth: "2026-12", date: "2027-01-05", actorId: owner, asOf: NOW }), "invalid_date"));
+  ok("another branch's month is not touched", D.getMonth(hypo, "2026-12").bookingCloseDate !== "2026-11-28");
+  ok("a closing day cannot be set when booking is not open", throws(() => D.setBookingCloseDate({ branchId: hypo, yearMonth: "2026-12", date: "2026-11-28", actorId: owner, asOf: NOW }), "invalid_transition"));
   // switching off
   ok("a month can be switched off while nothing is booked", (() => { D.enableMonth({ branchId: hypo, yearMonth: "2027-04", actorId: owner, asOf: NOW }); return D.disableMonth({ branchId: hypo, yearMonth: "2027-04", actorId: owner }).status === "off" && D.monthBudget(hypo, "2027-04") === 0; })());
   ok("every change is in the audit log with who / what / before / after", (db.prepare("SELECT COUNT(*) n FROM special_duty_audit WHERE actor_user_id = ? AND (before_json IS NOT NULL OR after_json IS NOT NULL)").get(owner) as { n: number }).n >= 10);

@@ -83,7 +83,7 @@ export default function Client({ month }: { month: string }) {
       </div>
       {data.slots != null && <div className="card text-sm text-slate-600 space-y-1">
         <p className="font-semibold text-slate-800">วิธีเลือกวัน</p>
-        <p>เลือกได้เฉพาะวันที่ท่านมีตารางทำงานปกติ และต้องเลือกให้ครบจำนวนวันขั้นต่ำของแต่ละตำแหน่ง</p>
+        <p>เลือกได้เฉพาะวันที่ท่านมีตารางทำงานปกติ จำนวนวันแนะนำต่อตำแหน่งมีให้ดูแต่ไม่บังคับ เลือกเท่าที่ทำได้</p>
         <p>วันที่มีผู้เลือกแล้วจะแสดงว่า “เต็ม” โดยไม่แสดงชื่อผู้ที่เลือก</p>
         <p>ค่าตอบแทนจะจ่ายพร้อมค่าบริการในวันที่ 20 ของเดือนถัดไป</p>
       </div>}
@@ -100,8 +100,8 @@ export default function Client({ month }: { month: string }) {
             </div>
             {p.days.length === 0 ? <p className="text-sm text-slate-500">ท่านไม่มีวันทำงานที่เลือกได้ในเดือนนี้</p> : (
               <>
-                <div className={`rounded-xl px-3 py-2 text-sm font-semibold ${sel.size === 0 ? "bg-[var(--surface-field)] text-slate-600" : sel.size < min ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800"}`}>
-                  {sel.size === 0 ? `ต้องเลือกอย่างน้อย ${min} วัน` : sel.size < min ? `เลือกแล้ว ${sel.size} วัน ต้องเลือกเพิ่มอีก ${min - sel.size} วัน` : `เลือกแล้ว ${sel.size} วัน ครบตามเกณฑ์ขั้นต่ำ ${min} วัน`}
+                <div className={`rounded-xl px-3 py-2 text-sm font-semibold ${sel.size === 0 ? "bg-[var(--surface-field)] text-slate-600" : sel.size < min ? "bg-sky-50 text-sky-800" : "bg-emerald-50 text-emerald-800"}`}>
+                  {sel.size === 0 ? `แนะนำให้เลือกประมาณ ${min} วัน (ไม่บังคับ — เลือกเท่าที่ทำได้)` : sel.size < min ? `เลือกแล้ว ${sel.size} วัน (แนะนำ ${min} วัน แต่ไม่บังคับ กดยืนยันได้เลย)` : `เลือกแล้ว ${sel.size} วัน ครบตามที่แนะนำ ${min} วัน`}
                 </div>
                 <MonthGrid month={month} days={p.days} sel={sel} open={open}
                   toggle={(date) => setPicked((s) => { const cur = new Set(s[p.id] ?? []); cur.has(date) ? cur.delete(date) : cur.add(date); return { ...s, [p.id]: [...cur].sort() }; })} />

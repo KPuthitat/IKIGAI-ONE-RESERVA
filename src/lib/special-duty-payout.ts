@@ -70,7 +70,7 @@ export type DutyOwnerAlert = { kind: "few_people" | "too_many_days"; text: strin
 export function dutyOwnerAlerts(branchId: number, yearMonth: string): DutyOwnerAlert[] {
   const s = dutyMonthSummary(branchId, yearMonth);
   const alerts: DutyOwnerAlert[] = [];
-  const minPeople = cfgNum("owner_alert_min_bookers"), maxDays = cfgNum("owner_alert_max_days_per_person");
+  const minPeople = cfgNum("owner_alert_min_bookers", branchId), maxDays = cfgNum("owner_alert_max_days_per_person", branchId);
   if (s.heldDays > 0 && s.byPerson.length < minPeople) alerts.push({ kind: "few_people", text: `มีผู้ได้รับตำแหน่งเพียง ${s.byPerson.length} คน ต่ำกว่าเกณฑ์ ${minPeople} คน` });
   for (const p of s.byPerson) if (p.days > maxDays) alerts.push({ kind: "too_many_days", text: `${p.name} ได้รับตำแหน่ง ${p.days} วัน เกินเกณฑ์ ${maxDays} วันต่อเดือน` });
   return alerts;

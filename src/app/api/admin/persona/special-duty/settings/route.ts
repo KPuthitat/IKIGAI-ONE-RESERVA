@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { canManage } from "@/lib/special-duty-access";
-import { disableMonth, enableMonth, getMonth, listConfig, listPositions, savePosition, setConfig, SpecialDutyError, WORK_GROUPS } from "@/lib/special-duty";
+import { disableMonth, enableMonth, getMonth, listBranchConfig, listConfig, listPositions, savePosition, setBranchConfig, setConfig, SpecialDutyError, WORK_GROUPS } from "@/lib/special-duty";
 import { bookingAudience } from "@/lib/special-duty-roster";
 import { bookingOpenFlex, pushIndividually } from "@/lib/special-duty-notify";
 import { viewerOf } from "@/lib/special-duty-viewer";
@@ -30,6 +30,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     isOwner: user.role === "super_admin",
     config: user.role === "super_admin" ? listConfig() : null,
+    branchConfig: listBranchConfig(branchId),   // the criteria as THIS branch sees them (its own value or the global one)
     branches, branchId,
     month: getMonth(branchId, month.data),
     positions: listPositions(branchId, month.data),
@@ -38,8 +39,8 @@ export async function GET(req: Request) {
 }
 
 const Body = z.object({
-  action: z.enum(["set_config", "enable_month", "disable_month", "save_position"]),
-  key: z.string().optional(), value: z.number().optional(),
+  action: z.enum(["set_config", "set_branch_config", "enable_month", "disable_month", "save_position"]),
+  key: z.string().optional(), value: z.number().nullable().optional(),
   branch_id: z.number().int().optional(), month: YM.optional(),
   slot_no: z.number().int().min(1).max(3).optional(), name: z.string().trim().min(1).max(80).optional(),
   description: z.string().trim().max(300).nullable().optional(), daily_rate: z.number().min(0).max(100000).optional(),
@@ -60,6 +61,13 @@ export async function POST(req: Request) {
       setConfig(d.key, d.value, user.id);
       logPersonaAction(user.id, "special_duty.config", 0);
       return NextResponse.json({ ok: true, config: listConfig() });
+    }
+    if (d.action === "set_branch_config") {
+      // each branch's manager sets that branch's own criteria; value null = back to the global value
+      if (!d.branch_id || !d.key || d.value === undefined || !canManage(v, d.branch_id)) return NextResponse.json({ error: d.branch_id && canManage(v, d.branch_id) ? "invalid_body" : "forbidden" }, { status: d.branch_id && canManage(v, d.branch_id) ? 400 : 403 });
+      setBranchConfig(d.branch_id, d.key, d.value, user.id);
+      logPersonaAction(user.id, "special_duty.branch_config", d.branch_id);
+      return NextResponse.json({ ok: true, branchConfig: listBranchConfig(d.branch_id) });
     }
     if (!d.branch_id || !d.month || !canManage(v, d.branch_id)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     if (d.action === "enable_month") {

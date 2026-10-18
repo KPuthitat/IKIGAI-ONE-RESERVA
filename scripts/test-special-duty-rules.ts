@@ -58,8 +58,9 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("the rows are in the database", (db.prepare("SELECT COUNT(*) n FROM special_duty_days WHERE user_id = ?").get(cook) as { n: number }).n === 6);
 
   // minimum 6
-  ok("fewer than 6 days for a position is refused", codes(book(cook2, dish, days(10, 5))).includes("below_minimum_days"));
-  ok("…and nothing was saved", (db.prepare("SELECT COUNT(*) n FROM special_duty_days WHERE user_id = ?").get(cook2) as { n: number }).n === 0);
+  ok("fewer than 6 days is accepted — 6 is a recommendation, not a lock (owner 2026-10-18)", book(cook2, dish, days(10, 5)).ok === true && (db.prepare("SELECT COUNT(*) n FROM special_duty_days WHERE user_id = ?").get(cook2) as { n: number }).n === 5);
+  ok("…even a single day", book(cook2, dish, days(20, 1)).ok === true);
+  book(cook2, dish, []);
   ok("not booking a position at all is fine (empty set)", book(cook2, toilet, []).ok === true);
 
   // eligibility
@@ -101,7 +102,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
 
   // changing a booking
   ok("a person can replace their days for a position (still 6 or more)", book(cook, dish, days(1, 8)).ok === true && (db.prepare("SELECT COUNT(*) n FROM special_duty_days WHERE user_id = ? AND position_id = ?").get(cook, dish) as { n: number }).n === 8);
-  ok("dropping to fewer than 6 is refused, dropping to none cancels", codes(book(cook, dish, days(1, 3))).includes("below_minimum_days") && book(cook, dish, []).ok === true);
+  ok("dropping to fewer than 6 is fine too, and dropping to none cancels", book(cook, dish, days(1, 3)).ok === true && book(cook, dish, []).ok === true);
 
   // window and disqualification
   ok("after the closing date booking is refused", codes(R.checkBookingSet({ userId: cook2, branchId: nama, yearMonth: YM, positionId: toilet, dates: days(1, 6), asOf: "2026-11-26" })).includes("booking_closed"));

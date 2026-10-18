@@ -27,7 +27,7 @@ export function absenceStrikes(userId: number, branchId: number, yearMonth: stri
 /** More than the configured number of missed duties last month → no self-booking this
  *  month (the manager can still assign them an open day). */
 export function isSelfBookingDisqualified(userId: number, branchId: number, yearMonth: string): boolean {
-  return absenceStrikes(userId, branchId, prevMonth(yearMonth)) > cfgNum("absence_strike_limit");
+  return absenceStrikes(userId, branchId, prevMonth(yearMonth)) > cfgNum("absence_strike_limit", branchId);
 }
 
 type UserRow = { id: number; department: string | null; status: string };
@@ -70,7 +70,8 @@ function checkSlot(user: UserRow, branchId: number, ym: string, pos: DutyPositio
 }
 
 /** The user's whole wanted set of days for ONE position (replacing what they hold there).
- *  Either empty (cancel / not booking) or at least min_days_per_position. */
+ *  Any number of days is accepted (owner 2026-10-18: "ไม่น้อยกว่า 6 ครั้ง" is NOT a lock — someone rostered on fewer than
+ *  6 days could never reach it). min_days_per_position is only the recommended number shown to staff. */
 export function checkBookingSet(args: { userId: number; branchId: number; yearMonth: string; positionId: number; dates: string[]; asOf?: string }): RuleResult {
   const { userId, branchId, yearMonth, positionId } = args;
   const asOf = args.asOf ?? bkkToday();
@@ -89,11 +90,10 @@ export function checkBookingSet(args: { userId: number; branchId: number; yearMo
   for (const d of dates) checkSlot(user, branchId, yearMonth, pos, d, asOf, errs);
   if (!pos || !pos.active) return { ok: false, errors: errs };
 
-  if (dates.length > 0 && dates.length < cfgNum("min_days_per_position")) errs.push({ code: "below_minimum_days", positionId });
 
   // at most N positions per person per day, counting every row they hold (booked or assigned) in OTHER positions
   const db = getDb();
-  const maxPerDay = cfgNum("max_positions_per_person_per_day");
+  const maxPerDay = cfgNum("max_positions_per_person_per_day", branchId);
   for (const d of dates) {
     const others = (db.prepare("SELECT COUNT(*) AS n FROM special_duty_days WHERE user_id = ? AND duty_date = ? AND position_id != ?").get(userId, d, positionId) as { n: number }).n;
     if (others + 1 > maxPerDay) errs.push({ code: "too_many_per_day", positionId, date: d });
@@ -155,7 +155,7 @@ export function checkAssignment(args: { userId: number; branchId: number; yearMo
   if (!pos || !pos.active) return { ok: false, errors: errs };
   const db = getDb();
   const others = (db.prepare("SELECT COUNT(*) AS n FROM special_duty_days WHERE user_id = ? AND duty_date = ? AND position_id != ?").get(userId, date, positionId) as { n: number }).n;
-  if (others + 1 > cfgNum("max_positions_per_person_per_day")) errs.push({ code: "too_many_per_day", positionId, date });
+  if (others + 1 > cfgNum("max_positions_per_person_per_day", branchId)) errs.push({ code: "too_many_per_day", positionId, date });
   if (db.prepare("SELECT 1 FROM special_duty_days WHERE position_id = ? AND duty_date = ?").get(positionId, date)) errs.push({ code: "slot_taken", positionId, date });
   if (args.override) {
     const stepped = errs.filter((e) => OVERRIDABLE.has(e.code)).map((e) => e.code);

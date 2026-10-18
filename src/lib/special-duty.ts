@@ -28,8 +28,15 @@ const bkkToday = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0
 
 // ── config ────────────────────────────────────────────────────────────────
 
-export function cfgNum(key: string): number {
-  const r = getDb().prepare("SELECT value FROM special_duty_config WHERE key = ?").get(key) as { value: string } | undefined;
+/** A criterion's value. With a branch: that branch's own setting if it has one, otherwise the global value. */
+export function cfgNum(key: string, branchId?: number | null): number {
+  const db = getDb();
+  if (branchId != null) {
+    const o = db.prepare("SELECT value FROM special_duty_branch_config WHERE branch_id = ? AND key = ?").get(branchId, key) as { value: string } | undefined;
+    const on = Number(o?.value);
+    if (o && Number.isFinite(on)) return on;
+  }
+  const r = db.prepare("SELECT value FROM special_duty_config WHERE key = ?").get(key) as { value: string } | undefined;
   const n = Number(r?.value);
   if (!r || !Number.isFinite(n)) throw new SpecialDutyError("config_missing", `special_duty_config.${key} is not set`);
   return n;
@@ -39,6 +46,32 @@ export function listConfig(): Record<string, number> {
   const out: Record<string, number> = {};
   for (const r of getDb().prepare("SELECT key, value FROM special_duty_config").all() as Array<{ key: string; value: string }>) out[r.key] = Number(r.value);
   return out;
+}
+
+/** Every criterion as one branch sees it: its effective value, the global one, and whether the branch overrides it. */
+export function listBranchConfig(branchId: number): Record<string, { value: number; global: number; overridden: boolean }> {
+  const db = getDb();
+  const own = new Map((db.prepare("SELECT key, value FROM special_duty_branch_config WHERE branch_id = ?").all(branchId) as Array<{ key: string; value: string }>).map((r) => [r.key, Number(r.value)]));
+  const out: Record<string, { value: number; global: number; overridden: boolean }> = {};
+  for (const [key, g] of Object.entries(listConfig())) out[key] = { value: own.has(key) ? own.get(key)! : g, global: g, overridden: own.has(key) };
+  return out;
+}
+
+/** Set (or, with null, clear) one branch's own value of a criterion. Same limits as the global setter. */
+export function setBranchConfig(branchId: number, key: string, value: number | null, actorId: number): void {
+  const db = getDb();
+  if (!db.prepare("SELECT 1 FROM special_duty_config WHERE key = ?").get(key)) throw new SpecialDutyError("unknown_config_key");
+  const before = listBranchConfig(branchId)[key];
+  if (value == null) {
+    db.prepare("DELETE FROM special_duty_branch_config WHERE branch_id = ? AND key = ?").run(branchId, key);
+  } else {
+    if (!Number.isFinite(value) || value < 0) throw new SpecialDutyError("invalid_value");
+    if (key === "max_positions_per_branch" && value > 3) throw new SpecialDutyError("max_positions_capped", "the schema holds 3 positions per branch");
+    db.prepare(`INSERT INTO special_duty_branch_config (branch_id, key, value, updated_by, updated_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(branch_id, key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at`)
+      .run(branchId, key, String(value), actorId, new Date().toISOString());
+  }
+  audit({ actorId, branchId, entity: "branch_config", entityId: key, action: value == null ? "clear" : "update", before: before.value, after: value == null ? before.global : value });
 }
 
 export function setConfig(key: string, value: number, actorId: number): void {
@@ -97,14 +130,28 @@ export function isEnabled(branchId: number, yearMonth: string): boolean {
 
 /** Default last booking day: the Nth of the PREVIOUS month; if the roster was
  *  published so late that fewer than min_booking_window_days remain, publish day + window. */
-export function bookingCloseDateFor(yearMonth: string, publishedAtIso?: string | null): string {
-  const day = String(cfgNum("booking_close_day_of_previous_month")).padStart(2, "0");
+export function bookingCloseDateFor(yearMonth: string, publishedAtIso?: string | null, branchId?: number | null): string {
+  const day = String(cfgNum("booking_close_day_of_previous_month", branchId)).padStart(2, "0");
   const standard = `${prevMonth(yearMonth)}-${day}`;
   if (!publishedAtIso) return standard;
   const pub = new Date(new Date(publishedAtIso).getTime() + 7 * 3600_000);
-  pub.setUTCDate(pub.getUTCDate() + cfgNum("min_booking_window_days"));
+  pub.setUTCDate(pub.getUTCDate() + cfgNum("min_booking_window_days", branchId));
   const earliest = pub.toISOString().slice(0, 10);
   return earliest > standard ? earliest : standard;
+}
+
+/** Set this branch's last booking day for the month (owner 2026-10-18: each branch closes on its own date). Only while
+ *  booking is open — the day cannot be in the past or after the month's last day. */
+export function setBookingCloseDate(args: { branchId: number; yearMonth: string; date: string; actorId: number; asOf?: string }): DutyMonth {
+  const { branchId, yearMonth, date, actorId } = args;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new SpecialDutyError("invalid_date");
+  const cur = getMonth(branchId, yearMonth);
+  if (!cur.enabled || cur.status !== "booking_open") throw new SpecialDutyError("invalid_transition", "booking is not open");
+  if (date < (args.asOf ?? bkkToday())) throw new SpecialDutyError("invalid_date", "the closing day cannot be in the past");
+  if (date > `${yearMonth}-${String(daysInMonth(yearMonth)).padStart(2, "0")}`) throw new SpecialDutyError("invalid_date", "booking must close within the month");
+  getDb().prepare("UPDATE special_duty_months SET booking_close_date = ? WHERE branch_id = ? AND year_month = ?").run(date, branchId, yearMonth);
+  audit({ actorId, branchId, yearMonth, entity: "month", entityId: `${branchId}:${yearMonth}`, action: "set_close_date", before: cur.bookingCloseDate, after: date });
+  return getMonth(branchId, yearMonth);
 }
 
 /** Owner switches the scheme on for one branch + month. Positions are copied from the
@@ -120,7 +167,7 @@ export function enableMonth(args: { branchId: number; yearMonth: string; actorId
   const pub = getLastPublish(branchId, yearMonth);
   const published = !!pub && !!db.prepare("SELECT 1 FROM roster_publish_log WHERE branch_id = ? AND year_month = ? AND kind = 'publish'").get(branchId, yearMonth);
   const status: DutyMonthStatus = published ? "booking_open" : "awaiting_roster";
-  const close = bookingCloseDateFor(yearMonth, published ? new Date().toISOString() : null);
+  const close = bookingCloseDateFor(yearMonth, published ? new Date().toISOString() : null, branchId);
   db.transaction(() => {
     db.prepare(`
       INSERT INTO special_duty_months (branch_id, year_month, enabled, status, booking_close_date, booking_opened_at)
@@ -211,10 +258,10 @@ export function savePosition(args: {
 }): DutyPosition {
   const { branchId, yearMonth, slotNo, actorId } = args;
   if (!isMonth(yearMonth)) throw new SpecialDutyError("invalid_month");
-  if (!Number.isInteger(slotNo) || slotNo < 1 || slotNo > cfgNum("max_positions_per_branch")) throw new SpecialDutyError("slot_out_of_range", "a branch has at most 3 positions");
+  if (!Number.isInteger(slotNo) || slotNo < 1 || slotNo > cfgNum("max_positions_per_branch", args.branchId)) throw new SpecialDutyError("slot_out_of_range", "a branch has at most 3 positions");
   const name = args.name.trim();
   if (!name) throw new SpecialDutyError("name_required");
-  const rate = args.dailyRate ?? cfgNum("default_daily_rate");
+  const rate = args.dailyRate ?? cfgNum("default_daily_rate", args.branchId);
   if (!Number.isFinite(rate) || rate < 0) throw new SpecialDutyError("invalid_rate");
   if (args.eligibleGroups) for (const g of args.eligibleGroups) if (!WORK_GROUPS.includes(g)) throw new SpecialDutyError("invalid_group");
   const month = getMonth(branchId, yearMonth);

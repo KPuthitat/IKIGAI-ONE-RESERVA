@@ -62,7 +62,7 @@ export function getAnonymousSlots(viewer: Viewer, branchId: number, yearMonth: s
     }
     return { id: p.id, slotNo: p.slotNo, name: p.name, description: p.description, dailyRate: p.dailyRate, eligible, days };
   });
-  return { status: month.status, bookingCloseDate: month.bookingCloseDate, minDays: cfgNum("min_days_per_position"), positions };
+  return { status: month.status, bookingCloseDate: month.bookingCloseDate, minDays: cfgNum("min_days_per_position", branchId), positions };
 }
 
 export type MyDuty = { id: number; positionId: number; positionName: string; date: string; status: string; amount: number; iDoIt: boolean; reviewNote: string | null; evidenceCount: number };
