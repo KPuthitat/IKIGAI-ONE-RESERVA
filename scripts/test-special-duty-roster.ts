@@ -48,6 +48,14 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("publishing opens booking", pub.opened && D.getMonth(nama, YM).status === "booking_open");
   ok("a late publication still gives the minimum window (27th + 3 days)", pub.closeDate === "2026-11-30" && D.getMonth(nama, YM).bookingCloseDate === "2026-11-30");
   ok("the audience is the rostered staff who may take at least one position, with their LINE ids", pub.audience.length === 2 && pub.audience.every((a) => a.lineUserId?.startsWith("U-")));
+  // who would not get the card, and why (owner 2026-10-20)
+  const noline = mk("noline", "service", null), idle = mk("idle", "service");
+  up(noline, 3, rosterPos2);   // on the roster (own cell) but no LINE; "idle" is never rostered
+  const rep = H.audienceReport(nama, YM);
+  const why = (id: number) => rep.find((e) => e.userId === id)?.reason;
+  ok("a person with a shift and a LINE id is reachable", why(waiter) === "ok" && why(cook) === "ok");
+  ok("a rostered person without LINE is reported as no_line", why(noline) === "no_line");
+  ok("a branch member with no shift in the month is reported as not_on_roster", why(idle) === "not_on_roster");
   ok("publishing twice does not open it again", H.openBookingOnPublish({ branchId: nama, yearMonth: YM, actorId: owner }).opened === false);
   ok("days with nobody eligible are reported (no kitchen staff after day 20)", (() => {
     const g = pub.gaps.filter((x) => x.positionId === dish);

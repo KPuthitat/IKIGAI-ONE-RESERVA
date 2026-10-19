@@ -12,6 +12,7 @@
 import { getDb } from "./db";
 import { getMonth, listPositions, advanceMonth, bookingCloseDateFor, audit, daysInMonth, type DutyPosition } from "./special-duty";
 import { isOnRoster } from "./special-duty-rules";
+import { sqlNameWithPrefix } from "./name";
 
 type Released = { positionId: number; positionName: string; date: string; userId: number };
 
@@ -63,6 +64,42 @@ export function bookingAudience(branchId: number, ym: string): Array<{ userId: n
     .filter((u) => positions.some((p) => p.eligibleGroups == null || (u.dept != null && (p.eligibleGroups as string[]).includes(u.dept))))
     .map((u) => ({ userId: u.id, lineUserId: u.line }));
 }
+
+export type AudienceReason = "ok" | "no_line" | "not_on_roster" | "group_not_eligible" | "no_positions";
+export type AudienceEntry = { userId: number; name: string; lineUserId: string | null; reason: AudienceReason };
+
+/**
+ * Everyone attached to this branch with the reason they would (not) receive the "choose your days" card
+ * (owner 2026-10-20: ทำรายชื่อคนที่ไม่ได้รับแจ้งเตือน). Mirrors bookingAudience's rules, plus LINE.
+ */
+export function audienceReport(branchId: number, ym: string): AudienceEntry[] {
+  const db = getDb();
+  const positions = listPositions(branchId, ym, { activeOnly: true });
+  const onRoster = new Set((db.prepare(`
+    SELECT DISTINCT a.user_id AS id FROM roster_assignments a JOIN shift_codes s ON s.id = a.shift_code_id
+     WHERE a.branch_id = ? AND substr(a.assignment_date, 1, 7) = ? AND s.kind = 'work'`).all(branchId, ym) as Array<{ id: number }>).map((r) => r.id));
+  const people = db.prepare(`
+    SELECT u.id, ${sqlNameWithPrefix("u")} AS name, u.line_user_id AS line, u.department AS dept
+      FROM users u JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+     WHERE u.role IN ('staff','admin') AND u.status NOT IN ('disabled','resigned','terminated') AND COALESCE(u.is_test_account,0) = 0
+     ORDER BY u.display_name COLLATE NOCASE`).all(branchId) as Array<{ id: number; name: string; line: string | null; dept: string | null }>;
+  return people.map((u) => {
+    let reason: AudienceReason = "ok";
+    if (positions.length === 0) reason = "no_positions";
+    else if (!onRoster.has(u.id)) reason = "not_on_roster";
+    else if (!positions.some((p) => p.eligibleGroups == null || (u.dept != null && (p.eligibleGroups as string[]).includes(u.dept)))) reason = "group_not_eligible";
+    else if (!u.line) reason = "no_line";
+    return { userId: u.id, name: u.name, lineUserId: u.line, reason };
+  });
+}
+
+export const AUDIENCE_REASON_TH: Record<string, string> = {
+  not_on_roster: "ไม่มีกะทำงานในตารางงานเดือนนี้ของสาขา",
+  group_not_eligible: "แผนกไม่ตรงกลุ่มที่ตำแหน่งงานเปิดให้",
+  no_line: "ยังไม่ได้ผูก LINE",
+  push_failed: "ส่ง LINE ไม่สำเร็จ (เช่น บล็อกบอท)",
+  no_positions: "ยังไม่มีตำแหน่งงานที่เปิดใช้"
+};
 
 export type CoverageGap = { positionId: number; positionName: string; date: string };
 
