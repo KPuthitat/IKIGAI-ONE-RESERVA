@@ -32,6 +32,7 @@ import SvcForfeitExemptButton from "../SvcForfeitExemptButton";
 import SvcAttendancePanel, { type PanelRow } from "./SvcAttendancePanel";
 import { svcAttendanceApplies, getSvcCriteriaReview, pendingLeaveCountForMonth } from "@/lib/svc-attendance";
 import SvcReviewButton from "../SvcReviewButton";
+import { meetingFeeReview } from "@/lib/svc-meeting-review";
 import SvcMeetingFeeEditor from "../SvcMeetingFeeEditor";
 import SvcDeductionEditor from "../SvcDeductionEditor";
 import OwlMascot from "../../../../components/OwlMascot";
@@ -84,6 +85,8 @@ export default function CompanyServiceChargePage({
   // Manual lump-sum meeting fees for the month (owner 2026-09-20) — paid WITH the
   // service charge; the amount here is gross (pre-WHT).
   const meetingFees = listManualMeetingFees(month);
+  // เบี้ยประชุมจากการเข้าประชุมผู้บริหารของเดือนนี้ (owner 2026-10-20) — shown as its own card
+  const mtgReview = meetingFeeReview(month, branchRow.company_id);
 
   // Company-wide payout (close/pay/post to ACCOUNTA, split per branch) — only in
   // shared "รวมกอง" mode (owner 2026-09-03). In that mode the per-branch page hides
@@ -296,6 +299,79 @@ export default function CompanyServiceChargePage({
       {attendanceOn && attendanceRows.length > 0 && (
         <SvcAttendancePanel rows={attendanceRows} yearMonth={month} canEdit={canManagePayout} locked={payoutLocked} />
       )}
+
+      {/* เบี้ยประชุม (จากการเข้าประชุมผู้บริหาร) — จ่ายพร้อมเซอร์วิสชาร์จของเดือนนี้ */}
+      <div className="card">
+        <div className="flex items-baseline justify-between gap-2 flex-wrap mb-2">
+          <div className="text-sm font-bold text-slate-700">เบี้ยประชุม · ประชุมผู้บริหารเดือนนี้</div>
+          {mtgReview.people.length > 0 && (
+            <div className="text-xs text-slate-500">รวม ฿{fmtMoney(mtgReview.totalGross)} · สุทธิ ฿{fmtMoney(mtgReview.totalNet)} (จ่ายพร้อมเซอร์วิสชาร์จ)</div>
+          )}
+        </div>
+        {mtgReview.people.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
+                  <th className="py-1.5 pr-3">ชื่อ</th>
+                  <th className="py-1.5 pr-3 text-right">ประชุม (ครั้ง)</th>
+                  <th className="py-1.5 pr-3 text-right">เวลา (ชม.)</th>
+                  <th className="py-1.5 pr-3 text-right">เบี้ยประชุม</th>
+                  <th className="py-1.5 pr-3 text-right">หัก ณ ที่จ่าย</th>
+                  <th className="py-1.5 pr-3 text-right">สุทธิ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mtgReview.people.map((p) => (
+                  <tr key={p.userId} className="border-b border-slate-100 last:border-0">
+                    <td className="py-1.5 pr-3 text-slate-800">{p.name}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{p.meetings}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{(p.minutes / 60).toFixed(2)}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{fmtMoney(p.gross)}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums text-amber-700">{p.wht > 0 ? fmtMoney(p.wht) : "—"}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums font-bold text-emerald-700">{fmtMoney(p.net)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-sm text-slate-500">
+            {mtgReview.beforeCutover
+              ? "เดือนนี้ก่อนเริ่มจ่ายเบี้ยประชุมผ่านเซอร์วิสชาร์จ (เริ่มตั้งแต่ ก.ย. 2569) — จ่ายผ่านค่าตอบแทนแล้ว"
+              : mtgReview.meetings.length === 0
+                ? "เดือนนี้ไม่มีการประชุมผู้บริหารที่บันทึกไว้ในระบบ"
+                : "มีการประชุมในเดือนนี้ แต่ยังไม่มีใครมีเบี้ยประชุม — เบี้ยจะคิดเมื่อผู้เข้าร่วมกด “จบการประชุม” และกรอกบันทึกครบ ดูรายการด้านล่าง"}
+          </div>
+        )}
+        {mtgReview.meetings.length > 0 && (
+          <div className="mt-3 overflow-x-auto">
+            <div className="text-[11px] font-semibold text-slate-500 mb-1">การประชุมของเดือนนี้</div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-slate-400 border-b border-slate-200">
+                  <th className="py-1 pr-3">วันที่</th><th className="py-1 pr-3">หัวข้อ</th>
+                  <th className="py-1 pr-3 text-right">เชิญ</th><th className="py-1 pr-3 text-right">เข้าร่วม</th>
+                  <th className="py-1 pr-3 text-right">จบแล้ว</th><th className="py-1 pr-3 text-right">เบี้ยรวม</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mtgReview.meetings.map((m) => (
+                  <tr key={m.id} className="border-b border-slate-100 last:border-0">
+                    <td className="py-1 pr-3 whitespace-nowrap">{m.date}</td>
+                    <td className="py-1 pr-3 text-slate-700">{m.title}</td>
+                    <td className="py-1 pr-3 text-right tabular-nums">{m.invited}</td>
+                    <td className="py-1 pr-3 text-right tabular-nums">{m.joined}</td>
+                    <td className={`py-1 pr-3 text-right tabular-nums ${m.joined > m.finished ? "text-amber-600 font-semibold" : ""}`}>{m.finished}</td>
+                    <td className="py-1 pr-3 text-right tabular-nums">{m.feeTotal > 0 ? fmtMoney(m.feeTotal) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-[11px] text-slate-400 mt-1">เบี้ยประชุมคิดจากผู้ที่ “จบแล้ว” เท่านั้น (กดจบการประชุมและกรอกบันทึกครบ) — ถ้า “เข้าร่วม” มากกว่า “จบแล้ว” แปลว่ามีคนยังไม่จบ ยังไม่มีเบี้ยของคนนั้น</p>
+          </div>
+        )}
+      </div>
 
       {/* Distribution */}
       <div className="card">
