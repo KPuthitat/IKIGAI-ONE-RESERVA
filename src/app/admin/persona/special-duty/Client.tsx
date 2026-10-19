@@ -38,6 +38,8 @@ export default function Client({ month }: { month: string }) {
   const [photos, setPhotos] = useState<Array<{ id: number }>>([]);
   const [rejectNote, setRejectNote] = useState("");
   const [subs, setSubs] = useState<Array<{ id: number; name: string }> | null>(null);
+  // who did not (or will not) get the booking card, with the reason (owner 2026-10-20)
+  const [missed, setMissed] = useState<{ list: Array<{ userId: number; name: string; reasonText: string }>; sentNote: string | null } | null>(null);
   const [closeDate, setCloseDate] = useState("");   // this branch's own closing day (booking stage)
 
   const load = useCallback(async () => {
@@ -106,6 +108,7 @@ export default function Client({ month }: { month: string }) {
                   const r = await act({ action: "open_booking", ...(closeDate ? { close_date: closeDate } : {}) });
                   if (!r.ok) { setMsg({ ok: false, text: r.j.error === "no_roster" ? "สาขานี้ยังไม่มีตารางงานของเดือนนี้ ลงตารางงานก่อนจึงเปิดให้เลือกวันได้" : r.j.error === "not_awaiting_roster" ? "เดือนนี้เปิดให้เลือกวันไปแล้ว" : "เปิดไม่สำเร็จ" }); return; }
                   const { recipients = 0, sent = 0, noLine = 0 } = r.j as { recipients?: number; sent?: number; noLine?: number };
+                  setMissed({ list: (r.j.missed ?? []) as Array<{ userId: number; name: string; reasonText: string }>, sentNote: `ส่ง LINE สำเร็จ ${sent}/${recipients} คน` });
                   done(`เปิดให้เลือกวันแล้ว · ส่ง LINE ${sent}/${recipients} คน${noLine ? ` (ไม่มี LINE ${noLine} คน — เข้าเลือกได้เองในระบบ)` : ""}`);
                 }}>เปิดให้พนักงานสาขานี้เลือกวัน และส่ง LINE</button>
               </>
@@ -126,6 +129,7 @@ export default function Client({ month }: { month: string }) {
                   const r = await act({ action: "invite_booking" });
                   if (!r.ok) { setMsg({ ok: false, text: r.j.error === "booking_not_open" ? "ขณะนี้ไม่ได้อยู่ในช่วงเปิดให้เลือกวัน" : "ส่งไม่สำเร็จ" }); return; }
                   const { recipients = 0, sent = 0, noLine = 0 } = r.j as { recipients?: number; sent?: number; noLine?: number };
+                  setMissed({ list: (r.j.missed ?? []) as Array<{ userId: number; name: string; reasonText: string }>, sentNote: `ส่ง LINE สำเร็จ ${sent}/${recipients} คน` });
                   setMsg({ ok: true, text: `ส่งให้พนักงานเลือกวันแล้ว · LINE ${sent}/${recipients} คน${noLine ? ` (ไม่มี LINE ${noLine} คน — เข้าเลือกได้เองที่เมนูตำแหน่งงานค่าตอบแทนพิเศษ)` : ""}` });
                 }}>ส่งให้พนักงานเข้ามาเลือกวัน</button>
                 <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { const r = await act({ action: "close_booking" }); r.ok ? done("ปิดรับการเลือกวันแล้ว") : setMsg({ ok: false, text: ERR[r.j.error] ?? "ทำรายการไม่สำเร็จ" }); }}>ปิดรับการเลือกวันก่อนกำหนด</button>
@@ -144,6 +148,31 @@ export default function Client({ month }: { month: string }) {
                   }}>ประกาศตาราง</button>
                 </div>
               </>
+            )}
+            {["booking_open", "booking_closed", "filling"].includes(st) && (
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <button type="button" className="btn-secondary" disabled={busy} onClick={async () => {
+                  const r = await act({ action: "audience_check" });
+                  if (!r.ok) { setMsg({ ok: false, text: "ตรวจรายชื่อไม่สำเร็จ" }); return; }
+                  setMissed({ list: (r.j.missed ?? []) as Array<{ userId: number; name: string; reasonText: string }>, sentNote: `พร้อมรับแจ้ง ${r.j.reachable ?? 0}/${r.j.total ?? 0} คน` });
+                }}>ตรวจรายชื่อคนที่ไม่ได้รับแจ้งเตือน</button>
+                {missed && (
+                  <div className="rounded-xl bg-slate-50 p-3 text-sm space-y-1">
+                    {missed.sentNote && <div className="font-semibold text-slate-700">{missed.sentNote}</div>}
+                    {missed.list.length === 0
+                      ? <div className="text-emerald-700">ทุกคนในสาขามีสิทธิ์และผูก LINE ครบ — ไม่มีใครตกหล่น</div>
+                      : (
+                        <>
+                          <div className="text-amber-700">ไม่ได้รับแจ้งเตือน {missed.list.length} คน</div>
+                          <ul className="space-y-0.5">
+                            {missed.list.map((p) => <li key={p.userId} className="flex flex-wrap gap-x-2"><span className="text-slate-800">{p.name}</span><span className="text-slate-500">— {p.reasonText}</span></li>)}
+                          </ul>
+                          <div className="text-[11px] text-slate-400">คนที่ไม่ได้รับ LINE ยังเข้าเลือกวันเองได้ที่เมนูตำแหน่งงานค่าตอบแทนพิเศษ (ถ้ามีสิทธิ์และมีกะในตาราง)</div>
+                        </>
+                      )}
+                  </div>
+                )}
+              </div>
             )}
             {["special_published", "in_progress", "settled"].includes(st) && <p className="text-sm text-slate-600">ประกาศตารางแล้ว พนักงานในสาขาเห็นรายชื่อผู้ปฏิบัติงานแต่ไม่เห็นค่าตอบแทน</p>}
           </div>

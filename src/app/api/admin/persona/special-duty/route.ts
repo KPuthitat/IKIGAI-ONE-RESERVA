@@ -6,8 +6,8 @@ import { canManage, getManagerView } from "@/lib/special-duty-access";
 import { getMonth, listPositions, setBookingCloseDate, SpecialDutyError } from "@/lib/special-duty";
 import { checkAssignment } from "@/lib/special-duty-rules";
 import { closeBooking, fillOpenDays, managerAssign, openDays, publishSchedule, removeDay, startFilling } from "@/lib/special-duty-fill";
-import { bookingOpenFlex, noticeFlex, pushIndividually, schedulePublishedFlex } from "@/lib/special-duty-notify";
-import { bookingAudience, branchHasRoster, openBookingOnPublish } from "@/lib/special-duty-roster";
+import { bookingOpenFlex, noticeFlex, pushIndividually, pushWithOutcome, schedulePublishedFlex } from "@/lib/special-duty-notify";
+import { audienceReport, AUDIENCE_REASON_TH, bookingAudience, branchHasRoster, openBookingOnPublish } from "@/lib/special-duty-roster";
 import { decideSwap, listPendingForManager, swapNotices, SwapError } from "@/lib/special-duty-swap";
 import { dutyMonthSummary, dutyOwnerAlerts } from "@/lib/special-duty-payout";
 import { assignSubstitute, dayBelongsToBranch, EvidenceError, listEvidence, listSubstituteCandidates, markAbsent, reviewEvidence } from "@/lib/special-duty-evidence";
@@ -76,9 +76,17 @@ export async function GET(req: Request) {
   });
 }
 
+// People who will not get (or did not get) the booking card, each with the reason, worded for the manager.
+function missedList(report: ReturnType<typeof audienceReport>, outcome?: Map<number, "sent" | "no_line" | "push_failed">) {
+  return report
+    .map((e) => ({ userId: e.userId, name: e.name, reason: e.reason !== "ok" ? e.reason : outcome?.get(e.userId) === "push_failed" ? "push_failed" : "ok" }))
+    .filter((e) => e.reason !== "ok")
+    .map((e) => ({ userId: e.userId, name: e.name, reason: e.reason, reasonText: AUDIENCE_REASON_TH[e.reason] ?? e.reason }));
+}
+
 const Body = z.object({
   month: YM,
-  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute", "approve_swap", "reject_swap", "invite_booking", "open_booking", "set_close_date"]),
+  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute", "approve_swap", "reject_swap", "invite_booking", "open_booking", "set_close_date", "audience_check"]),
   position_id: z.number().int().optional(), date: z.string().optional(), user_id: z.number().int().optional(), override: z.boolean().optional(),
   close_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), swap_id: z.number().int().optional(), day_id: z.number().int().optional(), allow_unfilled: z.boolean().optional(), note: z.string().max(300).optional()
 });
@@ -102,9 +110,10 @@ export async function POST(req: Request) {
         if (r.opened && d.close_date) { try { setBookingCloseDate({ branchId, yearMonth: ym, date: d.close_date, actorId }); r.closeDate = d.close_date; } catch { /* keep the default day */ } }
         const branch = getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string };
         const base = (process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || "").replace(/\/$/, "");
-        const sent = await pushIndividually(r.audience.map((a) => a.lineUserId), bookingOpenFlex({ branchName: branch.name, yearMonth: ym, closeDate: r.closeDate, url: `${base}/staff/persona/special-duty?month=${ym}` }));
+        const outcome = await pushWithOutcome(r.audience, bookingOpenFlex({ branchName: branch.name, yearMonth: ym, closeDate: r.closeDate, url: `${base}/staff/persona/special-duty?month=${ym}` }));
+        const sent = [...outcome.values()].filter((v) => v === "sent").length;
         logPersonaAction(actorId, "special_duty.open_booking", branchId);
-        return NextResponse.json({ ok: true, recipients: r.audience.length, sent, noLine: r.audience.filter((a) => !a.lineUserId).length, gaps: r.gaps.length });
+        return NextResponse.json({ ok: true, recipients: r.audience.length, sent, noLine: r.audience.filter((a) => !a.lineUserId).length, gaps: r.gaps.length, missed: missedList(audienceReport(branchId, ym), outcome) });
       }
       case "set_close_date": {
         if (!d.close_date) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
@@ -118,9 +127,15 @@ export async function POST(req: Request) {
         const branch = getDb().prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string };
         const base = (process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || "").replace(/\/$/, "");
         const aud = bookingAudience(branchId, ym);
-        const sent = await pushIndividually(aud.map((a) => a.lineUserId), bookingOpenFlex({ branchName: branch.name, yearMonth: ym, closeDate: m.bookingCloseDate, url: `${base}/staff/persona/special-duty?month=${ym}` }));
+        const outcome = await pushWithOutcome(aud, bookingOpenFlex({ branchName: branch.name, yearMonth: ym, closeDate: m.bookingCloseDate, url: `${base}/staff/persona/special-duty?month=${ym}` }));
+        const sent = [...outcome.values()].filter((v) => v === "sent").length;
         logPersonaAction(actorId, "special_duty.invite_booking", branchId);
-        return NextResponse.json({ ok: true, recipients: aud.length, sent, noLine: aud.filter((a) => !a.lineUserId).length });
+        return NextResponse.json({ ok: true, recipients: aud.length, sent, noLine: aud.filter((a) => !a.lineUserId).length, missed: missedList(audienceReport(branchId, ym), outcome) });
+      }
+      case "audience_check": {
+        // Who would not get the booking card (and why) — no message is sent.
+        const rep = audienceReport(branchId, ym);
+        return NextResponse.json({ ok: true, total: rep.length, reachable: rep.filter((e) => e.reason === "ok").length, missed: missedList(rep) });
       }
       case "start_filling": startFilling({ branchId, yearMonth: ym, actorId }); break;
       case "suggest": return NextResponse.json({ ok: true, plan: fillOpenDays({ branchId, yearMonth: ym, managerId: actorId, commit: false }) });

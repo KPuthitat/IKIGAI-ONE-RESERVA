@@ -52,6 +52,19 @@ export async function pushIndividually(recipients: Array<string | null>, flex: L
   return sent;
 }
 
+/** Like pushIndividually, but says what happened to each person (owner 2026-10-20: who did not get it). */
+export async function pushWithOutcome(recipients: Array<{ userId: number; lineUserId: string | null }>, flex: LineFlexMessage): Promise<Map<number, "sent" | "no_line" | "push_failed">> {
+  const token = getPlatformChannel()?.channel_token?.trim();
+  const out = new Map<number, "sent" | "no_line" | "push_failed">();
+  for (const r of recipients) {
+    if (!r.lineUserId) { out.set(r.userId, "no_line"); continue; }
+    if (!token) { out.set(r.userId, "push_failed"); continue; }
+    try { out.set(r.userId, (await sendLinePush(token, { to: r.lineUserId, messages: [flex] })).ok ? "sent" : "push_failed"); }
+    catch (e) { console.warn("[special-duty] push failed", e); out.set(r.userId, "push_failed"); }
+  }
+  return out;
+}
+
 export function schedulePublishedFlex(args: { branchName: string; yearMonth: string; days: Array<{ positionName: string; date: string }>; url: string }): LineFlexMessage {
   const title = `ตารางตำแหน่งงานค่าตอบแทนพิเศษ เดือน${thaiMonth(args.yearMonth)}`;
   return {
