@@ -4851,7 +4851,13 @@ function runMigrations(db: Database.Database): void {
   // "ตรวจแล้ว" review sign-off (owner 2026-08-03) — auto-cleared on any line change.
   if (!plNames.has("reviewed_at")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN reviewed_at TEXT");
+  }  // "ทำรายการแล้ว" (owner 2026-10-19): the person's pay has been actually transferred. Pay-all / post-all stay
+  // locked until every person on the cycle is ticked.
+  if (!plNames.has("transferred_at")) {
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN transferred_at TEXT");
+    db.exec("ALTER TABLE payroll_lines ADD COLUMN transferred_by INTEGER");
   }
+
   if (!plNames.has("reviewed_by")) {
     db.exec("ALTER TABLE payroll_lines ADD COLUMN reviewed_by INTEGER REFERENCES users(id)");
   }

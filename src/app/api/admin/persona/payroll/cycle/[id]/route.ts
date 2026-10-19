@@ -47,6 +47,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const nowIso = new Date().toISOString();
   const results: Result[] = [];
 
+  // "ทำรายการแล้ว" gate (owner 2026-10-19): lines of a period (same filter as the cycle page's tables)
+  // that have not been ticked as transferred. Pay-all and post-all refuse a period while any remain.
+  const untransferredStmt = db.prepare(
+    `SELECT COUNT(DISTINCT pl.user_id) AS n FROM payroll_lines pl
+      WHERE pl.period_id = ? AND pl.transferred_at IS NULL
+        AND NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0)`
+  );
+  const untransferred = (periodId: number) => (untransferredStmt.get(periodId) as { n: number }).n;
+
   // ── ปิดยอดทุกสาขา ── needs the admin PIN; verify ONCE before the loop.
   if (d.action === "finalize_all") {
     const pinStr = (d.pin ?? "").trim();
@@ -90,6 +99,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       if (s.status !== "finalized") { results.push({ period_id: s.id, branch: s.branch_name, ok: false, skipped: s.status }); continue; }
       try {
         stmt.run(s.id);
+        db.prepare("UPDATE payroll_lines SET transferred_at = NULL, transferred_by = NULL WHERE period_id = ?").run(s.id);
         try { removePayrollFromAccounta(s.id); } catch (e) { console.error("[payroll-cycle] removePayrollFromAccounta failed", e); }
         results.push({ period_id: s.id, branch: s.branch_name, ok: true });
       } catch (e) { results.push({ period_id: s.id, branch: s.branch_name, ok: false, error: (e as Error).message }); }
@@ -105,6 +115,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const stmt = db.prepare(`UPDATE payroll_periods SET status='paid', paid_by=?, paid_at=? WHERE id=? AND status='finalized'`);
     for (const s of siblings) {
       if (s.status !== "finalized") { results.push({ period_id: s.id, branch: s.branch_name, ok: false, skipped: s.status }); continue; }
+      const left = untransferred(s.id);
+      if (left > 0) { results.push({ period_id: s.id, branch: s.branch_name, ok: false, skipped: `ยังไม่ทำรายการ (เหลือ ${left} คน)` }); continue; }
       try { stmt.run(user.id, paidAtIso, s.id); results.push({ period_id: s.id, branch: s.branch_name, ok: true }); }
       catch (e) { results.push({ period_id: s.id, branch: s.branch_name, ok: false, error: (e as Error).message }); }
     }
@@ -116,6 +128,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const stmt = db.prepare(`UPDATE payroll_periods SET posted_by=?, posted_at=COALESCE(posted_at,?) WHERE id=?`);
     for (const s of siblings) {
       if (s.status !== "paid") { results.push({ period_id: s.id, branch: s.branch_name, ok: false, skipped: s.status }); continue; }
+      const left = untransferred(s.id);
+      if (left > 0) { results.push({ period_id: s.id, branch: s.branch_name, ok: false, skipped: `ยังไม่ทำรายการ (เหลือ ${left} คน)` }); continue; }
       try {
         postPayrollToAccounta(s.id, user.id);
         stmt.run(user.id, nowIso, s.id);
