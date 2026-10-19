@@ -11,6 +11,7 @@ import { resolveCompanyCycle } from "@/lib/payroll-cycle";
 import CompanyCycleActions from "./CompanyCycleActions";
 import PtBreakdownTable from "./PtBreakdownTable";
 import LineReviewToggle from "./LineReviewToggle";
+import TransferToggle from "./TransferToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -190,6 +191,42 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
     }
   }
 
+  // ── "ทำรายการแล้ว" tick (owner 2026-10-19) ─────────────────────────────
+  // Once a period is finalized the admin ticks each person as their pay is really transferred; pay-all and
+  // post-all stay locked until everyone is ticked. Same row filter as the tables. Posted periods are frozen
+  // (static badge). `transferPeriodIdsByUser` = the finalized/paid, not-yet-posted periods a click updates.
+  const tSibIds = siblings.filter((s) => s.status === "finalized" || s.status === "paid").map((s) => s.id);
+  const postedIds = new Set(siblings.filter((s) => s.posted_at != null).map((s) => s.id));
+  const transferPeriodIdsByUser: Record<number, number[]> = {};
+  const transferredByUser: Record<number, boolean> = {};
+  const transferLockedByUser: Record<number, boolean> = {};
+  let transferUsers = 0, transferDoneUsers = 0;
+  if (tSibIds.length > 0) {
+    const trRows = db.prepare(`
+      SELECT pl.user_id, pl.period_id, pl.transferred_at
+      FROM payroll_lines pl
+      WHERE pl.period_id IN (${tSibIds.map(() => "?").join(",")})
+        AND NOT (pl.employment_type = 'ft' AND COALESCE(pl.monthly_salary_snapshot, 0) = 0)
+    `).all(...tSibIds) as Array<{ user_id: number; period_id: number; transferred_at: string | null }>;
+    const total = new Map<number, number>(), doneN = new Map<number, number>(), anyOpen = new Map<number, boolean>();
+    for (const r of trRows) {
+      total.set(r.user_id, (total.get(r.user_id) ?? 0) + 1);
+      if (r.transferred_at != null) doneN.set(r.user_id, (doneN.get(r.user_id) ?? 0) + 1);
+      if (!postedIds.has(r.period_id)) {
+        const arr = (transferPeriodIdsByUser[r.user_id] ??= []);
+        if (!arr.includes(r.period_id)) arr.push(r.period_id);
+        anyOpen.set(r.user_id, true);
+      }
+    }
+    for (const [uid, tot] of total) {
+      const done = (doneN.get(uid) ?? 0) === tot;
+      transferredByUser[uid] = done;
+      transferLockedByUser[uid] = !anyOpen.get(uid);
+      transferUsers++;
+      if (done) transferDoneUsers++;
+    }
+  }
+
   // Combined status counts.
   const n = siblings.length;
   const nFinalized = siblings.filter((s) => s.status === "finalized" || s.status === "paid").length;
@@ -247,6 +284,7 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
                       draftPeriodIds={draftPeriodIdsByUser[r.user_id] ?? []}
                       reviewed={reviewedByUser[r.user_id] ?? false}
                     />
+                    <TransferToggle userId={r.user_id} periodIds={transferPeriodIdsByUser[r.user_id] ?? []} done={transferredByUser[r.user_id] ?? false} locked={transferLockedByUser[r.user_id] ?? false} />
                   </td>
                   {multiBranch && branchCols.map((b) => {
                     const v = perB.get(b.id) ?? 0;
@@ -334,6 +372,8 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
         }))}
         reviewDoneUsers={reviewDoneUsers}
         reviewDraftUsers={reviewDraftUsers}
+        transferDoneUsers={transferDoneUsers}
+        transferUsers={transferUsers}
       />
 
       {/* Per-branch periods */}
@@ -398,6 +438,9 @@ export default function CompanyCyclePage({ params }: { params: { id: string } })
           multiBranch={multiBranch}
           draftPeriodIdsByUser={draftPeriodIdsByUser}
           reviewedByUser={reviewedByUser}
+          transferPeriodIdsByUser={transferPeriodIdsByUser}
+          transferredByUser={transferredByUser}
+          transferLockedByUser={transferLockedByUser}
         />
       )}
       {empTable(t(lang, "admin.persona.payroll.cycle.other"), "ประกันสังคม (ในระบบ)", "text-slate-600", otherRows.filter((r) => r.salary_tax_mode_snapshot !== "wht"))}

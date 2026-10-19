@@ -14,13 +14,15 @@ type CascadeResult = { period_id: number; branch: string | null; ok: boolean; sk
 // hits POST /cycle/[id] which loops the same guarded per-period op — finalize
 // needs the PIN, pay/post gate on status, each branch posts to its own books.
 export default function CompanyCycleActions({
-  lang, repId, siblings, reviewDoneUsers, reviewDraftUsers
+  lang, repId, siblings, reviewDoneUsers, reviewDraftUsers, transferDoneUsers, transferUsers
 }: {
   lang: Lang;
   repId: number;
   siblings: Sib[];
   reviewDoneUsers: number;
   reviewDraftUsers: number;
+  transferDoneUsers: number;
+  transferUsers: number;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -39,6 +41,9 @@ export default function CompanyCycleActions({
   const allReviewed = reviewDraftUsers === 0 || reviewDoneUsers >= reviewDraftUsers;
   const anyFinalized = siblings.some((s) => s.status === "finalized");
   const anyPaidUnposted = siblings.some((s) => s.status === "paid" && !s.posted);
+  // Pay-all / post-all stay locked until every person is ticked "ทำรายการแล้ว" (owner 2026-10-19).
+  const allTransferred = transferUsers === 0 || transferDoneUsers >= transferUsers;
+  const transferTitle = `ยังไม่ได้ติ๊ก "ทำรายการแล้ว" ครบ (${transferDoneUsers}/${transferUsers}) — ติ๊กให้ครบทุกคนก่อน`;
   const anyPosted = siblings.some((s) => s.posted);
 
   async function cascade(action: string, extra?: Record<string, unknown>): Promise<{ ok: boolean; errorText?: string }> {
@@ -82,6 +87,12 @@ export default function CompanyCycleActions({
         </p>
       )}
 
+      {(anyFinalized || anyPaidUnposted) && transferUsers > 0 && (
+        <p className={`text-xs mb-3 font-medium ${allTransferred ? "text-emerald-600" : "text-amber-600"}`}>
+          {allTransferred ? "✓ " : ""}ทำรายการแล้ว {transferDoneUsers}/{transferUsers} คน{allTransferred ? " · พร้อมทำจ่าย/ลงบัญชี" : " — ต้องติ๊กให้ครบก่อนกดทำจ่ายและลงบัญชี"}
+        </p>
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         <button
           type="button"
@@ -96,7 +107,8 @@ export default function CompanyCycleActions({
         <button
           type="button"
           onClick={() => setConfirmPay(true)}
-          disabled={busy !== null || !anyFinalized}
+          disabled={busy !== null || !anyFinalized || !allTransferred}
+          title={anyFinalized && !allTransferred ? transferTitle : undefined}
           className="text-sm px-4 py-1.5 rounded-full bg-sky-600 hover:bg-sky-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {busy === "mark_paid_all" ? "..." : t(lang, "admin.persona.payroll.cycle.payAll")}
@@ -105,7 +117,8 @@ export default function CompanyCycleActions({
         <button
           type="button"
           onClick={() => cascade("post_all")}
-          disabled={busy !== null || !anyPaidUnposted}
+          disabled={busy !== null || !anyPaidUnposted || !allTransferred}
+          title={anyPaidUnposted && !allTransferred ? transferTitle : undefined}
           className="text-sm px-4 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {busy === "post_all" ? "..." : t(lang, "admin.persona.payroll.cycle.postAll")}
