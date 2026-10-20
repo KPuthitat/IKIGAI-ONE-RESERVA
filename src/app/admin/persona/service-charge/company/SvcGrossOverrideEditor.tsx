@@ -9,11 +9,12 @@ import { fmtMoney } from "@/lib/format";
 // 2026-09-03). Shows the value; when overridden, a "กรอกเอง" badge + the computed
 // original. Admins with payout access can set/clear it while the month is draft.
 export default function SvcGrossOverrideEditor({
-  userId, yearMonth, gross, original, overridden, canEdit
+  userId, yearMonth, gross, extra = 0, original, overridden, canEdit
 }: {
   userId: number;
   yearMonth: string;
   gross: number;
+  extra?: number;      // เบี้ยประชุม (gross) paid with this month — shown inside the total, not part of the editable share
   original: number | null;
   overridden: boolean;
   canEdit: boolean;
@@ -41,7 +42,8 @@ export default function SvcGrossOverrideEditor({
 
   return (
     <div className="text-right leading-tight">
-      <div className="font-medium tabular-nums">{fmtMoney(gross)}</div>
+      <div className="font-medium tabular-nums">{fmtMoney(gross + extra)}</div>
+      {extra > 0 && <div className="text-[10px] text-violet-600 whitespace-nowrap">รวมเบี้ยประชุม {fmtMoney(extra)}</div>}
       {overridden && original != null && (
         <div className="text-[10px] text-slate-400 whitespace-nowrap">เดิม {fmtMoney(original)}</div>
       )}

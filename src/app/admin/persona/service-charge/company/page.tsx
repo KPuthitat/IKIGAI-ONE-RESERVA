@@ -21,6 +21,7 @@ import {
   svcPayoutIsCompanyWide,
   listSvcLineReviews,
   listManualMeetingFees,
+  meetingFeeByUserCompany,
   SVC_STAFF_SHARE_RATIO,
   SVC_COMPANY_SHARE_RATIO
 } from "@/lib/service-charge";
@@ -88,6 +89,14 @@ export default function CompanyServiceChargePage({
   const meetingFees = listManualMeetingFees(month);
   // เบี้ยประชุมจากการเข้าประชุมผู้บริหารของเดือนนี้ (owner 2026-10-20) — shown as its own card
   const mtgReview = meetingFeeReview(month, branchRow.company_id);
+  // The month's เบี้ยประชุม per person (this company) — folded into each row's รวม / สุทธิ and the totals
+  const mtgByUser = new Map<number, { gross: number; wht: number; net: number }>();
+  for (const m of meetingFeeByUserCompany(month).values()) {
+    if (m.companyId !== branchRow.company_id) continue;
+    const cur = mtgByUser.get(m.userId) ?? { gross: 0, wht: 0, net: 0 };
+    mtgByUser.set(m.userId, { gross: cur.gross + m.mtgGross, wht: cur.wht + m.mtgWht, net: cur.net + m.mtgNet });
+  }
+  const mtgTotals = [...mtgByUser.values()].reduce((a, m) => ({ gross: a.gross + m.gross, wht: a.wht + m.wht, net: a.net + m.net }), { gross: 0, wht: 0, net: 0 });
 
   // Company-wide payout (close/pay/post to ACCOUNTA, split per branch) — only in
   // shared "รวมกอง" mode (owner 2026-09-03). In that mode the per-branch page hides
@@ -226,9 +235,9 @@ export default function CompanyServiceChargePage({
         <CompanySvcPayoutActions
           yearMonth={month}
           status={payoutState.status}
-          netPayoutPreview={summary.totalNetPayout}
-          totalNet={postedTotals?.net ?? summary.totalNetPayout}
-          totalWht={postedTotals?.wht ?? summary.totalWht}
+          netPayoutPreview={summary.totalNetPayout + mtgTotals.net}
+          totalNet={postedTotals?.net ?? summary.totalNetPayout + mtgTotals.net}
+          totalWht={postedTotals?.wht ?? summary.totalWht + mtgTotals.wht}
           postedAt={postedTotals?.posted_at ?? null}
           incomplete={payoutState.incomplete}
           payDates={payoutState.payDates}
@@ -256,9 +265,9 @@ export default function CompanyServiceChargePage({
         />
         <SummaryCard
           label="ยอดจ่ายจริง (สุทธิ)"
-          value={fmtMoney(summary.totalNetPayout)}
+          value={fmtMoney(summary.totalNetPayout + mtgTotals.net)}
           accent="emerald"
-          sub={summary.totalWht > 0 ? `หัก ณ ที่จ่ายรวม ${fmtMoney(summary.totalWht)}` : undefined}
+          sub={[mtgTotals.net > 0 ? `รวมเบี้ยประชุม ${fmtMoney(mtgTotals.net)}` : null, summary.totalWht + mtgTotals.wht > 0 ? `หัก ณ ที่จ่ายรวม ${fmtMoney(summary.totalWht + mtgTotals.wht)}` : null].filter(Boolean).join(" · ") || undefined}
         />
         <SummaryCard
           label="วันโอนจริง"
@@ -434,13 +443,16 @@ export default function CompanyServiceChargePage({
                           </td>
                           <td className="py-2 pr-3">
                             <SvcGrossOverrideEditor userId={r.userId} yearMonth={month}
-                              gross={r.grossAllocation} original={r.grossOriginal ?? null}
+                              gross={r.grossAllocation} extra={mtgByUser.get(r.userId)?.gross ?? 0} original={r.grossOriginal ?? null}
                               overridden={!!r.grossOverridden} canEdit={canEditGross} />
                           </td>
                           <td className="py-2 pr-3 text-right align-top">
-                            <div className={`font-bold ${r.forfeited ? "text-rose-500 line-through" : "text-emerald-700"}`}>
-                              {fmtMoney(r.netPayout)}
+                            <div className={`font-bold ${r.forfeited && !mtgByUser.get(r.userId) ? "text-rose-500 line-through" : "text-emerald-700"}`}>
+                              {fmtMoney(r.netPayout + (mtgByUser.get(r.userId)?.net ?? 0))}
                             </div>
+                            {(mtgByUser.get(r.userId)?.net ?? 0) > 0 && (
+                              <span className="block whitespace-nowrap text-[9px] font-normal text-violet-600 leading-tight">รวมเบี้ยประชุม {fmtMoney(mtgByUser.get(r.userId)!.net)}</span>
+                            )}
                             {!r.forfeited && (r.foodClawback > 0 || r.otherDeductions > 0 || r.groupInsurance > 0 || r.taxMode === "wht") && (
                               <span className="block whitespace-nowrap text-[9px] font-normal text-rose-500 leading-tight">
                                 {[
@@ -542,13 +554,13 @@ export default function CompanyServiceChargePage({
                 <tr className="border-t-2 border-slate-300 font-medium">
                   <td className="py-2 pr-3" colSpan={4}>รวมทั้งหมด ({summary.rows.length} คน)</td>
                   <td className="py-2 pr-3 text-right">
-                    {fmtMoney(summary.rows.reduce((s, r) => s + r.grossAllocation, 0))}
+                    {fmtMoney(summary.rows.reduce((s, r) => s + r.grossAllocation, 0) + mtgTotals.gross)}
                   </td>
                   <td className="py-2 pr-3 text-right text-emerald-700">
-                    {fmtMoney(summary.totalNetPayout)}
-                    {summary.totalWht > 0 && (
+                    {fmtMoney(summary.totalNetPayout + mtgTotals.net)}
+                    {summary.totalWht + mtgTotals.wht > 0 && (
                       <span className="block text-[9px] font-normal text-rose-500">
-                        หัก ณ ที่จ่ายรวม {fmtMoney(summary.totalWht)}
+                        หัก ณ ที่จ่ายรวม {fmtMoney(summary.totalWht + mtgTotals.wht)}
                       </span>
                     )}
                   </td>
