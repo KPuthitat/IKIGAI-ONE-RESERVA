@@ -22,5 +22,18 @@ function ok(name: string, cond: boolean) { console.log(`  ${cond ? "✓" : "✗"
   ok("the finished attendee shows with the fee", r.people.length === 1 && r.people[0].userId === a && r.people[0].gross === 200 && r.people[0].minutes === 60);
   ok("the meeting row shows 2 invited, 2 joined, 1 finished", r.meetings.length === 1 && r.meetings[0].invited === 2 && r.meetings[0].joined === 2 && r.meetings[0].finished === 1);
   ok("a month with no meetings is empty", meetingFeeReview("2026-08", co).people.length === 0 && meetingFeeReview("2026-08", co).beforeCutover);
+  // exempt people never show, and confirming replaces the computed fees with the edited manual ones
+  const ex = mk("ex");
+  db.prepare("UPDATE users SET meeting_fee_exempt = 1 WHERE id = ?").run(ex);
+  db.prepare("INSERT INTO exec_meeting_attendance (meeting_id,user_id,ended_at,minutes,fee_amount) VALUES (?,?,CURRENT_TIMESTAMP,140,450)").run(m1, ex);
+  ok("an exempt person is left out even if a fee was stored before the flag", meetingFeeReview("2026-09", co).people.every((p) => p.userId !== ex));
+  const S = await import("../src/lib/service-charge");
+  ok("not confirmed yet", S.isMeetingFeeConfirmed("2026-09") === false);
+  const c = S.confirmMeetingFees({ yearMonth: "2026-09", items: [{ userId: a, amount: 250 }, { userId: b, amount: 100 }], byUserId: a });
+  ok("confirm stores the edited amounts as the month's fees", c.people === 2 && c.total === 350 && S.listManualMeetingFees("2026-09").get(a)?.amount === 250);
+  const r2 = meetingFeeReview("2026-09", co);
+  ok("after confirm only the confirmed amounts are paid (no computed on top)", S.isMeetingFeeConfirmed("2026-09") && r2.confirmed !== null && r2.totalGross === 350);
+  S.confirmMeetingFees({ yearMonth: "2026-09", items: [{ userId: a, amount: 300 }], byUserId: a });
+  ok("a re-confirm replaces the list; people left out are cleared", S.listManualMeetingFees("2026-09").size === 1 && meetingFeeReview("2026-09", co).totalGross === 300);
   cleanup(); process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); cleanup(); process.exit(1); });

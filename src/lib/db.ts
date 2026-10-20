@@ -3523,6 +3523,13 @@ function runMigrations(db: Database.Database): void {
       PRIMARY KEY (user_id, year_month)
     );
     CREATE INDEX IF NOT EXISTS idx_svc_manual_meeting_fees_month ON svc_manual_meeting_fees(year_month);
+    -- A month's meeting fees confirmed by the approver (owner 2026-10-20): from then on the manual rows above are
+    -- the ONLY meeting fees paid for that month (the attendance-computed ones are no longer added on top).
+    CREATE TABLE IF NOT EXISTS svc_meeting_fee_confirmed (
+      year_month   TEXT PRIMARY KEY,
+      confirmed_by INTEGER REFERENCES users(id),
+      confirmed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────

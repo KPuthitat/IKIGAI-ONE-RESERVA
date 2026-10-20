@@ -32,6 +32,7 @@ import SvcForfeitExemptButton from "../SvcForfeitExemptButton";
 import SvcAttendancePanel, { type PanelRow } from "./SvcAttendancePanel";
 import { svcAttendanceApplies, getSvcCriteriaReview, pendingLeaveCountForMonth } from "@/lib/svc-attendance";
 import SvcReviewButton from "../SvcReviewButton";
+import SvcMeetingFeeSummary from "./SvcMeetingFeeSummary";
 import { meetingFeeReview } from "@/lib/svc-meeting-review";
 import SvcMeetingFeeEditor from "../SvcMeetingFeeEditor";
 import SvcDeductionEditor from "../SvcDeductionEditor";
@@ -309,32 +310,9 @@ export default function CompanyServiceChargePage({
           )}
         </div>
         {mtgReview.people.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
-                  <th className="py-1.5 pr-3">ชื่อ</th>
-                  <th className="py-1.5 pr-3 text-right">ประชุม (ครั้ง)</th>
-                  <th className="py-1.5 pr-3 text-right">เวลา (ชม.)</th>
-                  <th className="py-1.5 pr-3 text-right">เบี้ยประชุม</th>
-                  <th className="py-1.5 pr-3 text-right">หัก ณ ที่จ่าย</th>
-                  <th className="py-1.5 pr-3 text-right">สุทธิ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mtgReview.people.map((p) => (
-                  <tr key={p.userId} className="border-b border-slate-100 last:border-0">
-                    <td className="py-1.5 pr-3 text-slate-800">{p.name}</td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums">{p.meetings}</td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums">{(p.minutes / 60).toFixed(2)}</td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums">{fmtMoney(p.gross)}</td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums text-amber-700">{p.wht > 0 ? fmtMoney(p.wht) : "—"}</td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums font-bold text-emerald-700">{fmtMoney(p.net)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <SvcMeetingFeeSummary key={`${month}-${mtgReview.totalGross}-${mtgReview.confirmed?.at ?? ""}`} yearMonth={month}
+            people={mtgReview.people.map((p) => ({ userId: p.userId, name: p.name, meetings: p.meetings, minutes: p.minutes, gross: p.gross }))}
+            confirmed={mtgReview.confirmed} canEdit={canManagePayout && !payoutLocked} />
         ) : (
           <div className="text-sm text-slate-500">
             {mtgReview.beforeCutover

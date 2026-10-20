@@ -4,11 +4,11 @@
 // screen, the PDF and the payroll summary can never disagree.
 import { getDb } from "./db";
 import { MEETING_FEE_SVC_START_MONTH } from "./payroll-compute";
-import { meetingFeeByUserCompany } from "./service-charge";
+import { isMeetingFeeConfirmed, meetingFeeByUserCompany } from "./service-charge";
 
 export type MeetingFeePerson = { userId: number; name: string; meetings: number; minutes: number; gross: number; wht: number; net: number };
 export type MeetingFeeMeeting = { id: number; title: string; date: string; status: string; invited: number; joined: number; finished: number; feeTotal: number };
-export type MeetingFeeReview = { beforeCutover: boolean; people: MeetingFeePerson[]; meetings: MeetingFeeMeeting[]; totalGross: number; totalNet: number };
+export type MeetingFeeReview = { confirmed: { by: string | null; at: string } | null; beforeCutover: boolean; people: MeetingFeePerson[]; meetings: MeetingFeeMeeting[]; totalGross: number; totalNet: number };
 
 export function meetingFeeReview(yearMonth: string, companyId: number): MeetingFeeReview {
   const db = getDb();
@@ -35,13 +35,19 @@ export function meetingFeeReview(yearMonth: string, companyId: number): MeetingF
              (SELECT COUNT(*) FROM exec_meeting_invitees i WHERE i.meeting_id = m.id) AS invited,
              (SELECT COUNT(*) FROM exec_meeting_attendance a WHERE a.meeting_id = m.id) AS joined,
              (SELECT COUNT(*) FROM exec_meeting_attendance a WHERE a.meeting_id = m.id AND a.ended_at IS NOT NULL) AS finished,
-             COALESCE((SELECT SUM(a.fee_amount) FROM exec_meeting_attendance a WHERE a.meeting_id = m.id AND a.ended_at IS NOT NULL), 0) AS feeTotal
+             COALESCE((SELECT SUM(a.fee_amount) FROM exec_meeting_attendance a JOIN users eu ON eu.id = a.user_id WHERE a.meeting_id = m.id AND a.ended_at IS NOT NULL AND COALESCE(eu.meeting_fee_exempt, 0) = 0), 0) AS feeTotal
         FROM exec_meetings m
        WHERE substr(m.meeting_date, 1, 7) = ?
        ORDER BY m.meeting_date, m.id`).all(yearMonth) as MeetingFeeMeeting[];
   } catch { /* exec-meeting tables may not exist yet */ }
   const round2 = (n: number) => Math.round(n * 100) / 100;
+  let confirmed: MeetingFeeReview["confirmed"] = null;
+  if (isMeetingFeeConfirmed(yearMonth)) {
+    const c = db.prepare("SELECT c.confirmed_at AS at, u.display_name AS by FROM svc_meeting_fee_confirmed c LEFT JOIN users u ON u.id = c.confirmed_by WHERE c.year_month = ?").get(yearMonth) as { at: string; by: string | null };
+    confirmed = { by: c.by, at: c.at };
+  }
   return {
+    confirmed,
     beforeCutover: yearMonth < MEETING_FEE_SVC_START_MONTH,
     people, meetings,
     totalGross: round2(people.reduce((s, p) => s + p.gross, 0)),
