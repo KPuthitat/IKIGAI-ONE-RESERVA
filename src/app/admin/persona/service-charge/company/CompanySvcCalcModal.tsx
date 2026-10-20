@@ -21,7 +21,7 @@ export default function CompanySvcCalcModal({
   displayName, shared, byBranch, grossAllocation, netAllocation, forfeited,
   forfeitReason, dailyBreakdown, dayLedger, taxMode, whtAmount, groupInsurance, netPayout,
   foodClawback = 0, otherDeductions = 0, otherDeductionItems = [],
-  grossBeforePenalty, penaltyAmount = 0
+  grossBeforePenalty, penaltyAmount = 0, meetingFee = null
 }: {
   displayName: string;
   shared: boolean;
@@ -42,6 +42,8 @@ export default function CompanySvcCalcModal({
   /** Accrual before the ½-tier withholding (ขาด/ลา/สาย 21–50%); = grossAllocation when nothing is withheld. */
   grossBeforePenalty?: number;
   penaltyAmount?: number;
+  /** เบี้ยประชุม paid with this month (gross / withholding / net) — added before the withholding line. */
+  meetingFee?: { gross: number; wht: number; net: number } | null;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -217,17 +219,28 @@ export default function CompanySvcCalcModal({
                     <span>หักประกันกลุ่ม</span><span>−฿{fmtMoney(groupInsurance)}</span>
                   </div>
                 )}
+                {meetingFee && meetingFee.gross > 0 && (
+                  <>
+                    <div className="flex justify-between text-slate-600">
+                      <span>ยอดเซอร์วิสชาร์จก่อนหักภาษี</span><span>฿{fmtMoney(Math.max(0, netAllocation - groupInsurance))}</span>
+                    </div>
+                    <div className="flex justify-between text-violet-700">
+                      <span>+ เบี้ยประชุม (ประชุมผู้บริหาร)</span><span>+฿{fmtMoney(meetingFee.gross)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-between text-slate-600">
-                  <span>ยอดก่อนหักภาษี</span><span>฿{fmtMoney(Math.max(0, netAllocation - groupInsurance))}</span>
+                  <span>ยอดก่อนหักภาษี{meetingFee && meetingFee.gross > 0 ? " (รวมเบี้ยประชุม)" : ""}</span>
+                  <span>฿{fmtMoney(Math.max(0, netAllocation - groupInsurance) + (meetingFee?.gross ?? 0))}</span>
                 </div>
                 {taxMode === "wht" && (
                   <div className="flex justify-between text-rose-600">
-                    <span>หัก ณ ที่จ่าย 3%</span><span>−฿{fmtMoney(whtAmount)}</span>
+                    <span>หัก ณ ที่จ่าย 3%</span><span>−฿{fmtMoney(whtAmount + (meetingFee?.wht ?? 0))}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-emerald-700 pt-0.5 border-t border-slate-100">
                   <span>ยอดจ่ายจริง{taxMode === "sso" ? " (ประกันสังคม — รับเต็ม)" : ""}</span>
-                  <span>฿{fmtMoney(netPayout)}</span>
+                  <span>฿{fmtMoney(netPayout + (meetingFee?.net ?? 0))}</span>
                 </div>
               </div>
             )}

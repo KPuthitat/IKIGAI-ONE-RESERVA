@@ -6,12 +6,12 @@ import { fmtMoney } from "@/lib/format";
 import { apiUrl } from "@/lib/url";
 import PinPromptModal from "@/app/components/PinPromptModal";
 
-type Person = { userId: number; name: string; meetings: number; minutes: number; gross: number };
+type Person = { userId: number; name: string; meetings: number; minutes: number; rule: number; manual: number; gross: number };
 
 // Editable เบี้ยประชุม summary (owner 2026-10-20): the approver adjusts each amount, confirms with the PIN, and the
 // amounts flow into every person's row below (the purple "เบี้ยประชุม" chip) as the month's meeting fee.
-export default function SvcMeetingFeeSummary({ yearMonth, people, confirmed, canEdit }: {
-  yearMonth: string; people: Person[]; confirmed: { by: string | null; at: string } | null; canEdit: boolean;
+export default function SvcMeetingFeeSummary({ yearMonth, people, confirmed, canEdit, showManual }: {
+  yearMonth: string; showManual: boolean; people: Person[]; confirmed: { by: string | null; at: string } | null; canEdit: boolean;
 }) {
   const router = useRouter();
   const [amounts, setAmounts] = useState<Record<number, string>>(() => Object.fromEntries(people.map((p) => [p.userId, String(p.gross)])));
@@ -30,7 +30,9 @@ export default function SvcMeetingFeeSummary({ yearMonth, people, confirmed, can
               <th className="py-1.5 pr-3">ชื่อ</th>
               <th className="py-1.5 pr-3 text-right">ประชุม (ครั้ง)</th>
               <th className="py-1.5 pr-3 text-right">เวลา (ชม.)</th>
-              <th className="py-1.5 pr-3 text-right">เบี้ยประชุม (ก่อนภาษี)</th>
+              <th className="py-1.5 pr-3 text-right" title="50 บาท ต่อทุก 15 นาทีเต็มที่เข้าประชุม">คำนวณตามกติกา</th>
+              {showManual && <th className="py-1.5 pr-3 text-right" title="ยอดกรอกมือที่เคยใส่ไว้ — จะถูกแทนที่ด้วยยอดที่ยืนยัน">กรอกมือเดิม</th>}
+              <th className="py-1.5 pr-3 text-right">เบี้ยประชุมที่จ่าย (ก่อนภาษี)</th>
             </tr>
           </thead>
           <tbody>
@@ -39,6 +41,8 @@ export default function SvcMeetingFeeSummary({ yearMonth, people, confirmed, can
                 <td className="py-1.5 pr-3 text-slate-800">{p.name}</td>
                 <td className="py-1.5 pr-3 text-right tabular-nums">{p.meetings || "—"}</td>
                 <td className="py-1.5 pr-3 text-right tabular-nums">{p.minutes ? (p.minutes / 60).toFixed(2) : "—"}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums text-slate-500">{p.rule > 0 ? fmtMoney(p.rule) : "—"}</td>
+                {showManual && <td className="py-1.5 pr-3 text-right tabular-nums text-slate-400">{p.manual > 0 ? fmtMoney(p.manual) : "—"}</td>}
                 <td className="py-1.5 pr-3 text-right">
                   {canEdit
                     ? <input className="input !w-28 text-right tabular-nums" inputMode="decimal" value={amounts[p.userId] ?? ""} onChange={(e) => setAmounts((a) => ({ ...a, [p.userId]: e.target.value }))} />
@@ -49,7 +53,7 @@ export default function SvcMeetingFeeSummary({ yearMonth, people, confirmed, can
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-slate-300 font-medium">
-              <td className="py-1.5 pr-3" colSpan={3}>รวม</td>
+              <td className="py-1.5 pr-3" colSpan={showManual ? 5 : 4}>รวม</td>
               <td className="py-1.5 pr-3 text-right tabular-nums">{fmtMoney(total)}</td>
             </tr>
           </tfoot>
