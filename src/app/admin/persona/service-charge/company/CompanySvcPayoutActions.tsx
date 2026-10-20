@@ -195,44 +195,70 @@ export default function CompanySvcPayoutActions({
       </div>
 
       {criteriaOpen && criteria && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setCriteriaOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3" role="dialog" aria-modal="true"
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setCriteriaOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true"
             aria-label="ยืนยันการพิจารณาเกณฑ์รับเซอร์วิสชาร์จ" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-bold text-slate-800">ก่อนปิดยอด: พิจารณาเกณฑ์รับเซอร์วิสชาร์จแล้วหรือยัง</h3>
-            <p className="text-xs text-slate-600">
-              เกณฑ์รับเซอร์วิสชาร์จเดือน {yearMonth}: จำนวนครั้งที่ ขาด + ลา + สาย ÷ จำนวนวันที่ลงตารางงาน —
-              ไม่เกิน 20% ได้เต็ม · 21–50% ได้ครึ่ง · เกิน 50% ไม่ได้รับ
-              หากมีกรณีที่ควรยกเว้น ให้กดปุ่ม “ยกเว้น” ในส่วน “ตรวจเกณฑ์รับเซอร์วิสชาร์จ” ก่อนปิดยอด
-            </p>
-            <ul className="text-sm rounded-lg border border-slate-200 divide-y divide-slate-100">
-              <li className="flex justify-between px-3 py-1.5"><span className="text-slate-600">ได้เต็ม</span><b>{criteria.full} คน</b></li>
-              <li className="flex justify-between px-3 py-1.5"><span className="text-slate-600">ได้ครึ่ง</span><b className="text-amber-700">{criteria.half} คน</b></li>
-              <li className="flex justify-between px-3 py-1.5"><span className="text-slate-600">ไม่ได้รับ</span><b className="text-rose-700">{criteria.none} คน</b></li>
-              <li className="flex justify-between px-3 py-1.5"><span className="text-slate-600">ยกเว้นแล้ว</span><b>{criteria.waivedEvents} ครั้ง</b></li>
-            </ul>
-            {criteria.pendingLeaves > 0 && (
-              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded px-3 py-2">
-                ยังมีใบลาที่รออนุมัติ {criteria.pendingLeaves} ใบในเดือนนี้ — วันดังกล่าวอาจถูกนับเป็นขาดจนกว่าจะอนุมัติหรือกดยกเว้น
+            <div className="px-6 pt-5 pb-3 border-b border-slate-100">
+              <div className="text-[11px] font-semibold tracking-wide text-brand uppercase">ก่อนปิดยอด · เดือน {yearMonth}</div>
+              <h3 className="text-lg font-bold text-slate-800 mt-0.5">ตรวจเกณฑ์รับเซอร์วิสชาร์จแล้วหรือยัง</h3>
+              <p className="text-sm text-slate-500 mt-1">
+                ดูผลของ ขาด + ลา + สาย ของพนักงานทุกคนอีกครั้งก่อนปิดยอด หากมีกรณีที่ควรยกเว้น ให้กด “ยกเว้น” ในส่วน “ตรวจเกณฑ์รับเซอร์วิสชาร์จ” ก่อน
               </p>
-            )}
-            {criteria.unreviewedLines > 0 && (
-              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded px-3 py-2">
-                ยังไม่ได้ติ๊ก “ตรวจแล้ว” {criteria.unreviewedLines} คน ในตารางส่วนแบ่ง
-              </p>
-            )}
-            <label className="flex items-start gap-2 text-sm text-slate-800 cursor-pointer">
-              <input type="checkbox" className="mt-1" checked={criteriaTick} onChange={(e) => setCriteriaTick(e.target.checked)} />
-              <span>ข้าพเจ้าได้พิจารณาเกณฑ์รับเซอร์วิสชาร์จ (ขาด ลา มาสาย) ของพนักงานทุกคนแล้ว</span>
-            </label>
-            <div className="flex gap-2 pt-1">
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2.5 text-center">
+                    <div className="text-2xl font-bold text-emerald-700 tabular-nums">{criteria.full}</div>
+                    <div className="text-xs text-emerald-800 mt-0.5">ได้เต็ม (คน)</div>
+                  </div>
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-center">
+                    <div className="text-2xl font-bold text-amber-700 tabular-nums">{criteria.half}</div>
+                    <div className="text-xs text-amber-800 mt-0.5">ได้ครึ่ง (คน)</div>
+                  </div>
+                  <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2.5 text-center">
+                    <div className="text-2xl font-bold text-rose-700 tabular-nums">{criteria.none}</div>
+                    <div className="text-xs text-rose-800 mt-0.5">ไม่ได้รับ (คน)</div>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2.5 text-center">
+                    <div className="text-2xl font-bold text-slate-700 tabular-nums">{criteria.waivedEvents}</div>
+                    <div className="text-xs text-slate-600 mt-0.5">ยกเว้นแล้ว (ครั้ง)</div>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-2">
+                  เกณฑ์: จำนวนครั้ง ขาด + ลา + สาย ÷ จำนวนวันที่ลงตารางงาน — ไม่เกิน 20% ได้เต็ม · 21–50% ได้ครึ่ง · เกิน 50% ไม่ได้รับ
+                </p>
+              </div>
+
+              {criteria.pendingLeaves > 0 && (
+                <div className="flex gap-2 text-sm text-amber-900 bg-amber-50 border border-amber-300 rounded-xl px-3 py-2.5">
+                  <span aria-hidden>⚠️</span>
+                  <span>ยังมีใบลาที่รออนุมัติ <b>{criteria.pendingLeaves}</b> ใบในเดือนนี้ — วันดังกล่าวอาจถูกนับเป็นขาดจนกว่าจะอนุมัติหรือกดยกเว้น</span>
+                </div>
+              )}
+              {criteria.unreviewedLines > 0 && (
+                <div className="flex gap-2 text-sm text-amber-900 bg-amber-50 border border-amber-300 rounded-xl px-3 py-2.5">
+                  <span aria-hidden>⚠️</span>
+                  <span>ยังไม่ได้ติ๊ก “ตรวจแล้ว” <b>{criteria.unreviewedLines}</b> คน ในตารางส่วนแบ่ง</span>
+                </div>
+              )}
+
+              <label className={`flex items-start gap-3 rounded-xl border px-4 py-3 cursor-pointer transition-colors ${criteriaTick ? "border-emerald-400 bg-emerald-50" : "border-slate-300 hover:bg-slate-50"}`}>
+                <input type="checkbox" className="mt-1 h-4 w-4 accent-emerald-600" checked={criteriaTick} onChange={(e) => setCriteriaTick(e.target.checked)} />
+                <span className="text-sm text-slate-800">ข้าพเจ้าได้พิจารณาเกณฑ์รับเซอร์วิสชาร์จ (ขาด ลา มาสาย) ของพนักงานทุกคนแล้ว</span>
+              </label>
+            </div>
+
+            <div className="px-6 pb-5 flex flex-col-reverse sm:flex-row gap-2">
               <button type="button" onClick={() => setCriteriaOpen(false)}
-                className="flex-1 text-sm px-3 py-2 rounded border border-slate-300 text-slate-700 hover:bg-slate-50">
-                ยังไม่ได้พิจารณา — กลับไปตรวจ
+                className="sm:flex-1 text-sm font-medium px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50">
+                กลับไปตรวจก่อน
               </button>
               <button type="button" disabled={!criteriaTick}
                 onClick={() => { setCriteriaConfirmed(true); setCriteriaOpen(false); setPinFor("finalize"); setError(null); }}
-                className="flex-1 text-sm font-bold px-3 py-2 rounded text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50">
-                พิจารณาแล้ว — ดำเนินการต่อ
+                className="sm:flex-1 text-sm font-bold px-4 py-2.5 rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed">
+                ตรวจแล้ว · ไปขั้นตอนใส่ PIN
               </button>
             </div>
           </div>
