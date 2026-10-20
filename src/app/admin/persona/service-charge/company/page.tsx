@@ -34,6 +34,7 @@ import SvcAttendancePanel, { type PanelRow } from "./SvcAttendancePanel";
 import { svcAttendanceApplies, getSvcCriteriaReview, pendingLeaveCountForMonth } from "@/lib/svc-attendance";
 import SvcReviewButton from "../SvcReviewButton";
 import SvcMeetingFeeSummary from "./SvcMeetingFeeSummary";
+import CollapsibleCard from "./CollapsibleCard";
 import { meetingFeeReview } from "@/lib/svc-meeting-review";
 import SvcMeetingFeeEditor from "../SvcMeetingFeeEditor";
 import SvcDeductionEditor from "../SvcDeductionEditor";
@@ -311,13 +312,8 @@ export default function CompanyServiceChargePage({
       )}
 
       {/* เบี้ยประชุม (จากการเข้าประชุมผู้บริหาร) — จ่ายพร้อมเซอร์วิสชาร์จของเดือนนี้ */}
-      <div className="card">
-        <div className="flex items-baseline justify-between gap-2 flex-wrap mb-2">
-          <div className="text-sm font-bold text-slate-700">เบี้ยประชุม · ประชุมผู้บริหารเดือนนี้</div>
-          {mtgReview.people.length > 0 && (
-            <div className="text-xs text-slate-500">รวม ฿{fmtMoney(mtgReview.totalGross)} ก่อนภาษี (จ่ายพร้อมเซอร์วิสชาร์จ)</div>
-          )}
-        </div>
+      <CollapsibleCard storageKey="svcMeetingFeeCardCollapsed" title="เบี้ยประชุม · ประชุมผู้บริหารเดือนนี้"
+        aside={mtgReview.people.length > 0 ? `รวม ฿${fmtMoney(mtgReview.totalGross)} ก่อนภาษี (จ่ายพร้อมเซอร์วิสชาร์จ)` : undefined}>
         {mtgReview.people.length > 0 ? (
           <SvcMeetingFeeSummary key={`${month}-${mtgReview.totalGross}-${mtgReview.confirmed?.at ?? ""}`} yearMonth={month} showManual={mtgReview.hasManualToReplace}
             people={mtgReview.people}
@@ -358,7 +354,7 @@ export default function CompanyServiceChargePage({
             <p className="text-[11px] text-slate-400 mt-1">เบี้ยประชุมคิดจากผู้ที่ “จบแล้ว” เท่านั้น (กดจบการประชุมและกรอกบันทึกครบ) — ถ้า “เข้าร่วม” มากกว่า “จบแล้ว” แปลว่ามีคนยังไม่จบ ยังไม่มีเบี้ยของคนนั้น</p>
           </div>
         )}
-      </div>
+      </CollapsibleCard>
 
       {/* Distribution */}
       <div className="card">
