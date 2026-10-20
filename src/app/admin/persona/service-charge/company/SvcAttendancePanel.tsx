@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatLongDate } from "@/lib/time";
 import SvcForfeitExemptButton from "../SvcForfeitExemptButton";
@@ -53,6 +53,10 @@ export default function SvcAttendancePanel({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState<number | null>(null);
+  // The whole review can be hidden (owner 2026-10-20: ตรวจเกณฑ์ซ่อนได้); the choice is remembered in this browser.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => { try { if (localStorage.getItem("svcAttendancePanelCollapsed") === "1") setCollapsed(true); } catch { /* storage blocked */ } }, []);
+  const toggleCollapsed = () => setCollapsed((c) => { const n = !c; try { localStorage.setItem("svcAttendancePanelCollapsed", n ? "1" : "0"); } catch { /* storage blocked */ } return n; });
   const [showClean, setShowClean] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [asking, setAsking] = useState<string | null>(null);   // `${userId}:${date}:${kind}` while the reason box is open
@@ -90,7 +94,14 @@ export default function SvcAttendancePanel({
   return (
     <section className="card space-y-3" aria-label="ตรวจเกณฑ์รับเซอร์วิสชาร์จ">
       <div>
-        <h2 className="font-bold text-slate-800 text-sm">ตรวจเกณฑ์รับเซอร์วิสชาร์จ · ขาด ลา มาสาย</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-bold text-slate-800 text-sm">ตรวจเกณฑ์รับเซอร์วิสชาร์จ · ขาด ลา มาสาย</h2>
+          <button type="button" onClick={toggleCollapsed} aria-expanded={!collapsed}
+            className="text-xs px-2.5 py-1 rounded-full border border-slate-300 text-slate-600 hover:bg-slate-50 whitespace-nowrap">
+            {collapsed ? "แสดง ▾" : "ซ่อน ▴"}
+          </button>
+        </div>
+        {!collapsed && <>
         <p className="text-[11px] text-slate-500 mt-0.5">
           รวมทุกสาขาของบริษัท เดือน {yearMonth} · จำนวนครั้งที่ ขาด + ลา + สาย ÷ จำนวนวันที่ลงตารางงานทั้งเดือน ·
           ไม่เกิน 20% ได้เต็ม · 21–50% ได้ครึ่ง · เกิน 50% ไม่ได้รับ
@@ -98,6 +109,7 @@ export default function SvcAttendancePanel({
         <p className="text-[11px] text-slate-400 mt-0.5">
           การลาที่นับ: ไม่รวมลาป่วย · เฉพาะวันเสาร์-อาทิตย์/วันหยุดนักขัตฤกษ์ และการลาที่ยื่นวันเดียวกับวันลาหรือหลังวันลา (ถือตามวันที่ยื่นใบลา)
         </p>
+        </>}
       </div>
 
       <div className="flex flex-wrap gap-2 text-xs">
@@ -107,6 +119,7 @@ export default function SvcAttendancePanel({
         {nWaived > 0 && <span className="px-2.5 py-1 rounded-full bg-slate-50 text-slate-600 border border-slate-200">ยกเว้นแล้ว {nWaived} ครั้ง</span>}
       </div>
 
+      {!collapsed && (<>
       {locked && (
         <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded px-3 py-2">
           ปิดยอดเดือนนี้แล้ว จึงแก้ไขการยกเว้นไม่ได้ (ต้องปลดล็อคการปิดยอดก่อน)
@@ -228,6 +241,7 @@ export default function SvcAttendancePanel({
           {showClean ? "ซ่อน" : "แสดง"}พนักงานที่ไม่มีรายการ ({clean.length} คน)
         </button>
       )}
+      </>)}
     </section>
   );
 }
