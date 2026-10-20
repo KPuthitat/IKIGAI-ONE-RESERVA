@@ -2209,16 +2209,23 @@ export type BranchSvcPayoutRow = {
  * on/after MEETING_FEE_SVC_START_MONTH (before that, meeting fees were paid via
  * payroll and must not be re-paid here). Keyed user_id → gross baht.
  */
+/** True once the approver confirmed the month's meeting fees: the manual rows are then the only ones paid. */
+export function isMeetingFeeConfirmed(yearMonth: string): boolean {
+  try { return !!getDb().prepare("SELECT 1 FROM svc_meeting_fee_confirmed WHERE year_month = ?").get(yearMonth); }
+  catch { return false; }
+}
+
 export function meetingFeeGrossByUser(yearMonth: string): Map<number, number> {
   const map = new Map<number, number>();
   // Computed (attendance-based) fees only exist on/after the cutover — before it
   // they were paid via payroll and must not be re-paid here.
-  if (yearMonth >= MEETING_FEE_SVC_START_MONTH) {
+  if (yearMonth >= MEETING_FEE_SVC_START_MONTH && !isMeetingFeeConfirmed(yearMonth)) {
     try {
       const rows = getDb().prepare(`
         SELECT a.user_id AS user_id, SUM(a.fee_amount) AS fee
         FROM exec_meeting_attendance a JOIN exec_meetings m ON m.id = a.meeting_id
-        WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0
+        JOIN users eu ON eu.id = a.user_id
+        WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0 AND COALESCE(eu.meeting_fee_exempt, 0) = 0
           AND substr(m.meeting_date, 1, 7) = ?
         GROUP BY a.user_id
       `).all(yearMonth) as Array<{ user_id: number; fee: number }>;
@@ -2264,7 +2271,7 @@ export function meetingFeeGrossByBranchUser(yearMonth: string): Map<number, Map<
     m.set(userId, round2((m.get(userId) ?? 0) + gross));
     out.set(branchId, m);
   };
-  if (yearMonth >= MEETING_FEE_SVC_START_MONTH) {
+  if (yearMonth >= MEETING_FEE_SVC_START_MONTH && !isMeetingFeeConfirmed(yearMonth)) {
     try {
       // Group by (user, override branch) so a person attending two meetings for two
       // different branches is split across both. fee_branch_id NULL → home branch.
@@ -2272,8 +2279,9 @@ export function meetingFeeGrossByBranchUser(yearMonth: string): Map<number, Map<
         SELECT a.user_id AS user_id, fb.branch_id AS feeBranch, SUM(a.fee_amount) AS fee
         FROM exec_meeting_attendance a
         JOIN exec_meetings m ON m.id = a.meeting_id
+        JOIN users eu ON eu.id = a.user_id
         LEFT JOIN exec_meeting_fee_branch fb ON fb.meeting_id = a.meeting_id AND fb.user_id = a.user_id
-        WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0
+        WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0 AND COALESCE(eu.meeting_fee_exempt, 0) = 0
           AND substr(m.meeting_date, 1, 7) = ?
         GROUP BY a.user_id, fb.branch_id
       `).all(yearMonth) as Array<{ user_id: number; feeBranch: number | null; fee: number }>;
@@ -2322,6 +2330,26 @@ export function setManualMeetingFee(args: {
     db.prepare("DELETE FROM svc_manual_meeting_fees WHERE user_id = ? AND year_month = ?")
       .run(args.userId, args.yearMonth);
   }
+}
+
+/**
+ * The approver confirms a month's meeting fees (owner 2026-10-20): `items` is the whole list of GROSS amounts to
+ * pay (edited from the attendance summary). They are stored as the manual fees — rows not in the list are
+ * cleared — and the month is flagged so the attendance-computed fees are no longer added on top.
+ */
+export function confirmMeetingFees(args: { yearMonth: string; items: Array<{ userId: number; amount: number }>; byUserId: number }): { people: number; total: number } {
+  const db = getDb();
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const keep = new Map<number, number>();
+  for (const i of args.items) { const a = round2(i.amount); if (a > 0) keep.set(i.userId, a); }
+  db.transaction(() => {
+    for (const r of db.prepare("SELECT user_id FROM svc_manual_meeting_fees WHERE year_month = ?").all(args.yearMonth) as Array<{ user_id: number }>)
+      if (!keep.has(r.user_id)) setManualMeetingFee({ userId: r.user_id, yearMonth: args.yearMonth, amount: 0, byUserId: args.byUserId });
+    for (const [userId, amount] of keep) setManualMeetingFee({ userId, yearMonth: args.yearMonth, amount, note: "เบี้ยประชุมตามการเข้าประชุม (ยืนยันแล้ว)", byUserId: args.byUserId });
+    db.prepare(`INSERT INTO svc_meeting_fee_confirmed (year_month, confirmed_by, confirmed_at) VALUES (?, ?, datetime('now'))
+                ON CONFLICT(year_month) DO UPDATE SET confirmed_by = excluded.confirmed_by, confirmed_at = excluded.confirmed_at`).run(args.yearMonth, args.byUserId);
+  })();
+  return { people: keep.size, total: round2([...keep.values()].reduce((s, v) => s + v, 0)) };
 }
 
 /** Home (primary, else lowest) branch id for a user — where their meeting fee books. */
