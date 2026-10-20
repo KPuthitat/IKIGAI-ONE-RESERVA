@@ -1,30 +1,63 @@
 // เบี้ยประชุม review for the company service-charge page (owner 2026-10-20): who earned a meeting fee
-// from the executive meetings of the month, and — when nobody shows — why (meeting not ended, nobody
-// finished their minutes, month before the cutover). Money comes from meetingFeeByUserCompany so the
-// screen, the PDF and the payroll summary can never disagree.
+// from the executive meetings of the month, computed from the minutes actually attended under the current
+// rule (50 บาท per full 15 minutes — NOT the amount stored when the attendance ended, which may predate the
+// rule), and — when nobody shows — why. Until the approver confirms the month, the amounts proposed here are
+// the rule-based ones only; any earlier manual lump sum is shown beside them for reference and is replaced on
+// confirm. After confirming, the confirmed (manual) amounts are what is paid.
 import { getDb } from "./db";
 import { MEETING_FEE_SVC_START_MONTH } from "./payroll-compute";
-import { isMeetingFeeConfirmed, meetingFeeByUserCompany } from "./service-charge";
+import { nameWithPrefix } from "./name";
+import { MEETING_FEE_PER_15MIN } from "./exec-meetings";
+import { isMeetingFeeConfirmed, listManualMeetingFees } from "./service-charge";
 
-export type MeetingFeePerson = { userId: number; name: string; meetings: number; minutes: number; gross: number; wht: number; net: number };
+export type MeetingFeePerson = {
+  userId: number; name: string; meetings: number; minutes: number;
+  rule: number;     // computed from attended minutes, 50 per full 15 minutes
+  manual: number;   // a manual lump sum already keyed for the month (0 = none)
+  gross: number;    // the amount to pay / propose: confirmed amount, else the rule-based one
+};
 export type MeetingFeeMeeting = { id: number; title: string; date: string; status: string; invited: number; joined: number; finished: number; feeTotal: number };
-export type MeetingFeeReview = { confirmed: { by: string | null; at: string } | null; beforeCutover: boolean; people: MeetingFeePerson[]; meetings: MeetingFeeMeeting[]; totalGross: number; totalNet: number };
+export type MeetingFeeReview = {
+  confirmed: { by: string | null; at: string } | null; beforeCutover: boolean;
+  people: MeetingFeePerson[]; meetings: MeetingFeeMeeting[]; totalGross: number; hasManualToReplace: boolean;
+};
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function meetingFeeReview(yearMonth: string, companyId: number): MeetingFeeReview {
   const db = getDb();
-  const people: MeetingFeePerson[] = [];
-  const stats = new Map<number, { meetings: number; minutes: number }>();
+  const inCompany = `EXISTS (SELECT 1 FROM user_branches ub JOIN branches b ON b.id = ub.branch_id WHERE ub.user_id = u.id AND b.company_id = ?)`;
+  const confirmedOn = isMeetingFeeConfirmed(yearMonth);
+
+  const stats = new Map<number, { meetings: number; minutes: number; rule: number }>();
   try {
     for (const r of db.prepare(`
-      SELECT a.user_id AS uid, COUNT(*) AS n, COALESCE(SUM(a.minutes), 0) AS mins
-        FROM exec_meeting_attendance a JOIN exec_meetings m ON m.id = a.meeting_id
-       WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0 AND substr(m.meeting_date, 1, 7) = ?
-       GROUP BY a.user_id`).all(yearMonth) as Array<{ uid: number; n: number; mins: number }>) stats.set(r.uid, { meetings: r.n, minutes: r.mins });
+      SELECT a.user_id AS uid, COUNT(*) AS n, COALESCE(SUM(a.minutes), 0) AS mins, COALESCE(SUM((a.minutes / 15) * ${MEETING_FEE_PER_15MIN}), 0) AS fee
+        FROM exec_meeting_attendance a JOIN exec_meetings m ON m.id = a.meeting_id JOIN users u ON u.id = a.user_id
+       WHERE a.ended_at IS NOT NULL AND COALESCE(a.minutes, 0) >= 15 AND COALESCE(u.meeting_fee_exempt, 0) = 0
+         AND substr(m.meeting_date, 1, 7) = ? AND ${inCompany}
+       GROUP BY a.user_id`).all(yearMonth, companyId) as Array<{ uid: number; n: number; mins: number; fee: number }>)
+      stats.set(r.uid, { meetings: r.n, minutes: r.mins, rule: round2(r.fee) });
   } catch { /* exec-meeting tables may not exist yet */ }
-  for (const m of meetingFeeByUserCompany(yearMonth).values()) {
-    if (m.companyId !== companyId) continue;
-    const s = stats.get(m.userId);
-    people.push({ userId: m.userId, name: m.displayName, meetings: s?.meetings ?? 0, minutes: s?.minutes ?? 0, gross: m.mtgGross, wht: m.mtgWht, net: m.mtgNet });
+
+  const manual = new Map<number, number>();
+  const manualAll = listManualMeetingFees(yearMonth);
+  if (manualAll.size > 0) {
+    const ids = [...manualAll.keys()];
+    for (const r of db.prepare(`SELECT u.id FROM users u WHERE u.id IN (${ids.map(() => "?").join(",")}) AND ${inCompany}`).all(...ids, companyId) as Array<{ id: number }>)
+      manual.set(r.id, manualAll.get(r.id)!.amount);
+  }
+
+  const ids = new Set<number>([...stats.keys(), ...manual.keys()]);
+  const nameOf = db.prepare("SELECT display_name, title_prefix FROM users WHERE id = ?");
+  const people: MeetingFeePerson[] = [];
+  for (const uid of ids) {
+    const s = stats.get(uid);
+    const man = manual.get(uid) ?? 0;
+    const gross = confirmedOn ? man : (s?.rule ?? 0);
+    if (gross <= 0 && man <= 0) continue;
+    const u = nameOf.get(uid) as { display_name: string; title_prefix: string | null } | undefined;
+    people.push({ userId: uid, name: nameWithPrefix(u?.title_prefix ?? null, u?.display_name ?? ""), meetings: s?.meetings ?? 0, minutes: s?.minutes ?? 0, rule: s?.rule ?? 0, manual: man, gross });
   }
   people.sort((a, b) => b.gross - a.gross || a.name.localeCompare(b.name, "th"));
 
@@ -35,22 +68,22 @@ export function meetingFeeReview(yearMonth: string, companyId: number): MeetingF
              (SELECT COUNT(*) FROM exec_meeting_invitees i WHERE i.meeting_id = m.id) AS invited,
              (SELECT COUNT(*) FROM exec_meeting_attendance a WHERE a.meeting_id = m.id) AS joined,
              (SELECT COUNT(*) FROM exec_meeting_attendance a WHERE a.meeting_id = m.id AND a.ended_at IS NOT NULL) AS finished,
-             COALESCE((SELECT SUM(a.fee_amount) FROM exec_meeting_attendance a JOIN users eu ON eu.id = a.user_id WHERE a.meeting_id = m.id AND a.ended_at IS NOT NULL AND COALESCE(eu.meeting_fee_exempt, 0) = 0), 0) AS feeTotal
+             COALESCE((SELECT SUM((a.minutes / 15) * ${MEETING_FEE_PER_15MIN}) FROM exec_meeting_attendance a JOIN users eu ON eu.id = a.user_id
+                        WHERE a.meeting_id = m.id AND a.ended_at IS NOT NULL AND COALESCE(a.minutes, 0) >= 15 AND COALESCE(eu.meeting_fee_exempt, 0) = 0), 0) AS feeTotal
         FROM exec_meetings m
        WHERE substr(m.meeting_date, 1, 7) = ?
        ORDER BY m.meeting_date, m.id`).all(yearMonth) as MeetingFeeMeeting[];
   } catch { /* exec-meeting tables may not exist yet */ }
-  const round2 = (n: number) => Math.round(n * 100) / 100;
+
   let confirmed: MeetingFeeReview["confirmed"] = null;
-  if (isMeetingFeeConfirmed(yearMonth)) {
+  if (confirmedOn) {
     const c = db.prepare("SELECT c.confirmed_at AS at, u.display_name AS by FROM svc_meeting_fee_confirmed c LEFT JOIN users u ON u.id = c.confirmed_by WHERE c.year_month = ?").get(yearMonth) as { at: string; by: string | null };
     confirmed = { by: c.by, at: c.at };
   }
   return {
-    confirmed,
-    beforeCutover: yearMonth < MEETING_FEE_SVC_START_MONTH,
+    confirmed, beforeCutover: yearMonth < MEETING_FEE_SVC_START_MONTH,
     people, meetings,
     totalGross: round2(people.reduce((s, p) => s + p.gross, 0)),
-    totalNet: round2(people.reduce((s, p) => s + p.net, 0))
+    hasManualToReplace: !confirmedOn && people.some((p) => p.manual > 0)
   };
 }

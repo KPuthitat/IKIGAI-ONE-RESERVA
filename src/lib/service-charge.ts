@@ -26,6 +26,7 @@
 import { getDb } from "./db";
 import { pairShifts, applyPtGrace, pickScheduled, deductBreak, MEETING_FEE_SVC_START_MONTH, type ScheduledShift, type PayrollSettings } from "./payroll-compute";
 import { nameWithPrefix } from "./name";
+import { MEETING_FEE_PER_15MIN } from "./exec-meetings";
 import { approvedEarlyLeaveKeys } from "./early-leave";
 import { LATE_GRACE_MINUTES, SC_INELIGIBILITY_THRESHOLD } from "./late-detection";
 import { approvedExcusedDatesForMonth } from "./late-excusals";
@@ -2222,10 +2223,10 @@ export function meetingFeeGrossByUser(yearMonth: string): Map<number, number> {
   if (yearMonth >= MEETING_FEE_SVC_START_MONTH && !isMeetingFeeConfirmed(yearMonth)) {
     try {
       const rows = getDb().prepare(`
-        SELECT a.user_id AS user_id, SUM(a.fee_amount) AS fee
+        SELECT a.user_id AS user_id, SUM((COALESCE(a.minutes, 0) / 15) * ${MEETING_FEE_PER_15MIN}) AS fee
         FROM exec_meeting_attendance a JOIN exec_meetings m ON m.id = a.meeting_id
         JOIN users eu ON eu.id = a.user_id
-        WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0 AND COALESCE(eu.meeting_fee_exempt, 0) = 0
+        WHERE a.ended_at IS NOT NULL AND COALESCE(a.minutes, 0) >= 15 AND COALESCE(eu.meeting_fee_exempt, 0) = 0
           AND substr(m.meeting_date, 1, 7) = ?
         GROUP BY a.user_id
       `).all(yearMonth) as Array<{ user_id: number; fee: number }>;
@@ -2276,12 +2277,12 @@ export function meetingFeeGrossByBranchUser(yearMonth: string): Map<number, Map<
       // Group by (user, override branch) so a person attending two meetings for two
       // different branches is split across both. fee_branch_id NULL → home branch.
       const rows = db.prepare(`
-        SELECT a.user_id AS user_id, fb.branch_id AS feeBranch, SUM(a.fee_amount) AS fee
+        SELECT a.user_id AS user_id, fb.branch_id AS feeBranch, SUM((COALESCE(a.minutes, 0) / 15) * ${MEETING_FEE_PER_15MIN}) AS fee
         FROM exec_meeting_attendance a
         JOIN exec_meetings m ON m.id = a.meeting_id
         JOIN users eu ON eu.id = a.user_id
         LEFT JOIN exec_meeting_fee_branch fb ON fb.meeting_id = a.meeting_id AND fb.user_id = a.user_id
-        WHERE a.ended_at IS NOT NULL AND a.fee_amount > 0 AND COALESCE(eu.meeting_fee_exempt, 0) = 0
+        WHERE a.ended_at IS NOT NULL AND COALESCE(a.minutes, 0) >= 15 AND COALESCE(eu.meeting_fee_exempt, 0) = 0
           AND substr(m.meeting_date, 1, 7) = ?
         GROUP BY a.user_id, fb.branch_id
       `).all(yearMonth) as Array<{ user_id: number; feeBranch: number | null; fee: number }>;

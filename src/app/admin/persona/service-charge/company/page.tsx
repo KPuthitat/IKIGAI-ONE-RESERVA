@@ -315,12 +315,12 @@ export default function CompanyServiceChargePage({
         <div className="flex items-baseline justify-between gap-2 flex-wrap mb-2">
           <div className="text-sm font-bold text-slate-700">เบี้ยประชุม · ประชุมผู้บริหารเดือนนี้</div>
           {mtgReview.people.length > 0 && (
-            <div className="text-xs text-slate-500">รวม ฿{fmtMoney(mtgReview.totalGross)} · สุทธิ ฿{fmtMoney(mtgReview.totalNet)} (จ่ายพร้อมเซอร์วิสชาร์จ)</div>
+            <div className="text-xs text-slate-500">รวม ฿{fmtMoney(mtgReview.totalGross)} ก่อนภาษี (จ่ายพร้อมเซอร์วิสชาร์จ)</div>
           )}
         </div>
         {mtgReview.people.length > 0 ? (
-          <SvcMeetingFeeSummary key={`${month}-${mtgReview.totalGross}-${mtgReview.confirmed?.at ?? ""}`} yearMonth={month}
-            people={mtgReview.people.map((p) => ({ userId: p.userId, name: p.name, meetings: p.meetings, minutes: p.minutes, gross: p.gross }))}
+          <SvcMeetingFeeSummary key={`${month}-${mtgReview.totalGross}-${mtgReview.confirmed?.at ?? ""}`} yearMonth={month} showManual={mtgReview.hasManualToReplace}
+            people={mtgReview.people}
             confirmed={mtgReview.confirmed} canEdit={canManagePayout && !payoutLocked} />
         ) : (
           <div className="text-sm text-slate-500">
@@ -541,6 +541,7 @@ export default function CompanyServiceChargePage({
                                 otherDeductionItems={r.otherDeductionItems}
                                 grossBeforePenalty={r.grossBeforePenalty}
                                 penaltyAmount={r.penaltyAmount}
+                                meetingFee={mtgByUser.get(r.userId) ?? null}
                               />
                             </div>
                           </td>

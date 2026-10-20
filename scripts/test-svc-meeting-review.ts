@@ -22,6 +22,15 @@ function ok(name: string, cond: boolean) { console.log(`  ${cond ? "✓" : "✗"
   ok("the finished attendee shows with the fee", r.people.length === 1 && r.people[0].userId === a && r.people[0].gross === 200 && r.people[0].minutes === 60);
   ok("the meeting row shows 2 invited, 2 joined, 1 finished", r.meetings.length === 1 && r.meetings[0].invited === 2 && r.meetings[0].joined === 2 && r.meetings[0].finished === 1);
   ok("a month with no meetings is empty", meetingFeeReview("2026-08", co).people.length === 0 && meetingFeeReview("2026-08", co).beforeCutover);
+  // the rule is applied to the minutes attended, not to the amount stored back then; a manual lump sum is not added in
+  const c2 = mk("c2");
+  db.prepare("INSERT INTO exec_meeting_attendance (meeting_id,user_id,ended_at,minutes,fee_amount) VALUES (?,?,CURRENT_TIMESTAMP,74,246.67)").run(m1, c2);
+  db.prepare("INSERT INTO svc_manual_meeting_fees (user_id, year_month, amount) VALUES (?, '2026-09', 500)").run(c2);
+  const rr = meetingFeeReview("2026-09", co);
+  const pc = rr.people.find((p) => p.userId === c2);
+  ok("74 minutes pay 4 full blocks = 200 (not the stored 246.67)", pc?.rule === 200 && pc?.gross === 200);
+  ok("an earlier manual lump sum is shown beside, not added", pc?.manual === 500 && rr.hasManualToReplace === true);
+  ok("the SVC payout uses the same rule-based amount plus the manual one until confirmed", (await import("../src/lib/service-charge")).meetingFeeGrossByUser("2026-09").get(c2) === 700);
   // exempt people never show, and confirming replaces the computed fees with the edited manual ones
   const ex = mk("ex");
   db.prepare("UPDATE users SET meeting_fee_exempt = 1 WHERE id = ?").run(ex);
