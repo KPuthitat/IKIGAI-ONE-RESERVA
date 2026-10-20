@@ -514,7 +514,7 @@ export default function CompanyServiceChargePage({
                             )}
                           </td>
                           <td className="py-2 pr-3 text-right align-middle">
-                            <div className="flex flex-wrap items-center justify-end gap-1.5">
+                            <div className="flex flex-col items-end gap-1.5">
                               <SvcReviewButton
                                 userId={r.userId}
                                 yearMonth={month}

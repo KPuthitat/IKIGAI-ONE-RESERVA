@@ -33,6 +33,8 @@ export default function SvcReviewButton({
       router.refresh();
     } catch {
       setErr(true);
+    } finally {
+      // the row keeps this component mounted across the refresh, so it must not stay "busy" (a stuck "…")
       setBusy(false);
     }
   }
