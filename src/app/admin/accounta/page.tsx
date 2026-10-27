@@ -44,6 +44,13 @@ export default function AccountaHome() {
         : "รายชื่อคู่ค้า · เลขภาษี · หมวดเริ่มต้น"
     },
     {
+      href: "/admin/accounta/purchasing", icon: "chart", tone: "amber", eyebrow, cta,
+      title: en ? "OPEX / CAPEX budget · PR / PO" : "งบ OPEX/CAPEX · ใบขอซื้อ (PR/PO)",
+      sub: en
+        ? "Annual budget vs spend · purchase requests · executive approval · purchase orders"
+        : "ตั้งงบรายปี เทียบยอดใช้จริง · ใบขอซื้อ · ผู้บริหารอนุมัติ · ใบสั่งซื้อ"
+    },
+    {
       href: "/admin/accounta/company", icon: "building", tone: "violet", eyebrow, cta,
       title: en ? "Company overview (all branches)" : "ภาพรวมบริษัท (รวมสาขา)",
       sub: en
