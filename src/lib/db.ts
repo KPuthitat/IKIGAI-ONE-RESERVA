@@ -3530,6 +3530,86 @@ function runMigrations(db: Database.Database): void {
       confirmed_by INTEGER REFERENCES users(id),
       confirmed_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- ── งบประมาณ OPEX/CAPEX + ใบขอซื้อ (PR) / ใบสั่งซื้อ (PO) (owner 2026-10-27) ──
+    -- One budget per (year, branch, ACCOUNTA category); kind is derived from the category (CapEx category = capex).
+    CREATE TABLE IF NOT EXISTS budget_lines (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      year       INTEGER NOT NULL,
+      branch_id  INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      kind       TEXT NOT NULL CHECK (kind IN ('opex','capex')),
+      category   TEXT NOT NULL,
+      amount     REAL NOT NULL DEFAULT 0,
+      note       TEXT,
+      updated_by INTEGER REFERENCES users(id),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (year, branch_id, category)
+    );
+    -- PR lifecycle: draft → submitted → approved | rejected; approved → ordered (PO issued) → received → closed (bills linked);
+    -- cancelled any time before ordered.
+    CREATE TABLE IF NOT EXISTS purchase_requests (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      pr_no              TEXT NOT NULL UNIQUE,
+      branch_id          INTEGER NOT NULL REFERENCES branches(id),
+      kind               TEXT NOT NULL CHECK (kind IN ('opex','capex')),
+      category           TEXT NOT NULL,
+      title              TEXT NOT NULL,
+      reason             TEXT NOT NULL DEFAULT '',
+      needed_date        TEXT,
+      status             TEXT NOT NULL DEFAULT 'draft'
+                         CHECK (status IN ('draft','submitted','approved','rejected','ordered','received','closed','cancelled')),
+      vendor_id          INTEGER,
+      vendor_name        TEXT NOT NULL DEFAULT '',
+      vat_rate           REAL NOT NULL DEFAULT 0,
+      subtotal           REAL NOT NULL DEFAULT 0,
+      vat_amount         REAL NOT NULL DEFAULT 0,
+      total              REAL NOT NULL DEFAULT 0,
+      over_budget        INTEGER NOT NULL DEFAULT 0,
+      over_budget_reason TEXT NOT NULL DEFAULT '',
+      requested_by       INTEGER NOT NULL REFERENCES users(id),
+      submitted_at       TEXT,
+      decided_by         INTEGER REFERENCES users(id),
+      decided_at         TEXT,
+      decision_note      TEXT NOT NULL DEFAULT '',
+      created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_purchase_requests_branch ON purchase_requests(branch_id, status);
+    CREATE TABLE IF NOT EXISTS purchase_request_items (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      pr_id       INTEGER NOT NULL REFERENCES purchase_requests(id) ON DELETE CASCADE,
+      line_no     INTEGER NOT NULL,
+      description TEXT NOT NULL,
+      qty         REAL NOT NULL DEFAULT 1,
+      unit        TEXT NOT NULL DEFAULT '',
+      unit_price  REAL NOT NULL DEFAULT 0,
+      amount      REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_purchase_request_items_pr ON purchase_request_items(pr_id);
+    -- One PO per approved PR.
+    CREATE TABLE IF NOT EXISTS purchase_orders (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      po_no         TEXT NOT NULL UNIQUE,
+      pr_id         INTEGER NOT NULL UNIQUE REFERENCES purchase_requests(id),
+      vendor_id     INTEGER,
+      vendor_name   TEXT NOT NULL DEFAULT '',
+      total         REAL NOT NULL DEFAULT 0,
+      expected_date TEXT,
+      note          TEXT NOT NULL DEFAULT '',
+      issued_by     INTEGER REFERENCES users(id),
+      issued_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      received_at   TEXT,
+      received_by   INTEGER REFERENCES users(id),
+      receive_note  TEXT NOT NULL DEFAULT ''
+    );
+    -- The ACCOUNTA bills that paid for a PO (one bill belongs to at most one PO).
+    CREATE TABLE IF NOT EXISTS purchase_order_bills (
+      po_id      INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+      expense_id INTEGER NOT NULL UNIQUE REFERENCES accounta_expenses(id) ON DELETE CASCADE,
+      linked_by  INTEGER REFERENCES users(id),
+      linked_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (po_id, expense_id)
+    );
   `);
 
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────
