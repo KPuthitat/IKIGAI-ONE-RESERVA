@@ -134,5 +134,20 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("sweeping again does nothing", E.sweepEvidence() === 0);
 
   console.log(failed ? `\n${failed} FAILED` : "\nAll checks passed");
+  // two jobs on the same day, one set of photos (owner 2026-10-29)
+  const dish = D.listPositions(nama, YM).find((x) => x.name === "ล้างจาน")!;
+  // the month is already in progress, so insert the two assigned days directly
+  for (const pos of [toilet.id, dish.id]) db.prepare("INSERT INTO special_duty_days (position_id, duty_date, user_id, source, status) VALUES (?, ?, ?, 'assigned', 'assigned')").run(pos, date(8), cook);
+  const dayOf = (pos: number, d: number) => (db.prepare("SELECT id FROM special_duty_days WHERE position_id = ? AND duty_date = ?").get(pos, date(d)) as { id: number }).id;
+  const [t8, d8] = [dayOf(toilet.id, 8), dayOf(dish.id, 8)];
+  clockIn(cook, 8);
+  const filesBefore = fs.readdirSync(path.join(PHOTOS, String(nama))).length;
+  ok("jobs of different dates cannot share one submission", code(() => E.submitEvidence({ dayIds: [t8, dayId(2)], userId: cook, photos: [PIX], noPeopleConfirmed: true, today: date(8) })) === "days_must_match" || code(() => E.submitEvidence({ dayIds: [t8, dayId(2)], userId: cook, photos: [PIX], noPeopleConfirmed: true, today: date(8) })) === "forbidden");
+  ok("someone else's job cannot be added to the submission", code(() => E.submitEvidence({ dayIds: [t8, dayId(7)], userId: cook, photos: [PIX], noPeopleConfirmed: true, today: date(8) })) !== "none");
+  E.submitEvidence({ dayIds: [t8, d8], userId: cook, photos: [PIX], noPeopleConfirmed: true, today: date(8) });
+  ok("both jobs become submitted from one submission", (db.prepare("SELECT COUNT(*) n FROM special_duty_days WHERE id IN (?, ?) AND status = 'submitted'").get(t8, d8) as { n: number }).n === 2);
+  ok("the photo is stored once but each job has it to review", fs.readdirSync(path.join(PHOTOS, String(nama))).length === filesBefore + 1 && E.listEvidence(t8).length === 1 && E.listEvidence(d8).length === 1 && E.listEvidence(t8)[0].filename === E.listEvidence(d8)[0].filename);
+  E.reviewEvidence({ dayId: t8, branchId: nama, managerId: owner, approve: true });
+  ok("each job is reviewed on its own", status(8) === "approved" && (db.prepare("SELECT status FROM special_duty_days WHERE id = ?").get(d8) as { status: string }).status === "submitted");
   cleanup(); process.exit(failed ? 1 : 0);
 })();

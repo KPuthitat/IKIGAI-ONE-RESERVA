@@ -41,6 +41,7 @@ export const EVIDENCE_TEXT: Record<string, string> = {
   photos_required: "กรุณาถ่ายภาพพื้นที่ที่ทำความสะอาดอย่างน้อยหนึ่งภาพ",
   too_many_photos: "ส่งภาพได้ไม่เกินจำนวนที่กำหนด",
   photo_bad_format: "ไฟล์ภาพไม่ถูกต้อง",
+  days_must_match: "งานที่เลือกส่งพร้อมกัน ต้องเป็นวันเดียวกันและสาขาเดียวกัน",
   photo_too_large: "ไฟล์ภาพใหญ่เกินไป",
   no_people_not_confirmed: "กรุณายืนยันว่าในภาพไม่มีบุคคลปรากฏอยู่",
   note_required: "กรุณาระบุเหตุผล",
