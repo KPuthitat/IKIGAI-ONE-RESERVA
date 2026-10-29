@@ -127,7 +127,10 @@ function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; publis
   const [photos, setPhotos] = useState<string[]>([]);
   const [noPeople, setNoPeople] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState<number[]>([]);   // jobs of the same day this one set of photos is sent for
   const today = todayBkk();
+  const sendable = (d: Mine) => published && d.iDoIt && ["booked", "assigned", "covered"].includes(d.status) && today >= d.date;
+  const openFor = (d: Mine) => { setOpenId(d.id); setPhotos([]); setNoPeople(false); setPicked(mine.filter((x) => x.date === d.date && sendable(x)).map((x) => x.id)); };
 
   async function addFiles(files: FileList | null) {
     if (!files) return;
@@ -135,9 +138,9 @@ function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; publis
     for (const f of Array.from(files)) { const u = await downscaleToDataUrl(f); if (u) out.push(u); }
     setPhotos((p) => [...p, ...out].slice(0, 5));
   }
-  async function send(id: number) {
+  async function send() {
     setBusy(true); setMsg({ ok: true, text: "" });
-    const r = await fetch(apiUrl("/api/staff/persona/special-duty/evidence"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ day_id: id, photos, no_people: noPeople }) });
+    const r = await fetch(apiUrl("/api/staff/persona/special-duty/evidence"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ day_ids: picked, photos, no_people: noPeople }) });
     const j = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { setMsg({ ok: false, text: j.message ?? "ส่งหลักฐานไม่สำเร็จ" }); return; }
@@ -152,7 +155,8 @@ function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; publis
       {published && <p className="text-sm text-slate-600">เมื่อทำหน้าที่เสร็จให้ถ่ายภาพพื้นที่ที่รับผิดชอบ โดยไม่ให้มีบุคคลอยู่ในภาพ แล้วกดส่งหลักฐาน ค่าตอบแทนนับเฉพาะวันที่ผู้จัดการตรวจรับแล้ว และท่านต้องมาทำงานปกติในวันนั้นด้วย</p>}
       <ul className="space-y-2">
         {mine.map((d) => {
-          const canSend = published && d.iDoIt && ["booked", "assigned", "covered"].includes(d.status) && today >= d.date;
+          const canSend = sendable(d);
+          const sameDay = mine.filter((x) => x.date === d.date && sendable(x));
           return (
             <li key={d.id} className="rounded-xl border border-[var(--card-border)] px-3 py-2 text-sm">
               <div className="flex items-start justify-between gap-2">
@@ -161,10 +165,22 @@ function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; publis
                   <div className="text-slate-600">{published ? (DUTY_STATUS[d.status] ?? d.status) : ""}{d.iDoIt && published ? ` · ${money(d.amount)} บาท` : ""}{!d.iDoIt && d.status !== "absent" && published ? " · ผู้อื่นปฏิบัติแทน" : ""}</div>
                   {d.reviewNote && d.status !== "approved" && <div className="text-rose-700">ผู้จัดการแจ้งกลับ: {d.reviewNote}</div>}
                 </div>
-                {canSend && openId !== d.id && <button type="button" className="btn-primary whitespace-nowrap" onClick={() => { setOpenId(d.id); setPhotos([]); setNoPeople(false); }}>ส่งหลักฐาน</button>}
+                {canSend && openId !== d.id && <button type="button" className="btn-primary whitespace-nowrap" onClick={() => openFor(d)}>ส่งหลักฐาน</button>}
               </div>
               {openId === d.id && (
                 <div className="mt-2 space-y-2 rounded-xl bg-[var(--surface-field)] p-3">
+                  {sameDay.length > 1 && (
+                    <div className="rounded-lg border border-[var(--card-border)] bg-white p-2.5 space-y-1">
+                      <div className="text-sm font-semibold text-slate-700">ส่งหลักฐานชุดนี้สำหรับงานของวันที่ {fmtDate(d.date)}</div>
+                      <p className="text-xs text-slate-500">ทำหลายงานในวันเดียว แนบรูปชุดเดียวแล้วเลือกได้ว่าใช้กับงานไหนบ้าง</p>
+                      {sameDay.map((x) => (
+                        <label key={x.id} className="flex items-center gap-2 text-sm text-slate-800">
+                          <input type="checkbox" checked={picked.includes(x.id)} onChange={(e) => setPicked((p) => (e.target.checked ? [...p, x.id] : p.filter((i) => i !== x.id)))} />
+                          <span>{x.positionName}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                   <label className="block">
                     <span className="text-sm text-slate-700">ภาพพื้นที่ที่ทำความสะอาด (1 ถึง 5 ภาพ)</span>
                     <input type="file" accept="image/*" capture="environment" multiple className="mt-1 block w-full text-sm" onChange={(e) => addFiles(e.target.files)} />
@@ -180,7 +196,7 @@ function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; publis
                     <span>ข้าพเจ้ายืนยันว่าในภาพมีเฉพาะพื้นที่ทำงาน ไม่มีบุคคลปรากฏอยู่</span>
                   </label>
                   <div className="flex gap-2">
-                    <button type="button" className="btn-primary" disabled={busy || photos.length === 0 || !noPeople} onClick={() => send(d.id)}>{busy ? "กำลังส่ง" : "ส่งหลักฐาน"}</button>
+                    <button type="button" className="btn-primary" disabled={busy || photos.length === 0 || !noPeople || picked.length === 0} onClick={() => send()}>{busy ? "กำลังส่ง" : picked.length > 1 ? `ส่งหลักฐาน ${picked.length} งาน` : "ส่งหลักฐาน"}</button>
                     <button type="button" className="btn-secondary" onClick={() => setOpenId(null)}>ปิด</button>
                   </div>
                 </div>

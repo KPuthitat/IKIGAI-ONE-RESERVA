@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import EmptyState from "@/app/components/EmptyState";
@@ -25,6 +25,23 @@ const DAY_STATUS: Record<string, string> = {
   booked: "รอปฏิบัติงาน", assigned: "รอปฏิบัติงาน", covered: "มีผู้แทน รอปฏิบัติงาน", submitted: "ส่งหลักฐานแล้ว รอตรวจ", approved: "ตรวจรับแล้ว", absent: "ขาดปฏิบัติงาน"
 };
 const ERR: Record<string, string> = { invalid_date: "วันปิดรับไม่ถูกต้อง (ต้องไม่เป็นวันที่ผ่านมาแล้ว และอยู่ภายในเดือนนั้น)", unfilled_days: "ยังมีวันที่ว่างอยู่", invalid_transition: "ขั้นตอนนี้ทำไม่ได้ในสถานะปัจจุบัน", not_removable: "ถอนไม่ได้ เพราะมีการส่งหลักฐานแล้ว", wrong_stage: "ถอนได้ก่อนประกาศตารางเท่านั้น", not_found: "ไม่พบรายการ" };
+
+// A dialog opened right where the manager is working, so reviewing a day never means scrolling back up the page
+// (owner 2026-10-29: เวลากดจะเช็กงาน มันไกลกันเกิน). Click outside or ปิด to dismiss.
+function Sheet({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" className="bg-white w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl shadow-2xl p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export default function Client({ month }: { month: string }) {
   const router = useRouter();
@@ -222,8 +239,8 @@ export default function Client({ month }: { month: string }) {
           )}
 
           {pick && (
-            <div className="card space-y-2 !border-brand/40">
-              <h2 className="font-bold text-ink">เลือกผู้ปฏิบัติงาน</h2>
+            <Sheet onClose={() => setPick(null)}>
+              <h2 className="text-lg font-bold text-ink">เลือกผู้ปฏิบัติงาน</h2>
               <p className="text-sm text-slate-600">{pick.positionName} · {fmtDate(pick.date)}</p>
               {pick.list.length === 0 ? <p className="text-sm text-rose-700">ไม่มีพนักงานที่ตรงเงื่อนไขในวันนี้ (ต้องมีตารางทำงาน ไม่ลา และอยู่ในกลุ่มงานที่กำหนด) — เลือกจากรายชื่อด้านล่างแบบข้ามเงื่อนไขได้</p> : (
                 <div className="flex flex-wrap gap-2">
@@ -254,13 +271,13 @@ export default function Client({ month }: { month: string }) {
                   </div>
                 </div>
               )}
-              <button type="button" className="btn-secondary" onClick={() => setPick(null)}>ปิด</button>
-            </div>
+              <div className="flex justify-end pt-1"><button type="button" className="btn-secondary" onClick={() => setPick(null)}>ปิด</button></div>
+            </Sheet>
           )}
 
           {selected && (
-            <div className="card space-y-2 !border-brand/40">
-              <h2 className="font-bold text-ink">{selected.name}</h2>
+            <Sheet onClose={() => setSelected(null)}>
+              <h2 className="text-lg font-bold text-ink">{selected.name}</h2>
               <p className="text-sm text-slate-600">{fmtDate(selected.date)} · {selected.source === "booked" ? "เลือกเอง" : "ผู้จัดการมอบหมาย"} · {DAY_STATUS[selected.status] ?? selected.status}</p>
               {selected.performerName && <p className="text-sm text-brand">ผู้ปฏิบัติแทน: {selected.performerName}</p>}
               {selected.reviewNote && <p className="text-sm text-rose-700">หมายเหตุ: {selected.reviewNote}</p>}
@@ -274,7 +291,7 @@ export default function Client({ month }: { month: string }) {
                   {photos.map((ph) => (
                     <a key={ph.id} href={apiUrl(`/api/special-duty/photo/${ph.id}`)} target="_blank" rel="noreferrer">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={apiUrl(`/api/special-duty/photo/${ph.id}`)} alt="หลักฐาน" className="h-28 w-28 rounded-md object-cover border border-slate-200" />
+                      <img src={apiUrl(`/api/special-duty/photo/${ph.id}`)} alt="หลักฐาน" className="h-32 w-32 sm:h-36 sm:w-36 rounded-lg object-cover border border-slate-200" />
                     </a>
                   ))}
                 </div>
@@ -298,14 +315,14 @@ export default function Client({ month }: { month: string }) {
                   )}
                 </div>
               )}
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                 {["booked", "assigned", "submitted", "covered"].includes(selected.status) && ["special_published", "in_progress"].includes(st) && selected.date <= new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10) && (
                   <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { if (!window.confirm("บันทึกว่าผู้ปฏิบัติงานขาดในวันนี้ใช่หรือไม่ รายการนี้นับเป็นการขาดหนึ่งครั้งของผู้ที่ได้รับมอบหมาย")) return; const r = await act({ action: "absent", day_id: selected.id }); r.ok ? done("บันทึกการขาดแล้ว เลือกผู้ปฏิบัติแทนได้ที่ช่องวันนี้") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>บันทึกว่าขาด</button>
                 )}
                 {canEdit && <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { const r = await act({ action: "remove", day_id: selected.id }); r.ok ? done("ถอนวันนี้ออกแล้ว") : setMsg({ ok: false, text: ERR[r.j.error] ?? "ถอนไม่สำเร็จ" }); }}>ถอนออก</button>}
-                <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>ปิด</button>
+                <button type="button" className="btn-secondary sm:ml-auto" onClick={() => setSelected(null)}>ปิด</button>
               </div>
-            </div>
+            </Sheet>
           )}
 
           {data.positions.map((p) => {

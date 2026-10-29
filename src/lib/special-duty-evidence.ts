@@ -20,7 +20,7 @@ import { sqlNameWithPrefix } from "./name";
 export type EvidenceErrorCode =
   | "not_found" | "forbidden" | "wrong_stage" | "too_early" | "deadline_passed" | "wrong_status" | "not_present"
   | "photos_required" | "too_many_photos" | "photo_bad_format" | "photo_too_large" | "no_people_not_confirmed"
-  | "note_required" | "substitute_invalid" | "substitute_same_person" | "substitute_busy";
+  | "days_must_match" | "note_required" | "substitute_invalid" | "substitute_same_person" | "substitute_busy";
 
 export class EvidenceError extends Error { constructor(public code: EvidenceErrorCode) { super(code); } }
 
@@ -90,17 +90,26 @@ const WORKING = ["special_published", "in_progress"];
 
 // ── submit ────────────────────────────────────────────────────────────────
 
-export function submitEvidence(args: { dayId: number; userId: number; photos: string[]; noPeopleConfirmed: boolean; today?: string }): void {
+/** One set of photos for the jobs a person did on the same day (owner 2026-10-29: ทำสองงานในวันเดียว แนบรูปเดียว).
+ *  Every listed day must be this person's, in the same branch and on the same date; the photos are stored once and
+ *  each day gets its own evidence rows pointing at them, so each job is reviewed (and paid) on its own. */
+export function submitEvidence(args: { dayId?: number; dayIds?: number[]; userId: number; photos: string[]; noPeopleConfirmed: boolean; today?: string }): void {
   const db = getDb();
   const today = args.today ?? bkkToday();
-  const d = loadDay(args.dayId);
-  if (performerOf(d) !== args.userId) throw new EvidenceError("forbidden");
-  if (d.status === "absent") throw new EvidenceError("wrong_status");
-  if (!["booked", "assigned"].includes(d.status) && !(d.status === "covered")) throw new EvidenceError("wrong_status");
-  const month = getMonth(d.branch_id, d.year_month);
-  if (!month.enabled || !WORKING.includes(month.status)) throw new EvidenceError("wrong_stage");
-  if (today < d.duty_date) throw new EvidenceError("too_early");
-  if (today > submitDeadline(d)) throw new EvidenceError("deadline_passed");
+  const ids = [...new Set(args.dayIds && args.dayIds.length > 0 ? args.dayIds : args.dayId != null ? [args.dayId] : [])];
+  if (ids.length === 0) throw new EvidenceError("not_found");
+  const days = ids.map(loadDay);
+  const d = days[0];
+  if (days.some((x) => x.branch_id !== d.branch_id || x.duty_date !== d.duty_date)) throw new EvidenceError("days_must_match");
+  for (const x of days) {
+    if (performerOf(x) !== args.userId) throw new EvidenceError("forbidden");
+    if (x.status === "absent") throw new EvidenceError("wrong_status");
+    if (!["booked", "assigned", "covered"].includes(x.status)) throw new EvidenceError("wrong_status");
+    const m = getMonth(x.branch_id, x.year_month);
+    if (!m.enabled || !WORKING.includes(m.status)) throw new EvidenceError("wrong_stage");
+    if (today < x.duty_date) throw new EvidenceError("too_early");
+    if (today > submitDeadline(x)) throw new EvidenceError("deadline_passed");
+  }
   if (!args.noPeopleConfirmed) throw new EvidenceError("no_people_not_confirmed");
   const photos = args.photos ?? [];
   if (photos.length < cfgNum("evidence_min_photos", d.branch_id)) throw new EvidenceError("photos_required");
@@ -114,10 +123,13 @@ export function submitEvidence(args: { dayId: number; userId: number; photos: st
     const now = new Date().toISOString();
     db.transaction(() => {
       const ins = db.prepare("INSERT INTO special_duty_evidence (day_id, branch_id, filename, uploaded_by, uploaded_at) VALUES (?,?,?,?,?)");
-      for (const f of saved) ins.run(d.id, d.branch_id, f, args.userId, now);
-      db.prepare("UPDATE special_duty_days SET status = 'submitted', submitted_at = ?, review_note = NULL WHERE id = ?").run(now, d.id);
-      audit({ actorId: args.userId, branchId: d.branch_id, yearMonth: d.year_month, entity: "evidence", entityId: d.id, action: "submit", after: { photos: saved.length } });
-      if (month.status === "special_published") advanceMonth({ branchId: d.branch_id, yearMonth: d.year_month, to: "in_progress", actorId: args.userId });
+      for (const x of days) {
+        for (const f of saved) ins.run(x.id, x.branch_id, f, args.userId, now);
+        db.prepare("UPDATE special_duty_days SET status = 'submitted', submitted_at = ?, review_note = NULL WHERE id = ?").run(now, x.id);
+        audit({ actorId: args.userId, branchId: x.branch_id, yearMonth: x.year_month, entity: "evidence", entityId: x.id, action: "submit", after: { photos: saved.length, sharedWith: days.length - 1 } });
+        const m = getMonth(x.branch_id, x.year_month);
+        if (m.status === "special_published") advanceMonth({ branchId: x.branch_id, yearMonth: x.year_month, to: "in_progress", actorId: args.userId });
+      }
     })();
   } catch (e) {
     for (const f of saved) { try { fs.unlinkSync(path.join(branchDir(d.branch_id), f)); } catch { /* ignore */ } }
