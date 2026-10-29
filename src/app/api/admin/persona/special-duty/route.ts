@@ -10,7 +10,7 @@ import { bookingOpenFlex, noticeFlex, pushIndividually, pushWithOutcome, schedul
 import { audienceReport, AUDIENCE_REASON_TH, bookingAudience, branchHasRoster, openBookingOnPublish } from "@/lib/special-duty-roster";
 import { decideSwap, listPendingForManager, swapNotices, SwapError } from "@/lib/special-duty-swap";
 import { dutyMonthSummary, dutyOwnerAlerts } from "@/lib/special-duty-payout";
-import { assignSubstitute, dayBelongsToBranch, EvidenceError, listEvidence, listSubstituteCandidates, markAbsent, reviewEvidence } from "@/lib/special-duty-evidence";
+import { assignSubstitute, dayBelongsToBranch, EvidenceError, evidenceFlags, listEvidence, listSubstituteCandidates, markAbsent, reviewEvidence } from "@/lib/special-duty-evidence";
 import { EVIDENCE_TEXT, RULE_TEXT, SWAP_TEXT, viewerOf } from "@/lib/special-duty-viewer";
 import { sqlNameWithPrefix } from "@/lib/name";
 
@@ -47,7 +47,7 @@ export async function GET(req: Request) {
   if (photosOf) {
     const id = Number(photosOf);
     if (!dayBelongsToBranch(id, g.branchId)) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    return NextResponse.json({ photos: listEvidence(id).filter((x) => !x.deleted).map((x) => ({ id: x.id, uploadedAt: x.uploadedAt })) });
+    return NextResponse.json({ photos: listEvidence(id).filter((x) => !x.deleted).map((x) => ({ id: x.id, uploadedAt: x.uploadedAt })), flags: evidenceFlags(id) });
   }
   const subsOf = q.get("substitutes");
   if (subsOf) return NextResponse.json({ candidates: listSubstituteCandidates(Number(subsOf), g.branchId) });

@@ -10,6 +10,7 @@
 //  • The manager can mark the holder absent (one strike toward the limit) and name a substitute,
 //    who then submits the evidence. A substitute day does not count toward their own minimum days.
 
+import crypto from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { getDb } from "./db";
@@ -93,7 +94,8 @@ const WORKING = ["special_published", "in_progress"];
 /** One set of photos for the jobs a person did on the same day (owner 2026-10-29: ทำสองงานในวันเดียว แนบรูปเดียว).
  *  Every listed day must be this person's, in the same branch and on the same date; the photos are stored once and
  *  each day gets its own evidence rows pointing at them, so each job is reviewed (and paid) on its own. */
-export function submitEvidence(args: { dayId?: number; dayIds?: number[]; userId: number; photos: string[]; noPeopleConfirmed: boolean; today?: string }): void {
+export type PhotoMeta = { phash?: string | null; takenAt?: string | null };
+export function submitEvidence(args: { dayId?: number; dayIds?: number[]; userId: number; photos: string[]; photoMeta?: PhotoMeta[]; noPeopleConfirmed: boolean; today?: string }): void {
   const db = getDb();
   const today = args.today ?? bkkToday();
   const ids = [...new Set(args.dayIds && args.dayIds.length > 0 ? args.dayIds : args.dayId != null ? [args.dayId] : [])];
@@ -114,17 +116,23 @@ export function submitEvidence(args: { dayId?: number; dayIds?: number[]; userId
   const photos = args.photos ?? [];
   if (photos.length < cfgNum("evidence_min_photos", d.branch_id)) throw new EvidenceError("photos_required");
   if (photos.length > cfgNum("evidence_max_photos", d.branch_id)) throw new EvidenceError("too_many_photos");
-  for (const p of photos) decodePhoto(p);   // format and size first, so a bad file is reported as such
+  const shas = photos.map((p) => crypto.createHash("sha256").update(decodePhoto(p).buf).digest("hex"));   // format and size first, so a bad file is reported as such
   if (!wasPresent(args.userId, d.branch_id, d.duty_date)) throw new EvidenceError("not_present");
 
   const saved: string[] = [];
   try {
     for (const p of photos) saved.push(savePhoto(d.branch_id, p));
     const now = new Date().toISOString();
+    const metaOf = (i: number) => {
+      const m = args.photoMeta?.[i];
+      const phash = m?.phash && /^[0-9a-f]{16}$/.test(m.phash) ? m.phash : null;
+      const t = m?.takenAt ? Date.parse(m.takenAt) : NaN;
+      return { phash, takenAt: Number.isFinite(t) ? new Date(t).toISOString() : null };
+    };
     db.transaction(() => {
-      const ins = db.prepare("INSERT INTO special_duty_evidence (day_id, branch_id, filename, uploaded_by, uploaded_at) VALUES (?,?,?,?,?)");
+      const ins = db.prepare("INSERT INTO special_duty_evidence (day_id, branch_id, filename, uploaded_by, uploaded_at, sha256, phash, taken_at) VALUES (?,?,?,?,?,?,?,?)");
       for (const x of days) {
-        for (const f of saved) ins.run(x.id, x.branch_id, f, args.userId, now);
+        saved.forEach((f, i) => { const m = metaOf(i); ins.run(x.id, x.branch_id, f, args.userId, now, shas[i], m.phash, m.takenAt); });
         db.prepare("UPDATE special_duty_days SET status = 'submitted', submitted_at = ?, review_note = NULL WHERE id = ?").run(now, x.id);
         audit({ actorId: args.userId, branchId: x.branch_id, yearMonth: x.year_month, entity: "evidence", entityId: x.id, action: "submit", after: { photos: saved.length, sharedWith: days.length - 1 } });
         const m = getMonth(x.branch_id, x.year_month);
@@ -226,6 +234,55 @@ export function listEvidence(dayId: number): EvidencePhoto[] {
   return (getDb().prepare("SELECT id, filename, uploaded_by AS ub, uploaded_at AS ua, deleted_at AS del FROM special_duty_evidence WHERE day_id = ? ORDER BY id")
     .all(dayId) as Array<{ id: number; filename: string; ub: number; ua: string; del: string | null }>)
     .map((r) => ({ id: r.id, filename: r.filename, uploadedBy: r.ub, uploadedAt: r.ua, deleted: r.del != null }));
+}
+
+// ── duplicate-photo signals (owner 2026-10-29) ──────────────────────────
+// Warnings for the manager, never a verdict: the same area is legitimately photographed every day, so only a
+// byte-identical file or a near-identical picture (a resize / re-save of the same shot) is called a duplicate.
+
+export const NEAR_DUPLICATE_BITS = 4;   // of the 64-bit difference hash; a fresh handheld shot of the same spot is usually > 10
+export type EvidenceFlag = {
+  kind: "identical" | "similar" | "older_photo"; photoId: number; takenAt?: string;
+  other?: { dayId: number; date: string; positionName: string; performerName: string; status: string; branchName: string };
+};
+
+function hamming(a: string, b: string): number {
+  let x = BigInt(`0x${a}`) ^ BigInt(`0x${b}`), n = 0;
+  while (x) { n += Number(x & 1n); x >>= 1n; }
+  return n;
+}
+
+export function evidenceFlags(dayId: number): EvidenceFlag[] {
+  const db = getDb();
+  const d = loadDay(dayId);
+  const mine = db.prepare("SELECT id, filename, sha256, phash, taken_at FROM special_duty_evidence WHERE day_id = ? ORDER BY id").all(dayId) as
+    Array<{ id: number; filename: string; sha256: string | null; phash: string | null; taken_at: string | null }>;
+  if (mine.length === 0) return [];
+  const names = mine.map((m) => m.filename);
+  // pictures sent for OTHER days (a photo shared by several jobs of one submission has the same filename — not a duplicate)
+  const others = db.prepare(`
+    SELECT e.id, e.day_id, e.sha256, e.phash, dd.duty_date AS date, pp.name AS pname, dd.status, b.name AS bname,
+           ${sqlNameWithPrefix("u")} AS performer
+      FROM special_duty_evidence e JOIN special_duty_days dd ON dd.id = e.day_id JOIN special_duty_positions pp ON pp.id = dd.position_id
+      JOIN branches b ON b.id = pp.branch_id JOIN users u ON u.id = COALESCE(dd.performer_user_id, dd.user_id)
+     WHERE e.day_id != ? AND e.filename NOT IN (${names.map(() => "?").join(",")}) AND (e.sha256 IS NOT NULL OR e.phash IS NOT NULL)
+     ORDER BY e.id DESC LIMIT 4000`).all(dayId, ...names) as Array<{ id: number; day_id: number; sha256: string | null; phash: string | null; date: string; pname: string; status: string; bname: string; performer: string }>;
+  const flags: EvidenceFlag[] = [];
+  const who = (o: (typeof others)[number]) => ({ dayId: o.day_id, date: o.date, positionName: o.pname, performerName: o.performer, status: o.status, branchName: o.bname });
+  for (const m of mine) {
+    const same = m.sha256 ? others.find((o) => o.sha256 === m.sha256) : undefined;
+    if (same) flags.push({ kind: "identical", photoId: m.id, other: who(same) });
+    else if (m.phash) {
+      let best: (typeof others)[number] | undefined, bestBits = 99;
+      for (const o of others) { if (!o.phash) continue; const h = hamming(m.phash, o.phash); if (h < bestBits) { bestBits = h; best = o; } }
+      if (best && bestBits <= NEAR_DUPLICATE_BITS) flags.push({ kind: "similar", photoId: m.id, other: who(best) });
+    }
+    if (m.taken_at) {
+      const takenDay = new Date(Date.parse(m.taken_at) + 7 * 3600_000).toISOString().slice(0, 10);
+      if (takenDay < d.duty_date) flags.push({ kind: "older_photo", photoId: m.id, takenAt: takenDay });
+    }
+  }
+  return flags;
 }
 
 /** May this person open this photo? The manager of its branch, or the person who took it. */

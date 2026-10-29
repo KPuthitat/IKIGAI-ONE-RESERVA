@@ -3456,6 +3456,13 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_policy_notice_images_notice ON policy_notice_images(notice_id, sort_no);
   `);
+  // Duplicate-photo checks on special-duty evidence (owner 2026-10-29): a fingerprint of the stored file, a perceptual
+  // hash computed on the phone while the picture is downsized, and the file's own last-modified time.
+  const sdeCols = new Set((db.prepare("PRAGMA table_info(special_duty_evidence)").all() as Array<{ name: string }>).map((c) => c.name));
+  if (!sdeCols.has("sha256")) db.exec("ALTER TABLE special_duty_evidence ADD COLUMN sha256 TEXT");
+  if (!sdeCols.has("phash")) db.exec("ALTER TABLE special_duty_evidence ADD COLUMN phash TEXT");
+  if (!sdeCols.has("taken_at")) db.exec("ALTER TABLE special_duty_evidence ADD COLUMN taken_at TEXT");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_special_duty_evidence_sha ON special_duty_evidence(sha256)");
   // Who announces it (shown to staff as "ประกาศโดย"); blank = the account that created the notice.
   const pnCols = new Set((db.prepare("PRAGMA table_info(policy_notices)").all() as Array<{ name: string }>).map((c) => c.name));
   if (!pnCols.has("announcer")) db.exec("ALTER TABLE policy_notices ADD COLUMN announcer TEXT NOT NULL DEFAULT ''");

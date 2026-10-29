@@ -53,6 +53,9 @@ export default function Client({ month }: { month: string }) {
   const [pick, setPick] = useState<{ positionId: number; positionName: string; date: string; list: Array<{ id: number; name: string }>; others: Array<{ id: number; name: string; reasons: string[]; overridable: boolean }> } | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
   const [photos, setPhotos] = useState<Array<{ id: number }>>([]);
+  // duplicate-photo warnings for the opened day (owner 2026-10-29: ช่วยตรวจจับการส่งภาพซ้ำ)
+  type DupFlag = { kind: "identical" | "similar" | "older_photo"; photoId: number; takenAt?: string; other?: { dayId: number; date: string; positionName: string; performerName: string; status: string; branchName: string } };
+  const [flags, setFlags] = useState<DupFlag[]>([]);
   const [rejectNote, setRejectNote] = useState("");
   const [subs, setSubs] = useState<Array<{ id: number; name: string }> | null>(null);
   // who did not (or will not) get the booking card, with the reason (owner 2026-10-20)
@@ -74,10 +77,10 @@ export default function Client({ month }: { month: string }) {
     setBusy(false);
     return { ok: r.ok, j };
   }
-  const done = async (text: string) => { setMsg({ ok: true, text }); setCloseDate(""); setPlan(null); setPick(null); setSelected(null); setPhotos([]); setRejectNote(""); setSubs(null); await load(); router.refresh(); };
+  const done = async (text: string) => { setMsg({ ok: true, text }); setCloseDate(""); setPlan(null); setPick(null); setSelected(null); setPhotos([]); setFlags([]); setRejectNote(""); setSubs(null); await load(); router.refresh(); };
   const open_ = async (row: Row) => {
-    setSelected(row); setPick(null); setPhotos([]); setRejectNote(""); setSubs(null);
-    if (row.evidenceCount > 0) { const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&photos=${row.id}`), { cache: "no-store" }); const j = await r.json(); setPhotos(j.photos ?? []); }
+    setSelected(row); setPick(null); setPhotos([]); setFlags([]); setRejectNote(""); setSubs(null);
+    if (row.evidenceCount > 0) { const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&photos=${row.id}`), { cache: "no-store" }); const j = await r.json(); setPhotos(j.photos ?? []); setFlags(j.flags ?? []); }
     if (row.status === "absent") { const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&substitutes=${row.id}`), { cache: "no-store" }); const j = await r.json(); setSubs(j.candidates ?? []); }
   };
 
@@ -296,11 +299,24 @@ export default function Client({ month }: { month: string }) {
                   ))}
                 </div>
               )}
+              {flags.length > 0 && (
+                <div className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2.5 text-sm text-rose-900 space-y-1">
+                  <div className="font-bold">⚠️ ตรวจพบสัญญาณภาพซ้ำ — โปรดดูก่อนตรวจรับ</div>
+                  {flags.map((f, i) => (
+                    <div key={i}>
+                      {f.kind === "identical" && f.other && <>• ภาพที่ {photos.findIndex((p) => p.id === f.photoId) + 1} <b>เป็นไฟล์เดียวกัน</b>กับภาพที่เคยส่งของ {f.other.positionName} วันที่ {fmtDate(f.other.date)} ({f.other.performerName}{f.other.branchName ? ` · ${f.other.branchName}` : ""})</>}
+                      {f.kind === "similar" && f.other && <>• ภาพที่ {photos.findIndex((p) => p.id === f.photoId) + 1} <b>เหมือนภาพเดิมมาก</b> (ย่อหรือบันทึกซ้ำจากภาพเดียวกัน) กับ {f.other.positionName} วันที่ {fmtDate(f.other.date)} ({f.other.performerName})</>}
+                      {f.kind === "older_photo" && <>• ภาพที่ {photos.findIndex((p) => p.id === f.photoId) + 1} <b>ถ่ายก่อนวันปฏิบัติงาน</b> (ไฟล์ลงวันที่ {f.takenAt ? fmtDate(f.takenAt) : "ก่อนหน้า"})</>}
+                    </div>
+                  ))}
+                  <div className="text-xs text-rose-700">เป็นเพียงสัญญาณเตือน ผู้จัดการเป็นผู้ตัดสิน — พื้นที่เดียวกันถ่ายใหม่ทุกวันไม่ถือว่าซ้ำ</div>
+                </div>
+              )}
               {selected.status === "submitted" && (
                 <div className="space-y-2">
                   <input className="input w-full" placeholder="เหตุผล (ต้องกรอกเมื่อส่งกลับ)" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" className="btn-primary" disabled={busy || !selected.presentAtWork} onClick={async () => { const r = await act({ action: "approve", day_id: selected.id }); r.ok ? done("ตรวจรับเรียบร้อยแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ตรวจรับไม่สำเร็จ" }); }}>ตรวจรับ</button>
+                    <button type="button" className="btn-primary" disabled={busy || !selected.presentAtWork} onClick={async () => { if (flags.length > 0 && !window.confirm("พบสัญญาณภาพซ้ำในหลักฐานนี้ ยังต้องการตรวจรับหรือไม่")) return; const r = await act({ action: "approve", day_id: selected.id }); r.ok ? done("ตรวจรับเรียบร้อยแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ตรวจรับไม่สำเร็จ" }); }}>ตรวจรับ</button>
                     <button type="button" className="btn-secondary" disabled={busy || rejectNote.trim().length < 3} onClick={async () => { const r = await act({ action: "reject", day_id: selected.id, note: rejectNote }); r.ok ? done("ส่งกลับให้แก้ไขแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>ส่งกลับให้แก้ไข</button>
                   </div>
                 </div>
