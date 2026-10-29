@@ -149,5 +149,21 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("the photo is stored once but each job has it to review", fs.readdirSync(path.join(PHOTOS, String(nama))).length === filesBefore + 1 && E.listEvidence(t8).length === 1 && E.listEvidence(d8).length === 1 && E.listEvidence(t8)[0].filename === E.listEvidence(d8)[0].filename);
   E.reviewEvidence({ dayId: t8, branchId: nama, managerId: owner, approve: true });
   ok("each job is reviewed on its own", status(8) === "approved" && (db.prepare("SELECT status FROM special_duty_days WHERE id = ?").get(d8) as { status: string }).status === "submitted");
+  // duplicate-photo signals (owner 2026-10-29)
+  const fl = (id: number) => E.evidenceFlags(id);
+  ok("the same bytes sent for another day are flagged identical (not against the job it was shared with)", (() => { const f = fl(t8); return f.some((x) => x.kind === "identical" && x.other && x.other.dayId !== d8) && !f.some((x) => x.other?.dayId === d8); })());
+  const PIX2 = (n: number) => "data:image/jpeg;base64," + Buffer.from(`other-bytes-${n}`).toString("base64");
+  const mkDay = (d: number) => { db.prepare("INSERT INTO special_duty_days (position_id, duty_date, user_id, source, status) VALUES (?, ?, ?, 'assigned', 'assigned')").run(toilet.id, date(d), cook); clockIn(cook, d); return dayOf(toilet.id, d); };
+  const d10 = mkDay(10), d11 = mkDay(11), d12 = mkDay(12), d13 = mkDay(13);
+  const send = (id: number, d: number, n: number, meta: { phash?: string; takenAt?: string }) => E.submitEvidence({ dayIds: [id], userId: cook, photos: [PIX2(n)], photoMeta: [meta], noPeopleConfirmed: true, today: date(d) });
+  send(d10, 10, 10, { phash: "0f0f0f0f0f0f0f0f", takenAt: `${date(10)}T05:00:00Z` });
+  ok("a first picture with a fingerprint is not flagged", fl(d10).length === 0);
+  send(d11, 11, 11, { phash: "0f0f0f0f0f0f0f0e", takenAt: `${date(11)}T05:00:00Z` });   // 1 bit away, different bytes: a re-saved copy
+  ok("a near-identical picture (re-saved copy) is flagged similar and names the earlier day", fl(d11).some((x) => x.kind === "similar" && x.other?.dayId === d10));
+  send(d12, 12, 12, { phash: "f0f0f0f0f0f0f0f0", takenAt: `${date(12)}T05:00:00Z` });   // 32 bits away: a new shot of the same spot
+  ok("a different shot of the same spot is not flagged", fl(d12).length === 0);
+  send(d13, 13, 13, { phash: "123456789abcdef0", takenAt: `${date(9)}T05:00:00Z` });
+  ok("a picture dated before the duty day is flagged", fl(d13).some((x) => x.kind === "older_photo" && x.takenAt === date(9)));
+  ok("a malformed fingerprint is ignored, not stored", (() => { const dd = mkDay(14); send(dd, 14, 14, { phash: "zz" }); return (db.prepare("SELECT phash FROM special_duty_evidence WHERE day_id = ?").get(dd) as { phash: string | null }).phash === null; })());
   cleanup(); process.exit(failed ? 1 : 0);
 })();

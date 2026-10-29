@@ -24,7 +24,27 @@ const DUTY_STATUS: Record<string, string> = {
 };
 const todayBkk = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 
-function downscaleToDataUrl(file: File, maxEdge = 1280, quality = 0.7): Promise<string | null> {
+type Shot = { url: string; phash: string | null; takenAt: string | null };
+
+// 64-bit difference hash of a picture (9×8 greyscale, each pixel vs its right neighbour) as 16 hex digits. The manager's
+// duplicate-photo check compares these: a resized or re-saved copy of the same shot stays within a few bits.
+function differenceHash(source: HTMLCanvasElement): string | null {
+  try {
+    const c = document.createElement("canvas"); c.width = 9; c.height = 8;
+    const ctx = c.getContext("2d"); if (!ctx) return null;
+    ctx.drawImage(source, 0, 0, 9, 8);
+    const px = ctx.getImageData(0, 0, 9, 8).data;
+    const lum = (x: number, y: number) => { const i = (y * 9 + x) * 4; return px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114; };
+    let hex = "", nibble = 0, n = 0;
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      nibble = (nibble << 1) | (lum(x, y) > lum(x + 1, y) ? 1 : 0);
+      if (++n % 4 === 0) { hex += nibble.toString(16); nibble = 0; }
+    }
+    return hex;
+  } catch { return null; }
+}
+
+function downscaleToShot(file: File, maxEdge = 1280, quality = 0.7): Promise<Shot | null> {
   return new Promise((resolve) => {
     if (!file.type.startsWith("image/")) return resolve(null);
     const url = URL.createObjectURL(file);
@@ -35,7 +55,8 @@ function downscaleToDataUrl(file: File, maxEdge = 1280, quality = 0.7): Promise<
       const w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
       const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext("2d"); if (!ctx) return resolve(null);
-      ctx.drawImage(img, 0, 0, w, h); resolve(canvas.toDataURL("image/jpeg", quality));
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve({ url: canvas.toDataURL("image/jpeg", quality), phash: differenceHash(canvas), takenAt: file.lastModified > 0 ? new Date(file.lastModified).toISOString() : null });
     };
     img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
     img.src = url;
@@ -124,7 +145,7 @@ export default function Client({ month }: { month: string }) {
 
 function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; published: boolean; onChanged: () => void; setMsg: (m: { ok: boolean; text: string }) => void }) {
   const [openId, setOpenId] = useState<number | null>(null);
-  const [photos, setPhotos] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<Shot[]>([]);
   const [noPeople, setNoPeople] = useState(false);
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<number[]>([]);   // jobs of the same day this one set of photos is sent for
@@ -134,13 +155,13 @@ function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; publis
 
   async function addFiles(files: FileList | null) {
     if (!files) return;
-    const out: string[] = [];
-    for (const f of Array.from(files)) { const u = await downscaleToDataUrl(f); if (u) out.push(u); }
+    const out: Shot[] = [];
+    for (const f of Array.from(files)) { const u = await downscaleToShot(f); if (u) out.push(u); }
     setPhotos((p) => [...p, ...out].slice(0, 5));
   }
   async function send() {
     setBusy(true); setMsg({ ok: true, text: "" });
-    const r = await fetch(apiUrl("/api/staff/persona/special-duty/evidence"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ day_ids: picked, photos, no_people: noPeople }) });
+    const r = await fetch(apiUrl("/api/staff/persona/special-duty/evidence"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ day_ids: picked, photos: photos.map((p) => p.url), photo_meta: photos.map((p) => ({ phash: p.phash, taken_at: p.takenAt })), no_people: noPeople }) });
     const j = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { setMsg({ ok: false, text: j.message ?? "ส่งหลักฐานไม่สำเร็จ" }); return; }
@@ -188,7 +209,7 @@ function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; publis
                   {photos.length > 0 && <div className="flex flex-wrap gap-2">{photos.map((u, i) => (
                     <div key={i} className="relative">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={u} alt="" className="h-20 w-20 rounded-md object-cover" />
+                      <img src={u.url} alt="" className="h-20 w-20 rounded-md object-cover" />
                       <button type="button" className="absolute -right-1 -top-1 rounded-full bg-rose-600 px-1.5 text-xs text-white" onClick={() => setPhotos((p) => p.filter((_, k) => k !== i))}>ลบ</button>
                     </div>))}</div>}
                   <label className="flex items-start gap-2 text-sm text-slate-700">

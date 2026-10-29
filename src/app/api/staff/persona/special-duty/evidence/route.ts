@@ -6,7 +6,8 @@ import { EVIDENCE_TEXT } from "@/lib/special-duty-viewer";
 
 // POST {day_id | day_ids, photos: dataUrl[], no_people: true} — the person doing the duty sends photos of the work area;
 // day_ids sends one set of photos for several jobs done on the same day.
-const Body = z.object({ day_id: z.number().int().positive().optional(), day_ids: z.array(z.number().int().positive()).max(10).optional(), photos: z.array(z.string().max(4_000_000)).max(10), no_people: z.boolean() });
+const Body = z.object({ day_id: z.number().int().positive().optional(), day_ids: z.array(z.number().int().positive()).max(10).optional(), photos: z.array(z.string().max(4_000_000)).max(10), no_people: z.boolean(),
+  photo_meta: z.array(z.object({ phash: z.string().regex(/^[0-9a-f]{16}$/).nullable().optional(), taken_at: z.string().max(40).nullable().optional() })).max(10).optional() });
 
 export async function POST(req: Request) {
   const user = getSessionUser();
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
   if (!p.success) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   if (p.data.day_id == null && !p.data.day_ids?.length) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   try {
-    submitEvidence({ dayId: p.data.day_id, dayIds: p.data.day_ids, userId: user.id, photos: p.data.photos, noPeopleConfirmed: p.data.no_people });
+    submitEvidence({ dayId: p.data.day_id, dayIds: p.data.day_ids, userId: user.id, photos: p.data.photos, photoMeta: p.data.photo_meta?.map((m) => ({ phash: m.phash, takenAt: m.taken_at })), noPeopleConfirmed: p.data.no_people });
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof EvidenceError) return NextResponse.json({ ok: false, error: e.code, message: EVIDENCE_TEXT[e.code] ?? e.code }, { status: 422 });
