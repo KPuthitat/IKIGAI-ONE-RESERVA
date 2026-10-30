@@ -2529,6 +2529,13 @@ function runMigrations(db: Database.Database): void {
   {
     const ocols = db.prepare("PRAGMA table_info(delivery_orders)").all() as Array<{ name: string }>;
     if (!ocols.some((c) => c.name === "stock_deducted")) db.exec("ALTER TABLE delivery_orders ADD COLUMN stock_deducted INTEGER NOT NULL DEFAULT 0");
+    // Walk-in orders placed from the table / counter QR with no LINE login (owner 2026-10-30): an unguessable token for the
+    // customer's tracking page, a queue number per branch per day, the table label, and the service mode (pickup | dine_in).
+    if (!ocols.some((c) => c.name === "guest_token")) db.exec("ALTER TABLE delivery_orders ADD COLUMN guest_token TEXT");
+    if (!ocols.some((c) => c.name === "queue_no")) db.exec("ALTER TABLE delivery_orders ADD COLUMN queue_no INTEGER");
+    if (!ocols.some((c) => c.name === "table_label")) db.exec("ALTER TABLE delivery_orders ADD COLUMN table_label TEXT");
+    if (!ocols.some((c) => c.name === "service_mode")) db.exec("ALTER TABLE delivery_orders ADD COLUMN service_mode TEXT");
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_orders_guest_token ON delivery_orders (guest_token) WHERE guest_token IS NOT NULL");
     if (!ocols.some((c) => c.name === "income_posted")) db.exec("ALTER TABLE delivery_orders ADD COLUMN income_posted INTEGER NOT NULL DEFAULT 0");
     if (!ocols.some((c) => c.name === "insigna_recorded")) db.exec("ALTER TABLE delivery_orders ADD COLUMN insigna_recorded INTEGER NOT NULL DEFAULT 0");
   }

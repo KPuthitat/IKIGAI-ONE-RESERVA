@@ -257,6 +257,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/admin/delivera/kitchen", label: "กระดานครัว" },
         { href: "/admin/delivera/settings", label: "ตั้งค่า / เมนู" },
+        { href: "/admin/delivera/qr", label: "QR สั่งหน้าร้าน" },
         // Global LINE creds — admin-only (the page enforces requireAdmin too).
         ...((user.role === "admin" || user.role === "super_admin") ? [{ href: "/admin/delivera/connection", label: "เชื่อมต่อ LINE" }] : []),
         { href: "/admin/delivera/report", label: "ยอดขายเดลิเวอรี่" }
