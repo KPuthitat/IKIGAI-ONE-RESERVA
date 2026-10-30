@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiUrl } from "@/lib/url";
 import { fmtMoney } from "@/lib/format";
+import { describeOptions } from "@/lib/delivera/options-text";
 
 // Live kitchen board + rider dispatch/tracking. No Supabase Realtime → poll 8s.
 type OrderRow = {
@@ -12,7 +13,7 @@ type OrderRow = {
   status: string; pay_method: string | null; pay_status: string;
   time_slot: string | null; created_at: string;
 };
-type ItemRow = { id: number; name_th: string; qty: number; line_total: number };
+type ItemRow = { id: number; name_th: string; qty: number; line_total: number; options_json?: string };
 type Delivery = { assigned_at: string | null; accepted_at: string | null; picked_up_at: string | null; delivered_at: string | null };
 type KOrder = { order: OrderRow; items: ItemRow[]; rider: { id: number; name: string; phone: string | null } | null; delivery: Delivery | null; slip_image_url: string | null };
 type NearRider = { id: number; name: string; vehicle: string | null; plate: string | null; distance_km: number | null; last_seen: string | null };
@@ -135,8 +136,9 @@ function Card({ o, busy, act, dispatchOpen, riders, onOpenDispatch, onCloseDispa
 
       <ul className="mt-1.5 space-y-0.5">
         {items.map((it) => (
-          <li key={it.id} className="flex justify-between text-xs text-slate-700">
-            <span className="truncate pr-2">{it.name_th}</span><span className="shrink-0 text-slate-500">× {it.qty}</span>
+          <li key={it.id} className="text-xs text-slate-700">
+            <div className="flex justify-between"><span className="truncate pr-2">{it.name_th}</span><span className="shrink-0 text-slate-500">× {it.qty}</span></div>
+            {describeOptions(it.options_json) && <div className="text-[11px] text-amber-700 pl-2">{describeOptions(it.options_json)}</div>}
           </li>
         ))}
       </ul>

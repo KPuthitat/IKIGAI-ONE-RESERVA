@@ -2475,6 +2475,28 @@ function runMigrations(db: Database.Database): void {
       created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_delivery_payments_order ON delivery_payments (order_id);
+
+    -- Menu option groups (owner 2026-10-30: เหมือนแอปสั่งเครื่องดื่ม — ขนาด/ความหวาน/น้ำแข็ง/ท็อปปิ้ง): a group belongs to one menu item
+    -- and holds choices with a price add-on. required = at least min_pick must be chosen; multi = more than one allowed (up to max_pick).
+    CREATE TABLE IF NOT EXISTS delivera_option_groups (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id    INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      menu_item_id INTEGER NOT NULL REFERENCES delivera_menu_items(id) ON DELETE CASCADE,
+      name         TEXT NOT NULL,
+      min_pick     INTEGER NOT NULL DEFAULT 0,
+      max_pick     INTEGER NOT NULL DEFAULT 1,
+      sort_order   INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_delivera_option_groups_item ON delivera_option_groups (menu_item_id);
+    CREATE TABLE IF NOT EXISTS delivera_option_choices (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id     INTEGER NOT NULL REFERENCES delivera_option_groups(id) ON DELETE CASCADE,
+      name         TEXT NOT NULL,
+      price_delta  REAL NOT NULL DEFAULT 0,
+      is_available INTEGER NOT NULL DEFAULT 1,
+      sort_order   INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_delivera_option_choices_group ON delivera_option_choices (group_id);
   `);
   // Per-branch feature flag — DELIVERA ships dark; owner flips this per branch
   // once the LINE channels / SlipOK / Maps keys are provisioned. No branch is

@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isDeliveraBranch, getBranchSettings, listZones } from "@/lib/delivera/db";
 import { listMenu } from "@/lib/delivera/orders";
+import { listOptionGroups } from "@/lib/delivera/options";
 import SettingsClient from "./SettingsClient";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,8 @@ export default function DeliveraSettingsPage() {
   const branchId = user.activeBranchId;
   const branch = getDb().prepare("SELECT name, latitude, longitude FROM branches WHERE id = ?").get(branchId) as { name: string; latitude: number | null; longitude: number | null } | undefined;
   const settings = getBranchSettings(branchId);
+  const menuRows = listMenu(branchId);
+  const optionsOf = listOptionGroups(menuRows.map((m) => m.id));
 
   return (
     <div className="space-y-4">
@@ -37,7 +40,7 @@ export default function DeliveraSettingsPage() {
           record_insigna: settings.hook_record_insigna === 1
         }}
         hasCoords={branch?.latitude != null && branch?.longitude != null}
-        menu={listMenu(branchId).map((m) => ({ id: m.id, name_th: m.name_th, category: m.category, description: m.description, price: m.price, is_available: m.is_available === 1, image_url: m.image_url, is_standard_meal: m.is_standard_meal === 1, credit_cost: m.credit_cost, is_store_drink: m.is_store_drink === 1 }))}
+        menu={menuRows.map((m) => ({ optionCount: optionsOf.get(m.id)?.length ?? 0, id: m.id, name_th: m.name_th, category: m.category, description: m.description, price: m.price, is_available: m.is_available === 1, image_url: m.image_url, is_standard_meal: m.is_standard_meal === 1, credit_cost: m.credit_cost, is_store_drink: m.is_store_drink === 1 }))}
         zones={listZones(branchId).map((z) => ({ id: z.id, name: z.name, max_distance_km: z.max_distance_km, base_fee: z.base_fee, per_km_fee: z.per_km_fee, min_order_amount: z.min_order_amount }))}
       />
     </div>

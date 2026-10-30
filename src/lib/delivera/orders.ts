@@ -4,6 +4,7 @@ import type Database from "better-sqlite3";
 import { hashLineUserId } from "@/lib/insigna/hash";
 import { encryptSecret } from "@/lib/secret-vault";
 import { quote, round2, type QuoteResult } from "./quote";
+import { OptionError, priceChoices } from "./options";
 
 // DELIVERA order server core — reused by the customer API (commit 3), kitchen
 // board (5), integration hooks (7) and notifications (8). All reads/writes are
@@ -111,7 +112,7 @@ export type CreateOrderInput = {
   destLng?: number | null;
   timeSlot?: string | null;
   note?: string | null;
-  items: Array<{ menu_item_id: number; qty: number; options_json?: string }>;
+  items: Array<{ menu_item_id: number; qty: number; options_json?: string; choice_ids?: number[] }>;
 };
 
 /** DLV-YYMMDD-XXXX in Asia/Bangkok. UNIQUE column + retry guard collisions. */
@@ -152,8 +153,13 @@ export function createOrder(input: CreateOrderInput): {
     if (!m) throw new OrderError("menu_item_not_found", it.menu_item_id);
     if (!m.is_available) throw new OrderError("menu_item_unavailable", it.menu_item_id);
     if (!Number.isInteger(it.qty) || it.qty <= 0) throw new OrderError("bad_qty", it.menu_item_id);
-    return { menu_item_id: m.id, name_th: m.name_th, qty: it.qty, unit_price: m.price,
-             options_json: it.options_json ?? "{}", line_total: round2(m.price * it.qty) };
+    // option picks are validated against the item's groups and priced here (owner 2026-10-30); the line keeps a readable snapshot
+    let opt: ReturnType<typeof priceChoices>;
+    try { opt = priceChoices(m.id, it.choice_ids ?? []); }
+    catch (e) { if (e instanceof OptionError) throw new OrderError(e.code, e.detail ?? m.name_th); throw e; }
+    const unit = round2(m.price + opt.delta);
+    return { menu_item_id: m.id, name_th: m.name_th, qty: it.qty, unit_price: unit,
+             options_json: opt.picked.length > 0 ? JSON.stringify({ choices: opt.picked }) : (it.options_json ?? "{}"), line_total: round2(unit * it.qty) };
   });
   const subtotal = round2(priced.reduce((s, p) => s + p.line_total, 0));
 
