@@ -94,6 +94,7 @@ export type OrderRow = {
   pay_status: "unpaid" | "pending_verify" | "verified" | "failed" | "refunded";
   time_slot: string | null; note: string | null; created_at: string; updated_at: string;
   stock_deducted?: number; income_posted?: number; insigna_recorded?: number;
+  guest_token?: string | null; queue_no?: number | null; table_label?: string | null; service_mode?: "pickup" | "dine_in" | null;
 };
 
 export type OrderItemRow = {

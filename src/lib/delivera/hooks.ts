@@ -77,6 +77,7 @@ export function applyAccountaIncome(order: OrderRow): void {
 export function applyInsignaSignal(order: OrderRow): void {
   const db = getDb();
   if (order.insigna_recorded) return;
+  if (order.guest_token) return;   // a walk-in has no identity — one throw-away "customer" per order would only pollute INSIGNA
   if (!hookFlags(order.branch_id).insigna) return;   // opt-in per branch (default off)
   try {
     const { visit_token } = startVisit({

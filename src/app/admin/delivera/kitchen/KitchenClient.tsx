@@ -12,6 +12,7 @@ type OrderRow = {
   subtotal: number; delivery_fee: number; total: number;
   status: string; pay_method: string | null; pay_status: string;
   time_slot: string | null; created_at: string;
+  guest_token?: string | null; queue_no?: number | null; table_label?: string | null; service_mode?: string | null;
 };
 type ItemRow = { id: number; name_th: string; qty: number; line_total: number; options_json?: string };
 type Delivery = { assigned_at: string | null; accepted_at: string | null; picked_up_at: string | null; delivered_at: string | null };
@@ -123,11 +124,22 @@ function Card({ o, busy, act, dispatchOpen, riders, onOpenDispatch, onCloseDispa
   return (
     <div className="rounded-lg bg-white border border-slate-200 p-2.5 shadow-sm">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-mono font-bold text-slate-700">{order.order_no}</span>
+        <span className="flex items-center gap-1.5 min-w-0">
+          {order.queue_no != null && (
+            <span className="rounded-md bg-brand text-white px-1.5 py-px text-sm font-bold leading-tight">#{order.queue_no}</span>
+          )}
+          <span className="text-xs font-mono font-bold text-slate-700 truncate">{order.order_no}</span>
+        </span>
         <span className="text-[11px] text-slate-400">{fmtTime(order.created_at)}</span>
       </div>
       <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
-        <span className="text-[11px] text-slate-500">{order.fulfillment === "delivery" ? "จัดส่ง" : "รับเอง"}</span>
+        {order.guest_token ? (
+          <span className="text-[10px] rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 px-1.5 py-px font-medium">
+            {order.service_mode === "dine_in" ? `โต๊ะ ${order.table_label ?? ""}`.trim() : "หน้าร้าน · รับเอง"}
+          </span>
+        ) : (
+          <span className="text-[11px] text-slate-500">{order.fulfillment === "delivery" ? "จัดส่ง" : "รับเอง"}</span>
+        )}
         <span className={`text-[10px] rounded-full border px-1.5 py-px ${paidBadge}`}>
           {order.pay_method === "cod" ? "ปลายทาง" : PAY_LABEL[order.pay_status] ?? order.pay_status}
         </span>
