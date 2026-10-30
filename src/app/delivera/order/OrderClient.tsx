@@ -356,6 +356,8 @@ function orderErrText(code: string): string {
     below_min_order: "ยอดสั่งซื้อต่ำกว่าขั้นต่ำของเขตจัดส่ง",
     dest_location_required: "กรุณาปักพิกัดที่อยู่จัดส่ง",
     menu_item_unavailable: "มีเมนูที่ปิดการขายอยู่ในตะกร้า",
+    option_required: "เมนูบางรายการต้องเลือกตัวเลือก (เช่น ขนาด/ความหวาน) — หน้านี้ยังไม่รองรับ กรุณาสั่งผ่านหน้าสั่งอาหารของร้าน",
+    option_invalid: "ตัวเลือกของเมนูไม่ถูกต้อง",
     delivera_line_not_configured: "ระบบยังไม่พร้อมให้บริการ",
     line_auth_failed: "ยืนยันตัวตน LINE ไม่สำเร็จ กรุณาลองใหม่"
   };

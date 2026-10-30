@@ -2,8 +2,9 @@
 
 import { useRef, useState } from "react";
 import { apiUrl } from "@/lib/url";
+import OptionsEditor from "./OptionsEditor";
 
-type MenuItem = { id: number; name_th: string; category: string | null; description: string | null; price: number; is_available: boolean; image_url: string | null; is_standard_meal: boolean; credit_cost: number; is_store_drink: boolean };
+type MenuItem = { optionCount?: number; id: number; name_th: string; category: string | null; description: string | null; price: number; is_available: boolean; image_url: string | null; is_standard_meal: boolean; credit_cost: number; is_store_drink: boolean };
 type Zone = { id: number; name: string; max_distance_km: number; base_fee: number; per_km_fee: number; min_order_amount: number };
 type Hooks = { deduct_stock: boolean; post_income: boolean; record_insigna: boolean };
 
@@ -135,6 +136,7 @@ export default function SettingsClient(props: {
 
 function MenuManager({ menu, setMenu }: { menu: MenuItem[]; setMenu: (m: MenuItem[]) => void }) {
   const [name, setName] = useState(""); const [cat, setCat] = useState(""); const [price, setPrice] = useState(""); const [desc, setDesc] = useState("");
+  const [optFor, setOptFor] = useState<MenuItem | null>(null);
   async function add() {
     if (!name.trim() || !(Number(price) >= 0)) return;
     const body = { name_th: name.trim(), category: cat.trim() || null, description: desc.trim() || null, price: Number(price) };
@@ -172,6 +174,7 @@ function MenuManager({ menu, setMenu }: { menu: MenuItem[]; setMenu: (m: MenuIte
                 onBlur={(e) => { const c = Number(e.target.value); if (Number.isInteger(c) && c >= 0 && c !== it.credit_cost) setCreditCost(it, c); }} />
             )}
             <label className="flex items-center gap-1 text-[11px] text-sky-700" title="MEALPASS: เครื่องดื่มในร้าน (ใช้คูปองเครื่องดื่ม)"><input type="checkbox" checked={it.is_store_drink} onChange={() => toggleDrink(it)} />เครื่องดื่ม</label>
+            <button type="button" onClick={() => setOptFor(it)} className="text-[11px] text-brand hover:underline whitespace-nowrap" title="ขนาด / ความหวาน / ท็อปปิ้ง ฯลฯ">ตัวเลือก{it.optionCount ? ` (${it.optionCount})` : ""}</button>
             <button type="button" onClick={() => del(it)} className="text-[11px] text-rose-500 hover:underline">ลบ</button>
           </div>
         ))}
@@ -184,6 +187,7 @@ function MenuManager({ menu, setMenu }: { menu: MenuItem[]; setMenu: (m: MenuIte
         <button type="button" onClick={add} disabled={!name.trim()} className="rounded-md bg-brand text-white px-3 py-2 text-sm font-medium disabled:opacity-50">เพิ่ม</button>
       </div>
       <input className="input !text-xs" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="คำอธิบายเมนู (ถ้ามี) — ลูกค้าเห็นตอนสั่ง" />
+      {optFor && <OptionsEditor itemId={optFor.id} itemName={optFor.name_th} onClose={() => setOptFor(null)} onSaved={(n) => setMenu(menu.map((m) => (m.id === optFor.id ? { ...m, optionCount: n } : m)))} />}
     </div>
   );
 }

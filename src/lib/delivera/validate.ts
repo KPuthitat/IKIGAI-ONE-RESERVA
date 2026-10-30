@@ -17,7 +17,8 @@ export const QuoteBody = z.object({
 export const OrderItemBody = z.object({
   menu_item_id: z.number().int().positive(),
   qty: z.number().int().min(1).max(99),
-  options_json: z.string().max(2000).optional()
+  options_json: z.string().max(2000).optional(),
+  choice_ids: z.array(z.number().int().positive()).max(40).optional()   // picked option choices (validated + priced server-side)
 });
 
 export const CreateOrderBody = z.object({
@@ -85,6 +86,6 @@ export function toCreateOrderInput(
     destLng: d.dest_lng ?? null,
     timeSlot: d.time_slot ?? null,
     note: d.note ?? null,
-    items: d.items.map((i) => ({ menu_item_id: i.menu_item_id, qty: i.qty, options_json: i.options_json }))
+    items: d.items.map((i) => ({ menu_item_id: i.menu_item_id, qty: i.qty, options_json: i.options_json, choice_ids: i.choice_ids }))
   };
 }
