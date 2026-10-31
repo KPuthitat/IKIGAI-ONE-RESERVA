@@ -56,6 +56,13 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("a person with a shift and a LINE id is reachable", why(waiter) === "ok" && why(cook) === "ok");
   ok("a rostered person without LINE is reported as no_line", why(noline) === "no_line");
   ok("a branch member with no shift in the month still gets the card (owner 2026-10-31)", why(idle) === "ok" && H.bookingAudience(nama, YM).some((a) => a.userId === idle));
+  ok("a group mismatch says which department the person has and which groups the positions are open to", (() => {
+    D.savePosition({ branchId: hypo, yearMonth: YM, slotNo: 1, name: "ล้างจาน", eligibleGroups: ["kitchen"], actorId: owner, asOf: NOW });
+    const odd = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,department,line_user_id) VALUES ('odd','x','odd','staff','active','management','U-odd')").run().lastInsertRowid);
+    db.prepare("INSERT INTO user_branches (user_id,branch_id) VALUES (?,?)").run(odd, hypo);
+    const e = H.audienceReport(hypo, YM).find((x) => x.userId === odd);
+    return e?.reason === "group_not_eligible" && !!e.detail && e.detail.includes("ฝ่ายบริหาร") && e.detail.includes("ครัว");
+  })());
   ok("publishing twice does not open it again", H.openBookingOnPublish({ branchId: nama, yearMonth: YM, actorId: owner }).opened === false);
   ok("days with nobody eligible are reported (no kitchen staff after day 20)", (() => {
     const g = pub.gaps.filter((x) => x.positionId === dish);

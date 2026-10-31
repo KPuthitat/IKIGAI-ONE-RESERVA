@@ -79,9 +79,9 @@ export async function GET(req: Request) {
 // People who will not get (or did not get) the booking card, each with the reason, worded for the manager.
 function missedList(report: ReturnType<typeof audienceReport>, outcome?: Map<number, "sent" | "no_line" | "push_failed">) {
   return report
-    .map((e) => ({ userId: e.userId, name: e.name, reason: e.reason !== "ok" ? e.reason : outcome?.get(e.userId) === "push_failed" ? "push_failed" : "ok" }))
+    .map((e) => ({ userId: e.userId, name: e.name, detail: e.detail, reason: e.reason !== "ok" ? e.reason : outcome?.get(e.userId) === "push_failed" ? "push_failed" : "ok" }))
     .filter((e) => e.reason !== "ok")
-    .map((e) => ({ userId: e.userId, name: e.name, reason: e.reason, reasonText: AUDIENCE_REASON_TH[e.reason] ?? e.reason }));
+    .map((e) => ({ userId: e.userId, name: e.name, reason: e.reason, reasonText: e.detail ? `${AUDIENCE_REASON_TH[e.reason] ?? e.reason} — ${e.detail}` : AUDIENCE_REASON_TH[e.reason] ?? e.reason }));
 }
 
 const Body = z.object({
