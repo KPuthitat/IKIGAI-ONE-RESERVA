@@ -75,3 +75,30 @@ export function dutyOwnerAlerts(branchId: number, yearMonth: string): DutyOwnerA
   for (const p of s.byPerson) if (p.days > maxDays) alerts.push({ kind: "too_many_days", text: `${p.name} ได้รับตำแหน่ง ${p.days} วัน เกินเกณฑ์ ${maxDays} วันต่อเดือน` });
   return alerts;
 }
+
+export type DutyPayoutPerson = { userId: number; name: string; days: number; gross: number; pendingDays: number };
+export type DutyPayoutReview = { people: DutyPayoutPerson[]; totalGross: number; approvedDays: number; pendingDays: number };
+
+/** A company's duty pay for the month (owner 2026-11-01): who is paid with the service charge, how many approved
+ *  days and how much (before tax), plus the days still waiting for approval — those are NOT in this round. */
+export function dutyPayoutReview(yearMonth: string, companyId: number): DutyPayoutReview {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT d.status, COALESCE(d.performer_user_id, d.user_id) AS uid, p.daily_rate AS rate
+      FROM special_duty_days d JOIN special_duty_positions p ON p.id = d.position_id JOIN branches b ON b.id = p.branch_id
+     WHERE b.company_id = ? AND substr(d.duty_date, 1, 7) = ?
+       AND d.status IN ('approved','booked','assigned','covered','submitted')
+  `).all(companyId, yearMonth) as Array<{ status: string; uid: number; rate: number }>;
+  const by = new Map<number, DutyPayoutPerson>();
+  const nameOf = db.prepare(`SELECT ${sqlNameWithPrefix("u")} AS name FROM users u WHERE u.id = ?`);
+  for (const r of rows) {
+    let p = by.get(r.uid);
+    if (!p) { p = { userId: r.uid, name: (nameOf.get(r.uid) as { name: string } | undefined)?.name ?? "", days: 0, gross: 0, pendingDays: 0 }; by.set(r.uid, p); }
+    if (r.status === "approved") { p.days++; p.gross = round2(p.gross + r.rate); } else p.pendingDays++;
+  }
+  const people = [...by.values()].sort((a, b) => b.gross - a.gross || b.pendingDays - a.pendingDays || a.name.localeCompare(b.name, "th"));
+  return {
+    people, totalGross: round2(people.reduce((s, p) => s + p.gross, 0)),
+    approvedDays: people.reduce((s, p) => s + p.days, 0), pendingDays: people.reduce((s, p) => s + p.pendingDays, 0)
+  };
+}

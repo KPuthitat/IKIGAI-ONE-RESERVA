@@ -67,6 +67,16 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   const agg = SC.dutyFeeByUserCompany(YM);
   ok("the roll-up map has one row per person (the substitute: 150 + 100 from two branches = 250)", agg.size === 2 && near(agg.get(`${whtP}|null`)?.dutyGross ?? 0, 1000) && near(agg.get(`${ssoP}|null`)?.dutyNet ?? 0, 250));
 
+  // ── company review card ──
+  const co = Number(db.prepare("INSERT INTO companies (name_th) VALUES ('บ')").run().lastInsertRowid);
+  db.prepare("UPDATE branches SET company_id = ? WHERE id IN (?, ?)").run(co, nama, hypo);
+  const rv = P.dutyPayoutReview(YM, co);
+  const rp = (id: number) => rv.people.find((x) => x.userId === id);
+  ok("the company review lists approved days and amounts per payee", rp(whtP)?.days === 6 && near(rp(whtP)!.gross, 1000) && rp(ssoP)?.days === 2 && near(rp(ssoP)!.gross, 250));
+  ok("days still waiting for approval are counted apart and earn nothing", rp(pend)?.days === 0 && rp(pend)?.pendingDays === 2 && rp(pend)?.gross === 0 && rv.pendingDays >= 4);
+  ok("the company total matches what the payout pays", near(rv.totalGross, 1250));
+  ok("another company sees nothing", P.dutyPayoutReview(YM, co + 1).people.length === 0);
+
   // ── accounta ──
   db.prepare("INSERT INTO svc_payout_batches (branch_id,year_month,status) VALUES (?,?,'finalized')").run(nama, YM);
   const batch = (db.prepare("SELECT id FROM svc_payout_batches WHERE branch_id=? AND year_month=?").get(nama, YM) as { id: number }).id;

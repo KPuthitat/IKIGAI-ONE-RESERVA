@@ -22,6 +22,7 @@ import {
   listSvcLineReviews,
   listManualMeetingFees,
   meetingFeeByUserCompany,
+  dutyFeeByUserCompany,
   SVC_STAFF_SHARE_RATIO,
   SVC_COMPANY_SHARE_RATIO
 } from "@/lib/service-charge";
@@ -34,6 +35,7 @@ import SvcAttendancePanel, { type PanelRow } from "./SvcAttendancePanel";
 import { svcAttendanceApplies, getSvcCriteriaReview, pendingLeaveCountForMonth } from "@/lib/svc-attendance";
 import SvcReviewButton from "../SvcReviewButton";
 import SvcMeetingFeeSummary from "./SvcMeetingFeeSummary";
+import { dutyPayoutReview } from "@/lib/special-duty-payout";
 import CollapsibleCard from "./CollapsibleCard";
 import { meetingFeeReview, logTime, type MeetingLogNote } from "@/lib/svc-meeting-review";
 import SvcMeetingFeeEditor from "../SvcMeetingFeeEditor";
@@ -105,6 +107,19 @@ export default function CompanyServiceChargePage({
     mtgByUser.set(m.userId, { gross: cur.gross + m.mtgGross, wht: cur.wht + m.mtgWht, net: cur.net + m.mtgNet });
   }
   const mtgTotals = [...mtgByUser.values()].reduce((a, m) => ({ gross: a.gross + m.gross, wht: a.wht + m.wht, net: a.net + m.net }), { gross: 0, wht: 0, net: 0 });
+
+  // ค่าตอบแทนตำแหน่งงานพิเศษ (owner 2026-11-01) — paid on the SAME day as the service charge, so it sits in
+  // every total here exactly like the meeting fee, with its own card listing who and how many days.
+  const dutyReview = dutyPayoutReview(month, branchRow.company_id);
+  const dutyByUser = new Map<number, { gross: number; wht: number; net: number }>();
+  for (const d of dutyFeeByUserCompany(month).values()) {
+    if (d.companyId !== branchRow.company_id) continue;
+    const cur = dutyByUser.get(d.userId) ?? { gross: 0, wht: 0, net: 0 };
+    dutyByUser.set(d.userId, { gross: cur.gross + d.dutyGross, wht: cur.wht + d.dutyWht, net: cur.net + d.dutyNet });
+  }
+  const dutyTotals = [...dutyByUser.values()].reduce((a, m) => ({ gross: a.gross + m.gross, wht: a.wht + m.wht, net: a.net + m.net }), { gross: 0, wht: 0, net: 0 });
+  // Everything paid on top of the service-charge share itself
+  const extraTotals = { gross: mtgTotals.gross + dutyTotals.gross, wht: mtgTotals.wht + dutyTotals.wht, net: mtgTotals.net + dutyTotals.net };
 
   // Company-wide payout (close/pay/post to ACCOUNTA, split per branch) — only in
   // shared "รวมกอง" mode (owner 2026-09-03). In that mode the per-branch page hides
@@ -243,9 +258,9 @@ export default function CompanyServiceChargePage({
         <CompanySvcPayoutActions
           yearMonth={month}
           status={payoutState.status}
-          netPayoutPreview={summary.totalNetPayout + mtgTotals.net}
-          totalNet={postedTotals?.net ?? summary.totalNetPayout + mtgTotals.net}
-          totalWht={postedTotals?.wht ?? summary.totalWht + mtgTotals.wht}
+          netPayoutPreview={summary.totalNetPayout + extraTotals.net}
+          totalNet={postedTotals?.net ?? summary.totalNetPayout + extraTotals.net}
+          totalWht={postedTotals?.wht ?? summary.totalWht + extraTotals.wht}
           postedAt={postedTotals?.posted_at ?? null}
           incomplete={payoutState.incomplete}
           payDates={payoutState.payDates}
@@ -273,17 +288,17 @@ export default function CompanyServiceChargePage({
         />
         <SummaryCard
           label="ยอดจ่ายจริง (สุทธิ)"
-          value={fmtMoney(summary.totalNetPayout + mtgTotals.net)}
+          value={fmtMoney(summary.totalNetPayout + extraTotals.net)}
           accent="emerald"
-          sub={[mtgTotals.net > 0 ? `รวมเบี้ยประชุม ${fmtMoney(mtgTotals.net)}` : null, summary.totalWht + mtgTotals.wht > 0 ? `หัก ณ ที่จ่ายรวม ${fmtMoney(summary.totalWht + mtgTotals.wht)}` : null].filter(Boolean).join(" · ") || undefined}
+          sub={[mtgTotals.net > 0 ? `รวมเบี้ยประชุม ${fmtMoney(mtgTotals.net)}` : null, dutyTotals.net > 0 ? `รวมตำแหน่งพิเศษ ${fmtMoney(dutyTotals.net)}` : null, summary.totalWht + extraTotals.wht > 0 ? `หัก ณ ที่จ่ายรวม ${fmtMoney(summary.totalWht + extraTotals.wht)}` : null].filter(Boolean).join(" · ") || undefined}
         />
         <SummaryCard
           label="วันโอนจริง"
           value={payoutState?.payDates?.svcPayDate ?? summary.payoutDate}
           accent="brand"
           sub={payoutState?.hasMeetingFee && payoutState.payDates && payoutState.payDates.meetingPayDate !== payoutState.payDates.svcPayDate
-            ? `เบี้ยประชุม ${payoutState.payDates.meetingPayDate}`
-            : "จ่ายพร้อมกันทุกสาขา"}
+            ? `เบี้ยประชุม ${payoutState.payDates.meetingPayDate}${dutyTotals.net > 0 ? " · ตำแหน่งพิเศษจ่ายวันนี้" : ""}`
+            : dutyTotals.net > 0 ? "จ่ายพร้อมกันทุกสาขา · รวมตำแหน่งพิเศษ" : "จ่ายพร้อมกันทุกสาขา"}
         />
       </div>
 
@@ -395,6 +410,52 @@ export default function CompanyServiceChargePage({
         )}
       </CollapsibleCard>
 
+      {/* ค่าตอบแทนตำแหน่งงานพิเศษ — จ่ายวันเดียวกับเซอร์วิสชาร์จ */}
+      {(dutyReview.people.length > 0) && (
+        <CollapsibleCard storageKey="svcDutyFeeCardCollapsed" title="ค่าตอบแทนตำแหน่งงานพิเศษ · จ่ายวันเดียวกับเซอร์วิสชาร์จ"
+          aside={dutyReview.totalGross > 0 ? `รวม ฿${fmtMoney(dutyReview.totalGross)} ก่อนภาษี` : undefined}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
+                  <th className="py-1.5 pr-3">ชื่อ</th>
+                  <th className="py-1.5 pr-3 text-right">วันที่ตรวจรับแล้ว</th>
+                  <th className="py-1.5 pr-3 text-right">ยังรอตรวจรับ</th>
+                  <th className="py-1.5 pr-3 text-right">ก่อนภาษี</th>
+                  <th className="py-1.5 pr-3 text-right">สุทธิ (หลังภาษี)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dutyReview.people.map((p) => (
+                  <tr key={p.userId} className="border-b border-slate-100 last:border-0">
+                    <td className="py-1.5 pr-3 text-slate-800">{p.name}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{p.days || "—"}</td>
+                    <td className={`py-1.5 pr-3 text-right tabular-nums ${p.pendingDays > 0 ? "text-amber-600 font-semibold" : "text-slate-400"}`}>{p.pendingDays || "—"}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{p.gross > 0 ? fmtMoney(p.gross) : "—"}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums text-emerald-700">{dutyByUser.get(p.userId) ? fmtMoney(dutyByUser.get(p.userId)!.net) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 font-medium">
+                  <td className="py-1.5 pr-3">รวม</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{dutyReview.approvedDays}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{dutyReview.pendingDays || "—"}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{fmtMoney(dutyReview.totalGross)}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums text-emerald-700">{fmtMoney(dutyTotals.net)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {dutyReview.pendingDays > 0 && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              ยังมี {dutyReview.pendingDays} วันที่รอตรวจรับ — วันที่ยังไม่ตรวจรับจะไม่ถูกจ่ายในรอบนี้ ตรวจรับได้ที่ <a className="underline" href={`/admin/persona/special-duty?month=${month}`}>หน้าตำแหน่งงานค่าตอบแทนพิเศษ</a> ก่อนปิดรอบ
+            </p>
+          )}
+          <p className="mt-1 text-[11px] text-slate-400">จ่ายเฉพาะวันที่ตรวจรับแล้ว วันที่โอนเดียวกับเซอร์วิสชาร์จ · ภาษีหัก ณ ที่จ่าย 3% เฉพาะพนักงานที่หักภาษี ส่วนผู้อยู่ประกันสังคมไม่ถูกหัก</p>
+        </CollapsibleCard>
+      )}
+
       {/* Distribution */}
       <div className="card">
         <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
@@ -478,13 +539,16 @@ export default function CompanyServiceChargePage({
                           </td>
                           <td className="py-2 pr-3">
                             <SvcGrossOverrideEditor userId={r.userId} yearMonth={month}
-                              gross={r.grossAllocation} extra={mtgByUser.get(r.userId)?.gross ?? 0} original={r.grossOriginal ?? null}
+                              gross={r.grossAllocation} extra={(mtgByUser.get(r.userId)?.gross ?? 0) + (dutyByUser.get(r.userId)?.gross ?? 0)} original={r.grossOriginal ?? null}
                               overridden={!!r.grossOverridden} canEdit={canEditGross} />
                           </td>
                           <td className="py-2 pr-3 text-right align-top">
-                            <div className={`font-bold ${r.forfeited && !mtgByUser.get(r.userId) ? "text-rose-500 line-through" : "text-emerald-700"}`}>
-                              {fmtMoney(r.netPayout + (mtgByUser.get(r.userId)?.net ?? 0))}
+                            <div className={`font-bold ${r.forfeited && !mtgByUser.get(r.userId) && !dutyByUser.get(r.userId) ? "text-rose-500 line-through" : "text-emerald-700"}`}>
+                              {fmtMoney(r.netPayout + (mtgByUser.get(r.userId)?.net ?? 0) + (dutyByUser.get(r.userId)?.net ?? 0))}
                             </div>
+                            {(dutyByUser.get(r.userId)?.net ?? 0) > 0 && (
+                              <span className="block whitespace-nowrap text-[9px] font-normal text-fuchsia-700 leading-tight">รวมตำแหน่งพิเศษ {fmtMoney(dutyByUser.get(r.userId)!.net)}</span>
+                            )}
                             {(mtgByUser.get(r.userId)?.net ?? 0) > 0 && (
                               <span className="block whitespace-nowrap text-[9px] font-normal text-violet-600 leading-tight">รวมเบี้ยประชุม {fmtMoney(mtgByUser.get(r.userId)!.net)}</span>
                             )}
@@ -577,6 +641,7 @@ export default function CompanyServiceChargePage({
                                 grossBeforePenalty={r.grossBeforePenalty}
                                 penaltyAmount={r.penaltyAmount}
                                 meetingFee={mtgByUser.get(r.userId) ?? null}
+                                dutyFee={dutyByUser.get(r.userId) ?? null}
                               />
                             </div>
                           </td>
@@ -590,13 +655,13 @@ export default function CompanyServiceChargePage({
                 <tr className="border-t-2 border-slate-300 font-medium">
                   <td className="py-2 pr-3" colSpan={4}>รวมทั้งหมด ({summary.rows.length} คน)</td>
                   <td className="py-2 pr-3 text-right">
-                    {fmtMoney(summary.rows.reduce((s, r) => s + r.grossAllocation, 0) + mtgTotals.gross)}
+                    {fmtMoney(summary.rows.reduce((s, r) => s + r.grossAllocation, 0) + extraTotals.gross)}
                   </td>
                   <td className="py-2 pr-3 text-right text-emerald-700">
-                    {fmtMoney(summary.totalNetPayout + mtgTotals.net)}
-                    {summary.totalWht + mtgTotals.wht > 0 && (
+                    {fmtMoney(summary.totalNetPayout + extraTotals.net)}
+                    {summary.totalWht + extraTotals.wht > 0 && (
                       <span className="block text-[9px] font-normal text-rose-500">
-                        หัก ณ ที่จ่ายรวม {fmtMoney(summary.totalWht + mtgTotals.wht)}
+                        หัก ณ ที่จ่ายรวม {fmtMoney(summary.totalWht + extraTotals.wht)}
                       </span>
                     )}
                   </td>
