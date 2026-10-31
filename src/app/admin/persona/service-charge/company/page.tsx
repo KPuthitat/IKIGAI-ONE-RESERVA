@@ -35,7 +35,7 @@ import { svcAttendanceApplies, getSvcCriteriaReview, pendingLeaveCountForMonth }
 import SvcReviewButton from "../SvcReviewButton";
 import SvcMeetingFeeSummary from "./SvcMeetingFeeSummary";
 import CollapsibleCard from "./CollapsibleCard";
-import { meetingFeeReview } from "@/lib/svc-meeting-review";
+import { meetingFeeReview, logTime, type MeetingLogNote } from "@/lib/svc-meeting-review";
 import SvcMeetingFeeEditor from "../SvcMeetingFeeEditor";
 import SvcDeductionEditor from "../SvcDeductionEditor";
 import OwlMascot from "../../../../components/OwlMascot";
@@ -43,6 +43,13 @@ import OwlMascot from "../../../../components/OwlMascot";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "Service Charge · รวมทั้งบริษัท · PERSONA" };
+
+const LOG_NOTE_TH: Record<MeetingLogNote, string> = {
+  ok: "ได้เบี้ย", open: "ยังไม่กดจบ (ยังไม่มีเบี้ย)", short: "ไม่ถึง 15 นาที", exempt: "ไม่รับเบี้ยประชุม", absent: "ไม่ได้เข้าร่วม"
+};
+const LOG_NOTE_TONE: Record<MeetingLogNote, string> = {
+  ok: "text-emerald-700", open: "text-amber-600 font-medium", short: "text-slate-500", exempt: "text-slate-400", absent: "text-slate-400"
+};
 
 export default function CompanyServiceChargePage({
   searchParams
@@ -351,6 +358,38 @@ export default function CompanyServiceChargePage({
                 ))}
               </tbody>
             </table>
+            {mtgReview.logs.length > 0 && (
+              <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3" open>
+                <summary className="cursor-pointer text-[11px] font-semibold text-slate-600">เวลาเข้า-ออกประชุมรายบุคคล (ใช้ประกอบการพิจารณา)</summary>
+                <div className="mt-2 space-y-3">
+                  {mtgReview.logs.map((lg) => (
+                    <div key={lg.id}>
+                      <div className="text-xs font-medium text-slate-700">{lg.date} · {lg.title}</div>
+                      <table className="w-full text-xs mt-1">
+                        <thead>
+                          <tr className="text-left text-slate-400 border-b border-slate-200">
+                            <th className="py-1 pr-3">ชื่อ</th><th className="py-1 pr-3">เข้า</th><th className="py-1 pr-3">ออก</th>
+                            <th className="py-1 pr-3 text-right">นาที</th><th className="py-1 pr-3 text-right">เบี้ยตามกติกา</th><th className="py-1">หมายเหตุ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {lg.rows.map((r) => (
+                            <tr key={r.userId} className="border-b border-slate-100 last:border-0">
+                              <td className="py-1 pr-3 text-slate-800">{r.name}</td>
+                              <td className="py-1 pr-3 tabular-nums">{logTime(r.joinedAt) || "—"}</td>
+                              <td className="py-1 pr-3 tabular-nums">{logTime(r.endedAt) || "—"}</td>
+                              <td className="py-1 pr-3 text-right tabular-nums">{r.minutes ?? "—"}</td>
+                              <td className="py-1 pr-3 text-right tabular-nums">{r.rule > 0 ? fmtMoney(r.rule) : "—"}</td>
+                              <td className={`py-1 ${LOG_NOTE_TONE[r.note]}`}>{LOG_NOTE_TH[r.note]}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
             <p className="text-[11px] text-slate-400 mt-1">เบี้ยประชุมคิดจากผู้ที่ “จบแล้ว” เท่านั้น (กดจบการประชุมและกรอกบันทึกครบ) — ถ้า “เข้าร่วม” มากกว่า “จบแล้ว” แปลว่ามีคนยังไม่จบ ยังไม่มีเบี้ยของคนนั้น</p>
           </div>
         )}

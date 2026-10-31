@@ -7,6 +7,7 @@
 import { getDb } from "./db";
 import { MEETING_FEE_SVC_START_MONTH } from "./payroll-compute";
 import { nameWithPrefix } from "./name";
+import { bkkHHMM } from "./time";
 import { MEETING_FEE_PER_15MIN } from "./exec-meetings";
 import { isMeetingFeeConfirmed, listManualMeetingFees } from "./service-charge";
 
@@ -17,9 +18,16 @@ export type MeetingFeePerson = {
   gross: number;    // the amount to pay / propose: confirmed amount, else the rule-based one
 };
 export type MeetingFeeMeeting = { id: number; title: string; date: string; status: string; invited: number; joined: number; finished: number; feeTotal: number };
+/** One invitee's time log for a meeting — what the approver needs to judge the fee (owner 2026-11-01). */
+export type MeetingLogNote = "ok" | "open" | "short" | "exempt" | "absent";
+export type MeetingLogRow = {
+  userId: number; name: string; joinedAt: string | null; endedAt: string | null; minutes: number | null;
+  rule: number; note: MeetingLogNote;
+};
+export type MeetingLog = { id: number; title: string; date: string; rows: MeetingLogRow[] };
 export type MeetingFeeReview = {
   confirmed: { by: string | null; at: string } | null; beforeCutover: boolean;
-  people: MeetingFeePerson[]; meetings: MeetingFeeMeeting[]; totalGross: number; hasManualToReplace: boolean;
+  people: MeetingFeePerson[]; meetings: MeetingFeeMeeting[]; logs: MeetingLog[]; totalGross: number; hasManualToReplace: boolean;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -75,6 +83,35 @@ export function meetingFeeReview(yearMonth: string, companyId: number): MeetingF
        ORDER BY m.meeting_date, m.id`).all(yearMonth) as MeetingFeeMeeting[];
   } catch { /* exec-meeting tables may not exist yet */ }
 
+  // Per-person time log of each meeting: everyone invited or who joined, in this company only.
+  const logs: MeetingLog[] = [];
+  try {
+    const att = db.prepare(`
+      SELECT a.user_id AS uid, a.joined_at, a.ended_at, a.minutes, COALESCE(u.meeting_fee_exempt, 0) AS exempt
+        FROM exec_meeting_attendance a JOIN users u ON u.id = a.user_id
+       WHERE a.meeting_id = ? AND ${inCompany}`);
+    const inv = db.prepare(`SELECT i.user_id AS uid FROM exec_meeting_invitees i JOIN users u ON u.id = i.user_id WHERE i.meeting_id = ? AND ${inCompany}`);
+    for (const m of meetings) {
+      const rows = new Map<number, MeetingLogRow>();
+      for (const r of att.all(m.id, companyId) as Array<{ uid: number; joined_at: string | null; ended_at: string | null; minutes: number | null; exempt: number }>) {
+        const mins = r.minutes ?? null;
+        const rule = r.ended_at && !r.exempt && (mins ?? 0) >= 15 ? Math.floor((mins as number) / 15) * MEETING_FEE_PER_15MIN : 0;
+        const note: MeetingLogNote = !r.ended_at ? "open" : r.exempt ? "exempt" : (mins ?? 0) < 15 ? "short" : "ok";
+        rows.set(r.uid, { userId: r.uid, name: "", joinedAt: r.joined_at, endedAt: r.ended_at, minutes: mins, rule, note });
+      }
+      for (const r of inv.all(m.id, companyId) as Array<{ uid: number }>)
+        if (!rows.has(r.uid)) rows.set(r.uid, { userId: r.uid, name: "", joinedAt: null, endedAt: null, minutes: null, rule: 0, note: "absent" });
+      const nm = db.prepare("SELECT display_name, title_prefix FROM users WHERE id = ?");
+      const list = [...rows.values()].map((r) => {
+        const u = nm.get(r.userId) as { display_name: string; title_prefix: string | null } | undefined;
+        return { ...r, name: nameWithPrefix(u?.title_prefix ?? null, u?.display_name ?? "") };
+      });
+      const order: Record<MeetingLogNote, number> = { ok: 0, short: 1, exempt: 2, open: 3, absent: 4 };
+      list.sort((a, b) => order[a.note] - order[b.note] || a.name.localeCompare(b.name, "th"));
+      if (list.length > 0) logs.push({ id: m.id, title: m.title, date: m.date, rows: list });
+    }
+  } catch { /* exec-meeting tables may not exist yet */ }
+
   let confirmed: MeetingFeeReview["confirmed"] = null;
   if (confirmedOn) {
     const c = db.prepare("SELECT c.confirmed_at AS at, u.display_name AS by FROM svc_meeting_fee_confirmed c LEFT JOIN users u ON u.id = c.confirmed_by WHERE c.year_month = ?").get(yearMonth) as { at: string; by: string | null };
@@ -82,8 +119,11 @@ export function meetingFeeReview(yearMonth: string, companyId: number): MeetingF
   }
   return {
     confirmed, beforeCutover: yearMonth < MEETING_FEE_SVC_START_MONTH,
-    people, meetings,
+    people, meetings, logs,
     totalGross: round2(people.reduce((s, p) => s + p.gross, 0)),
     hasManualToReplace: !confirmedOn && people.some((p) => p.manual > 0)
   };
 }
+
+/** "HH:MM" in Bangkok for a stored attendance timestamp ("" when none). */
+export function logTime(ts: string | null): string { return ts ? bkkHHMM(ts) : ""; }
