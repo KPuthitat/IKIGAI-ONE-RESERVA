@@ -93,6 +93,12 @@ export default function Client({ month }: { month: string }) {
   const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
   const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
 
+  async function checkAudience() {
+    const r = await act({ action: "audience_check" });
+    if (!r.ok) { setMsg({ ok: false, text: "ตรวจรายชื่อไม่สำเร็จ" }); return; }
+    setMissed({ list: (r.j.missed ?? []) as Array<{ userId: number; name: string; reasonText: string }>, sentNote: `พร้อมรับแจ้ง ${r.j.reachable ?? 0}/${r.j.total ?? 0} คน` });
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -135,24 +141,31 @@ export default function Client({ month }: { month: string }) {
             )}
             {st === "booking_open" && (
               <>
-                <p className="text-sm text-slate-600">พนักงานเลือกวันเองได้จนถึงวันปิดรับ ท่านเพิ่มผู้ปฏิบัติงานเองได้ด้วยการกดช่อง “ว่าง” ในปฏิทินด้านล่าง ระบบจะปิดรับการเลือกวันเองเมื่อพ้นวันที่กำหนด</p>
-                <div className="flex flex-wrap items-end gap-2">
-                  <label className="field !w-auto max-w-[16rem]"><span>วันปิดรับของสาขานี้</span><input type="date" value={closeDate || data.month.bookingCloseDate || ""} onChange={(e) => setCloseDate(e.target.value)} /></label>
-                  <button type="button" className="btn-secondary" disabled={busy || !closeDate || closeDate === data.month.bookingCloseDate} onClick={async () => {
-                    const r = await act({ action: "set_close_date", close_date: closeDate });
-                    r.ok ? done(`ตั้งวันปิดรับเป็น ${fmtDate(closeDate)} แล้ว`) : setMsg({ ok: false, text: ERR[r.j.error] ?? "ตั้งวันปิดรับไม่สำเร็จ" });
-                  }}>ตั้งวันปิดรับ</button>
+                <p className="text-sm text-slate-600">พนักงานเลือกวันเองได้จนถึงวันปิดรับ หากต้องการเพิ่มผู้ปฏิบัติงานเอง กดช่อง “ว่าง” ในปฏิทินด้านล่าง</p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-slate-50 px-3 py-2">
+                  <span className="text-sm font-medium text-slate-700">ปิดรับวันที่</span>
+                  <input type="date" className="input !w-auto !py-1.5" value={closeDate || data.month.bookingCloseDate || ""} onChange={(e) => setCloseDate(e.target.value)} />
+                  {closeDate && closeDate !== data.month.bookingCloseDate && (
+                    <button type="button" className="btn-primary !py-1.5" disabled={busy} onClick={async () => {
+                      const r = await act({ action: "set_close_date", close_date: closeDate });
+                      r.ok ? done(`ตั้งวันปิดรับเป็น ${fmtDate(closeDate)} แล้ว`) : setMsg({ ok: false, text: ERR[r.j.error] ?? "ตั้งวันปิดรับไม่สำเร็จ" });
+                    }}>บันทึกวันที่</button>
+                  )}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                <button type="button" className="btn-primary" disabled={busy} onClick={async () => {
-                  if (!window.confirm("ส่งข้อความ LINE ให้พนักงานที่มีสิทธิ์เข้ามาเลือกวันตำแหน่งงานค่าตอบแทนพิเศษตอนนี้เลยไหม")) return;
-                  const r = await act({ action: "invite_booking" });
-                  if (!r.ok) { setMsg({ ok: false, text: r.j.error === "booking_not_open" ? "ขณะนี้ไม่ได้อยู่ในช่วงเปิดให้เลือกวัน" : "ส่งไม่สำเร็จ" }); return; }
-                  const { recipients = 0, sent = 0, noLine = 0 } = r.j as { recipients?: number; sent?: number; noLine?: number };
-                  setMissed({ list: (r.j.missed ?? []) as Array<{ userId: number; name: string; reasonText: string }>, sentNote: `ส่ง LINE สำเร็จ ${sent}/${recipients} คน` });
-                  setMsg({ ok: true, text: `ส่งให้พนักงานเลือกวันแล้ว · LINE ${sent}/${recipients} คน${noLine ? ` (ไม่มี LINE ${noLine} คน — เข้าเลือกได้เองที่เมนูตำแหน่งงานค่าตอบแทนพิเศษ)` : ""}` });
-                }}>ส่งให้พนักงานเข้ามาเลือกวัน</button>
-                <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { const r = await act({ action: "close_booking" }); r.ok ? done("ปิดรับการเลือกวันแล้ว") : setMsg({ ok: false, text: ERR[r.j.error] ?? "ทำรายการไม่สำเร็จ" }); }}>ปิดรับการเลือกวันก่อนกำหนด</button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" className="btn-primary" disabled={busy} onClick={async () => {
+                    if (!window.confirm("ส่งข้อความ LINE ให้พนักงานที่มีสิทธิ์เข้ามาเลือกวันตำแหน่งงานค่าตอบแทนพิเศษตอนนี้เลยไหม")) return;
+                    const r = await act({ action: "invite_booking" });
+                    if (!r.ok) { setMsg({ ok: false, text: r.j.error === "booking_not_open" ? "ขณะนี้ไม่ได้อยู่ในช่วงเปิดให้เลือกวัน" : "ส่งไม่สำเร็จ" }); return; }
+                    const { recipients = 0, sent = 0, noLine = 0 } = r.j as { recipients?: number; sent?: number; noLine?: number };
+                    setMissed({ list: (r.j.missed ?? []) as Array<{ userId: number; name: string; reasonText: string }>, sentNote: `ส่ง LINE สำเร็จ ${sent}/${recipients} คน` });
+                    setMsg({ ok: true, text: `ส่งให้พนักงานเลือกวันแล้ว · LINE ${sent}/${recipients} คน${noLine ? ` (ไม่มี LINE ${noLine} คน — เข้าเลือกได้เองจากหน้าแรกของ PERSONA)` : ""}` });
+                  }}>ส่งให้พนักงานเข้ามาเลือกวัน</button>
+                  <button type="button" className="btn-secondary" disabled={busy} onClick={checkAudience}>ตรวจว่าใครไม่ได้รับแจ้งเตือน</button>
+                  <button type="button" className="ml-auto text-sm text-rose-600 hover:underline disabled:opacity-50" disabled={busy} onClick={async () => {
+                    if (!window.confirm("ปิดรับการเลือกวันก่อนกำหนด พนักงานจะเลือกวันเองไม่ได้อีก ต้องการปิดไหม")) return;
+                    const r = await act({ action: "close_booking" }); r.ok ? done("ปิดรับการเลือกวันแล้ว") : setMsg({ ok: false, text: ERR[r.j.error] ?? "ทำรายการไม่สำเร็จ" });
+                  }}>ปิดรับก่อนกำหนด</button>
                 </div>
               </>
             )}
@@ -170,29 +183,30 @@ export default function Client({ month }: { month: string }) {
               </>
             )}
             {["booking_open", "booking_closed", "filling"].includes(st) && (
-              <div className="pt-2 border-t border-slate-100 space-y-2">
-                <button type="button" className="btn-secondary" disabled={busy} onClick={async () => {
-                  const r = await act({ action: "audience_check" });
-                  if (!r.ok) { setMsg({ ok: false, text: "ตรวจรายชื่อไม่สำเร็จ" }); return; }
-                  setMissed({ list: (r.j.missed ?? []) as Array<{ userId: number; name: string; reasonText: string }>, sentNote: `พร้อมรับแจ้ง ${r.j.reachable ?? 0}/${r.j.total ?? 0} คน` });
-                }}>ตรวจรายชื่อคนที่ไม่ได้รับแจ้งเตือน</button>
+              <>
+                {st !== "booking_open" && (
+                  <div><button type="button" className="btn-secondary" disabled={busy} onClick={checkAudience}>ตรวจว่าใครไม่ได้รับแจ้งเตือน</button></div>
+                )}
                 {missed && (
-                  <div className="rounded-xl bg-slate-50 p-3 text-sm space-y-1">
-                    {missed.sentNote && <div className="font-semibold text-slate-700">{missed.sentNote}</div>}
+                  <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-semibold text-slate-700">{missed.sentNote}</div>
+                      <button type="button" className="text-xs text-slate-400 hover:text-slate-600" onClick={() => setMissed(null)}>ซ่อน</button>
+                    </div>
                     {missed.list.length === 0
-                      ? <div className="text-emerald-700">ทุกคนในสาขามีสิทธิ์และผูก LINE ครบ — ไม่มีใครตกหล่น</div>
+                      ? <div className="text-emerald-700">ทุกคนในสาขาผูก LINE และมีสิทธิ์ครบ ไม่มีใครตกหล่น</div>
                       : (
                         <>
                           <div className="text-amber-700">ไม่ได้รับแจ้งเตือน {missed.list.length} คน</div>
-                          <ul className="space-y-0.5">
-                            {missed.list.map((p) => <li key={p.userId} className="flex flex-wrap gap-x-2"><span className="text-slate-800">{p.name}</span><span className="text-slate-500">— {p.reasonText}</span></li>)}
+                          <ul className="divide-y divide-slate-100">
+                            {missed.list.map((p) => <li key={p.userId} className="flex flex-wrap items-baseline justify-between gap-x-3 py-1"><span className="text-slate-800">{p.name}</span><span className="text-xs text-slate-500">{p.reasonText}</span></li>)}
                           </ul>
-                          <div className="text-[11px] text-slate-400">คนที่ไม่ได้รับ LINE ยังเข้าเลือกวันเองได้ที่เมนูตำแหน่งงานค่าตอบแทนพิเศษ (ถ้ามีสิทธิ์และมีกะในตาราง)</div>
+                          <div className="text-[11px] text-slate-400">คนเหล่านี้ยังเข้าเลือกวันเองได้จากแถบสีเหลืองบนหน้าแรกของ PERSONA</div>
                         </>
                       )}
                   </div>
                 )}
-              </div>
+              </>
             )}
             {["special_published", "in_progress", "settled"].includes(st) && <p className="text-sm text-slate-600">ประกาศตารางแล้ว พนักงานในสาขาเห็นรายชื่อผู้ปฏิบัติงานแต่ไม่เห็นค่าตอบแทน</p>}
           </div>
