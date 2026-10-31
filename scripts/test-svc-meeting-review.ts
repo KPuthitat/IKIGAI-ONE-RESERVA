@@ -21,6 +21,18 @@ function ok(name: string, cond: boolean) { console.log(`  ${cond ? "✓" : "✗"
   const r = meetingFeeReview("2026-09", co);
   ok("the finished attendee shows with the fee", r.people.length === 1 && r.people[0].userId === a && r.people[0].gross === 200 && r.people[0].minutes === 60);
   ok("the meeting row shows 2 invited, 2 joined, 1 finished", r.meetings.length === 1 && r.meetings[0].invited === 2 && r.meetings[0].joined === 2 && r.meetings[0].finished === 1);
+  ok("the time log lists each invitee: finished with the rule fee, not finished flagged open", (() => {
+    const lg = r.logs.find((l) => l.id === m1);
+    const ra = lg?.rows.find((x) => x.userId === a), rb = lg?.rows.find((x) => x.userId === b);
+    return !!lg && ra?.note === "ok" && ra.rule === 200 && ra.minutes === 60 && !!ra.joinedAt && rb?.note === "open" && rb.rule === 0;
+  })());
+  ok("an invitee who never joined shows as absent; a short stay is flagged", (() => {
+    const d = mk("d"), s2 = mk("s2");
+    db.prepare("INSERT INTO exec_meeting_invitees (meeting_id,user_id) VALUES (?,?)").run(m1, d);
+    db.prepare("INSERT INTO exec_meeting_attendance (meeting_id,user_id,ended_at,minutes) VALUES (?,?,CURRENT_TIMESTAMP,10)").run(m1, s2);
+    const rows = meetingFeeReview("2026-09", co).logs.find((l) => l.id === m1)!.rows;
+    return rows.find((x) => x.userId === d)?.note === "absent" && rows.find((x) => x.userId === s2)?.note === "short" && rows.find((x) => x.userId === s2)?.rule === 0;
+  })());
   ok("a month with no meetings is empty", meetingFeeReview("2026-08", co).people.length === 0 && meetingFeeReview("2026-08", co).beforeCutover);
   // the rule is applied to the minutes attended, not to the amount stored back then; a manual lump sum is not added in
   const c2 = mk("c2");
