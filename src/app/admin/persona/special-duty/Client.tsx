@@ -201,7 +201,13 @@ export default function Client({ month }: { month: string }) {
                           <ul className="divide-y divide-slate-100">
                             {missed.list.map((p) => <li key={p.userId} className="flex flex-wrap items-baseline justify-between gap-x-3 py-1"><span className="text-slate-800">{p.name}</span><span className="text-xs text-slate-500">{p.reasonText}</span></li>)}
                           </ul>
-                          <div className="text-[11px] text-slate-400">คนเหล่านี้ยังเข้าเลือกวันเองได้จากแถบสีเหลืองบนหน้าแรกของ PERSONA</div>
+                          <div className="text-xs text-slate-500 space-y-0.5">
+                            {missed.list.some((p) => p.reasonText.includes("แผนก")) && (
+                              <div>แก้ได้สองทาง: <a className="text-brand underline" href={apiUrl(`/admin/persona/special-duty/settings?month=${month}`)}>เปิดกลุ่มงานของตำแหน่งให้ครอบคลุม</a> (ไม่เลือกกลุ่มเลย = ทุกฝ่าย) หรือตั้งฝ่ายของพนักงานที่ <a className="text-brand underline" href={apiUrl("/admin/persona/employees")}>หน้าพนักงาน</a></div>
+                            )}
+                            {missed.list.some((p) => p.reasonText.includes("LINE")) && <div>คนที่ยังไม่ผูก LINE ต้องผูกบัญชีที่แอปก่อนจึงจะได้ข้อความ</div>}
+                            <div className="text-[11px] text-slate-400">คนเหล่านี้ยังเข้าเลือกวันเองได้จากแถบสีเหลืองบนหน้าแรกของ PERSONA</div>
+                          </div>
                         </>
                       )}
                   </div>

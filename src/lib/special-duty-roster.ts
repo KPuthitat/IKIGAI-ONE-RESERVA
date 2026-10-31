@@ -67,7 +67,9 @@ export function bookingAudience(branchId: number, ym: string): Array<{ userId: n
 }
 
 export type AudienceReason = "ok" | "no_line" | "group_not_eligible" | "no_positions";
-export type AudienceEntry = { userId: number; name: string; lineUserId: string | null; reason: AudienceReason };
+export type AudienceEntry = { userId: number; name: string; lineUserId: string | null; reason: AudienceReason; detail?: string };
+
+const GROUP_LABEL_TH: Record<string, string> = { service: "บริการ", kitchen: "ครัว", management: "บริหาร", other: "อื่นๆ" };
 
 /**
  * Everyone attached to this branch with the reason they would (not) receive the "choose your days" card
@@ -81,12 +83,20 @@ export function audienceReport(branchId: number, ym: string): AudienceEntry[] {
       FROM users u JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
      WHERE u.role IN ('staff','admin') AND u.status NOT IN ('disabled','resigned','terminated') AND COALESCE(u.is_test_account,0) = 0
      ORDER BY u.display_name COLLATE NOCASE`).all(branchId) as Array<{ id: number; name: string; line: string | null; dept: string | null }>;
+  // Which groups the active positions are open to, for the manager's "how do I fix it" hint.
+  const openTo = new Set<string>();
+  for (const p of positions) for (const g of (p.eligibleGroups ?? []) as string[]) openTo.add(g);
+  const openToText = [...openTo].map((g) => GROUP_LABEL_TH[g] ?? g).join(", ");
   return people.map((u) => {
     let reason: AudienceReason = "ok";
+    let detail: string | undefined;
     if (positions.length === 0) reason = "no_positions";
-    else if (!positions.some((p) => p.eligibleGroups == null || (u.dept != null && (p.eligibleGroups as string[]).includes(u.dept)))) reason = "group_not_eligible";
+    else if (!positions.some((p) => p.eligibleGroups == null || (u.dept != null && (p.eligibleGroups as string[]).includes(u.dept)))) {
+      reason = "group_not_eligible";
+      detail = `${u.dept ? `ฝ่าย${GROUP_LABEL_TH[u.dept] ?? u.dept}` : "ยังไม่ได้ตั้งฝ่ายของพนักงาน"} · ตำแหน่งงานเปิดให้เฉพาะฝ่าย ${openToText}`;
+    }
     else if (!u.line) reason = "no_line";
-    return { userId: u.id, name: u.name, lineUserId: u.line, reason };
+    return { userId: u.id, name: u.name, lineUserId: u.line, reason, detail };
   });
 }
 
