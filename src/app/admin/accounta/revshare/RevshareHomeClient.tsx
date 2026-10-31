@@ -64,6 +64,8 @@ export default function RevshareHomeClient({ initialPartners }: { initialPartner
                   className="rounded-full bg-brand text-white px-3 py-1.5 text-sm font-medium hover:bg-brand-dark">รอบยอดขาย / นำเข้าไฟล์</Link>
                 <Link href={`/admin/accounta/revshare/settlement?partner=${p.id}`}
                   className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">สรุปยอด / สร้างใบวางบิล</Link>
+                <Link href={`/admin/accounta/revshare/analysis?partner=${p.id}`}
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">วิเคราะห์</Link>
                 <Link href={`/admin/accounta/revshare/config?partner=${p.id}`}
                   className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">ตั้งค่าคู่ค้า</Link>
               </div>
