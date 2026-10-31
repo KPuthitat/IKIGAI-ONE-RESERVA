@@ -8,6 +8,7 @@ import { userHasWorkShiftOn, resolveClockBranchId, scheduledWorkBranchesWithName
 import { resolveDrinkPartner } from "@/lib/partner-drink-orders";
 import { myOpenActionItemCount } from "@/lib/meetings";
 import { listEffectiveForStaff } from "@/lib/quality-docs";
+import { getMonth as getDutyMonth } from "@/lib/special-duty";
 import TimeClockClient from "./TimeClockClient";
 import BranchSwitchPrompt from "./BranchSwitchPrompt";
 
@@ -164,8 +165,27 @@ export default function StaffPersonaPage() {
     selfieEnabled: b.clock_selfie_enabled === 1
   }));
 
+  // Special-duty booking open for this month / next → always reachable from here, so nobody
+  // depends on the LINE card to find it (owner 2026-10-31).
+  const dutyMonths: string[] = [];
+  if (user.activeBranchId != null) {
+    const base = new Date(Date.now() + 7 * 3600_000);
+    for (let i = 0; i < 2; i++) {
+      const ym = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + i, 1)).toISOString().slice(0, 7);
+      const m = getDutyMonth(user.activeBranchId, ym);
+      if (m.enabled && m.status === "booking_open") dutyMonths.push(ym);
+    }
+  }
+
   return (
     <div className="space-y-3">
+      {dutyMonths.map((ym) => (
+        <Link key={ym} href={`/staff/persona/special-duty?month=${ym}`}
+          className="block rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100 transition">
+          <span className="font-bold">เปิดให้เลือกวันตำแหน่งงานค่าตอบแทนพิเศษแล้ว</span>
+          <span className="block text-xs mt-0.5">แตะเพื่อเลือกวันของเดือนนี้</span>
+        </Link>
+      ))}
       {branchSwitchOptions.length > 0 && (
         <BranchSwitchPrompt nickname={nickname} branches={branchSwitchOptions} />
       )}
