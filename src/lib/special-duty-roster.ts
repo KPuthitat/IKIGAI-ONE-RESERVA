@@ -50,22 +50,23 @@ export function branchHasRoster(branchId: number, ym: string): boolean {
      WHERE a.branch_id = ? AND substr(a.assignment_date, 1, 7) = ? AND s.kind = 'work' LIMIT 1`).get(branchId, ym);
 }
 
-/** People on this branch's roster in the month who may take at least one active position. */
+/** Everyone attached to the branch who may take at least one active position. Not limited to people already on
+ *  the month's roster (owner 2026-10-31: ทุกคนที่มีชื่อในตารางต้องได้รับแจ้ง) — only the days they may pick still
+ *  follow the roster. */
 export function bookingAudience(branchId: number, ym: string): Array<{ userId: number; lineUserId: string | null }> {
   const positions = listPositions(branchId, ym, { activeOnly: true });
   if (positions.length === 0) return [];
   const rows = getDb().prepare(`
     SELECT DISTINCT u.id, u.line_user_id AS line, u.department AS dept
-      FROM roster_assignments a JOIN shift_codes s ON s.id = a.shift_code_id JOIN users u ON u.id = a.user_id
-     WHERE a.branch_id = ? AND substr(a.assignment_date, 1, 7) = ? AND s.kind = 'work'
-       AND u.status NOT IN ('disabled','resigned','terminated')
-  `).all(branchId, ym) as Array<{ id: number; line: string | null; dept: string | null }>;
+      FROM users u JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
+     WHERE u.role IN ('staff','admin') AND u.status NOT IN ('disabled','resigned','terminated') AND COALESCE(u.is_test_account,0) = 0
+  `).all(branchId) as Array<{ id: number; line: string | null; dept: string | null }>;
   return rows
     .filter((u) => positions.some((p) => p.eligibleGroups == null || (u.dept != null && (p.eligibleGroups as string[]).includes(u.dept))))
     .map((u) => ({ userId: u.id, lineUserId: u.line }));
 }
 
-export type AudienceReason = "ok" | "no_line" | "not_on_roster" | "group_not_eligible" | "no_positions";
+export type AudienceReason = "ok" | "no_line" | "group_not_eligible" | "no_positions";
 export type AudienceEntry = { userId: number; name: string; lineUserId: string | null; reason: AudienceReason };
 
 /**
@@ -75,9 +76,6 @@ export type AudienceEntry = { userId: number; name: string; lineUserId: string |
 export function audienceReport(branchId: number, ym: string): AudienceEntry[] {
   const db = getDb();
   const positions = listPositions(branchId, ym, { activeOnly: true });
-  const onRoster = new Set((db.prepare(`
-    SELECT DISTINCT a.user_id AS id FROM roster_assignments a JOIN shift_codes s ON s.id = a.shift_code_id
-     WHERE a.branch_id = ? AND substr(a.assignment_date, 1, 7) = ? AND s.kind = 'work'`).all(branchId, ym) as Array<{ id: number }>).map((r) => r.id));
   const people = db.prepare(`
     SELECT u.id, ${sqlNameWithPrefix("u")} AS name, u.line_user_id AS line, u.department AS dept
       FROM users u JOIN user_branches ub ON ub.user_id = u.id AND ub.branch_id = ?
@@ -86,7 +84,6 @@ export function audienceReport(branchId: number, ym: string): AudienceEntry[] {
   return people.map((u) => {
     let reason: AudienceReason = "ok";
     if (positions.length === 0) reason = "no_positions";
-    else if (!onRoster.has(u.id)) reason = "not_on_roster";
     else if (!positions.some((p) => p.eligibleGroups == null || (u.dept != null && (p.eligibleGroups as string[]).includes(u.dept)))) reason = "group_not_eligible";
     else if (!u.line) reason = "no_line";
     return { userId: u.id, name: u.name, lineUserId: u.line, reason };
@@ -94,7 +91,6 @@ export function audienceReport(branchId: number, ym: string): AudienceEntry[] {
 }
 
 export const AUDIENCE_REASON_TH: Record<string, string> = {
-  not_on_roster: "ไม่มีกะทำงานในตารางงานเดือนนี้ของสาขา",
   group_not_eligible: "แผนกไม่ตรงกลุ่มที่ตำแหน่งงานเปิดให้",
   no_line: "ยังไม่ได้ผูก LINE",
   push_failed: "ส่ง LINE ไม่สำเร็จ (เช่น บล็อกบอท)",
