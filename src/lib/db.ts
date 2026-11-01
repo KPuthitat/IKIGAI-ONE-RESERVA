@@ -3374,6 +3374,20 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_special_duty_days_user ON special_duty_days(user_id, duty_date);
 
+    -- Who was changed to whom on a duty day, and why (owner 2026-11-01: เปลี่ยนคนทำงานเพราะลาป่วยหรือเหตุอื่น ต้องระบุสาเหตุ).
+    -- Not an absence: the holder takes no strike. The current performer stays on special_duty_days.performer_user_id.
+    CREATE TABLE IF NOT EXISTS special_duty_replacements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      day_id INTEGER NOT NULL REFERENCES special_duty_days(id) ON DELETE CASCADE,
+      from_user_id INTEGER NOT NULL REFERENCES users(id),
+      to_user_id INTEGER NOT NULL REFERENCES users(id),
+      reason_type TEXT NOT NULL CHECK (reason_type IN ('sick','personal','emergency','other')),
+      reason_note TEXT,
+      by_user_id INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_duty_replacements_day ON special_duty_replacements(day_id);
+
     -- Evidence photos of the finished work area (never of people), kept per branch on disk and
     -- swept after special_duty_config.evidence_retention_days (the row stays, deleted_at is set).
     CREATE TABLE IF NOT EXISTS special_duty_evidence (

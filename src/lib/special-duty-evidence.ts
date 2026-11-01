@@ -21,7 +21,7 @@ import { sqlNameWithPrefix } from "./name";
 export type EvidenceErrorCode =
   | "not_found" | "forbidden" | "wrong_stage" | "too_early" | "deadline_passed" | "wrong_status" | "not_present"
   | "photos_required" | "too_many_photos" | "photo_bad_format" | "photo_too_large" | "no_people_not_confirmed"
-  | "days_must_match" | "note_required" | "substitute_invalid" | "substitute_same_person" | "substitute_busy";
+  | "days_must_match" | "note_required" | "substitute_invalid" | "substitute_same_person" | "substitute_busy" | "reason_required";
 
 export class EvidenceError extends Error { constructor(public code: EvidenceErrorCode) { super(code); } }
 
@@ -205,7 +205,60 @@ export function listSubstituteCandidates(dayId: number, branchId: number): Array
   if (d.branch_id !== branchId) return [];
   const users = getDb().prepare(`SELECT u.id, ${sqlNameWithPrefix("u")} AS name FROM users u WHERE u.role IN ('staff','admin') AND u.status NOT IN ('disabled','resigned','terminated')
       AND COALESCE(u.is_test_account,0) = 0 AND EXISTS (SELECT 1 FROM user_branches ub WHERE ub.user_id = u.id AND ub.branch_id = ?) ORDER BY u.display_name`).all(branchId) as Array<{ id: number; name: string }>;
-  return users.filter((u) => substituteProblem(d, u.id) === null);
+  const current = performerOf(d);
+  return users.filter((u) => u.id !== current && substituteProblem(d, u.id) === null);
+}
+
+// ── change the person doing a day (owner 2026-11-01) ──────────────────────
+// For sick leave or any other reason the manager may hand a day to someone else BEFORE it is done — also in advance, and
+// without the holder taking an absence strike. The reason is mandatory and kept with who was changed to whom.
+export const REPLACE_REASONS = ["sick", "personal", "emergency", "other"] as const;
+export type ReplaceReason = (typeof REPLACE_REASONS)[number];
+export const REPLACE_REASON_TH: Record<ReplaceReason, string> = { sick: "ลาป่วย", personal: "ธุระส่วนตัว", emergency: "เหตุฉุกเฉิน", other: "อื่นๆ" };
+
+export function replaceDutyWorker(args: { dayId: number; branchId: number; toUserId: number; reasonType: ReplaceReason; note?: string | null; managerId: number; today?: string }):
+  { fromUserId: number; toUserId: number; holderId: number; positionName: string; date: string; reasonText: string } {
+  const d = loadDay(args.dayId);
+  if (d.branch_id !== args.branchId) throw new EvidenceError("not_found");
+  if (!REPLACE_REASONS.includes(args.reasonType)) throw new EvidenceError("reason_required");
+  const note = (args.note ?? "").trim();
+  if (args.reasonType === "other" && note.length < 3) throw new EvidenceError("reason_required");
+  const month = getMonth(d.branch_id, d.year_month);
+  if (!WORKING.includes(month.status)) throw new EvidenceError("wrong_stage");
+  if (!["booked", "assigned", "covered"].includes(d.status)) throw new EvidenceError("wrong_status");
+  const today = args.today ?? bkkToday();
+  if (today > addDays(d.duty_date, cfgNum("evidence_deadline_days", d.branch_id))) throw new EvidenceError("deadline_passed");
+  const from = performerOf(d);
+  if (args.toUserId === from) throw new EvidenceError("substitute_same_person");
+  const db = getDb();
+  if (args.toUserId === d.user_id) {
+    // handing it back to the original holder
+    db.prepare("UPDATE special_duty_days SET status = ?, performer_user_id = NULL WHERE id = ?").run(d.source, d.id);
+  } else {
+    const problem = substituteProblem(d, args.toUserId);
+    if (problem) throw new EvidenceError(problem);
+    db.prepare("UPDATE special_duty_days SET status = 'covered', performer_user_id = ? WHERE id = ?").run(args.toUserId, d.id);
+  }
+  db.prepare("INSERT INTO special_duty_replacements (day_id, from_user_id, to_user_id, reason_type, reason_note, by_user_id) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(d.id, from, args.toUserId, args.reasonType, note || null, args.managerId);
+  audit({ actorId: args.managerId, branchId: d.branch_id, yearMonth: d.year_month, entity: "duty_day", entityId: d.id, action: "replace",
+    before: { performer: from }, after: { performer: args.toUserId, reason: args.reasonType, note: note || null } });
+  const pos = db.prepare("SELECT name FROM special_duty_positions WHERE id = ?").get(d.position_id) as { name: string };
+  return { fromUserId: from, toUserId: args.toUserId, holderId: d.user_id, positionName: pos.name, date: d.duty_date,
+    reasonText: `${REPLACE_REASON_TH[args.reasonType]}${note ? ` · ${note}` : ""}` };
+}
+
+/** The latest change on a day, for the manager's detail panel. */
+export type DayReplacement = { fromName: string; toName: string; reasonText: string; at: string };
+export function latestReplacements(dayIds: number[]): Map<number, DayReplacement> {
+  const out = new Map<number, DayReplacement>();
+  if (dayIds.length === 0) return out;
+  const rows = getDb().prepare(`
+    SELECT r.day_id AS id, ${sqlNameWithPrefix("f")} AS fromName, ${sqlNameWithPrefix("t")} AS toName, r.reason_type AS type, r.reason_note AS note, r.created_at AS at
+      FROM special_duty_replacements r JOIN users f ON f.id = r.from_user_id JOIN users t ON t.id = r.to_user_id
+     WHERE r.day_id IN (${dayIds.map(() => "?").join(",")}) ORDER BY r.id`).all(...dayIds) as Array<{ id: number; fromName: string; toName: string; type: ReplaceReason; note: string | null; at: string }>;
+  for (const r of rows) out.set(r.id, { fromName: r.fromName, toName: r.toName, reasonText: `${REPLACE_REASON_TH[r.type] ?? r.type}${r.note ? ` · ${r.note}` : ""}`, at: r.at });
+  return out;
 }
 
 export function assignSubstitute(args: { dayId: number; branchId: number; performerId: number; managerId: number; today?: string }): void {

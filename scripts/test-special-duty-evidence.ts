@@ -165,5 +165,23 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   send(d13, 13, 13, { phash: "123456789abcdef0", takenAt: `${date(9)}T05:00:00Z` });
   ok("a picture dated before the duty day is flagged", fl(d13).some((x) => x.kind === "older_photo" && x.takenAt === date(9)));
   ok("a malformed fingerprint is ignored, not stored", (() => { const dd = mkDay(14); send(dd, 14, 14, { phash: "zz" }); return (db.prepare("SELECT phash FROM special_duty_evidence WHERE day_id = ?").get(dd) as { phash: string | null }).phash === null; })());
+  // ── changing who does a day, with a reason (owner 2026-11-01) ──
+  const rd = (() => { const id = Number(db.prepare("INSERT INTO special_duty_days (position_id,duty_date,user_id,source,status) VALUES (?,?,?,'booked','booked')").run(toilet.id, date(20), holder).lastInsertRowid); return id; })();
+  const strikesBefore = R.absenceStrikes(holder, nama, YM);
+  const rep = (over: Record<string, unknown> = {}) => E.replaceDutyWorker({ dayId: rd, branchId: nama, toUserId: sub, reasonType: "sick", note: null, managerId: owner, today: date(18), ...over } as never);
+  ok("a reason is mandatory; 'other' needs words", code(() => rep({ reasonType: undefined })) === "reason_required" && code(() => rep({ reasonType: "other", note: "" })) === "reason_required");
+  ok("a person who cannot take it is refused (outside the group)", code(() => rep({ toUserId: owner })) === "substitute_invalid");
+  const r1 = rep({ note: "ไข้หวัดใหญ่" });
+  ok("a day can be handed over in advance for sick leave; it becomes covered by the new person", status(20) === "covered" && (db.prepare("SELECT performer_user_id p FROM special_duty_days WHERE id = ?").get(rd) as { p: number }).p === sub && r1.reasonText.includes("ลาป่วย") && r1.reasonText.includes("ไข้หวัดใหญ่"));
+  ok("the person already doing the day cannot be 'changed' to themselves", code(() => rep({ toUserId: sub })) === "substitute_same_person");
+  ok("the holder takes no absence strike", R.absenceStrikes(holder, nama, YM) === strikesBefore);
+  ok("who → whom and why is kept", (() => { const x = E.latestReplacements([rd]).get(rd); return !!x && x.fromName === "holder" && x.toName === "sub" && x.reasonText === "ลาป่วย · ไข้หวัดใหญ่"; })());
+  ok("the current performer is not offered again as a candidate", !E.listSubstituteCandidates(rd, nama).some((u) => u.id === sub));
+  ok("it can be changed again to a third person, the log keeps both", (() => { rep({ toUserId: other, reasonType: "personal", note: null }); return (db.prepare("SELECT COUNT(*) n FROM special_duty_replacements WHERE day_id = ?").get(rd) as { n: number }).n === 2 && E.latestReplacements([rd]).get(rd)!.toName === "other"; })());
+  ok("and handed back to the original holder", (() => { rep({ toUserId: holder, reasonType: "other", note: "หายแล้ว" }); const d = db.prepare("SELECT status, performer_user_id p FROM special_duty_days WHERE id = ?").get(rd) as { status: string; p: number | null }; return d.status === "booked" && d.p === null; })());
+  ok("a day whose evidence is already sent cannot be changed", code(() => E.replaceDutyWorker({ dayId: dayId(7), branchId: nama, toUserId: sub, reasonType: "sick", managerId: owner, today: date(8) })) === "wrong_status");
+  ok("another branch cannot change it", code(() => E.replaceDutyWorker({ dayId: rd, branchId: hypo, toUserId: sub, reasonType: "sick", managerId: owner, today: date(18) })) === "not_found");
+  ok("too late after the evidence deadline", code(() => rep({ today: "2026-12-30" })) === "deadline_passed");
+
   cleanup(); process.exit(failed ? 1 : 0);
 })();
