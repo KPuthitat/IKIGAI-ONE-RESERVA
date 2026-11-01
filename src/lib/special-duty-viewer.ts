@@ -48,7 +48,8 @@ export const EVIDENCE_TEXT: Record<string, string> = {
   substitute_invalid: "ผู้ที่เลือกไม่สามารถแทนได้ (ต้องอยู่ในสาขา ตรงกับกลุ่มงานที่กำหนด มีตารางทำงานในวันนั้น และไม่ลา)",
   substitute_same_person: "ผู้แทนต้องเป็นคนละคนกับผู้ที่ขาด",
   substitute_busy: "ผู้ที่เลือกมีตำแหน่งในวันนั้นครบจำนวนที่กำหนดแล้ว",
-  reason_required: "กรุณาระบุสาเหตุการเปลี่ยนคน (ถ้าเลือก “อื่นๆ” ต้องพิมพ์เหตุผล)"
+  reason_required: "กรุณาระบุสาเหตุการเปลี่ยนคน (ถ้าเลือก “อื่นๆ” ต้องพิมพ์เหตุผล)",
+  change_pending: "วันนี้มีคำขอเปลี่ยนคนที่รออนุมัติอยู่แล้ว"
 };
 
 export const SWAP_TEXT: Record<string, string> = {

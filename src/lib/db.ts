@@ -3388,6 +3388,24 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_special_duty_replacements_day ON special_duty_replacements(day_id);
 
+    -- An employee's own request to change who does their day (owner 2026-11-01: ให้พนักงานขอเปลี่ยนเองได้).
+    -- The branch manager decides; approving performs the replacement (and records it above).
+    CREATE TABLE IF NOT EXISTS special_duty_change_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      day_id INTEGER NOT NULL REFERENCES special_duty_days(id) ON DELETE CASCADE,
+      requested_by INTEGER NOT NULL REFERENCES users(id),
+      proposed_user_id INTEGER REFERENCES users(id),
+      reason_type TEXT NOT NULL CHECK (reason_type IN ('sick','personal','emergency','other')),
+      reason_note TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TEXT,
+      decision_note TEXT,
+      final_user_id INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_special_duty_change_requests_day ON special_duty_change_requests(day_id, status);
+
     -- Evidence photos of the finished work area (never of people), kept per branch on disk and
     -- swept after special_duty_config.evidence_retention_days (the row stays, deleted_at is set).
     CREATE TABLE IF NOT EXISTS special_duty_evidence (

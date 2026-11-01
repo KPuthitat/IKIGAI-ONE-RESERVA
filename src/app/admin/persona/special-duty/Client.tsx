@@ -9,7 +9,7 @@ type Position = { id: number; slotNo: number; name: string; dailyRate: number };
 type Row = { id: number; positionId: number; date: string; userId: number; name: string; source: "booked" | "assigned"; status: string; performerName: string | null; reviewNote: string | null; evidenceCount: number; presentAtWork: boolean; replacement: { fromName: string; toName: string; reasonText: string; at: string } | null };
 type Open = { positionId: number; positionName: string; date: string; candidates: number };
 type Summary = { budget: number; approvedDays: number; approvedAmount: number; pendingDays: number; absentDays: number; unfilledDays: number; heldDays: number };
-type Data = { month: { enabled: boolean; status: string; bookingCloseDate: string | null }; positions: Position[]; rows: Row[]; open: Open[]; swaps: Array<{ id: number; note: string | null; fromName: string; toName: string; a: { date: string; positionName: string }; b: { date: string; positionName: string } }>; summary: Summary | null; alerts: Array<{ kind: string; text: string }> };
+type Data = { month: { enabled: boolean; status: string; bookingCloseDate: string | null }; positions: Position[]; rows: Row[]; open: Open[]; changes: Array<{ id: number; dayId: number; date: string; positionName: string; requesterName: string; proposedId: number | null; proposedName: string | null; reasonText: string }>; swaps: Array<{ id: number; note: string | null; fromName: string; toName: string; a: { date: string; positionName: string }; b: { date: string; positionName: string } }>; summary: Summary | null; alerts: Array<{ kind: string; text: string }> };
 type Plan = { suggestions: Array<{ positionName: string; date: string; userName: string }>; unfillable: Open[] };
 
 const MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
@@ -243,6 +243,16 @@ export default function Client({ month }: { month: string }) {
             </div>
           )}
 
+          {data.changes?.length > 0 && (
+            <div className="card space-y-2 !border-brand/40">
+              <h2 className="font-bold text-ink">คำขอเปลี่ยนผู้ปฏิบัติงานรออนุมัติ ({data.changes.length})</h2>
+              {data.changes.map((c) => (
+                <ChangeRequestRow key={c.id} c={c} month={month} busy={busy}
+                  decide={async (body, okText) => { const r = await act({ ...body, request_id: c.id }); r.ok ? done(okText) : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }} />
+              ))}
+            </div>
+          )}
+
           {data.summary && ["special_published", "in_progress", "settled"].includes(st) && (
             <div className="card space-y-2">
               <h2 className="font-bold text-ink">ค่าตอบแทนของเดือนนี้</h2>
@@ -363,13 +373,13 @@ export default function Client({ month }: { month: string }) {
                   )}
                 </div>
               )}
-              {["booked", "assigned", "covered"].includes(selected.status) && ["special_published", "in_progress"].includes(st) && (
+              {["booked", "assigned", "covered", "submitted"].includes(selected.status) && ["special_published", "in_progress"].includes(st) && (
                 <div className="space-y-2 rounded-xl border border-slate-200 p-3">
                   {!replacing ? (
-                    <button type="button" className="btn-secondary" disabled={busy} onClick={() => startReplace(selected)}>เปลี่ยนผู้ปฏิบัติงาน (ลาป่วย / เหตุอื่น)</button>
+                    <button type="button" className="btn-secondary" disabled={busy} onClick={() => startReplace(selected)}>{selected.status === "submitted" ? "คนที่ทำจริงไม่ใช่คนนี้ — เปลี่ยนผู้ได้รับค่าตอบแทน" : "เปลี่ยนผู้ปฏิบัติงาน (ลาป่วย / เหตุอื่น)"}</button>
                   ) : (
                     <>
-                      <div className="text-sm font-medium text-slate-700">เปลี่ยนผู้ปฏิบัติงานวันนี้ · ไม่นับเป็นการขาดของผู้เดิม</div>
+                      <div className="text-sm font-medium text-slate-700">{selected.status === "submitted" ? "ระบุคนที่ทำงานจริงวันนี้ — ค่าตอบแทนจะจ่ายให้คนนี้ (ต้องมีการลงเวลาเข้างานปกติของวันนั้น)" : "เปลี่ยนผู้ปฏิบัติงานวันนี้ · ไม่นับเป็นการขาดของผู้เดิม"}</div>
                       <div className="flex flex-wrap gap-1.5">
                         {([["sick", "ลาป่วย"], ["personal", "ธุระส่วนตัว"], ["emergency", "เหตุฉุกเฉิน"], ["other", "อื่นๆ"]] as const).map(([k, label]) => (
                           <button key={k} type="button" aria-pressed={repReason === k} className={`chip ${repReason === k ? "chip-active" : ""}`} onClick={() => setRepReason(k)}>{label}</button>
@@ -438,6 +448,35 @@ export default function Client({ month }: { month: string }) {
           })}
         </>
       )}
+    </div>
+  );
+}
+
+// One employee request to hand a day over: approve (to the person they suggested, or one the manager picks) or refuse with a reason.
+function ChangeRequestRow({ c, month, busy, decide }: {
+  c: { id: number; dayId: number; date: string; positionName: string; requesterName: string; proposedId: number | null; proposedName: string | null; reasonText: string };
+  month: string; busy: boolean; decide: (body: Record<string, unknown>, okText: string) => Promise<void>;
+}) {
+  const [cands, setCands] = useState<Array<{ id: number; name: string }> | null>(null);
+  const [pick, setPick] = useState<number | null>(c.proposedId);
+  const [note, setNote] = useState("");
+  const loadCands = async () => { const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&substitutes=${c.dayId}`), { cache: "no-store" }); const j = await r.json(); setCands(j.candidates ?? []); };
+  const pickedName = pick == null ? null : pick === c.proposedId ? c.proposedName : cands?.find((x) => x.id === pick)?.name ?? null;
+  return (
+    <div className="rounded-xl border border-[var(--card-border)] bg-[var(--surface-field)] px-3 py-2 text-sm space-y-2">
+      <div className="text-slate-700"><b>{c.requesterName}</b> ขอเปลี่ยนผู้ปฏิบัติงาน {c.positionName} วันที่ {fmtDate(c.date)}</div>
+      <div className="text-slate-600">สาเหตุ: {c.reasonText}</div>
+      <div className="text-slate-600">{c.proposedName ? `เสนอให้ ${c.proposedName} ทำแทน` : "ไม่ได้เสนอผู้ทำแทน — เลือกเองได้"}</div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {cands == null ? <button type="button" className="chip" onClick={loadCands}>{c.proposedName ? "เปลี่ยนคนแทน" : "เลือกคนแทน"}</button>
+          : cands.length === 0 ? <span className="text-xs text-rose-700">ไม่มีผู้ที่แทนได้ในวันนี้</span>
+          : cands.map((u) => <button key={u.id} type="button" aria-pressed={pick === u.id} className={`chip ${pick === u.id ? "chip-active" : ""}`} onClick={() => setPick(u.id)}>{u.name}</button>)}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className="btn-primary" disabled={busy || pick == null} onClick={() => { if (window.confirm(`อนุมัติให้ ${pickedName ?? "คนที่เลือก"} ปฏิบัติงานแทน ${c.requesterName} ใช่หรือไม่`)) decide({ action: "approve_change", user_id: pick }, "อนุมัติการเปลี่ยนผู้ปฏิบัติงานแล้ว"); }}>อนุมัติ{pickedName ? ` (${pickedName})` : ""}</button>
+        <input className="input flex-1 min-w-[10rem]" placeholder="เหตุผลที่ไม่อนุมัติ" value={note} onChange={(e) => setNote(e.target.value)} />
+        <button type="button" className="btn-secondary" disabled={busy || note.trim().length < 3} onClick={() => decide({ action: "reject_change", note }, "ไม่อนุมัติคำขอแล้ว")}>ไม่อนุมัติ</button>
+      </div>
     </div>
   );
 }

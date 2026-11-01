@@ -136,19 +136,53 @@ export default function Client({ month }: { month: string }) {
           </section>
         );
       })}
-      {data.mine.length > 0 && <MyDuties mine={data.mine} published={data.slots == null} onChanged={load} setMsg={setMsg} />}
+      {data.mine.length > 0 && <MyDuties month={month} mine={data.mine} published={data.slots == null} onChanged={load} setMsg={setMsg} />}
       {data.schedule && <Swaps month={month} setMsg={setMsg} />}
       {data.schedule && <Schedule rows={data.schedule} />}
     </div>
   );
 }
 
-function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; published: boolean; onChanged: () => void; setMsg: (m: { ok: boolean; text: string }) => void }) {
+function MyDuties({ month, mine, published, onChanged, setMsg }: { month: string; mine: Mine[]; published: boolean; onChanged: () => void; setMsg: (m: { ok: boolean; text: string }) => void }) {
   const [openId, setOpenId] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Shot[]>([]);
   const [noPeople, setNoPeople] = useState(false);
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<number[]>([]);   // jobs of the same day this one set of photos is sent for
+  // asking to hand a day over (owner 2026-11-01): reason is required, naming a colleague is optional, the manager decides
+  type Req = { id: number; dayId: number; status: string; reasonText: string; proposedName: string | null; decisionNote: string | null; finalName: string | null };
+  const [reqs, setReqs] = useState<Req[]>([]);
+  const [reqFor, setReqFor] = useState<number | null>(null);
+  const [reason, setReason] = useState<"sick" | "personal" | "emergency" | "other" | "">("");
+  const [reasonNote, setReasonNote] = useState("");
+  const [cands, setCands] = useState<Array<{ id: number; name: string }> | null>(null);
+  const [proposed, setProposed] = useState<number | null>(null);
+  const loadReqs = useCallback(async () => {
+    if (!published) return;
+    const r = await fetch(apiUrl(`/api/staff/persona/special-duty/change?month=${month}`), { cache: "no-store" }); const j = await r.json().catch(() => ({}));
+    if (r.ok) setReqs(j.requests ?? []);
+  }, [month, published]);
+  useEffect(() => { loadReqs(); }, [loadReqs]);
+  const openReq = async (d: Mine) => {
+    setReqFor(d.id); setReason(""); setReasonNote(""); setProposed(null); setCands(null);
+    const r = await fetch(apiUrl(`/api/staff/persona/special-duty/change?month=${month}&candidates=${d.id}`), { cache: "no-store" }); const j = await r.json().catch(() => ({}));
+    setCands(r.ok ? (j.candidates ?? []) : []);
+  };
+  async function sendReq(d: Mine) {
+    setBusy(true);
+    const r = await fetch(apiUrl("/api/staff/persona/special-duty/change"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month, action: "request", day_id: d.id, reason_type: reason, note: reasonNote.trim() || undefined, proposed_user_id: proposed }) });
+    const j = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) { setMsg({ ok: false, text: j.message ?? "ส่งคำขอไม่สำเร็จ" }); return; }
+    setMsg({ ok: true, text: "ส่งคำขอเปลี่ยนผู้ปฏิบัติงานแล้ว รอผู้จัดการพิจารณา" });
+    setReqFor(null); loadReqs();
+  }
+  async function cancelReq(id: number) {
+    const r = await fetch(apiUrl("/api/staff/persona/special-duty/change"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ month, action: "cancel", request_id: id }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { setMsg({ ok: false, text: j.message ?? "ยกเลิกไม่สำเร็จ" }); return; }
+    setMsg({ ok: true, text: "ยกเลิกคำขอแล้ว" }); loadReqs();
+  }
   const today = todayBkk();
   const sendable = (d: Mine) => published && d.iDoIt && ["booked", "assigned", "covered"].includes(d.status) && today >= d.date;
   const openFor = (d: Mine) => { setOpenId(d.id); setPhotos([]); setNoPeople(false); setPicked(mine.filter((x) => x.date === d.date && sendable(x)).map((x) => x.id)); };
@@ -188,6 +222,45 @@ function MyDuties({ mine, published, onChanged, setMsg }: { mine: Mine[]; publis
                 </div>
                 {canSend && openId !== d.id && <button type="button" className="btn-primary whitespace-nowrap" onClick={() => openFor(d)}>ส่งหลักฐาน</button>}
               </div>
+              {(() => {
+                const mineReqs = reqs.filter((x) => x.dayId === d.id);
+                const pending = mineReqs.find((x) => x.status === "pending");
+                const last = mineReqs.find((x) => x.status !== "pending" && x.status !== "cancelled");
+                const canAsk = published && d.iDoIt && ["booked", "assigned", "covered"].includes(d.status) && !pending;
+                return (
+                  <>
+                    {pending && (
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                        <span>ขอเปลี่ยนผู้ปฏิบัติงานแล้ว รอผู้จัดการพิจารณา · สาเหตุ: {pending.reasonText}{pending.proposedName ? ` · เสนอ ${pending.proposedName}` : ""}</span>
+                        <button type="button" className="underline" onClick={() => cancelReq(pending.id)}>ยกเลิกคำขอ</button>
+                      </div>
+                    )}
+                    {last?.status === "rejected" && <div className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800">ผู้จัดการไม่อนุมัติการเปลี่ยนผู้ปฏิบัติงาน{last.decisionNote ? ` · ${last.decisionNote}` : ""} — ท่านยังเป็นผู้ปฏิบัติงานวันนี้</div>}
+                    {canAsk && reqFor !== d.id && <button type="button" className="mt-2 text-xs text-brand underline" onClick={() => openReq(d)}>ขอเปลี่ยนคน (ลาป่วย / เหตุอื่น)</button>}
+                    {reqFor === d.id && (
+                      <div className="mt-2 space-y-2 rounded-xl bg-[var(--surface-field)] p-3">
+                        <div className="text-sm font-medium text-slate-700">ขอเปลี่ยนผู้ปฏิบัติงานวันที่ {fmtDate(d.date)}</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {([["sick", "ลาป่วย"], ["personal", "ธุระส่วนตัว"], ["emergency", "เหตุฉุกเฉิน"], ["other", "อื่นๆ"]] as const).map(([k, label]) => (
+                            <button key={k} type="button" aria-pressed={reason === k} className={`chip ${reason === k ? "chip-active" : ""}`} onClick={() => setReason(k)}>{label}</button>
+                          ))}
+                        </div>
+                        <input className="input w-full" maxLength={200} placeholder={reason === "other" ? "ระบุสาเหตุ (จำเป็น)" : "รายละเอียดเพิ่มเติม (ถ้ามี)"} value={reasonNote} onChange={(e) => setReasonNote(e.target.value)} />
+                        <div className="text-xs text-slate-500">เสนอคนที่จะทำแทน (ไม่บังคับ — ผู้จัดการจะเป็นผู้เลือก/อนุมัติ)</div>
+                        {cands == null ? <p className="text-xs text-slate-500">กำลังโหลด</p> : cands.length === 0 ? <p className="text-xs text-slate-500">ยังไม่มีผู้ที่แทนได้ในวันนี้ ส่งคำขอให้ผู้จัดการหาคนแทนได้</p> : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {cands.map((c) => <button key={c.id} type="button" aria-pressed={proposed === c.id} className={`chip ${proposed === c.id ? "chip-active" : ""}`} onClick={() => setProposed(proposed === c.id ? null : c.id)}>{c.name}</button>)}
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <button type="button" className="btn-primary" disabled={busy || !reason || (reason === "other" && reasonNote.trim().length < 3)} onClick={() => sendReq(d)}>{busy ? "กำลังส่ง" : "ส่งคำขอ"}</button>
+                          <button type="button" className="btn-secondary" onClick={() => setReqFor(null)}>ปิด</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               {openId === d.id && (
                 <div className="mt-2 space-y-2 rounded-xl bg-[var(--surface-field)] p-3">
                   {sameDay.length > 1 && (
