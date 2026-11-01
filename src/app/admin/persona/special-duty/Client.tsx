@@ -6,7 +6,7 @@ import { apiUrl } from "@/lib/url";
 import EmptyState from "@/app/components/EmptyState";
 
 type Position = { id: number; slotNo: number; name: string; dailyRate: number };
-type Row = { id: number; positionId: number; date: string; userId: number; name: string; source: "booked" | "assigned"; status: string; performerName: string | null; reviewNote: string | null; evidenceCount: number; presentAtWork: boolean };
+type Row = { id: number; positionId: number; date: string; userId: number; name: string; source: "booked" | "assigned"; status: string; performerName: string | null; reviewNote: string | null; evidenceCount: number; presentAtWork: boolean; replacement: { fromName: string; toName: string; reasonText: string; at: string } | null };
 type Open = { positionId: number; positionName: string; date: string; candidates: number };
 type Summary = { budget: number; approvedDays: number; approvedAmount: number; pendingDays: number; absentDays: number; unfilledDays: number; heldDays: number };
 type Data = { month: { enabled: boolean; status: string; bookingCloseDate: string | null }; positions: Position[]; rows: Row[]; open: Open[]; swaps: Array<{ id: number; note: string | null; fromName: string; toName: string; a: { date: string; positionName: string }; b: { date: string; positionName: string } }>; summary: Summary | null; alerts: Array<{ kind: string; text: string }> };
@@ -58,6 +58,10 @@ export default function Client({ month }: { month: string }) {
   const [flags, setFlags] = useState<DupFlag[]>([]);
   const [rejectNote, setRejectNote] = useState("");
   const [subs, setSubs] = useState<Array<{ id: number; name: string }> | null>(null);
+  // changing who does a day, with the reason (owner 2026-11-01)
+  const [replacing, setReplacing] = useState(false);
+  const [repReason, setRepReason] = useState<"sick" | "personal" | "emergency" | "other" | "">("");
+  const [repNote, setRepNote] = useState("");
   // who did not (or will not) get the booking card, with the reason (owner 2026-10-20)
   const [missed, setMissed] = useState<{ list: Array<{ userId: number; name: string; reasonText: string }>; sentNote: string | null } | null>(null);
   const [closeDate, setCloseDate] = useState("");   // this branch's own closing day (booking stage)
@@ -77,11 +81,16 @@ export default function Client({ month }: { month: string }) {
     setBusy(false);
     return { ok: r.ok, j };
   }
-  const done = async (text: string) => { setMsg({ ok: true, text }); setCloseDate(""); setPlan(null); setPick(null); setSelected(null); setPhotos([]); setFlags([]); setRejectNote(""); setSubs(null); await load(); router.refresh(); };
+  const done = async (text: string) => { setMsg({ ok: true, text }); setCloseDate(""); setPlan(null); setPick(null); setSelected(null); setPhotos([]); setFlags([]); setRejectNote(""); setSubs(null); setReplacing(false); setRepReason(""); setRepNote(""); await load(); router.refresh(); };
   const open_ = async (row: Row) => {
-    setSelected(row); setPick(null); setPhotos([]); setFlags([]); setRejectNote(""); setSubs(null);
+    setSelected(row); setPick(null); setPhotos([]); setFlags([]); setRejectNote(""); setSubs(null); setReplacing(false); setRepReason(""); setRepNote("");
     if (row.evidenceCount > 0) { const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&photos=${row.id}`), { cache: "no-store" }); const j = await r.json(); setPhotos(j.photos ?? []); setFlags(j.flags ?? []); }
     if (row.status === "absent") { const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&substitutes=${row.id}`), { cache: "no-store" }); const j = await r.json(); setSubs(j.candidates ?? []); }
+  };
+
+  const startReplace = async (row: Row) => {
+    setReplacing(true); setSubs(null);
+    const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&substitutes=${row.id}`), { cache: "no-store" }); const j = await r.json(); setSubs(j.candidates ?? []);
   };
 
   if (err) return <div className="card tag-bad text-sm">{err === "forbidden" ? "เฉพาะผู้ดูแลสาขาเท่านั้นที่ใช้หน้านี้ได้" : "ไม่สามารถแสดงข้อมูลได้"}</div>;
@@ -303,6 +312,9 @@ export default function Client({ month }: { month: string }) {
               <h2 className="text-lg font-bold text-ink">{selected.name}</h2>
               <p className="text-sm text-slate-600">{fmtDate(selected.date)} · {selected.source === "booked" ? "เลือกเอง" : "ผู้จัดการมอบหมาย"} · {DAY_STATUS[selected.status] ?? selected.status}</p>
               {selected.performerName && <p className="text-sm text-brand">ผู้ปฏิบัติแทน: {selected.performerName}</p>}
+              {selected.replacement && (
+                <p className="rounded-lg bg-violet-50 px-3 py-2 text-sm text-violet-900">เปลี่ยนผู้ปฏิบัติงานจาก <b>{selected.replacement.fromName}</b> เป็น <b>{selected.replacement.toName}</b> · สาเหตุ: {selected.replacement.reasonText}</p>
+              )}
               {selected.reviewNote && <p className="text-sm text-rose-700">หมายเหตุ: {selected.reviewNote}</p>}
               {["submitted", "approved"].includes(selected.status) && (
                 <p className={`text-sm ${selected.presentAtWork ? "text-emerald-700" : "text-rose-700"}`}>
@@ -348,6 +360,36 @@ export default function Client({ month }: { month: string }) {
                     <div className="flex flex-wrap gap-2">
                       {subs.map((u) => <button key={u.id} type="button" className="btn-secondary" disabled={busy} onClick={async () => { const r = await act({ action: "substitute", day_id: selected.id, user_id: u.id }); r.ok ? done("มอบหมายผู้ปฏิบัติแทนแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>{u.name}</button>)}
                     </div>
+                  )}
+                </div>
+              )}
+              {["booked", "assigned", "covered"].includes(selected.status) && ["special_published", "in_progress"].includes(st) && (
+                <div className="space-y-2 rounded-xl border border-slate-200 p-3">
+                  {!replacing ? (
+                    <button type="button" className="btn-secondary" disabled={busy} onClick={() => startReplace(selected)}>เปลี่ยนผู้ปฏิบัติงาน (ลาป่วย / เหตุอื่น)</button>
+                  ) : (
+                    <>
+                      <div className="text-sm font-medium text-slate-700">เปลี่ยนผู้ปฏิบัติงานวันนี้ · ไม่นับเป็นการขาดของผู้เดิม</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {([["sick", "ลาป่วย"], ["personal", "ธุระส่วนตัว"], ["emergency", "เหตุฉุกเฉิน"], ["other", "อื่นๆ"]] as const).map(([k, label]) => (
+                          <button key={k} type="button" aria-pressed={repReason === k} className={`chip ${repReason === k ? "chip-active" : ""}`} onClick={() => setRepReason(k)}>{label}</button>
+                        ))}
+                      </div>
+                      <input className="input w-full" placeholder={repReason === "other" ? "ระบุสาเหตุ (จำเป็น)" : "รายละเอียดเพิ่มเติม (ถ้ามี)"} maxLength={200} value={repNote} onChange={(e) => setRepNote(e.target.value)} />
+                      <p className="text-xs text-slate-500">เลือกผู้ปฏิบัติแทน (ต้องมีตารางทำงานในวันนั้น ไม่ลา และอยู่ในกลุ่มงานที่กำหนด)</p>
+                      {subs == null ? <p className="text-sm text-slate-500">กำลังโหลด</p> : subs.length === 0 ? <p className="text-sm text-rose-700">ไม่มีผู้ที่แทนได้ในวันนี้</p> : (
+                        <div className="flex flex-wrap gap-2">
+                          {subs.map((u) => (
+                            <button key={u.id} type="button" className="btn-secondary" disabled={busy || !repReason || (repReason === "other" && repNote.trim().length < 3)} onClick={async () => {
+                              if (!window.confirm(`เปลี่ยนผู้ปฏิบัติงานเป็น ${u.name} ใช่หรือไม่`)) return;
+                              const r = await act({ action: "replace", day_id: selected.id, user_id: u.id, reason_type: repReason, note: repNote.trim() || undefined });
+                              r.ok ? done("เปลี่ยนผู้ปฏิบัติงานแล้ว และแจ้งทั้งสองคนทาง LINE") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" });
+                            }}>{u.name}</button>
+                          ))}
+                        </div>
+                      )}
+                      {!repReason && <p className="text-xs text-amber-700">เลือกสาเหตุก่อน จึงจะเลือกผู้ปฏิบัติแทนได้</p>}
+                    </>
                   )}
                 </div>
               )}

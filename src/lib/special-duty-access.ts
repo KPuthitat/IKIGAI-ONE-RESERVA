@@ -14,7 +14,7 @@
 import { getDb } from "./db";
 import { cfgNum, getMonth, listPositions, type DutyMonthStatus, type DutyPosition } from "./special-duty";
 import { isGroupEligible, isOnRoster } from "./special-duty-rules";
-import { wasPresent } from "./special-duty-evidence";
+import { latestReplacements, wasPresent } from "./special-duty-evidence";
 import { sqlNameWithPrefix } from "./name";
 
 export type Viewer = { userId: number; role: "staff" | "admin" | "super_admin"; branchIds: number[]; adminBranchIds: number[]; department?: string | null };
@@ -107,12 +107,13 @@ export type ManagerRow = {
   id: number; positionId: number; positionName: string; date: string; userId: number; name: string;
   source: "booked" | "assigned"; status: string; performerUserId: number | null; performerName: string | null; dailyRate: number;
   submittedAt: string | null; reviewNote: string | null; evidenceCount: number; presentAtWork: boolean;
+  replacement: { fromName: string; toName: string; reasonText: string; at: string } | null;
 };
 
 /** Everything for a branch, for its manager (or the owner). */
 export function getManagerView(viewer: Viewer, branchId: number, yearMonth: string): ManagerRow[] {
   if (!canManage(viewer, branchId)) throw new AccessError("forbidden");
-  return (getDb().prepare(`
+  const rows: ManagerRow[] = (getDb().prepare(`
     SELECT d.id, p.id AS pid, p.name AS pname, p.daily_rate AS rate, d.duty_date AS date, d.user_id AS uid, ${sqlNameWithPrefix("u")} AS uname,
            d.source, d.status, d.performer_user_id AS perf, ${sqlNameWithPrefix("pu")} AS perfname,
            d.submitted_at AS sub, d.review_note AS note, (SELECT COUNT(*) FROM special_duty_evidence e WHERE e.day_id = d.id AND e.deleted_at IS NULL) AS photos
@@ -123,7 +124,13 @@ export function getManagerView(viewer: Viewer, branchId: number, yearMonth: stri
      WHERE p.branch_id = ? AND p.year_month = ?
      ORDER BY p.slot_no, d.duty_date
   `).all(branchId, yearMonth) as Array<{ id: number; pid: number; pname: string; rate: number; date: string; uid: number; uname: string; source: "booked" | "assigned"; status: string; perf: number | null; perfname: string | null; sub: string | null; note: string | null; photos: number }>)
-    .map((r) => ({ submittedAt: r.sub, reviewNote: r.note, evidenceCount: r.photos, presentAtWork: wasPresent(r.perf ?? r.uid, branchId, r.date), id: r.id, positionId: r.pid, positionName: r.pname, date: r.date, userId: r.uid, name: r.uname, source: r.source, status: r.status, performerUserId: r.perf, performerName: r.perfname, dailyRate: r.rate }));
+    .map((r) => ({ submittedAt: r.sub, reviewNote: r.note, evidenceCount: r.photos, presentAtWork: wasPresent(r.perf ?? r.uid, branchId, r.date), id: r.id, positionId: r.pid, positionName: r.pname, date: r.date, userId: r.uid, name: r.uname, source: r.source, status: r.status, performerUserId: r.perf, performerName: r.perfname, dailyRate: r.rate, replacement: null }));
+  return withReplacements(rows);
+}
+
+function withReplacements(rows: ManagerRow[]): ManagerRow[] {
+  const rep = latestReplacements(rows.map((r) => r.id));
+  return rows.map((r) => ({ ...r, replacement: rep.get(r.id) ?? null }));
 }
 
 export type { DutyPosition };

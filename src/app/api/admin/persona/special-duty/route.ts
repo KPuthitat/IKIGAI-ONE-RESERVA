@@ -10,7 +10,7 @@ import { bookingOpenFlex, noticeFlex, pushIndividually, pushWithOutcome, schedul
 import { audienceReport, AUDIENCE_REASON_TH, bookingAudience, branchHasRoster, openBookingOnPublish } from "@/lib/special-duty-roster";
 import { decideSwap, listPendingForManager, swapNotices, SwapError } from "@/lib/special-duty-swap";
 import { dutyMonthSummary, dutyOwnerAlerts } from "@/lib/special-duty-payout";
-import { assignSubstitute, dayBelongsToBranch, EvidenceError, evidenceFlags, listEvidence, listSubstituteCandidates, markAbsent, reviewEvidence } from "@/lib/special-duty-evidence";
+import { assignSubstitute, dayBelongsToBranch, EvidenceError, evidenceFlags, listEvidence, listSubstituteCandidates, markAbsent, REPLACE_REASONS, replaceDutyWorker, reviewEvidence } from "@/lib/special-duty-evidence";
 import { EVIDENCE_TEXT, RULE_TEXT, SWAP_TEXT, viewerOf } from "@/lib/special-duty-viewer";
 import { sqlNameWithPrefix } from "@/lib/name";
 
@@ -86,9 +86,9 @@ function missedList(report: ReturnType<typeof audienceReport>, outcome?: Map<num
 
 const Body = z.object({
   month: YM,
-  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute", "approve_swap", "reject_swap", "invite_booking", "open_booking", "set_close_date", "audience_check"]),
+  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute", "replace", "approve_swap", "reject_swap", "invite_booking", "open_booking", "set_close_date", "audience_check"]),
   position_id: z.number().int().optional(), date: z.string().optional(), user_id: z.number().int().optional(), override: z.boolean().optional(),
-  close_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), swap_id: z.number().int().optional(), day_id: z.number().int().optional(), allow_unfilled: z.boolean().optional(), note: z.string().max(300).optional()
+  close_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), swap_id: z.number().int().optional(), day_id: z.number().int().optional(), allow_unfilled: z.boolean().optional(), note: z.string().max(300).optional(), reason_type: z.enum(REPLACE_REASONS).optional()
 });
 
 export async function POST(req: Request) {
@@ -174,6 +174,20 @@ export async function POST(req: Request) {
       case "substitute": {
         if (!d.day_id || !d.user_id) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
         assignSubstitute({ dayId: d.day_id, branchId, performerId: d.user_id, managerId: actorId });
+        break;
+      }
+      case "replace": {
+        // Change who does a day (sick leave or any reason) — the reason is mandatory and kept with the change.
+        if (!d.day_id || !d.user_id || !d.reason_type) return NextResponse.json({ ok: false, error: "reason_required", message: EVIDENCE_TEXT.reason_required }, { status: 422 });
+        const r = replaceDutyWorker({ dayId: d.day_id, branchId, toUserId: d.user_id, reasonType: d.reason_type, note: d.note, managerId: actorId });
+        const base = (process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || "").replace(/\/$/, "");
+        const url = `${base}/staff/persona/special-duty?month=${ym}`;
+        const lineOf = (id: number) => (getDb().prepare("SELECT line_user_id AS l FROM users WHERE id = ?").get(id) as { l: string | null } | undefined)?.l ?? null;
+        const when = new Date(`${r.date}T00:00:00Z`).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+        // the new person is told what they must do; the person replaced is told why (the reason stays between them and the manager)
+        pushIndividually([lineOf(r.toUserId)], noticeFlex({ title: "ได้รับมอบหมายตำแหน่งงานค่าตอบแทนพิเศษ", lines: [`${r.positionName} · ${when}`, "ผู้จัดการมอบหมายให้ท่านปฏิบัติงานแทนในวันนี้"], url, button: "เปิดดู" })).catch((e) => console.error("duty replace push", e));
+        const stillPerformer = r.fromUserId;
+        pushIndividually([lineOf(stillPerformer)], noticeFlex({ title: "เปลี่ยนผู้ปฏิบัติงานตำแหน่งงานพิเศษ", lines: [`${r.positionName} · ${when}`, `ผู้จัดการเปลี่ยนผู้ปฏิบัติงานแทนท่าน · สาเหตุ: ${r.reasonText}`], url, button: "เปิดดู" })).catch((e) => console.error("duty replace push", e));
         break;
       }
       case "publish": {
