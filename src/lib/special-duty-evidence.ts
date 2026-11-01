@@ -21,7 +21,7 @@ import { sqlNameWithPrefix } from "./name";
 export type EvidenceErrorCode =
   | "not_found" | "forbidden" | "wrong_stage" | "too_early" | "deadline_passed" | "wrong_status" | "not_present"
   | "photos_required" | "too_many_photos" | "photo_bad_format" | "photo_too_large" | "no_people_not_confirmed"
-  | "days_must_match" | "note_required" | "substitute_invalid" | "substitute_same_person" | "substitute_busy" | "reason_required";
+  | "days_must_match" | "note_required" | "substitute_invalid" | "substitute_same_person" | "substitute_busy" | "reason_required" | "change_pending";
 
 export class EvidenceError extends Error { constructor(public code: EvidenceErrorCode) { super(code); } }
 
@@ -217,7 +217,7 @@ export type ReplaceReason = (typeof REPLACE_REASONS)[number];
 export const REPLACE_REASON_TH: Record<ReplaceReason, string> = { sick: "ลาป่วย", personal: "ธุระส่วนตัว", emergency: "เหตุฉุกเฉิน", other: "อื่นๆ" };
 
 export function replaceDutyWorker(args: { dayId: number; branchId: number; toUserId: number; reasonType: ReplaceReason; note?: string | null; managerId: number; today?: string }):
-  { fromUserId: number; toUserId: number; holderId: number; positionName: string; date: string; reasonText: string } {
+  { fromUserId: number; toUserId: number; holderId: number; positionName: string; date: string; reasonText: string; afterWork: boolean } {
   const d = loadDay(args.dayId);
   if (d.branch_id !== args.branchId) throw new EvidenceError("not_found");
   if (!REPLACE_REASONS.includes(args.reasonType)) throw new EvidenceError("reason_required");
@@ -225,27 +225,33 @@ export function replaceDutyWorker(args: { dayId: number; branchId: number; toUse
   if (args.reasonType === "other" && note.length < 3) throw new EvidenceError("reason_required");
   const month = getMonth(d.branch_id, d.year_month);
   if (!WORKING.includes(month.status)) throw new EvidenceError("wrong_stage");
-  if (!["booked", "assigned", "covered"].includes(d.status)) throw new EvidenceError("wrong_status");
+  // Before the work is done, or after the evidence was sent (the person who REALLY did it is the one who is paid — the
+  // reviewer fixes the name before approving; the status then stays "submitted").
+  if (!["booked", "assigned", "covered", "submitted"].includes(d.status)) throw new EvidenceError("wrong_status");
   const today = args.today ?? bkkToday();
-  if (today > addDays(d.duty_date, cfgNum("evidence_deadline_days", d.branch_id))) throw new EvidenceError("deadline_passed");
+  if (d.status !== "submitted" && today > addDays(d.duty_date, cfgNum("evidence_deadline_days", d.branch_id))) throw new EvidenceError("deadline_passed");
+  const afterWork = d.status === "submitted";
   const from = performerOf(d);
   if (args.toUserId === from) throw new EvidenceError("substitute_same_person");
   const db = getDb();
   if (args.toUserId === d.user_id) {
     // handing it back to the original holder
-    db.prepare("UPDATE special_duty_days SET status = ?, performer_user_id = NULL WHERE id = ?").run(d.source, d.id);
+    db.prepare("UPDATE special_duty_days SET status = ?, performer_user_id = NULL WHERE id = ?").run(afterWork ? "submitted" : d.source, d.id);
   } else {
     const problem = substituteProblem(d, args.toUserId);
     if (problem) throw new EvidenceError(problem);
-    db.prepare("UPDATE special_duty_days SET status = 'covered', performer_user_id = ? WHERE id = ?").run(args.toUserId, d.id);
+    db.prepare("UPDATE special_duty_days SET status = ?, performer_user_id = ? WHERE id = ?").run(afterWork ? "submitted" : "covered", args.toUserId, d.id);
   }
+  // an employee's pending request for this day is settled by this change, whoever made it
+  db.prepare("UPDATE special_duty_change_requests SET status = 'approved', decided_by = ?, decided_at = ?, final_user_id = ? WHERE day_id = ? AND status = 'pending'")
+    .run(args.managerId, new Date().toISOString(), args.toUserId, d.id);
   db.prepare("INSERT INTO special_duty_replacements (day_id, from_user_id, to_user_id, reason_type, reason_note, by_user_id) VALUES (?, ?, ?, ?, ?, ?)")
     .run(d.id, from, args.toUserId, args.reasonType, note || null, args.managerId);
   audit({ actorId: args.managerId, branchId: d.branch_id, yearMonth: d.year_month, entity: "duty_day", entityId: d.id, action: "replace",
     before: { performer: from }, after: { performer: args.toUserId, reason: args.reasonType, note: note || null } });
   const pos = db.prepare("SELECT name FROM special_duty_positions WHERE id = ?").get(d.position_id) as { name: string };
   return { fromUserId: from, toUserId: args.toUserId, holderId: d.user_id, positionName: pos.name, date: d.duty_date,
-    reasonText: `${REPLACE_REASON_TH[args.reasonType]}${note ? ` · ${note}` : ""}` };
+    reasonText: `${REPLACE_REASON_TH[args.reasonType]}${note ? ` · ${note}` : ""}`, afterWork };
 }
 
 /** The latest change on a day, for the manager's detail panel. */
@@ -367,4 +373,96 @@ export function sweepEvidence(today = bkkToday()): number {
     }
   }
   return n;
+}
+
+// ── an employee asks to change (owner 2026-11-01) ─────────────────────────
+export type ChangeRequestView = {
+  id: number; dayId: number; date: string; positionName: string; status: string;
+  requesterId: number; requesterName: string; proposedId: number | null; proposedName: string | null;
+  reasonText: string; reasonType: ReplaceReason; reasonNote: string | null; decisionNote: string | null; finalName: string | null; createdAt: string;
+};
+type ChangeRow = { id: number; day_id: number; requested_by: number; proposed_user_id: number | null; reason_type: ReplaceReason; reason_note: string | null; status: string; decision_note: string | null; final_user_id: number | null; created_at: string };
+
+function changeView(r: ChangeRow): ChangeRequestView {
+  const db = getDb();
+  const name = (id: number | null) => id == null ? null : (db.prepare(`SELECT ${sqlNameWithPrefix("u")} AS n FROM users u WHERE u.id = ?`).get(id) as { n: string } | undefined)?.n ?? "";
+  const d = db.prepare("SELECT d.duty_date AS date, p.name AS pname FROM special_duty_days d JOIN special_duty_positions p ON p.id = d.position_id WHERE d.id = ?").get(r.day_id) as { date: string; pname: string };
+  return {
+    id: r.id, dayId: r.day_id, date: d.date, positionName: d.pname, status: r.status,
+    requesterId: r.requested_by, requesterName: name(r.requested_by) ?? "", proposedId: r.proposed_user_id, proposedName: name(r.proposed_user_id),
+    reasonText: `${REPLACE_REASON_TH[r.reason_type] ?? r.reason_type}${r.reason_note ? ` · ${r.reason_note}` : ""}`, reasonType: r.reason_type, reasonNote: r.reason_note,
+    decisionNote: r.decision_note, finalName: name(r.final_user_id), createdAt: r.created_at
+  };
+}
+
+/** Days this person could still ask to hand over, and who could take each — only their own days (they hold or perform them). */
+export function candidatesForRequester(dayId: number, userId: number): Array<{ id: number; name: string }> {
+  const d = loadDay(dayId);
+  if (performerOf(d) !== userId) throw new EvidenceError("forbidden");
+  return listSubstituteCandidates(dayId, d.branch_id);
+}
+
+export function requestDutyChange(args: { dayId: number; userId: number; proposedUserId?: number | null; reasonType: ReplaceReason; note?: string | null; today?: string }): number {
+  const d = loadDay(args.dayId);
+  if (performerOf(d) !== args.userId) throw new EvidenceError("forbidden");
+  if (!REPLACE_REASONS.includes(args.reasonType)) throw new EvidenceError("reason_required");
+  const note = (args.note ?? "").trim();
+  if (args.reasonType === "other" && note.length < 3) throw new EvidenceError("reason_required");
+  if (!WORKING.includes(getMonth(d.branch_id, d.year_month).status)) throw new EvidenceError("wrong_stage");
+  if (!["booked", "assigned", "covered"].includes(d.status)) throw new EvidenceError("wrong_status");
+  if ((args.today ?? bkkToday()) > addDays(d.duty_date, cfgNum("evidence_deadline_days", d.branch_id))) throw new EvidenceError("deadline_passed");
+  const db = getDb();
+  if (db.prepare("SELECT 1 FROM special_duty_change_requests WHERE day_id = ? AND status = 'pending'").get(d.id)) throw new EvidenceError("change_pending");
+  const proposed = args.proposedUserId ?? null;
+  if (proposed != null) {
+    if (proposed === args.userId) throw new EvidenceError("substitute_same_person");
+    const problem = proposed === d.user_id ? null : substituteProblem(d, proposed);
+    if (problem) throw new EvidenceError(problem);
+  }
+  const id = Number(db.prepare("INSERT INTO special_duty_change_requests (day_id, requested_by, proposed_user_id, reason_type, reason_note) VALUES (?, ?, ?, ?, ?)")
+    .run(d.id, args.userId, proposed, args.reasonType, note || null).lastInsertRowid);
+  audit({ actorId: args.userId, branchId: d.branch_id, yearMonth: d.year_month, entity: "duty_day", entityId: d.id, action: "change_request", after: { proposed, reason: args.reasonType } });
+  return id;
+}
+
+export function cancelDutyChange(args: { requestId: number; userId: number }): void {
+  const r = getDb().prepare("SELECT * FROM special_duty_change_requests WHERE id = ?").get(args.requestId) as ChangeRow | undefined;
+  if (!r) throw new EvidenceError("not_found");
+  if (r.requested_by !== args.userId) throw new EvidenceError("forbidden");
+  if (r.status !== "pending") throw new EvidenceError("wrong_status");
+  getDb().prepare("UPDATE special_duty_change_requests SET status = 'cancelled' WHERE id = ?").run(r.id);
+}
+
+/** The manager answers. Approving performs the replacement (to the proposed person unless the manager picks another). */
+export function decideDutyChange(args: { requestId: number; branchId: number; managerId: number; approve: boolean; toUserId?: number | null; note?: string | null; today?: string }):
+  { requesterId: number; requesterName: string; approved: boolean; replacement: ReturnType<typeof replaceDutyWorker> | null; positionName: string; date: string; decisionNote: string | null } {
+  const db = getDb();
+  const r = db.prepare("SELECT * FROM special_duty_change_requests WHERE id = ?").get(args.requestId) as ChangeRow | undefined;
+  if (!r) throw new EvidenceError("not_found");
+  const d = loadDay(r.day_id);
+  if (d.branch_id !== args.branchId) throw new EvidenceError("not_found");
+  if (r.status !== "pending") throw new EvidenceError("wrong_status");
+  const note = (args.note ?? "").trim();
+  const v = changeView(r);
+  if (!args.approve) {
+    if (note.length < 3) throw new EvidenceError("note_required");
+    db.prepare("UPDATE special_duty_change_requests SET status = 'rejected', decided_by = ?, decided_at = ?, decision_note = ? WHERE id = ?").run(args.managerId, new Date().toISOString(), note, r.id);
+    audit({ actorId: args.managerId, branchId: d.branch_id, yearMonth: d.year_month, entity: "duty_day", entityId: d.id, action: "change_reject", after: { note } });
+    return { requesterId: r.requested_by, requesterName: v.requesterName, approved: false, replacement: null, positionName: v.positionName, date: v.date, decisionNote: note };
+  }
+  const to = args.toUserId ?? r.proposed_user_id;
+  if (to == null) throw new EvidenceError("substitute_invalid");
+  const rep = replaceDutyWorker({ dayId: d.id, branchId: args.branchId, toUserId: to, reasonType: r.reason_type, note: r.reason_note, managerId: args.managerId, today: args.today });
+  if (note) db.prepare("UPDATE special_duty_change_requests SET decision_note = ? WHERE id = ?").run(note, r.id);
+  return { requesterId: r.requested_by, requesterName: v.requesterName, approved: true, replacement: rep, positionName: v.positionName, date: v.date, decisionNote: note || null };
+}
+
+export function listPendingChanges(branchId: number, yearMonth: string): ChangeRequestView[] {
+  return (getDb().prepare(`SELECT c.* FROM special_duty_change_requests c JOIN special_duty_days d ON d.id = c.day_id JOIN special_duty_positions p ON p.id = d.position_id
+      WHERE p.branch_id = ? AND p.year_month = ? AND c.status = 'pending' ORDER BY d.duty_date, c.id`).all(branchId, yearMonth) as ChangeRow[]).map(changeView);
+}
+
+export function listMyChanges(userId: number, yearMonth: string): ChangeRequestView[] {
+  return (getDb().prepare(`SELECT c.* FROM special_duty_change_requests c JOIN special_duty_days d ON d.id = c.day_id JOIN special_duty_positions p ON p.id = d.position_id
+      WHERE c.requested_by = ? AND p.year_month = ? ORDER BY c.id DESC`).all(userId, yearMonth) as ChangeRow[]).map(changeView);
 }
