@@ -72,7 +72,7 @@
     "test:revshare-pos": "node --import tsx scripts/test-revshare-pos.ts",
     "test:revshare-catchup": "node --import tsx scripts/test-revshare-catchup.ts",
     "test:revshare-analysis": "node --import tsx scripts/test-revshare-analysis.ts",
-    "test:revshare-post-income": "node --import tsx scripts/test-revshare-post-income.ts",
+    "test:revshare-transfer-expense": "node --import tsx scripts/test-revshare-transfer-expense.ts",
     "test:delivera": "node --import tsx scripts/test-delivera-quote.ts && node --import tsx scripts/test-delivera-payment.ts && node --import tsx scripts/test-delivera-options.ts && node --import tsx scripts/test-delivera-guest.ts",
     "test:income-tax": "node --import tsx scripts/test-income-tax.ts",
     "test:group-insurance": "node --import tsx scripts/test-group-insurance.ts",

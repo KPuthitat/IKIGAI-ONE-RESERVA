@@ -67,37 +67,32 @@ export default function RoundsClient({
   const [sendModal, setSendModal] = useState<{ key: string; heading: string; preview: React.ReactNode; body: Record<string, unknown> } | null>(null);
   const shop = partnerShopName(partner);
   const vatRate = partner.vat_enabled ? partner.vat_rate : 0;
-  // Booking the day to ACCOUNTA (owner 2026-11-02) — the same posting "ส่งยอดวันนี้" does, as a button of its own.
-  const [acct, setAcct] = useState<{ incomeBranchId: number | null; incomeBranchName: string | null; posted: Record<string, number> } | null>(null);
+  // Booking a weekly transfer to ACCOUNTA as a รายจ่าย (owner 2026-11-02). The sales themselves are already inside the
+  // daily shift-close revenue, so only the money paid out to the partner is booked.
+  type WeekXfer = { weekStart: string; weekEnd: string; label: string; sales: number; amount: number; defaultDate: string; posted: { expenseId: number; amount: number; date: string } | null };
+  const [weekXfers, setWeekXfers] = useState<Record<string, WeekXfer>>({});
+  const [acctModal, setAcctModal] = useState<{ x: WeekXfer; date: string } | null>(null);
   const [acctNote, setAcctNote] = useState<string | null>(null);
-  const loadAcct = useCallback(async () => {
-    const r = await fetch(apiUrl(`/api/accounta/revshare/post-income?partner=${partner.id}&year=${year}&month=${month}`), { cache: "no-store" });
+  const loadWeekXfers = useCallback(async () => {
+    const r = await fetch(apiUrl(`/api/accounta/revshare/post-transfer?partner=${partner.id}&year=${year}&month=${month}`), { cache: "no-store" });
     const j = await r.json().catch(() => ({}));
-    if (r.ok && j.ok) setAcct({ incomeBranchId: j.incomeBranchId, incomeBranchName: j.incomeBranchName, posted: j.posted ?? {} });
+    if (r.ok && j.ok) setWeekXfers(Object.fromEntries((j.weeks as WeekXfer[]).map((x) => [x.weekStart, x])));
   }, [partner.id, year, month]);
-  useEffect(() => { void loadAcct(); }, [loadAcct]);
-  // what the ACCOUNTA row should hold for a day (VAT-inclusive), and whether the booked row matches it
-  const acctAmount = (r: Round) => salesVat(r.sales_amount, vatRate, salesBaseIncludesVat(partner.sales_base)).total;
-  const acctState = (r: Round): "none" | "same" | "changed" => {
-    const have = acct?.posted[r.period_start];
-    if (have == null) return "none";
-    return Math.abs(have - acctAmount(r)) < 0.005 ? "same" : "changed";
-  };
-  async function postToAcct(dates: string[]) {
-    setAcctNote(null);
-    await guarded(async (pin) => {
-      const res = await fetch(apiUrl("/api/accounta/revshare/post-income"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ partner: partner.id, dates, pin }) });
-      const j = await res.json().catch(() => ({}));
-      if (res.ok && j.ok) {
-        const n = (j.posted as Array<unknown>).length;
-        setAcctNote(`ลงบัญชีแล้ว ${n} วัน${acct?.incomeBranchName ? ` · ${acct.incomeBranchName}` : ""}`);
-        void loadAcct();
-        return { ok: true };
-      }
-      if (PIN_ERRORS.has(j.error)) return { ok: false, pinError: true };
-      setErr(humanizeApiError(j, "ลงบัญชีไม่สำเร็จ"));
-      return { ok: false };
+  useEffect(() => { void loadWeekXfers(); }, [loadWeekXfers, rounds, catchups]);
+  async function confirmAcct(pin: string): Promise<{ ok: boolean; message?: string }> {
+    if (!acctModal) return { ok: false };
+    const res = await fetch(apiUrl("/api/accounta/revshare/post-transfer"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ partner: partner.id, year, month, week_start: acctModal.x.weekStart, date: acctModal.date, pin })
     });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok && j.ok) {
+      setAcctNote(`ลงบัญชีรายจ่ายแล้ว · โอนสัปดาห์ ${acctModal.x.label} ฿${fmtMoney(j.amount)}`);
+      setAcctModal(null); void loadWeekXfers();
+      return { ok: true };
+    }
+    if (PIN_ERRORS.has(j.error)) return { ok: false, message: "pin_invalid" };
+    return { ok: false, message: humanizeApiError(j, "ลงบัญชีไม่สำเร็จ") };
   }
 
   // ── Flexible transfer round (owner 2026-08-01) ──────────────────────
@@ -539,9 +534,6 @@ export default function RoundsClient({
       {/* Daily entries grouped by week (weekly transfer subtotal) */}
       <div className="card space-y-2">
         <div className="text-sm font-bold text-slate-800">ยอดขายรายวัน + ยอดโอนรายสัปดาห์</div>
-        {acct && acct.incomeBranchId == null && rounds.length > 0 && (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">ปุ่ม “ลงบัญชี” จะขึ้นเมื่อตั้งสาขาที่รับรายรับของคู่ค้านี้ไว้ที่หน้าตั้งค่าคู่ค้า</p>
-        )}
         {acctNote && <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800">{acctNote}</p>}
         {rounds.length === 0 && catchups.length === 0 ? (
           <p className="text-xs text-slate-400">ยังไม่มีข้อมูล — กดปุ่ม “นำเข้าไฟล์ยอดขายประจำวัน” ด้านบน</p>
@@ -595,15 +587,6 @@ export default function RoundsClient({
                               {sentKey === `d:${r.period_start}` || r.sent_at ? "✓ ส่งแล้ว" : "ส่งยอดวันนี้"}
                             </button>
                           )}
-                          {acct?.incomeBranchId != null && (() => {
-                            const st = acctState(r);
-                            return st === "same"
-                              ? <span className="text-[11px] text-sky-700 mr-3" title={`ลงบัญชีแล้ว ฿${fmtMoney(acct.posted[r.period_start])} (รวม VAT) · ${acct.incomeBranchName ?? ""}`}>✓ ลงบัญชีแล้ว</span>
-                              : <button type="button" onClick={() => postToAcct([r.period_start])} disabled={busy} className={`text-[11px] hover:underline mr-3 ${st === "changed" ? "text-amber-600" : "text-sky-700"}`}
-                                  title={st === "changed" ? `ยอดในบัญชี ฿${fmtMoney(acct.posted[r.period_start])} ไม่ตรงกับยอดปัจจุบัน ฿${fmtMoney(acctAmount(r))} — กดเพื่ออัปเดต` : `ลงรายรับ ฿${fmtMoney(acctAmount(r))} (รวม VAT) เข้า ${acct.incomeBranchName ?? "บัญชี"}`}>
-                                  {st === "changed" ? "ลงบัญชีใหม่ (ยอดเปลี่ยน)" : "ลงบัญชี"}
-                                </button>;
-                          })()}
                           <button type="button" onClick={() => del(r)} disabled={busy} className="text-[11px] text-rose-500 hover:underline">ลบ</button>
                         </td>
                       </tr>
@@ -616,11 +599,17 @@ export default function RoundsClient({
                       <td className="py-1 px-2 text-right font-mono font-bold text-brand">฿{fmtMoney(w.total)}</td>
                       <td colSpan={3} className="py-1 px-2 text-[10px] text-slate-400">
                         โอนเต็มจำนวนให้คู่ค้า
-                        {acct?.incomeBranchId != null && (() => {
-                          const todo = w.rounds.filter((r) => acctState(r) !== "same");
-                          return todo.length === 0
-                            ? <span className="ml-2 text-[11px] font-bold text-sky-700">✓ ลงบัญชีทั้งสัปดาห์แล้ว</span>
-                            : <button type="button" onClick={() => postToAcct(todo.map((r) => r.period_start))} disabled={busy} className="ml-2 text-[11px] font-bold text-sky-700 hover:underline">ลงบัญชีทั้งสัปดาห์ ({todo.length} วัน)</button>;
+                        {(() => {
+                          const x = weekXfers[w.first];
+                          if (!x) return null;
+                          const state = !x.posted ? "none" : Math.abs(x.posted.amount - x.amount) < 0.005 ? "same" : "changed";
+                          return state === "same"
+                            ? <span className="ml-2 text-[11px] font-bold text-sky-700" title={`ลงรายจ่ายแล้ว ฿${fmtMoney(x.posted!.amount)} · ${x.posted!.date}`}>✓ ลงบัญชีรายจ่ายแล้ว</span>
+                            : <button type="button" onClick={() => setAcctModal({ x, date: x.posted?.date ?? x.defaultDate })} disabled={busy}
+                                className={`ml-2 text-[11px] font-bold hover:underline ${state === "changed" ? "text-amber-600" : "text-sky-700"}`}
+                                title="ลงบัญชีรายจ่าย: โอนยอดสัปดาห์นี้ให้คู่ค้า (ยอดขายอยู่ในยอดปิดกะอยู่แล้ว จึงไม่ลงเป็นรายรับ)">
+                                {state === "changed" ? "ลงบัญชีรายจ่ายใหม่ (ยอดเปลี่ยน)" : "ลงบัญชีรายจ่าย"}
+                              </button>;
                         })()}
                         {partner.line_group_id && (
                           <button type="button" onClick={() => setSendModal({
@@ -902,6 +891,34 @@ export default function RoundsClient({
           submitLabel="ยืนยัน"
           onSubmit={onPinSubmit}
           onClose={() => setPinRun(null)}
+        />
+      )}
+
+      {acctModal && (
+        <SendPreviewModal
+          heading="ลงบัญชีรายจ่าย · โอนให้คู่ค้า"
+          preview={(() => {
+            const v = salesVat(acctModal.x.sales, vatRate, salesBaseIncludesVat(partner.sales_base));
+            return (
+              <div className="space-y-2 text-sm">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1">
+                  <div className="flex justify-between"><span className="text-slate-500">หมวด</span><span>ส่วนแบ่งจ่ายพันธมิตร</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">ผู้รับเงิน</span><span>{partner.name}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">สัปดาห์</span><span>{acctModal.x.label}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">ยอดขาย</span><span>฿{fmtMoney(v.base)}</span></div>
+                  {vatRate > 0 && <div className="flex justify-between"><span className="text-slate-500">VAT {Math.round(vatRate * 100)}%</span><span>฿{fmtMoney(v.vat)}</span></div>}
+                  <div className="flex justify-between border-t border-slate-200 pt-1 font-bold"><span>ยอดโอน</span><span className="text-brand">฿{fmtMoney(v.total)}</span></div>
+                </div>
+                <label className="block text-xs text-slate-600">วันที่โอน
+                  <input type="date" className="input mt-1 w-full" value={acctModal.date} onChange={(e) => setAcctModal((m) => (m ? { ...m, date: e.target.value } : m))} />
+                </label>
+                <p className="text-[11px] text-slate-500">ลงเป็นรายจ่าย (จ่ายแล้ว · โอน) ในบัญชีสาขานี้ ยอดขายของคู่ค้าอยู่ในยอดปิดกะรายวันอยู่แล้ว จึงไม่ลงเป็นรายรับซ้ำ{acctModal.x.posted ? " · สัปดาห์นี้เคยลงแล้ว กดยืนยันเพื่ออัปเดตแถวเดิม" : ""}</p>
+              </div>
+            );
+          })()}
+          busy={busy}
+          onConfirm={confirmAcct}
+          onClose={() => setAcctModal(null)}
         />
       )}
 

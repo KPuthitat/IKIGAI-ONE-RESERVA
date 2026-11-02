@@ -4,7 +4,7 @@
 // branch. Calc always goes through lib/revshare.ts. Owner 2026-06-22.
 
 import { getDb } from "./db";
-import { postRevshareDailyIncome } from "./accounta-db";
+import { createExpense, updateExpense } from "./accounta-db";
 import { menuRange } from "./salesa-db";
 import {
   computeSettlement, computeRoundBreakdown, roundLabel, round2,
@@ -896,43 +896,59 @@ export function partnerCategorySalesForMonths(
   return [...map].map(([name, sales]) => ({ name, sales })).filter((c) => c.sales > 0).sort((a, b) => b.sales - a.sales);
 }
 
-// ── Post a partner's daily sales to ACCOUNTA on demand (owner 2026-11-02) ────
-// The same posting the PIN-gated "ส่งยอดวันนี้" has always done as a side effect (the partner's own books =
-// income_branch_id, channel = partner name, VAT-inclusive amount) — now a button of its own, so a day can be booked
-// without sending the LINE card. Re-posting after the amount changed replaces the row (delete-then-insert).
-export function postedDailyIncome(partnerId: number, branchId: number, startIso: string, endIso: string): { incomeBranchId: number | null; incomeBranchName: string | null; posted: Record<string, number> } {
-  const partner = getPartner(partnerId, branchId);
-  if (!partner || partner.income_branch_id == null) return { incomeBranchId: null, incomeBranchName: null, posted: {} };
-  const db = getDb();
-  const rows = db.prepare(
-    "SELECT income_date AS d, amount FROM accounta_income WHERE branch_id = ? AND source = 'revshare' AND channel IS ? AND income_date BETWEEN ? AND ?"
-  ).all(partner.income_branch_id, partnerShopName(partner).trim() || null, startIso, endIso) as Array<{ d: string; amount: number }>;
-  const bn = (db.prepare("SELECT name FROM branches WHERE id = ?").get(partner.income_branch_id) as { name: string } | undefined)?.name ?? null;
-  const posted: Record<string, number> = {};
-  for (const r of rows) posted[r.d] = round2(r.amount);
-  return { incomeBranchId: partner.income_branch_id, incomeBranchName: bn, posted };
-}
+// ── Book the weekly transfer to a partner as an expense (owner 2026-11-02) ────
+// The partner's sales are already inside the shop's daily shift-close revenue, so nothing is booked as income. What
+// ACCOUNTA needs is the money paid out: one รายจ่าย per weekly transfer — category ส่วนแบ่งจ่ายพันธมิตร, vendor = the
+// partner company, VAT-inclusive (VAT shown as input tax), paid by transfer on the transfer day. Booking a week again
+// (e.g. after a figure changed) updates that same row.
+export const TRANSFER_CATEGORY = "ส่วนแบ่งจ่ายพันธมิตร";
+export class TransferPostError extends Error { constructor(public code: "not_found" | "week_not_found") { super(code); } }
 
-export class IncomePostError extends Error { constructor(public code: "not_found" | "no_income_branch" | "day_not_found") { super(code); } }
+export type WeekTransfer = { weekStart: string; weekEnd: string; label: string; sales: number; amount: number; defaultDate: string;
+  posted: { expenseId: number; amount: number; date: string } | null };
 
-/** Book the given days (single-day rows) to the partner's income branch. Returns what was booked. */
-export function postDailyRoundsToAccounta(partnerId: number, branchId: number, dates: string[], userId: number): Array<{ date: string; amount: number }> {
+function weekTransfers(partnerId: number, branchId: number, year: number, month: number): WeekTransfer[] | null {
   const partner = getPartner(partnerId, branchId);
-  if (!partner) throw new IncomePostError("not_found");
-  if (partner.income_branch_id == null) throw new IncomePostError("no_income_branch");
+  const preview = partner ? previewSettlement(partnerId, branchId, year, month) : null;
+  if (!partner || !preview) return null;
   const vatRate = partner.vat_enabled ? partner.vat_rate : 0;
   const includesVat = salesBaseIncludesVat(partner.sales_base);
   const db = getDb();
-  const out: Array<{ date: string; amount: number }> = [];
-  const run = db.transaction(() => {
-    for (const date of [...new Set(dates)].sort()) {
-      const round = db.prepare("SELECT sales_amount FROM revshare_rounds WHERE partner_id = ? AND period_start = ? AND period_end = ?").get(partnerId, date, date) as { sales_amount: number } | undefined;
-      if (!round) throw new IncomePostError("day_not_found");
-      const amount = salesVat(round.sales_amount, vatRate, includesVat).total;
-      postRevshareDailyIncome({ branchId: partner.income_branch_id as number, date, channel: partnerShopName(partner), amount, isVat: partner.vat_enabled, userId });
-      out.push({ date, amount });
-    }
+  return preview.breakdown.map((w) => {
+    const amount = salesVat(w.sales, vatRate, includesVat).total;
+    const row = db.prepare("SELECT id, amount_total AS a, bill_date AS d FROM accounta_expenses WHERE revshare_transfer_key = ? ORDER BY id LIMIT 1").get(`${partnerId}:${w.start}`) as { id: number; a: number; d: string } | undefined;
+    return { weekStart: w.start, weekEnd: w.end, label: w.label, sales: w.sales, amount, defaultDate: addDaysIso(mondayOf(w.start), 7),
+      posted: row ? { expenseId: row.id, amount: round2(row.a), date: row.d } : null };
   });
-  run();
-  return out;
+}
+
+export function listWeekTransfers(partnerId: number, branchId: number, year: number, month: number): WeekTransfer[] | null {
+  return weekTransfers(partnerId, branchId, year, month);
+}
+
+export function postWeekTransferExpense(partnerId: number, branchId: number, year: number, month: number, weekStart: string, date: string, userId: number): { expenseId: number; amount: number } {
+  const partner = getPartner(partnerId, branchId);
+  if (!partner) throw new TransferPostError("not_found");
+  const w = weekTransfers(partnerId, branchId, year, month)?.find((x) => x.weekStart === weekStart);
+  if (!w) throw new TransferPostError("week_not_found");
+  const db = getDb();
+  const company = (db.prepare("SELECT company_id FROM branches WHERE id = ?").get(branchId) as { company_id: number | null } | undefined)?.company_id ?? null;
+  const vatRate = partner.vat_enabled ? partner.vat_rate : 0;
+  const vat = salesVat(w.sales, vatRate, salesBaseIncludesVat(partner.sales_base));
+  const input = {
+    branch_id: branchId, company_id: company, bill_date: date, vendor_id: null, vendor_name: partner.name, doc_type: null,
+    category: TRANSFER_CATEGORY, description: `โอนยอดขายสัปดาห์ ${w.label} ให้ ${partnerShopName(partner)}`,
+    amount_total: vat.total, has_tax_invoice: partner.vat_enabled, vat_amount: vat.vat, base_amount: vat.base,
+    payment_status: "paid" as const, payment_method: "transfer", paid_date: date, due_date: null, is_fixed: false,
+    note: `ยอดขายสัปดาห์ ${w.label} ฿${w.sales.toFixed(2)}${partner.vat_enabled ? ` + VAT ${Math.round(vatRate * 100)}%` : ""} · บันทึกจากหน้ารอบยอดขาย`
+  };
+  const key = `${partnerId}:${w.weekStart}`;
+  const existing = db.prepare("SELECT id FROM accounta_expenses WHERE revshare_transfer_key = ? ORDER BY id LIMIT 1").get(key) as { id: number } | undefined;
+  let id: number;
+  if (existing) { updateExpense(existing.id, input as never); id = existing.id; }
+  else {
+    id = createExpense(userId, input as never);
+    db.prepare("UPDATE accounta_expenses SET revshare_transfer_key = ? WHERE id = ?").run(key, id);
+  }
+  return { expenseId: id, amount: vat.total };
 }
