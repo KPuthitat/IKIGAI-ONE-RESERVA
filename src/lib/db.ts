@@ -8691,6 +8691,12 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE accounta_expenses ADD COLUMN df_round_id INTEGER REFERENCES df_rounds(id) ON DELETE SET NULL");
     db.exec("CREATE INDEX IF NOT EXISTS idx_accounta_exp_df ON accounta_expenses(df_round_id)");
   }
+  // revshare_transfer_key (owner 2026-11-02): "<partnerId>:<first day of the week>" tags the รายจ่าย booked for a
+  // weekly transfer to a revenue-share partner, so booking it again updates that row instead of adding another.
+  if (!expCols.some((c) => c.name === "revshare_transfer_key")) {
+    db.exec("ALTER TABLE accounta_expenses ADD COLUMN revshare_transfer_key TEXT");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_accounta_exp_revshare_transfer ON accounta_expenses(revshare_transfer_key)");
+  }
   // due_date (owner 2026-06-24): for credit-term unpaid bills — when payment is
   // due. Drives the "บิลค้างชำระ" reminder so overdue bills surface. NULL for
   // paid bills / unpaid bills with no agreed due date.
