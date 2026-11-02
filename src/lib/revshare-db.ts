@@ -4,6 +4,7 @@
 // branch. Calc always goes through lib/revshare.ts. Owner 2026-06-22.
 
 import { getDb } from "./db";
+import { postRevshareDailyIncome } from "./accounta-db";
 import { menuRange } from "./salesa-db";
 import {
   computeSettlement, computeRoundBreakdown, roundLabel, round2,
@@ -893,4 +894,45 @@ export function partnerCategorySalesForMonths(
     }
   }
   return [...map].map(([name, sales]) => ({ name, sales })).filter((c) => c.sales > 0).sort((a, b) => b.sales - a.sales);
+}
+
+// ── Post a partner's daily sales to ACCOUNTA on demand (owner 2026-11-02) ────
+// The same posting the PIN-gated "ส่งยอดวันนี้" has always done as a side effect (the partner's own books =
+// income_branch_id, channel = partner name, VAT-inclusive amount) — now a button of its own, so a day can be booked
+// without sending the LINE card. Re-posting after the amount changed replaces the row (delete-then-insert).
+export function postedDailyIncome(partnerId: number, branchId: number, startIso: string, endIso: string): { incomeBranchId: number | null; incomeBranchName: string | null; posted: Record<string, number> } {
+  const partner = getPartner(partnerId, branchId);
+  if (!partner || partner.income_branch_id == null) return { incomeBranchId: null, incomeBranchName: null, posted: {} };
+  const db = getDb();
+  const rows = db.prepare(
+    "SELECT income_date AS d, amount FROM accounta_income WHERE branch_id = ? AND source = 'revshare' AND channel IS ? AND income_date BETWEEN ? AND ?"
+  ).all(partner.income_branch_id, partnerShopName(partner).trim() || null, startIso, endIso) as Array<{ d: string; amount: number }>;
+  const bn = (db.prepare("SELECT name FROM branches WHERE id = ?").get(partner.income_branch_id) as { name: string } | undefined)?.name ?? null;
+  const posted: Record<string, number> = {};
+  for (const r of rows) posted[r.d] = round2(r.amount);
+  return { incomeBranchId: partner.income_branch_id, incomeBranchName: bn, posted };
+}
+
+export class IncomePostError extends Error { constructor(public code: "not_found" | "no_income_branch" | "day_not_found") { super(code); } }
+
+/** Book the given days (single-day rows) to the partner's income branch. Returns what was booked. */
+export function postDailyRoundsToAccounta(partnerId: number, branchId: number, dates: string[], userId: number): Array<{ date: string; amount: number }> {
+  const partner = getPartner(partnerId, branchId);
+  if (!partner) throw new IncomePostError("not_found");
+  if (partner.income_branch_id == null) throw new IncomePostError("no_income_branch");
+  const vatRate = partner.vat_enabled ? partner.vat_rate : 0;
+  const includesVat = salesBaseIncludesVat(partner.sales_base);
+  const db = getDb();
+  const out: Array<{ date: string; amount: number }> = [];
+  const run = db.transaction(() => {
+    for (const date of [...new Set(dates)].sort()) {
+      const round = db.prepare("SELECT sales_amount FROM revshare_rounds WHERE partner_id = ? AND period_start = ? AND period_end = ?").get(partnerId, date, date) as { sales_amount: number } | undefined;
+      if (!round) throw new IncomePostError("day_not_found");
+      const amount = salesVat(round.sales_amount, vatRate, includesVat).total;
+      postRevshareDailyIncome({ branchId: partner.income_branch_id as number, date, channel: partnerShopName(partner), amount, isVat: partner.vat_enabled, userId });
+      out.push({ date, amount });
+    }
+  });
+  run();
+  return out;
 }
