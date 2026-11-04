@@ -144,27 +144,31 @@ export function buildLineBreakdown(
     .map((s) => ({ id: s.branch_id, name: s.branch_name as string, status: s.status }));
 
   const emp = db.prepare(`
-    SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, track_attendance FROM users WHERE id = ?
-  `).get(userId) as { employment_type: "pt" | "ft" | null; hourly_rate: number | null; monthly_salary: number | null; track_attendance: number | null } | undefined;
-  const isPt = emp?.employment_type === "pt";
-  const isExec = emp?.employment_type === "ft" && emp?.track_attendance === 0;
+    SELECT employment_type, ${branchHourlyRateSelect(period.branch_id)}, monthly_salary, track_attendance, pt_started_at FROM users WHERE id = ?
+  `).get(userId) as { employment_type: "pt" | "ft" | null; hourly_rate: number | null; monthly_salary: number | null; track_attendance: number | null; pt_started_at: string | null } | undefined;
+  // FT→PT switch (owner 2026-08-31): from pt_started_at's month the pay engine treats the person as PART-TIME (hourly)
+  // although the stored type stays 'ft' — read the same effective type here, otherwise the table would show a converted
+  // part-timer as a salaried employee ("อยู่ในเงินเดือน") while the money was computed per hour (owner 2026-11-04).
+  const effType: "pt" | "ft" | null = emp?.pt_started_at != null && period.period_start.slice(0, 7) >= emp.pt_started_at.slice(0, 7) ? "pt" : (emp?.employment_type ?? null);
+  const isPt = effType === "pt";
+  const isExec = effType === "ft" && emp?.track_attendance === 0;
   // Rest-day rule inputs — same eligibility (FT with a time clock) + approved extra-shift
   // dates as the pay engine.
-  const restEligible = emp?.employment_type === "ft" && emp?.track_attendance !== 0;
+  const restEligible = effType === "ft" && emp?.track_attendance !== 0;
   const restWorkDates = loadRestDayWorkDates(db, period.period_start, period.period_end, userId).get(userId);
 
   // ไม่ต้องลงเวลา (track_attendance = 0): there are no punches, so the ROSTER is the
   // record of the days worked. Pay already follows it (PT: rosterShifts in the pay
   // engine; salaried exec: flat salary) — the table must show those shifts instead of
   // reading every unpunched day as ขาดงาน (owner 2026-10-04).
-  const noClock = emp?.track_attendance === 0 && (emp?.employment_type === "pt" || emp?.employment_type === "ft");
+  const noClock = emp?.track_attendance === 0 && (effType === "pt" || effType === "ft");
 
   const settings = loadPayrollSettings(db, period.branch_id);
   const ptRate = emp?.hourly_rate ?? settings.pt_default_hourly_rate;
   const ftHourlyEquiv = emp?.monthly_salary ? emp.monthly_salary / 30 / 8 : 0;
   const rateForPay = isPt ? ptRate : ftHourlyEquiv;
   const round2 = (x: number) => Math.round(x * 100) / 100;
-  const ftMonthly = emp?.employment_type === "ft" && !!emp?.monthly_salary;
+  const ftMonthly = effType === "ft" && !!emp?.monthly_salary;
   const lineRow = db.prepare(
     `SELECT base_pay, ot_pay FROM payroll_lines WHERE period_id = ? AND user_id = ?`
   ).get(periodId, userId) as { base_pay: number; ot_pay: number } | undefined;

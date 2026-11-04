@@ -61,6 +61,16 @@ process.env.DATABASE_PATH = TMP;
   ok("no-clock PT: rostered day is a worked row", pd.pairs[0].statusLabel === ROSTER_LABEL && pd.effectiveMinutes > 0);
   ok("no-clock PT: day pay = hours × hourly rate", Math.abs(pd.pay - (pd.effectiveMinutes / 60) * 100) < 0.02);
 
+  // FT→PT switch (pt_started_at): the engine pays this person per hour, so the table must too — not "อยู่ในเงินเดือน".
+  const conv = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,employment_type,track_attendance,monthly_salary,hourly_rate,pt_started_at) VALUES ('conv','x','conv','staff','active','ft',0,14850,180,'2026-09-01')").run().lastInsertRowid);
+  roster(conv, "2026-09-01", sh);
+  const cv = buildLineBreakdown(db, period, conv)!;
+  ok("converted FT→PT: treated as part-time, not as a monthly salary", cv.is_pt === true && cv.ftMonthly === false);
+  ok("converted FT→PT: day pay = hours × the hourly rate", (() => { const d = day(cv, "2026-09-01"); return d.pay > 0 && Math.abs(d.pay - (d.effectiveMinutes / 60) * 180) < 0.02; })());
+  const before = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,employment_type,track_attendance,monthly_salary,hourly_rate,pt_started_at) VALUES ('conv2','x','conv2','staff','active','ft',0,14850,180,'2026-10-01')").run().lastInsertRowid);
+  roster(before, "2026-09-01", sh);
+  ok("before the switch month it is still a monthly salary", (() => { const b = buildLineBreakdown(db, period, before)!; return b.is_pt === false && b.ftMonthly === true; })());
+
   // A person who DOES clock in keeps the old reading: rostered but no punch = ขาดงาน.
   const c = buildLineBreakdown(db, period, clockedFt)!;
   ok("clocked-in employee: rostered day with no punch is still ขาดงาน", day(c, "2026-09-01").pairs[0].statusLabel === "ขาดงาน");
