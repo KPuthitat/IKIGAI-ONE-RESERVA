@@ -277,7 +277,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           collapsing to a single row on md+ via CSS order + a full-basis break
           (no duplicated controls). */}
       <header className="bg-coffee-gradient text-white shadow-md">
-        <div className="w-full max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="w-full max-w-screen-2xl mx-auto px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="order-1 flex-shrink-0 min-w-0">
             <HeaderBrand role="staff" />
           </div>
@@ -310,7 +310,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         </div>
       </header>
 
-      <div className="w-full max-w-6xl mx-auto px-4 pt-4 flex-1 flex flex-col min-w-0">
+      <div className="w-full max-w-screen-2xl mx-auto px-4 pt-4 flex-1 flex flex-col min-w-0">
         <ModuleTabs tabs={moduleTabs} />
         {/* Sub-nav chips read as part of the nav — snug under the tabs, with a
             clear gap before the page title so they never crowd it on mobile. */}
@@ -326,7 +326,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           {/* overflow-x-clip — page-level guard so nothing spills past the
               viewport on mobile. Wide tables keep their own overflow-x-auto. */}
           <main className="flex-1 min-w-0 overflow-x-clip pb-8">
-            <ActionBarProvider maxWidth="max-w-6xl">{children}</ActionBarProvider>
+            <ActionBarProvider maxWidth="max-w-screen-2xl">{children}</ActionBarProvider>
           </main>
         </div>
       </div>
