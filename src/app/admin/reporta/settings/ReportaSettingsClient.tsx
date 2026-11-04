@@ -124,14 +124,16 @@ export default function ReportaSettingsClient({
               const eff = effective(ym);
               const overridden = v.trim() !== "";
               return (
-                <div key={ym} className="bg-white px-4 py-3 flex items-center gap-3">
-                  <div className="w-28 shrink-0">
-                    <div className="text-sm text-slate-700">{ymLabel(ym)}</div>
-                    <div className="text-[11px] text-slate-400">{overridden ? "เป้าเฉพาะเดือน" : "ใช้เป้าเริ่มต้น"}</div>
+                <div key={ym} className="bg-white px-4 py-3 space-y-1.5">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-sm font-medium text-slate-700">{ymLabel(ym)}</span>
+                    <span className={`text-[11px] ${overridden ? "font-medium text-brand" : "text-slate-400"}`}>{overridden ? "เป้าเฉพาะเดือน" : eff ? "ใช้เป้าเริ่มต้น" : "ไม่ตั้งเป้า"}</span>
                   </div>
-                  <MoneyInput value={v} onChange={(d) => setMonthInputs((m) => ({ ...m, [ym]: d }))}
-                    placeholder={defaultNum ? withCommas(String(defaultNum)) : "—"} className="!py-1.5 flex-1 min-w-0" ariaLabel={`เป้าเดือน ${ymLabel(ym)}`} />
-                  <div className={`w-24 text-right text-xs tabular-nums shrink-0 ${eff ? "text-slate-600" : "text-slate-300"}`}>{eff ? withCommas(String(eff)) : "ไม่ตั้งเป้า"}</div>
+                  <div className="relative">
+                    <MoneyInput value={v} onChange={(d) => setMonthInputs((m) => ({ ...m, [ym]: d }))}
+                      placeholder={defaultNum ? withCommas(String(defaultNum)) : "—"} className="w-full !py-1.5 !pr-12" ariaLabel={`เป้าเดือน ${ymLabel(ym)}`} />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">บาท</span>
+                  </div>
                 </div>
               );
             })}

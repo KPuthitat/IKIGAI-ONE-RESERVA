@@ -14,7 +14,7 @@ export default function StaffPersonaLayout({ children }: { children: React.React
   const lang = getLang();
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-4xl">
       <StaffPersonaChrome
         labels={{
           back: t(lang, "staff.persona.backToModules"),
