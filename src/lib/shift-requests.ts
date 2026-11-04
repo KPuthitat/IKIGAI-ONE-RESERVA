@@ -276,3 +276,43 @@ export function recordExtraShiftOnBehalf(a: {
 export function shiftRequestKindLabel(kind: ShiftRequestKind): string {
   return KIND_TH[kind];
 }
+
+export type RevokeResult =
+  | { ok: true; recomputedPeriods: number[] }
+  | { ok: false; error: "not_found" | "not_approved" | "reason_required" | "period_locked" };
+
+/** Take back an APPROVED request (owner 2026-11-04: ลาวันที่ 24 → ยกเลิก → ไปลาวันที่ 23 แทน, but the day kept
+ *  showing "ทำงานวันหยุด" because the approved extra-shift stayed). The request becomes 'cancelled' with the reason
+ *  kept, DRAFT payroll lines covering the date are recomputed so the rest-day premium goes away, and the employee
+ *  is told. The roster is NOT touched — the admin keeps or removes the shift there. A date already inside a closed
+ *  payroll period is refused, because that money has been fixed. */
+export function revokeApprovedShiftRequest(a: { branchId: number; adminId: number; id: number; reason: string }): RevokeResult {
+  const db = getDb();
+  const row = db.prepare("SELECT id, user_id, branch_id, kind, work_date, off_date, status, ref_no, decision_note FROM shift_change_requests WHERE id = ?")
+    .get(a.id) as { id: number; user_id: number; branch_id: number | null; kind: ShiftRequestKind; work_date: string; off_date: string | null; status: string; ref_no: string | null; decision_note: string | null } | undefined;
+  if (!row || row.branch_id !== a.branchId) return { ok: false, error: "not_found" };
+  if (row.status !== "approved") return { ok: false, error: "not_approved" };
+  const reason = a.reason.trim();
+  if (reason.length < 3) return { ok: false, error: "reason_required" };
+  const dates = [row.work_date, ...(row.off_date ? [row.off_date] : [])];
+  for (const d of dates) {
+    const locked = db.prepare(`
+      SELECT 1 FROM payroll_periods p JOIN payroll_lines l ON l.period_id = p.id AND l.user_id = ?
+       WHERE p.status != 'draft' AND p.period_start <= ? AND p.period_end >= ? LIMIT 1
+    `).get(row.user_id, d, d);
+    if (locked) return { ok: false, error: "period_locked" };
+  }
+  const note = [row.decision_note, `ยกเลิกการอนุมัติ: ${reason}`].filter(Boolean).join(" · ");
+  db.prepare("UPDATE shift_change_requests SET status = 'cancelled', decided_by = ?, decided_at = CURRENT_TIMESTAMP, decision_note = ? WHERE id = ?")
+    .run(a.adminId, note, row.id);
+  const recomputed: number[] = [];
+  for (const d of dates) {
+    for (const p of db.prepare("SELECT id FROM payroll_periods WHERE status = 'draft' AND period_start <= ? AND period_end >= ?").all(d, d) as Array<{ id: number }>) {
+      if (recomputed.includes(p.id)) continue;
+      try { recomputeLine(db, p.id, row.user_id); recomputed.push(p.id); }
+      catch { /* no line for this person in that period — skip */ }
+    }
+  }
+  pushToUser(row.user_id, `คำร้อง${KIND_TH[row.kind]} (${row.ref_no ?? "#" + row.id}) — ยกเลิกการอนุมัติแล้ว\nหมายเหตุ: ${reason}`);
+  return { ok: true, recomputedPeriods: recomputed };
+}
