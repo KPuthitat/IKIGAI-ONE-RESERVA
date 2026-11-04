@@ -47,6 +47,23 @@ export default function ShiftRequestsAdminClient({
   const [note, setNote] = useState("");
   // Approve-and-assign modal target (the request being scheduled).
   const [assignFor, setAssignFor] = useState<Row | null>(null);
+  // Take back an approved request (owner 2026-11-04): reason + PIN, then the draft payroll for that date is recomputed.
+  const [revokeFor, setRevokeFor] = useState<number | null>(null);
+  const [revReason, setRevReason] = useState("");
+  const [revPin, setRevPin] = useState("");
+  const [revMsg, setRevMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  async function revoke(id: number) {
+    setBusyId(id); setRevMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/shift-request/${id}/revoke`), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: revPin, reason: revReason.trim() })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) { setRevMsg({ ok: false, text: j.error === "bad_pin" ? "PIN ไม่ถูกต้อง" : j.message ?? "ยกเลิกไม่สำเร็จ" }); return; }
+      setRevMsg({ ok: true, text: j.recomputedPeriods?.length ? `ยกเลิกการอนุมัติแล้ว และคำนวณค่าตอบแทนที่เกี่ยวข้องใหม่ ${j.recomputedPeriods.length} รอบ` : "ยกเลิกการอนุมัติแล้ว" });
+      setRevokeFor(null); setRevReason(""); setRevPin(""); router.refresh();
+    } finally { setBusyId(null); }
+  }
 
   async function reject(id: number) {
     setBusyId(id);
@@ -123,6 +140,7 @@ export default function ShiftRequestsAdminClient({
       {/* History — decided requests, grouped by month → day (owner 2026-06-17). */}
       <div className="space-y-2">
         <h2 className="text-sm font-bold text-slate-700">ประวัติคำขอ (อนุมัติ/ไม่อนุมัติแล้ว)</h2>
+        {revMsg?.ok && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{revMsg.text}</p>}
         {historyGroups.length === 0 ? (
           <EmptyState>ยังไม่มีประวัติ</EmptyState>
         ) : historyGroups.map(({ mk, days }, i) => (
@@ -143,7 +161,8 @@ export default function ShiftRequestsAdminClient({
                     {rows.map((r) => {
                       const sm = STATUS_META[r.status] ?? { label: r.status, cls: "bg-slate-100 text-slate-500" };
                       return (
-                        <div key={r.id} className="flex items-start justify-between gap-2 text-sm">
+                        <div key={r.id} className="text-sm">
+                        <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <span className="font-medium text-slate-800">{nameWithPrefix(r.title_prefix, r.employee_name)}</span>
                             <span className="text-[11px] text-slate-400">
@@ -154,7 +173,25 @@ export default function ShiftRequestsAdminClient({
                             {r.decision_note && <div className="text-[11px] text-slate-500">หมายเหตุ: {r.decision_note}</div>}
                             {r.decided_by_name && <div className="text-[10px] text-slate-400">โดย {r.decided_by_name}</div>}
                           </div>
-                          <span className={`flex-shrink-0 text-[10px] px-2 py-0.5 rounded-full font-bold ${sm.cls}`}>{sm.label}</span>
+                          <span className="flex flex-shrink-0 flex-col items-end gap-1">
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${sm.cls}`}>{sm.label}</span>
+                            {r.status === "approved" && revokeFor !== r.id && (
+                              <button type="button" className="text-[11px] text-rose-600 hover:underline" onClick={() => { setRevokeFor(r.id); setRevReason(""); setRevPin(""); setRevMsg(null); }}>ยกเลิกการอนุมัติ</button>
+                            )}
+                          </span>
+                        </div>
+                        {revokeFor === r.id && (
+                          <div className="mt-1.5 space-y-1.5 rounded-lg border border-rose-200 bg-rose-50 p-2.5">
+                            <div className="text-xs text-rose-900">ยกเลิกการอนุมัติ: ค่าทำงานวันหยุดส่วนเพิ่มของวันนี้จะหายไป และคำนวณค่าตอบแทนที่ยังเป็นฉบับร่างใหม่ (ตารางเวรไม่ถูกแก้) พนักงานจะได้รับแจ้ง</div>
+                            <input className="input w-full" maxLength={200} placeholder="เหตุผล เช่น พนักงานย้ายวันลา ไม่ได้ทำงานวันหยุดจริง" value={revReason} onChange={(e) => setRevReason(e.target.value)} />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input type="password" inputMode="numeric" autoComplete="off" placeholder="PIN" className="input w-24 tracking-widest text-center" value={revPin} onChange={(e) => setRevPin(e.target.value)} />
+                              <button type="button" className="btn-primary" disabled={busyId === r.id || revReason.trim().length < 3 || !/^\d{4}$/.test(revPin)} onClick={() => revoke(r.id)}>{busyId === r.id ? "กำลังทำรายการ" : "ยืนยันยกเลิก"}</button>
+                              <button type="button" className="btn-secondary" onClick={() => setRevokeFor(null)}>ปิด</button>
+                            </div>
+                            {revMsg && !revMsg.ok && <div className="text-xs text-rose-700">{revMsg.text}</div>}
+                          </div>
+                        )}
                         </div>
                       );
                     })}
