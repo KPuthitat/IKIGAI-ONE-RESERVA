@@ -997,7 +997,6 @@ export default function PeriodDetailClient({
                 type="date"
                 className="input"
                 value={paidAt}
-                max={todayBkk}
                 onChange={(e) => setPaidAt(e.target.value)}
               />
               <p className="text-xs text-slate-500 mt-1">
