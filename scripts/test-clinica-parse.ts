@@ -66,5 +66,26 @@ let threw = false;
 try { C.parseClinicaFile(buf(["a", "b"], [["1", "2"]], "Other")); } catch { threw = true; }
 ok("dispatch: unknown file → throws", threw);
 
+// ── Accounts-receivable ledger (title row above the header, no line items) ──
+const arHeader = ["เลขที่ใบแจ้งหนี้", "วันที่บิล", "รหัสลูกค้า", "ชื่อลูกค้า", "โทร", "กลุ่มลูกค้า", "ผู้ทำรายการ", "แผนก", "อายุหนี้ (วัน)", "เลขที่ใบเสร็จ", "วันที่ชำระ", "งวด", "ช่องทางชำระ", "ยอดชำระ", "คงเหลือหลังงวดนี้ *", "ยอดบิล", "ชำระแล้ว ณ วันที่", "ค้างชำระ ณ วันที่ 07/11/2569", "หมายเหตุ", "แท็ก"];
+const arRows: (string | number)[][] = [
+  ["BL1", "01/07/2567", "HN1", "ก", "", "บริษัท เอ", "แอดมิน", "-", 859, "RE1", "01/07/2567", "งวด 1", "วางบิล", 0, 750, 750, 0, 750, "", ""],
+  // two instalments: bill totals only on the last row
+  ["BL2", "05/11/2569", "HN2", "ข", "", "ประกัน บี", "แอดมิน", "-", 2, "RE2", "05/11/2569", "งวด 1", "วางบิล", 0, 800, "", "", "", "", ""],
+  ["BL2", "05/11/2569", "HN2", "ข", "", "ประกัน บี", "แอดมิน", "-", 2, "RE2", "05/11/2569", "งวด 2", "วางบิล", 0, 800, 800, 0, 800, "", ""],
+  ["ยอดรวม 2 บิล", "", "", "", "", "", "", "", "", "3 ใบเสร็จ", "", "", "", 0, "", 1550, 0, 1550, "", ""],
+];
+const arWs = XLSX.utils.aoa_to_sheet([["รายงานบัญชีลูกหนี้ · ยอด ณ วันที่ 07/11/2569"], arHeader, ...arRows]);
+const arWb = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(arWb, arWs, "ลูกหนี้");
+XLSX.utils.book_append_sheet(arWb, XLSX.utils.aoa_to_sheet([["อายุหนี้", "บิล"]]), "อายุหนี้");
+const arBuf = XLSX.write(arWb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+const ar = C.parseClinicaFile(arBuf);
+ok("ar: detected as outstanding snapshot", ar.kind === "outstanding");
+ok("ar: 2 bills, total row dropped", ar.kind === "outstanding" && ar.bills.length === 2);
+ok("ar: totals 1550 due", ar.kind === "outstanding" && near(ar.totalDue, 1550) && near(ar.totalNet, 1550));
+ok("ar: bill totals taken from the instalment row that carries them", ar.kind === "outstanding" && near(ar.bills[1].due, 800) && near(ar.bills[1].net, 800));
+ok("ar: Buddhist dates + range", ar.kind === "outstanding" && ar.rangeStart === "2024-07-01" && ar.rangeEnd === "2026-11-05");
+
 console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
