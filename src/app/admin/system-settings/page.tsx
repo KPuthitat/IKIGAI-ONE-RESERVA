@@ -20,6 +20,7 @@ import { t } from "@/lib/i18n";
 import SystemSettingsForm from "./SystemSettingsForm";
 import RecruitaOaSection from "./RecruitaOaSection";
 import PdpaImageUploader from "./PdpaImageUploader";
+import DeployCopyCard from "./DeployCopyCard";
 import { DEFAULT_HEALTH_CHECK_MESSAGE } from "@/lib/recruita-notify";
 import { OCR_MODELS, DEFAULT_OCR_MODEL } from "@/lib/accounta";
 import { OWL_AI_MODELS, DEFAULT_OWL_AI_MODEL } from "@/lib/owl-ai-models";
@@ -48,6 +49,8 @@ export default function SystemSettingsPage() {
           {t(lang, "admin.systemSettings.subtitle")}
         </p>
       </div>
+
+      <DeployCopyCard />
 
       <SystemSettingsForm
         token={settings.global_line_channel_token}
