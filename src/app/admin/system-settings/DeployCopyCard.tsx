@@ -7,6 +7,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // it is a heads-up (deploy.sh runs the same check and asks y/n), never a lock.
 const DEPLOY_CMD = "nokhookos-deploy";
 const CHECK_CMD = "curl -s http://ikigaimedihealth.com/api/deploy-window";
+// Everything in the order the owner runs it: look at the window, then deploy.
+// Pasted as one block into the SSH terminal; deploy.sh still asks y/n if unsafe.
+const ALL_CMDS = `${CHECK_CMD}\n${DEPLOY_CMD}\n`;
 
 type Win = { safe: boolean; warnings: string[]; nextSafeAt: string | null };
 
@@ -66,16 +69,16 @@ export default function DeployCopyCard() {
         <div>
           <h2 className="font-bold text-slate-800 text-sm">Deploy</h2>
           <p className="text-xs text-slate-600 mt-0.5">
-            กดคัดลอกแล้ววางในเทอร์มินัลบนเซิร์ฟเวอร์ — สคริปต์จะเช็กช่วงเวลาลงเวลางานให้อีกรอบก่อนเริ่ม
+            กดคัดลอกครั้งเดียวได้ครบทุกคำสั่ง (เช็กช่วงเวลา → deploy) แล้ววางในเทอร์มินัลบนเซิร์ฟเวอร์ — สคริปต์จะเช็กช่วงเวลาลงเวลางานให้อีกรอบก่อนเริ่ม
           </p>
         </div>
-        <button type="button" onClick={() => copy(DEPLOY_CMD, "deploy")}
+        <button type="button" onClick={() => copy(ALL_CMDS, "all")}
           className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 active:scale-95">
-          {copied === "deploy" ? "คัดลอกแล้ว ✓" : copied === "fail" ? "คัดลอกไม่ได้ — เลือกข้อความเอง" : "คัดลอกคำสั่ง deploy"}
+          {copied === "all" ? "คัดลอกแล้ว ✓" : copied === "fail" ? "คัดลอกไม่ได้ — เลือกข้อความเอง" : "คัดลอกคำสั่งทั้งหมด"}
         </button>
       </div>
 
-      <code className="block rounded-lg bg-white/80 border border-slate-200 px-3 py-2 text-sm font-mono text-slate-800 select-all">{DEPLOY_CMD}</code>
+      <pre className="rounded-lg bg-white/80 border border-slate-200 px-3 py-2 text-sm font-mono text-slate-800 select-all whitespace-pre-wrap break-all">{ALL_CMDS.trim()}</pre>
 
       <div className="text-xs">
         {err || !win ? (
@@ -91,10 +94,14 @@ export default function DeployCopyCard() {
         )}
       </div>
 
-      <button type="button" onClick={() => copy(CHECK_CMD, "check")}
-        className="text-xs text-slate-500 underline hover:text-slate-700">
-        {copied === "check" ? "คัดลอกแล้ว ✓" : "คัดลอกคำสั่งเช็กช่วงเวลา (curl)"}
-      </button>
+      <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+        <button type="button" onClick={() => copy(DEPLOY_CMD, "deploy")} className="underline hover:text-slate-700">
+          {copied === "deploy" ? "คัดลอกแล้ว ✓" : "คัดลอกเฉพาะ deploy"}
+        </button>
+        <button type="button" onClick={() => copy(CHECK_CMD, "check")} className="underline hover:text-slate-700">
+          {copied === "check" ? "คัดลอกแล้ว ✓" : "คัดลอกเฉพาะเช็กช่วงเวลา"}
+        </button>
+      </div>
     </div>
   );
 }
