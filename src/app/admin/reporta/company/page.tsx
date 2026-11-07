@@ -3,12 +3,13 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { requirePermission, canModule, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu, upcomingSpecialDaysOutlook, SPECIAL_DAYS_HORIZON_DAYS } from "@/lib/salesa-analytics";
+import { branchTrends, companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu, upcomingSpecialDaysOutlook, SPECIAL_DAYS_HORIZON_DAYS } from "@/lib/salesa-analytics";
 import { getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import { companyMonthLabor } from "@/lib/daily-col";
 import { fmtMoney } from "@/lib/format";
 import CompanyReportActions from "./CompanyReportActions";
 import LaborCostPanel from "./LaborCostPanel";
+import BranchTrendCharts from "./BranchTrendCharts";
 import SpecialDaysSend from "./SpecialDaysSend";
 import EmptyState from "@/app/components/EmptyState";
 
@@ -68,6 +69,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
   // bars and festival uplift — all company-scoped. Growth/festival are for the
   // current year regardless of the month picker (they're whole-year views).
   const wk = companyWeekCompare(companyBranchIds, today);
+  const trends = branchTrends(companyBranchIds, year, month);
   const bars = annualBranchBars(year, today, companyBranchIds);
   const fest = festivalAnalysis(year, today, companyBranchIds);
   // Forward-looking special-days plan (owner 2026-09-27) — next 60 days of
@@ -259,6 +261,9 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
               {ov.target ? ` · แถวรวม “ทำได้” นับเฉพาะ ${ov.targetedBranchCount} สาขาที่ตั้งเป้า (${baht(ov.target.mtdNett)} บาท ÷ ${baht(ov.target.target)} บาท)` : ""}
             </p>
           </div>
+
+          {/* Daily sales + spend-per-head trend, one card per branch (owner 2026-11-07) */}
+          <BranchTrendCharts trends={trends} year={year} month={month} />
 
           {/* Weekly same-period compare (owner 2026-09-21) */}
           {wk.branches.length > 0 && (
