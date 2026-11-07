@@ -2156,3 +2156,60 @@ export function annualBranchDailyBars(year: number, todayIso: string, allowedBra
 
   return { year, dayCount, startIso, branches: out };
 }
+
+// ── Per-branch daily trend: sales per day and spend per head (owner 2026-11-07) ──
+// One series per branch for the picked month (and the month before, for a faint overlay), read from the imported
+// daily POS rows. Per head = nett ÷ pax of that day (no pax → no point). Clinic branches have no POS rows, so they come
+// back empty and the page says so instead of drawing a flat line.
+export type TrendDay = { date: string; day: number; nett: number; pax: number; perHead: number | null };
+export type BranchTrend = {
+  branchId: number; branchName: string;
+  days: TrendDay[]; prevDays: TrendDay[];
+  avgPerDay: number | null; avgPerHead: number | null;           // this month: Σnett ÷ days with sales, Σnett ÷ Σpax
+  prevAvgPerDay: number | null; prevAvgPerHead: number | null;   // same figures for the previous month
+  perDayMomPct: number | null; perHeadMomPct: number | null;
+};
+
+function trendRows(branchId: number, ym: string): TrendDay[] {
+  return (getDb().prepare(
+    "SELECT sale_date AS d, nett, pax FROM salesa_daily WHERE branch_id = ? AND has_sales = 1 AND substr(sale_date, 1, 7) = ? ORDER BY sale_date"
+  ).all(branchId, ym) as Array<{ d: string; nett: number; pax: number }>).map((r) => ({
+    date: r.d, day: Number(r.d.slice(8, 10)), nett: Math.round(r.nett * 100) / 100, pax: r.pax || 0,
+    perHead: r.pax > 0 ? Math.round((r.nett / r.pax) * 100) / 100 : null
+  }));
+}
+function trendAvg(days: TrendDay[]): { perDay: number | null; perHead: number | null } {
+  if (days.length === 0) return { perDay: null, perHead: null };
+  const nett = days.reduce((s, d) => s + d.nett, 0);
+  const paxDays = days.filter((d) => d.pax > 0);
+  const pax = paxDays.reduce((s, d) => s + d.pax, 0);
+  return {
+    perDay: Math.round((nett / days.length) * 100) / 100,
+    perHead: pax > 0 ? Math.round((paxDays.reduce((s, d) => s + d.nett, 0) / pax) * 100) / 100 : null
+  };
+}
+const pctChange = (cur: number | null, prev: number | null): number | null =>
+  cur != null && prev != null && prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10 : null;
+
+export function branchTrends(branchIds: number[], year: number, month: number): BranchTrend[] {
+  const ym = `${year}-${String(month).padStart(2, "0")}`;
+  const pm = month === 1 ? 12 : month - 1, py = month === 1 ? year - 1 : year;
+  const pym = `${py}-${String(pm).padStart(2, "0")}`;
+  return orderedBranches(branchIds).map((b) => {
+    const days = trendRows(b.id, ym), prevDays = trendRows(b.id, pym);
+    const cur = trendAvg(days), prev = trendAvg(prevDays);
+    return {
+      branchId: b.id, branchName: b.name, days, prevDays,
+      avgPerDay: cur.perDay, avgPerHead: cur.perHead, prevAvgPerDay: prev.perDay, prevAvgPerHead: prev.perHead,
+      perDayMomPct: pctChange(cur.perDay, prev.perDay), perHeadMomPct: pctChange(cur.perHead, prev.perHead)
+    };
+  });
+}
+
+/** Trailing moving average (window n) over a daily series, ignoring missing points; null until a point has data. */
+export function movingAverage(values: Array<number | null>, n: number): Array<number | null> {
+  return values.map((_, i) => {
+    const w = values.slice(Math.max(0, i - n + 1), i + 1).filter((v): v is number => v != null);
+    return w.length === 0 ? null : Math.round((w.reduce((s, v) => s + v, 0) / w.length) * 100) / 100;
+  });
+}
