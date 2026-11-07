@@ -260,6 +260,78 @@ export function filenameWindow(name: string): { start: string; end: string } | n
 
 export type ClinicaOutstandingParse = Omit<ClinicaInvoiceParse, "kind"> & { kind: "outstanding" };
 
+// ── Accounts-receivable ledger (รายงานบัญชีลูกหนี้) ─────────────────────────────
+// The HIS's newer outstanding export: a title row ("รายงานบัญชีลูกหนี้ · ยอด ณ วันที่
+// …"), THEN the header row, one row per receipt instalment of an open bill, and a
+// trailing "ยอดรวม N บิล" row. The bill-level figures (ยอดบิล / ชำระแล้ว / ค้างชำระ
+// ณ วันที่ …) sit on one row of the bill only. It carries no line items or bill time.
+// It is the same snapshot as the unpaid-only Invoice Report, so it feeds the same
+// "outstanding" import.
+
+/** Row index of the AR ledger's header (within the first rows), or -1. */
+function arHeaderIndex(rows: Sheet): number {
+  for (let i = 0; i < Math.min(rows.length, 6); i++) {
+    const labels = rows[i].map((h) => cell([h], 0));
+    if (labels.includes("เลขที่ใบแจ้งหนี้") && labels.includes("เลขที่ใบเสร็จ") && labels.includes("ยอดบิล")) return i;
+  }
+  return -1;
+}
+
+function parseArRows(rows: Sheet, hdr: number): ClinicaOutstandingParse {
+  const header = rows[hdr];
+  const labels = header.map((h) => cell([h], 0));
+  const find = (match: (l: string) => boolean, what: string): number => {
+    const i = labels.findIndex(match);
+    if (i < 0) throw new Error(`ไม่พบคอลัมน์ "${what}" — ไม่ใช่ไฟล์รายงานบัญชีลูกหนี้`);
+    return i;
+  };
+  const cBill = find((l) => l === "เลขที่ใบแจ้งหนี้", "เลขที่ใบแจ้งหนี้"),
+    cDate = find((l) => l === "วันที่บิล", "วันที่บิล"),
+    cHn = find((l) => l === "รหัสลูกค้า", "รหัสลูกค้า"),
+    cPayer = find((l) => l === "กลุ่มลูกค้า", "กลุ่มลูกค้า"),
+    cStaff = find((l) => l === "ผู้ทำรายการ", "ผู้ทำรายการ"),
+    cNet = find((l) => l === "ยอดบิล", "ยอดบิล"),
+    cPaid = find((l) => l.startsWith("ชำระแล้ว"), "ชำระแล้ว"),
+    cDue = find((l) => l.startsWith("ค้างชำระ"), "ค้างชำระ");
+
+  const order: string[] = [];
+  const byBill = new Map<string, Sheet>();
+  for (let i = hdr + 1; i < rows.length; i++) {
+    const r = rows[i];
+    const billNo = cell(r, cBill);
+    if (!/^BL/i.test(billNo)) continue;             // drops the "ยอดรวม N บิล" row
+    if (!byBill.has(billNo)) { byBill.set(billNo, []); order.push(billNo); }
+    byBill.get(billNo)!.push(r);
+  }
+  const firstNonEmpty = (ls: Sheet, c: number): number => {
+    for (const r of ls) { if (cell(r, c) !== "") return num(r[c]); }
+    return 0;
+  };
+  const bills: ClinicaBill[] = order.map((billNo) => {
+    const ls = byBill.get(billNo)!;
+    const head = ls[0];
+    const net = round2(firstNonEmpty(ls, cNet));
+    return {
+      billNo, date: beDateToIso(cell(head, cDate)) ?? "", time: "",
+      hn: cell(head, cHn), payerGroup: cell(head, cPayer), staff: cell(head, cStaff),
+      gross: net, billDiscount: 0, net,
+      paid: round2(firstNonEmpty(ls, cPaid)), due: round2(firstNonEmpty(ls, cDue)),
+      items: []
+    };
+  });
+  if (!bills.length) throw new Error("ไม่พบบิลในรายงานบัญชีลูกหนี้");
+  const dates = bills.map((b) => b.date).filter(Boolean).sort();
+  return {
+    kind: "outstanding",
+    rangeStart: dates[0] ?? "", rangeEnd: dates[dates.length - 1] ?? "",
+    bills, billCount: bills.length,
+    patientCount: new Set(bills.map((b) => b.hn).filter(Boolean)).size,
+    totalNet: round2(bills.reduce((s, b) => s + b.net, 0)),
+    totalPaid: round2(bills.reduce((s, b) => s + b.paid, 0)),
+    totalDue: round2(bills.reduce((s, b) => s + b.due, 0))
+  };
+}
+
 // ── Receipt report ──────────────────────────────────────────────────────────
 // One row per receipt LINE ITEM; the payment sits on the receipt's first line(s):
 // ช่องทางชำระ / งวดที่ / ยอดชำระ / ค่าธรรมเนียมบัตร / ยอดค้างชำระ. เอกสารอ้างอิง is
@@ -347,6 +419,8 @@ export type ClinicaFileParse = ClinicaInvoiceParse | ClinicaOutstandingParse | C
  *  if it is none of the clinic reports. */
 export function parseClinicaFile(buf: Buffer | ArrayBuffer): ClinicaFileParse {
   const rows = firstSheetRows(buf);
+  const arHdr = arHeaderIndex(rows);
+  if (arHdr >= 0) return parseArRows(rows, arHdr);
   const header = rows[0] ?? [];
   if (header.some((h) => cell([h], 0) === "เลขที่ใบแจ้งหนี้")) {
     const p = parseInvoiceRows(rows);
@@ -355,5 +429,5 @@ export function parseClinicaFile(buf: Buffer | ArrayBuffer): ClinicaFileParse {
   }
   if (header.some((h) => cell([h], 0) === "เลขที่ใบเสร็จ")) return parseReceiptRows(rows);
   if (header.some((h) => cell([h], 0) === "เลขที่บริการ")) return parseOpdRows(rows);
-  throw new Error("ไม่รู้จักรูปแบบไฟล์ — ต้องเป็น Invoice / Receipt / OPD Report ของคลินิก");
+  throw new Error("ไม่รู้จักรูปแบบไฟล์ — ต้องเป็น Invoice / Receipt / OPD Report หรือรายงานบัญชีลูกหนี้ของคลินิก");
 }
