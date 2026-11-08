@@ -2206,10 +2206,53 @@ export function branchTrends(branchIds: number[], year: number, month: number): 
   });
 }
 
-/** Trailing moving average (window n) over a daily series, ignoring missing points; null until a point has data. */
-export function movingAverage(values: Array<number | null>, n: number): Array<number | null> {
-  return values.map((_, i) => {
-    const w = values.slice(Math.max(0, i - n + 1), i + 1).filter((v): v is number => v != null);
-    return w.length === 0 ? null : Math.round((w.reduce((s, v) => s + v, 0) / w.length) * 100) / 100;
-  });
+export { movingAverage } from "./trend-math";
+
+// ── Whole-year trend (owner 2026-11-08): 12 monthly points per branch + all branches combined, with last year behind ──
+export type YearMonth = { month: number; nett: number; pax: number; salesDays: number; avgPerDay: number | null; avgPerHead: number | null };
+export type BranchYearTrend = {
+  branchId: number; branchName: string;        // branchId 0 = every branch combined
+  months: YearMonth[]; prevMonths: YearMonth[];
+  avgPerDay: number | null; avgPerHead: number | null; prevAvgPerDay: number | null; prevAvgPerHead: number | null;
+  perDayYoyPct: number | null; perHeadYoyPct: number | null;
+};
+
+function yearMonths(branchIds: number[], year: number): YearMonth[] {
+  const out: YearMonth[] = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, nett: 0, pax: 0, salesDays: 0, avgPerDay: null, avgPerHead: null }));
+  if (branchIds.length === 0) return out;
+  const ph = branchIds.map(() => "?").join(",");
+  const rows = getDb().prepare(
+    `SELECT CAST(substr(sale_date, 6, 2) AS INTEGER) m, SUM(nett) nett, SUM(pax) pax,
+            SUM(CASE WHEN pax > 0 THEN nett ELSE 0 END) nettPax, COUNT(DISTINCT sale_date) days
+       FROM salesa_daily WHERE branch_id IN (${ph}) AND has_sales = 1 AND substr(sale_date, 1, 4) = ? GROUP BY m`
+  ).all(...branchIds, String(year)) as Array<{ m: number; nett: number; pax: number; nettPax: number; days: number }>;
+  for (const r of rows) {
+    const o = out[r.m - 1]; if (!o) continue;
+    o.nett = Math.round(r.nett * 100) / 100; o.pax = r.pax || 0; o.salesDays = r.days;
+    o.avgPerDay = r.days > 0 ? Math.round((r.nett / r.days) * 100) / 100 : null;
+    o.avgPerHead = r.pax > 0 ? Math.round((r.nettPax / r.pax) * 100) / 100 : null;
+  }
+  return out;
+}
+function yearAvg(months: YearMonth[], branchIds: number[], year: number): { perDay: number | null; perHead: number | null } {
+  const days = months.reduce((s, m) => s + m.salesDays, 0);
+  const nett = months.reduce((s, m) => s + m.nett, 0);
+  if (days === 0 || branchIds.length === 0) return { perDay: null, perHead: null };
+  const r = getDb().prepare(
+    `SELECT SUM(CASE WHEN pax > 0 THEN nett ELSE 0 END) nettPax, SUM(pax) pax FROM salesa_daily
+      WHERE branch_id IN (${branchIds.map(() => "?").join(",")}) AND has_sales = 1 AND substr(sale_date, 1, 4) = ?`
+  ).get(...branchIds, String(year)) as { nettPax: number | null; pax: number | null };
+  return { perDay: Math.round((nett / days) * 100) / 100, perHead: r.pax && r.pax > 0 ? Math.round(((r.nettPax ?? 0) / r.pax) * 100) / 100 : null };
+}
+
+/** Combined row first (branchId 0), then every branch in display order. */
+export function branchYearTrends(branchIds: number[], year: number): BranchYearTrend[] {
+  const build = (ids: number[], id: number, name: string): BranchYearTrend => {
+    const months = yearMonths(ids, year), prevMonths = yearMonths(ids, year - 1);
+    const cur = yearAvg(months, ids, year), prev = yearAvg(prevMonths, ids, year - 1);
+    return { branchId: id, branchName: name, months, prevMonths, avgPerDay: cur.perDay, avgPerHead: cur.perHead, prevAvgPerDay: prev.perDay, prevAvgPerHead: prev.perHead,
+      perDayYoyPct: pctChange(cur.perDay, prev.perDay), perHeadYoyPct: pctChange(cur.perHead, prev.perHead) };
+  };
+  const ordered = orderedBranches(branchIds);
+  return [build(ordered.map((b) => b.id), 0, "ทุกสาขารวม"), ...ordered.map((b) => build([b.id], b.id, b.name))];
 }

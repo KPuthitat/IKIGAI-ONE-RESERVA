@@ -3,7 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { requirePermission, canModule, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { branchTrends, companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu, upcomingSpecialDaysOutlook, SPECIAL_DAYS_HORIZON_DAYS } from "@/lib/salesa-analytics";
+import { branchTrends, branchYearTrends, companyOverview, companyWeekCompare, annualBranchBars, festivalAnalysis, companyTopMenu, upcomingSpecialDaysOutlook, SPECIAL_DAYS_HORIZON_DAYS } from "@/lib/salesa-analytics";
 import { getCardColor, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
 import { companyMonthLabor } from "@/lib/daily-col";
 import { fmtMoney } from "@/lib/format";
@@ -70,6 +70,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
   // current year regardless of the month picker (they're whole-year views).
   const wk = companyWeekCompare(companyBranchIds, today);
   const trends = branchTrends(companyBranchIds, year, month);
+  const yearTrends = branchYearTrends(companyBranchIds, year);
   const bars = annualBranchBars(year, today, companyBranchIds);
   const fest = festivalAnalysis(year, today, companyBranchIds);
   // Forward-looking special-days plan (owner 2026-09-27) — next 60 days of
@@ -263,7 +264,7 @@ export default function ReportaCompanyPage({ searchParams }: { searchParams: { y
           </div>
 
           {/* Daily sales + spend-per-head trend, one card per branch (owner 2026-11-07) */}
-          <BranchTrendCharts trends={trends} year={year} month={month} />
+          <BranchTrendCharts trends={trends} yearTrends={yearTrends} year={year} month={month} />
 
           {/* Weekly same-period compare (owner 2026-09-21) */}
           {wk.branches.length > 0 && (

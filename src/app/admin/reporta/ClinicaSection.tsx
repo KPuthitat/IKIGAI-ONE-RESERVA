@@ -9,6 +9,7 @@ import { hourSpan, hoursLabel, type HoursWindow } from "@/lib/hours";
 // shape, re-exported for the rest of the client tree.
 import type { ClinicaMonth } from "@/lib/clinica-analytics";
 import ClinicaSettlements from "./clinica/ClinicaSettlements";
+import ClinicaConfirmedSettlements from "./clinica/ClinicaConfirmedSettlements";
 import ClinicaAccountaCard from "./clinica/ClinicaAccountaCard";
 export type { ClinicaMonth };
 
@@ -460,6 +461,7 @@ export default function ClinicaSection({ c, onSendReport, sentAt, canSend, disab
 
       {/* Late payments of receivables, waiting for the real date + channel */}
       <ClinicaSettlements pending={c.pendingSettlements} stamp={`${c.arTotal}:${c.billCount}:${c.due}`} />
+      <ClinicaConfirmedSettlements stamp={`${c.arTotal}:${c.billCount}:${c.due}`} />
 
       {/* Cash-in by channel, from the Receipt Report */}
       {c.channelMix.length > 0 && (() => {
