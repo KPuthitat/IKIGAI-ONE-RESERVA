@@ -39,6 +39,19 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("January looks back to December of the previous year", (() => { day(b1, "2025-12-31", 1000, 10); return A.branchTrends([b1], 2026, 1)[0].prevDays.length === 1; })());
   ok("moving average ignores gaps and warms up", (() => { const m = A.movingAverage([10, null, 20, 30], 3); return m[0] === 10 && m[1] === 10 && m[2] === 15 && m[3] === 25; })());
 
+  // ── Whole-year view ──
+  const yt = A.branchYearTrends([b1, b2, clinic], 2026);
+  ok("year view: combined row first, then branches in display order", yt.map((x) => x.branchName).join() === "ทุกสาขารวม,HYPO,NAMA,CLINIC" && yt[0].branchId === 0);
+  const yh = yt.find((x) => x.branchId === b1)!;
+  ok("year view: 12 months, empty months are null not zero", yh.months.length === 12 && yh.months[0].avgPerDay === null && yh.months[0].salesDays === 0);
+  ok("year view: Nov per day 12,000 and per head 300 (has_sales=0 day left out)", yh.months[10].salesDays === 3 && yh.months[10].avgPerDay === 12000 && yh.months[10].avgPerHead === 300);
+  ok("year view: Oct per day 15,000, per head 200", yh.months[9].avgPerDay === 15000 && yh.months[9].avgPerHead === 200);
+  ok("year view: whole-year per day 13,200 and weighted per head 240", yh.avgPerDay === 13200 && yh.avgPerHead === 240);
+  ok("year view: previous year (Dec 2025) is behind it, with a YoY %", yh.prevMonths[11].avgPerDay === 1000 && yh.prevAvgPerDay === 1000 && yh.perDayYoyPct === 1220);
+  const yc = yt[0];
+  ok("combined row: Nov counts each calendar day once across branches (3 days, 41,000 → 13,666.67; per head 35,000 ÷ 125 = 280)", yc.months[10].salesDays === 3 && Math.abs((yc.months[10].avgPerDay ?? 0) - 13666.67) < 0.01 && yc.months[10].avgPerHead === 280);
+  ok("a branch with no POS rows is empty for the year", (() => { const e = yt.find((x) => x.branchId === clinic)!; return e.avgPerDay === null && e.months.every((m) => m.salesDays === 0); })());
+
   cleanup();
   if (failed) { console.error(`\n${failed} check(s) failed`); process.exit(1); }
   console.log("\nall checks passed");

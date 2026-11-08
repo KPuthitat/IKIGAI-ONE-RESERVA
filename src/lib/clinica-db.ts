@@ -286,6 +286,22 @@ export function resolveSettlement(branchId: number, id: number, userId: number |
   return { ok: true };
 }
 
+/** Correct the date / landing channel of an already CONFIRMED settlement (owner
+ *  2026-11-08: dates must be editable after the fact, e.g. after an auto-confirm that
+ *  used the import day). Returns the bill date so the caller can re-post ACCOUNTA. */
+export function editSettlement(branchId: number, id: number, userId: number | null, a: { settledDate: string; channel: string }): { ok: boolean; error?: string; billDate?: string } {
+  const db = getDb();
+  const row = db.prepare("SELECT status, bill_date FROM clinica_settlements WHERE id = ? AND branch_id = ?").get(id, branchId) as { status: string; bill_date: string } | undefined;
+  if (!row) return { ok: false, error: "not_found" };
+  if (row.status !== "confirmed") return { ok: false, error: "not_confirmed" };
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(a.settledDate) ? new Date(`${a.settledDate}T00:00:00Z`) : null;
+  if (!d || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== a.settledDate) return { ok: false, error: "bad_date" };
+  const channel = (a.channel ?? "").trim().slice(0, 120);
+  if (!channel) return { ok: false, error: "no_channel" };
+  db.prepare("UPDATE clinica_settlements SET settled_date=?, channel=?, confirmed_by=?, confirmed_at=CURRENT_TIMESTAMP WHERE id=?").run(a.settledDate, channel, userId, id);
+  return { ok: true, billDate: row.bill_date };
+}
+
 /** Confirm every pending settlement of the branch with what the system proposes
  *  (the settled date already stored = import day, and the suggested channel).
  *  Returns how many were confirmed and the bill-date span they touch, so the caller

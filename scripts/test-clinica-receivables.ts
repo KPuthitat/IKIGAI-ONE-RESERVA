@@ -212,6 +212,14 @@ function buf(header: string[], rows: (string | number)[][], sheetName: string): 
   ok("confirm-all keeps the proposed import-day date", (db.prepare("SELECT settled_date FROM clinica_settlements WHERE bill_no='R'").get() as { settled_date: string }).settled_date === "2026-11-10");
   ok("confirm-all on nothing pending is a no-op", cdb.confirmAllSettlements(branch, null).confirmed === 0);
 
+  // ── Edit a confirmed settlement's date / channel afterwards ──
+  const pRow = db.prepare("SELECT id, channel FROM clinica_settlements WHERE bill_no='P'").get() as { id: number; channel: string };
+  const ed = cdb.editSettlement(branch, pRow.id, null, { settledDate: "2026-11-03", channel: pRow.channel });
+  ok("edit a confirmed row: date changes, bill date returned for re-posting", ed.ok === true && ed.billDate === "2026-09-01" && (db.prepare("SELECT settled_date FROM clinica_settlements WHERE id=?").get(pRow.id) as { settled_date: string }).settled_date === "2026-11-03");
+  ok("edit rejects a bad date / empty channel", cdb.editSettlement(branch, pRow.id, null, { settledDate: "2026-02-30", channel: "x" }).error === "bad_date" && cdb.editSettlement(branch, pRow.id, null, { settledDate: "2026-11-03", channel: "" }).error === "no_channel");
+  const dis = db.prepare("SELECT id FROM clinica_settlements WHERE status='dismissed' LIMIT 1").get() as { id: number };
+  ok("only confirmed rows can be edited; other branches cannot", cdb.editSettlement(branch, dis.id, null, { settledDate: "2026-11-03", channel: "x" }).error === "not_confirmed" && cdb.editSettlement(999999, pRow.id, null, { settledDate: "2026-11-03", channel: "x" }).error === "not_found");
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
