@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
-import { clinicaCashChannels, listSettlements, resolveSettlement } from "@/lib/clinica-db";
+import { clinicaCashChannels, confirmAllSettlements, listSettlements, resolveSettlement } from "@/lib/clinica-db";
 import { autopostClinicaIfEnabled } from "@/lib/clinica-accounta";
 import { getDb } from "@/lib/db";
 
@@ -22,6 +22,11 @@ export async function POST(req: Request) {
   const branchId = user.activeBranchId ?? null;
   if (branchId == null) return NextResponse.json({ error: "no_branch" }, { status: 403 });
   const b = await req.json().catch(() => null) as { id?: unknown; action?: unknown; settledDate?: unknown; channel?: unknown } | null;
+  if (b?.action === "confirm_all") {
+    const done = confirmAllSettlements(branchId, user.id);
+    const accounta = done.confirmed > 0 ? autopostClinicaIfEnabled(branchId, user.id, { from: done.from || undefined, to: done.to || undefined }) : { posted: null };
+    return NextResponse.json({ ok: true, confirmed: done.confirmed, accounta });
+  }
   const id = Number(b?.id);
   if (!b || !Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "bad_id" }, { status: 400 });
   const r = b.action === "dismiss"

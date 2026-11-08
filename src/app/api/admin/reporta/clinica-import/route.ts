@@ -61,8 +61,8 @@ export async function POST(req: Request) {
   try {
     getDb().transaction(() => {
       for (const { name, p } of parsed) {
-        const r = p.kind === "invoice" ? importInvoice(branchId, p)
-          : p.kind === "outstanding" ? importOutstanding(branchId, p, { window: filenameWindow(name) })
+        const r = p.kind === "invoice" ? importInvoice(branchId, p, { autoConfirm: true })
+          : p.kind === "outstanding" ? importOutstanding(branchId, p, { window: filenameWindow(name), autoConfirm: true })
           : p.kind === "receipt" ? importReceipt(branchId, p)
           : importOpd(branchId, p);
         results.push({ filename: name, ...r });
