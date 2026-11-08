@@ -21,6 +21,7 @@ export default function ClinicaSettlements({ pending, stamp }: { pending: number
   const [channels, setChannels] = useState<string[]>([]);
   const [edit, setEdit] = useState<Record<number, { date: string; channel: string }>>({});
   const [busy, setBusy] = useState<number | null>(null);
+  const [bulk, setBulk] = useState(false);
   const [err, setErr] = useState("");
 
   async function load() {
@@ -56,6 +57,23 @@ export default function ClinicaSettlements({ pending, stamp }: { pending: number
     finally { setBusy(null); }
   }
 
+  // One click: confirm every row as proposed (import day + the payer's usual channel).
+  async function confirmAll() {
+    if (bulk || busy != null) return;
+    if (!window.confirm(`ยืนยันทั้ง ${items?.length ?? 0} บิลตามที่ระบบเสนอ (วันที่นำเข้าไฟล์ + ช่องทางที่ผู้จ่ายรายนี้ใช้ล่าสุด)?`)) return;
+    setBulk(true); setErr("");
+    try {
+      const res = await fetch(apiUrl("/api/admin/reporta/clinica-settlements"), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "confirm_all" })
+      });
+      if (!res.ok) { setErr("ยืนยันทั้งหมดไม่สำเร็จ ลองใหม่อีกครั้ง"); return; }
+      const ok = await res.json().catch(() => ({})) as { accounta?: { error?: string } };
+      if (ok.accounta?.error) setErr("ยืนยันแล้ว แต่ส่งยอดเข้า ACCOUNTA ไม่สำเร็จ — กด \"ส่งใหม่ทั้งหมด\" ในการ์ดส่งยอดเข้า ACCOUNTA");
+      setItems([]);
+    } catch { setErr("เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง"); }
+    finally { setBulk(false); }
+  }
+
   if (!items || items.length === 0) return null;
   const total = items.reduce((s, x) => s + x.amount, 0);
   return (
@@ -64,7 +82,14 @@ export default function ClinicaSettlements({ pending, stamp }: { pending: number
         <h3 className="font-bold text-slate-800 text-sm">ได้รับชำระแล้ว · รอยืนยันวันที่รับเงิน ({items.length} บิล)</h3>
         <span className="text-sm font-bold text-emerald-600">{baht(total)}</span>
       </div>
-      <p className="text-[11px] text-slate-500">ระบบเห็นว่าบิลเหล่านี้ไม่ค้างแล้ว วันที่ตั้งต้นคือวันที่นำเข้าไฟล์ — แก้วันที่/ช่องทางให้ตรงกับเงินเข้าจริงก่อนกดยืนยัน</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" disabled={bulk || busy != null} onClick={confirmAll}
+          className="rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+          {bulk ? "กำลังยืนยัน…" : `ยืนยันทั้งหมด (${items.length} บิล) ตามที่ระบบเสนอ`}
+        </button>
+        <span className="text-[11px] text-slate-500">ถ้ามีบิลไหนต้องแก้วันที่หรือช่องทาง แก้ทีละบิลด้านล่างก่อนได้</span>
+      </div>
+      <p className="text-[11px] text-slate-500">ระบบเห็นว่าบิลเหล่านี้เคยค้างและออกใบเสร็จแล้ว (เคลียร์แล้ว) วันที่ตั้งต้นคือวันที่นำเข้าไฟล์ นำเข้าไฟล์ครั้งต่อไประบบยืนยันให้อัตโนมัติ</p>
       <div className="divide-y divide-slate-100">
         {items.map((it) => {
           const e = edit[it.id] ?? { date: it.settledDate, channel: it.channel || it.suggestedChannel };

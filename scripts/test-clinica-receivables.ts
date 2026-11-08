@@ -194,6 +194,24 @@ function buf(header: string[], rows: (string | number)[][], sheetName: string): 
   const nextRow = cdb.listSettlements(branch, "pending").find((x) => x.payerGroup === "ประกันกลุ่ม เอ");
   ok("suggested channel follows the last confirmed one for that payer", nextRow?.suggestedChannel === aRow.suggestedChannel);
 
+  // ── Auto-confirm (owner 2026-11-08): open before + receipt now → cleared, no manual step ──
+  cdb.importInvoice(branch, invParse([bill("P", "2026-09-01", 900, 900), bill("Q", "2026-09-02", 600, 600, "บริษัท บี")]), { today: "2026-11-01" });
+  const rAuto = cdb.importInvoice(branch, invParse([bill("P", "2026-09-01", 900, 0), bill("Q", "2026-09-02", 600, 0, "บริษัท บี")]), { today: "2026-11-08", autoConfirm: true });
+  ok("auto import records 2 settlements", rAuto.settlements === 2);
+  const aP = db.prepare("SELECT status, settled_date, channel, confirmed_at FROM clinica_settlements WHERE bill_no='P'").get() as { status: string; settled_date: string; channel: string; confirmed_at: string | null };
+  ok("auto: confirmed at once, dated the import day, with a bank channel", aP.status === "confirmed" && aP.settled_date === "2026-11-08" && S.receiptChannelKind(aP.channel) === "bank" && !!aP.confirmed_at);
+  ok("auto: payer's last confirmed channel is reused", (db.prepare("SELECT channel FROM clinica_settlements WHERE bill_no='P'").get() as { channel: string }).channel === aRow.suggestedChannel);
+
+  // Bulk confirm of what was already pending.
+  cdb.importInvoice(branch, invParse([bill("R", "2026-09-05", 500, 500)]), { today: "2026-11-09" });
+  cdb.importInvoice(branch, invParse([bill("R", "2026-09-05", 500, 0)]), { today: "2026-11-10" });
+  const pendBefore = cdb.pendingSettlementCount(branch);
+  const all = cdb.confirmAllSettlements(branch, null);
+  ok("confirm-all clears every pending row", pendBefore >= 1 && all.confirmed === pendBefore && cdb.pendingSettlementCount(branch) === 0);
+  ok("confirm-all returns the bill-date span for re-posting", all.from !== "" && all.from <= all.to);
+  ok("confirm-all keeps the proposed import-day date", (db.prepare("SELECT settled_date FROM clinica_settlements WHERE bill_no='R'").get() as { settled_date: string }).settled_date === "2026-11-10");
+  ok("confirm-all on nothing pending is a no-op", cdb.confirmAllSettlements(branch, null).confirmed === 0);
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);

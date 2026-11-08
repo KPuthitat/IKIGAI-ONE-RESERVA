@@ -29,7 +29,7 @@ export type ClinicaImportResult = {
 /** Replace every bill in the file's date range, then insert the file's bills +
  *  items. A per-bill_no delete also covers a re-import whose bill lies outside
  *  the deleted range (e.g. an unparseable date). */
-export function importInvoice(branchId: number, p: ClinicaInvoiceParse, opts: { today?: string } = {}): ClinicaImportResult {
+export function importInvoice(branchId: number, p: ClinicaInvoiceParse, opts: { today?: string; autoConfirm?: boolean } = {}): ClinicaImportResult {
   const db = getDb();
   const today = opts.today ?? todayBkk();
   const before = openBills(branchId);
@@ -58,11 +58,22 @@ export function importInvoice(branchId: number, p: ClinicaInvoiceParse, opts: { 
         items++;
       }
     }
-    settlements = detectSettlements(branchId, before, "invoice", today);
+    settlements = detectSettlements(branchId, before, "invoice", today, !!opts.autoConfirm);
   })();
   return { kind: "invoice", rangeStart: p.rangeStart, rangeEnd: p.rangeEnd, bills: p.bills.length, items, settlements, totalNet: p.totalNet, totalDue: p.totalDue };
 }
 
+
+/** Channel a late payment is assumed to have landed in: the one last confirmed for
+ *  that payer group, else the first bank channel (insurers/companies pay by transfer). */
+function defaultChannelResolver(branchId: number): (payerGroup: string) => string {
+  const channels = clinicaCashChannels(branchId);
+  const bankDefault = channels.find((c) => receiptChannelKind(c) === "bank") ?? channels[0];
+  const lastFor = getDb().prepare(
+    `SELECT channel FROM clinica_settlements WHERE branch_id = ? AND payer_group = ? AND status = 'confirmed' AND COALESCE(channel,'') <> '' ORDER BY confirmed_at DESC, id DESC LIMIT 1`
+  );
+  return (grp) => (grp ? (lastFor.get(branchId, grp) as { channel: string } | undefined)?.channel : undefined) ?? bankDefault;
+}
 
 // ── Receivable settlement detection (owner 2026-10-04) ───────────────────────
 // Insurer / billed-company bills stay open for weeks and are paid later, but the
@@ -89,14 +100,22 @@ function openBills(branchId: number): Map<string, OpenBill> {
  *  pending settlement for each outstanding drop. A drop that comes with an equal
  *  drop in the bill's net is an adjustment (credit note), not a payment. A bill
  *  paid on the very day it was issued is same-day cash, never a receivable. */
-function detectSettlements(branchId: number, before: Map<string, OpenBill>, source: "invoice" | "outstanding", today: string): number {
+function detectSettlements(branchId: number, before: Map<string, OpenBill>, source: "invoice" | "outstanding", today: string, autoConfirm = false): number {
   if (before.size === 0) return 0;
   const db = getDb();
+  const channelFor = defaultChannelResolver(branchId);
   const get = db.prepare("SELECT net, due FROM clinica_bills WHERE branch_id = ? AND bill_no = ?");
   const recorded = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM clinica_settlements WHERE branch_id = ? AND bill_no = ? AND status <> 'dismissed'");
   const ins = db.prepare(
     `INSERT INTO clinica_settlements (branch_id, bill_no, bill_date, payer_group, amount, detected_on, settled_date, source)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  // Owner 2026-11-08: a bill that was open and now carries a receipt is cleared —
+  // no manual step. Auto mode books it confirmed at once, dated the import day,
+  // landing in the channel last used for that payer (bank for a first-timer).
+  const insAuto = db.prepare(
+    `INSERT INTO clinica_settlements (branch_id, bill_no, bill_date, payer_group, amount, detected_on, settled_date, channel, status, source, confirmed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, CURRENT_TIMESTAMP)`
   );
   let n = 0;
   for (const b of before.values()) {
@@ -110,7 +129,8 @@ function detectSettlements(branchId: number, before: Map<string, OpenBill>, sour
     const room = r2((now.net - now.due) - (recorded.get(branchId, b.billNo) as { s: number }).s);
     amount = Math.min(amount, room);
     if (amount <= 0.005) continue;
-    ins.run(branchId, b.billNo, b.billDate, b.payerGroup, amount, today, today, source);
+    if (autoConfirm) insAuto.run(branchId, b.billNo, b.billDate, b.payerGroup, amount, today, today, channelFor(b.payerGroup), source);
+    else ins.run(branchId, b.billNo, b.billDate, b.payerGroup, amount, today, today, source);
     n++;
   }
   return n;
@@ -125,7 +145,7 @@ function detectSettlements(branchId: number, before: Map<string, OpenBill>, sour
  *  bills); without one it is just what the listed bills cover, so a paid bill
  *  older than the oldest still-open one is not caught until a full Invoice import
  *  (authoritative) covers it. */
-export function importOutstanding(branchId: number, p: ClinicaOutstandingParse, opts: { today?: string; window?: { start: string; end: string } | null } = {}): ClinicaImportResult {
+export function importOutstanding(branchId: number, p: ClinicaOutstandingParse, opts: { today?: string; window?: { start: string; end: string } | null; autoConfirm?: boolean } = {}): ClinicaImportResult {
   const db = getDb();
   const today = opts.today ?? todayBkk();
   const before = openBills(branchId);
@@ -167,7 +187,7 @@ export function importOutstanding(branchId: number, p: ClinicaOutstandingParse, 
         closeBill.run(branchId, b.billNo);
       }
     }
-    settlements = detectSettlements(branchId, before, "outstanding", today);
+    settlements = detectSettlements(branchId, before, "outstanding", today, !!opts.autoConfirm);
   })();
   return { kind: "outstanding", rangeStart: p.rangeStart, rangeEnd: p.rangeEnd, bills: p.bills.length, items, settlements, totalNet: p.totalNet, totalDue: p.totalDue };
 }
@@ -264,6 +284,27 @@ export function resolveSettlement(branchId: number, id: number, userId: number |
     "UPDATE clinica_settlements SET status='confirmed', settled_date=?, channel=?, confirmed_by=?, confirmed_at=CURRENT_TIMESTAMP WHERE id=?"
   ).run(a.settledDate, channel, userId, id);
   return { ok: true };
+}
+
+/** Confirm every pending settlement of the branch with what the system proposes
+ *  (the settled date already stored = import day, and the suggested channel).
+ *  Returns how many were confirmed and the bill-date span they touch, so the caller
+ *  can re-post ACCOUNTA for it. */
+export function confirmAllSettlements(branchId: number, userId: number | null): { confirmed: number; from: string; to: string } {
+  const db = getDb();
+  const channelFor = defaultChannelResolver(branchId);
+  const rows = db.prepare(
+    "SELECT id, bill_date, COALESCE(payer_group,'') grp, COALESCE(channel,'') channel FROM clinica_settlements WHERE branch_id = ? AND status = 'pending'"
+  ).all(branchId) as Array<{ id: number; bill_date: string; grp: string; channel: string }>;
+  const upd = db.prepare("UPDATE clinica_settlements SET status='confirmed', channel=?, confirmed_by=?, confirmed_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'");
+  let from = "", to = "";
+  db.transaction(() => {
+    for (const r of rows) {
+      upd.run(r.channel || channelFor(r.grp), userId, r.id);
+      if (r.bill_date) { if (!from || r.bill_date < from) from = r.bill_date; if (!to || r.bill_date > to) to = r.bill_date; }
+    }
+  })();
+  return { confirmed: rows.length, from, to };
 }
 
 export function pendingSettlementCount(branchId: number): number {
