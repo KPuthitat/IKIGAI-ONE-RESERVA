@@ -5,7 +5,10 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { listWarningsForBranch } from "@/lib/discipline";
 import { nameWithPrefix } from "@/lib/name";
+import { missingOutStats } from "@/lib/missing-out";
+import { todayBkk } from "@/lib/time";
 import DisciplineClient from "./DisciplineClient";
+import MissingOutStatsCard from "./MissingOutStatsCard";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +35,7 @@ export default function AdminDisciplinePage() {
     id: number; display_name: string; title_prefix: string | null; username: string; employment_type: string | null;
   }>;
   const warnings = listWarningsForBranch(branch.id);
+  const lapseStats = missingOutStats(branch.id, todayBkk(), 6);
 
   return (
     <div className="space-y-4">
@@ -44,6 +48,7 @@ export default function AdminDisciplinePage() {
           {t(lang, "admin.persona.discipline.subtitle")}
         </p>
       </div>
+      <MissingOutStatsCard stats={lapseStats} months={6} />
       <DisciplineClient
         staffList={staffList}
         warnings={warnings.map((w) => ({

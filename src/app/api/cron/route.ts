@@ -12,6 +12,7 @@ import { NextResponse } from "next/server";
 import { getDb, type Branch, type Booking } from "@/lib/db";
 import { upcomingBirthdays, birthdayReminderFlex, birthdayReminderSent, markBirthdayReminderSent } from "@/lib/birthday-reminder";
 import { runSpecialDutyDaily } from "@/lib/special-duty-cron";
+import { sendMissingOutLetters } from "@/lib/missing-out";
 import { postDueRecurringExpenses, listDueUnpaidBills, markBillsReminded } from "@/lib/accounta-db";
 import {
   notifyCustomer,
@@ -184,6 +185,18 @@ async function runCron(): Promise<NextResponse> {
   } catch (e) {
     console.error("cron special duty error", e);
     reportError(e, "cron special duty", {});
+  }
+
+  // ── Forgotten clock-out letters (owner 2026-11-09) ─────────────────
+  // From 13:00 Bangkok time: anyone who did not clock out on their last working day and has no
+  // shift today gets the warning letter now, so it is acknowledged before their next working
+  // day (a clock-in is blocked until it is). Each lapse is sent once; the run is idempotent.
+  let missingOutLetters: { checked: number; sent: number } | null = null;
+  try {
+    missingOutLetters = await sendMissingOutLetters({ today: todayBkk, hhmm: nowHhmmBkk });
+  } catch (e) {
+    console.error("cron missing-out letters error", e);
+    reportError(e, "cron missing-out letters", {});
   }
 
   // Multi-time path: check which configured time slots are due for each branch.
@@ -644,7 +657,8 @@ async function runCron(): Promise<NextResponse> {
     insigna_rollup: insignaRollup,
     insigna_churn: insignaChurn,
     inventa_expiry_alerts_sent: inventaExpiryAlertsSent,
-    special_duty: specialDuty
+    special_duty: specialDuty,
+    missing_out_letters: missingOutLetters
   });
 }
 

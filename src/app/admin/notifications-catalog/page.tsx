@@ -62,6 +62,10 @@ function cards(): CatalogCard[] {
     branchName: "NAMA PASTA SRIRACHA", recipientName: "สมหญิง รักงาน", severity: "written_1",
     title: "มาสายเกินกำหนด 3 ครั้งในเดือน", refNo: "DW2569-3", staffUrl: "https://ikigaimedihealth.com/staff/persona/discipline"
   })));
+  add("PERSONA", "หนังสือเตือน: ลืมลงเวลาออกงาน (ส่ง 13:00 เมื่อวันถัดไปไม่มีกะ · ต้องกดรับทราบก่อนลงเวลาเข้า)", "อัตโนมัติ", build(() => disciplinaryWarningFlex({
+    branchName: "NAMA PASTA SRIRACHA", recipientName: "สมหญิง รักงาน", severity: "written_1",
+    title: "หนังสือเตือน: ไม่ลงเวลาออกงาน (ครั้งที่ 2)", refNo: "D25691104", staffUrl: "https://ikigaimedihealth.com/staff/persona/discipline/1"
+  })));
 
   // ── RESERVA (จองโต๊ะ) ──
   add("RESERVA", "ยืนยันการจอง (ลูกค้า)", "กดเอง", build(() => customerBookingFlex({

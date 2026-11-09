@@ -730,11 +730,13 @@ function ClockAction({
             : "วันนี้คุณไม่มีกะงาน — ถ้าต้องการมาทำงาน ให้ส่ง \"ขอเพิ่มกะ\" และรอการอนุมัติจากหัวหน้างานก่อนครับ"
         );
         else if (data.error === "prior_day_missing_out") {
-          // Yesterday's clock-out is missing → take them straight to certify it. The
-          // form shows the warning this records; acknowledging it with their PIN
-          // unblocks today's clock-in (no admin approval needed to proceed).
+          // A forgotten clock-out blocks clock-in until the warning letter is acknowledged
+          // (owner 2026-11-09). Still no certification for that day → the certification form
+          // (it acknowledges the same letter with the PIN); otherwise the letter itself.
           router.push(
-            `/staff/persona/time-certification?missing=1&type=out&date=${data.workDate}`
+            data.needsCert || !data.warningId
+              ? `/staff/persona/time-certification?missing=1&type=out&date=${data.workDate}`
+              : `/staff/persona/discipline/${data.warningId}`
           );
           return;
         }

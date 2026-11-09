@@ -3,7 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
-import { acknowledgeWarning, getWarning } from "@/lib/discipline";
+import { acknowledgeWarning, getWarning, isMissingOutLetter } from "@/lib/discipline";
 
 // POST /api/persona/discipline/[id]/acknowledge
 // Body: { method: "pin_explicit", pin: "1234" }
@@ -64,6 +64,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   } else {
     // auto_on_leave — no PIN required; client fires this when the
     // staff is leaving the warning page without explicit ack.
+    // A forgotten-clock-out letter blocks clock-in until the person presses รับทราบ with their
+    // PIN (owner 2026-11-09), so leaving the page must not acknowledge it.
+    if (isMissingOutLetter(w)) return NextResponse.json({ ok: true, flipped: false, requiresPin: true });
     const flipped = acknowledgeWarning(id, "auto_on_leave", d.reason ?? "page_leave");
     if (flipped) logPersonaAction(user.id, "discipline.ack_auto", id);
     return NextResponse.json({ ok: true, flipped });

@@ -21,10 +21,13 @@ import { useLang } from "@/lib/LangProvider";
 // audit log has a row pointing at the client-side timestamp too.
 
 export default function WarningAcknowledgeClient({
-  warningId, alreadyAcked
+  warningId, alreadyAcked, requiresPin = false
 }: {
   warningId: number;
   alreadyAcked: boolean;
+  /** Forgotten-clock-out letter (owner 2026-11-09): clock-in stays blocked until the person presses
+   *  รับทราบ with their PIN — leaving the page does not acknowledge it. */
+  requiresPin?: boolean;
 }) {
   const router = useRouter();
   const { t } = useLang();
@@ -57,7 +60,7 @@ export default function WarningAcknowledgeClient({
   //     another tab without closing. Captures swipe-away on mobile
   //     where beforeunload sometimes doesn't fire reliably.
   useEffect(() => {
-    if (alreadyAcked) return;
+    if (alreadyAcked || requiresPin) return;
     const fireAutoAck = (reason: string) => {
       if (explicitAckedRef.current) return;
       if (autoAckSentRef.current) return;
@@ -89,7 +92,7 @@ export default function WarningAcknowledgeClient({
       window.removeEventListener("beforeunload", onBeforeUnload);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [warningId, alreadyAcked]);
+  }, [warningId, alreadyAcked, requiresPin]);
 
   async function submitPin() {
     setErr(null);
@@ -127,8 +130,9 @@ export default function WarningAcknowledgeClient({
           {t("staff.persona.discipline.thanks")}
         </h2>
         <p className="text-sm text-slate-600">
-          {t("staff.persona.discipline.thanksBody")}
+          {requiresPin ? "รับทราบแล้ว — ลงเวลาเข้างานได้ตามปกติ และอย่าลืมยื่นขอรับรองเวลาออกงานของวันที่ลืม" : t("staff.persona.discipline.thanksBody")}
         </p>
+        {requiresPin && <a href="/staff/persona/time-certification" className="inline-block text-sm text-brand underline">ไปยื่นขอรับรองเวลา →</a>}
       </div>
     );
   }
@@ -164,7 +168,9 @@ export default function WarningAcknowledgeClient({
         <div className="text-sm text-rose-600">✗ {err}</div>
       )}
       <p className="text-[11px] text-slate-500">
-        {t("staff.persona.discipline.autoAckWarning")}
+        {requiresPin
+          ? "หนังสือฉบับนี้ต้องกดรับทราบด้วย PIN เท่านั้น — จนกว่าจะรับทราบ จะลงเวลาเข้างานไม่ได้ (ออกจากหน้านี้ไม่นับว่ารับทราบ)"
+          : t("staff.persona.discipline.autoAckWarning")}
       </p>
     </div>
   );
