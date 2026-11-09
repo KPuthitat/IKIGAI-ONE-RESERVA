@@ -111,14 +111,11 @@ export function detectPunchAnomaly(args: {
   return null;
 }
 
-/** Read-only check (no side effects): returns the work_date of an
- *  UNCERTIFIED prior-day dangling clock-out — an "in" with no "out" on the
- *  user's most recent prior working day (excluding overnight shifts) that has
- *  no certification request filed yet — or null. Used to BLOCK today's
- *  clock-in until the staff files a cert (owner 2026-06-14, #9 part B). Mirrors
- *  the missing_out branch of detectPunchAnomaly but doesn't record a flag, and
- *  clears once a time_certifications row (any status) covers that day. */
-export function uncertifiedPriorMissingOut(
+/** Read-only: the work_date of the user's most recent PRIOR working day that has an
+ *  "in" but no "out" (overnight shifts excluded), or null. No certification check —
+ *  this is the raw lapse; the clock-in gate (src/lib/missing-out.ts) decides what to do
+ *  with it. Mirrors the missing_out branch of detectPunchAnomaly without recording a flag. */
+export function priorMissingOutDay(
   userId: number,
   branchId: number,
   todayBkk: string
@@ -148,14 +145,28 @@ export function uncertifiedPriorMissingOut(
     LIMIT 1
   `).get(userId, prevDate);
   if (overnight) return null;
-  const cert = db.prepare(`
+  return prevDate;
+}
+
+/** Whether the person has filed a certification (pending or approved) for a missing
+ *  clock-out on that day. */
+export function hasMissingOutCert(userId: number, workDate: string): boolean {
+  return !!getDb().prepare(`
     SELECT 1 FROM time_certifications
     WHERE requested_by = ? AND kind = 'missing' AND entry_type = 'out'
       AND work_date = ? AND status IN ('pending', 'approved')
     LIMIT 1
-  `).get(userId, prevDate);
-  if (cert) return null;
-  return prevDate;
+  `).get(userId, workDate);
+}
+
+/** Older name kept for callers: the dangling prior day that has NO certification filed yet. */
+export function uncertifiedPriorMissingOut(
+  userId: number,
+  branchId: number,
+  todayBkk: string
+): string | null {
+  const day = priorMissingOutDay(userId, branchId, todayBkk);
+  return day && !hasMissingOutCert(userId, day) ? day : null;
 }
 
 // ── Schedule-deviation detection (owner 2026-06-08) ──────────────────

@@ -1,3 +1,4 @@
+import { missingOutClockInGate } from "@/lib/missing-out";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
@@ -10,7 +11,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { pushClockInCard } from "@/lib/line";
 import { getPlatformChannel, isChannelReady } from "@/lib/messaging-channels";
 import {
-  detectPunchAnomaly, detectScheduleDeviation, uncertifiedPriorMissingOut,
+  detectPunchAnomaly, detectScheduleDeviation,
   type OwlPrompt, type DeviationPrompt
 } from "@/lib/attendance-flags";
 import { userHasWorkShiftOn, effectiveShiftStartForUserDate, scheduledShiftMinutesForUserDate, actualWorkedMinutesForUserDate, resolveClockBranchId, openClockInBranchForUserOn } from "@/lib/roster";
@@ -356,20 +357,16 @@ export async function POST(req: Request) {
       );
     }
 
-    // ── Prior-day missing clock-out guard (owner 2026-06-14, #9 part B) ──
-    // If the most recent prior working day has an "in" with no "out" and the
-    // staff hasn't filed a certification for it yet, block today's clock-in —
-    // they must certify yesterday first (which auto-records a discipline note,
-    // see the time-certification route). Once the cert is FILED the day is no
-    // longer uncertified → unblocked immediately, no admin approval needed
-    // (owner: "ปลดบล็อกก่อน"). Scoped to a fresh clock-in so nobody mid-shift
-    // gets stranded. Supersedes the earlier pending-cert block.
-    const danglingDay = uncertifiedPriorMissingOut(
-      user.id, clockBranchId, todayBkk
-    );
-    if (danglingDay) {
+    // ── Forgotten clock-out gate (owner 2026-06-14, rewritten 2026-11-09) ──
+    // Whoever did not clock OUT cannot clock IN again — in every case — until they press
+    // รับทราบ (PIN) on the warning letter for that lapse. The letter is issued here if the system
+    // has not sent it yet (e.g. the afternoon run, for a day off, already did). Filing a
+    // certification is no longer enough on its own; the certification form acknowledges the
+    // letter too. Scoped to a fresh clock-in so nobody mid-shift gets stranded.
+    const gate = missingOutClockInGate(user.id, clockBranchId, todayBkk);
+    if (gate) {
       return NextResponse.json(
-        { error: "prior_day_missing_out", workDate: danglingDay },
+        { error: "prior_day_missing_out", workDate: gate.workDate, warningId: gate.warningId, needsCert: gate.needsCert },
         { status: 409 }
       );
     }

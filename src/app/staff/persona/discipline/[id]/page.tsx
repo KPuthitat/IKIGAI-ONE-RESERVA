@@ -5,7 +5,7 @@ import { requireStaffOrAdmin } from "@/lib/auth";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { formatBkkDateTime } from "@/lib/time";
-import { getWarning, recordView } from "@/lib/discipline";
+import { getWarning, isMissingOutLetter, recordView } from "@/lib/discipline";
 import { nameWithPrefix } from "@/lib/name";
 import WarningAcknowledgeClient from "./WarningAcknowledgeClient";
 
@@ -95,6 +95,7 @@ export default function StaffDisciplineDetailPage({ params }: { params: { id: st
       <WarningAcknowledgeClient
         warningId={w.id}
         alreadyAcked={!!w.acknowledged_at}
+        requiresPin={isMissingOutLetter(w)}
       />
     </div>
   );

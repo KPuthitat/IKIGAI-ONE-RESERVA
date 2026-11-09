@@ -3070,6 +3070,32 @@ function runMigrations(db: Database.Database): void {
       ON attendance_flags(branch_id, work_date);
   `);
 
+  // ── missing_out_lapses — one row per forgotten clock-out (owner 2026-11-09) ──
+  // A forgotten clock-out blocks the person's next clock-in until they press
+  // รับทราบ on the warning letter (a disciplinary_warnings row). This table is the
+  // statistics ledger: when the lapse was detected and how (at the clock-in
+  // attempt, by the afternoon letter run, or via the certification form), when the
+  // letter went out, when it was acknowledged, and how many clock-in attempts it
+  // blocked. Additive; warning_id is the letter itself.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS missing_out_lapses (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      branch_id        INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      work_date        TEXT NOT NULL,
+      warning_id       INTEGER REFERENCES disciplinary_warnings(id) ON DELETE SET NULL,
+      detected_via     TEXT NOT NULL DEFAULT 'clock_in',
+      detected_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      letter_sent_at   TEXT,
+      acknowledged_at  TEXT,
+      blocked_attempts INTEGER NOT NULL DEFAULT 0,
+      last_blocked_at  TEXT,
+      UNIQUE (user_id, work_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_missing_out_lapses_branch ON missing_out_lapses(branch_id, work_date);
+    CREATE INDEX IF NOT EXISTS idx_missing_out_lapses_warning ON missing_out_lapses(warning_id);
+  `);
+
   // ── shift_swap_overrides — informal shift swaps confirmed at clock-in ──
   // (owner 2026-06-08). When น้องฮูก detects a staff clocking in far off
   // their rostered start and they answer "สลับกะกับเพื่อน", we store the

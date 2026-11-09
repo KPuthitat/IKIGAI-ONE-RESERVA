@@ -45,3 +45,17 @@ export function missingOutWarningText(priorCount: number, workDate: string): {
       `หากเกิดซ้ำจะถูกพิจารณาโทษทางวินัยตามลำดับ`
   };
 }
+
+/** The same letter, issued BY THE SYSTEM when it notices a forgotten clock-out
+ *  (owner 2026-11-09): same title/severity (so the ladder and counts treat it as
+ *  one lapse) but the person has not acknowledged yet, so the body asks them to. */
+export function missingOutLetterText(priorCount: number, workDate: string): ReturnType<typeof missingOutWarningText> {
+  const base = missingOutWarningText(priorCount, workDate);
+  const nth = priorCount + 1;
+  return {
+    ...base,
+    body: `ระบบตรวจพบว่าพนักงานไม่ได้ลงเวลาออกงานของวันที่ ${dateTh(workDate)} (ครั้งที่ ${nth} ในรอบ 12 เดือน) ` +
+      `ซึ่งเป็นการละเลยหน้าที่ลงเวลาตามระเบียบของบริษัท เมื่อกดรับทราบหนังสือฉบับนี้แล้ว จึงจะลงเวลาเข้างานครั้งถัดไปได้ ` +
+      `และควรยื่นขอรับรองเวลาออกงานที่ถูกต้องผ่านระบบ หากเกิดซ้ำจะถูกพิจารณาโทษทางวินัยตามลำดับ`
+  };
+}

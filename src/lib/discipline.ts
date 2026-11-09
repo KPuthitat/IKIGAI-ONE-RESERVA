@@ -8,9 +8,9 @@
 // Numbering scheme: D + YYYYMM + 2-digit running sequence per month.
 // Same pattern as L (leave) and R (resignation) ref_no.
 
-import { getDb } from "./db";
+import { getDb, logPersonaAction } from "./db";
 import type { DisciplinaryWarning } from "./db";
-import { missingOutWarningText } from "./discipline-text";
+import { missingOutLetterText, missingOutWarningText } from "./discipline-text";
 
 export function generateWarningRef(): string {
   const db = getDb();
@@ -77,17 +77,82 @@ export function countWarningsByCategory(userId: number, category: string): numbe
   return r.n;
 }
 
-const MISSING_OUT_TITLE = "(title LIKE '%ไม่ลงเวลาออกงาน%' OR title LIKE '%ลืมลงเวลาออกงาน%')";
+export const MISSING_OUT_TITLE = "(title LIKE '%ไม่ลงเวลาออกงาน%' OR title LIKE '%ลืมลงเวลาออกงาน%')";
 
 /** Forgot-clock-OUT warnings in the last 12 months that still count (not voided) —
  *  what the missing-clock-out ladder escalates on. Forgot-IN notes and other
  *  admin-issued ones are a different offence and do not step this ladder. */
-export function recentMissingOutWarnings(userId: number): number {
+export function recentMissingOutWarnings(userId: number, exceptWorkDate?: string | null): number {
   const since = new Date(Date.now() - 365 * 86400_000).toISOString().slice(0, 19).replace("T", " ");
   return (getDb().prepare(
     `SELECT COUNT(*) AS n FROM disciplinary_warnings
-      WHERE user_id = ? AND reason_category = 'ลงเวลา' AND ${MISSING_OUT_TITLE} AND voided_at IS NULL AND issued_at >= ?`
-  ).get(userId, since) as { n: number }).n;
+      WHERE user_id = ? AND reason_category = 'ลงเวลา' AND ${MISSING_OUT_TITLE} AND voided_at IS NULL AND issued_at >= ?
+        AND (? IS NULL OR COALESCE(effective_date, '') <> ?)`
+  ).get(userId, since, exceptWorkDate ?? null, exceptWorkDate ?? null) as { n: number }).n;
+}
+
+// ── Lapse ledger (statistics) + the system-issued letter (owner 2026-11-09) ──────────
+// A forgotten clock-out is one row in missing_out_lapses, tied to its warning letter.
+// The clock-in gate (src/lib/missing-out.ts) blocks the person until they acknowledge
+// that letter with their PIN.
+
+/** Insert (or refresh) the ledger row for a lapse. `via`: where it was noticed first. */
+export function recordLapse(args: { userId: number; branchId: number; workDate: string; warningId: number; via: "clock_in" | "afternoon" | "certification"; acknowledged: boolean }): void {
+  getDb().prepare(
+    `INSERT INTO missing_out_lapses (user_id, branch_id, work_date, warning_id, detected_via, acknowledged_at)
+     VALUES (?, ?, ?, ?, ?, ${args.acknowledged ? "CURRENT_TIMESTAMP" : "NULL"})
+     ON CONFLICT(user_id, work_date) DO UPDATE SET
+       warning_id = COALESCE(excluded.warning_id, warning_id),
+       acknowledged_at = COALESCE(acknowledged_at, excluded.acknowledged_at)`
+  ).run(args.userId, args.branchId, args.workDate, args.warningId, args.via);
+}
+
+/** Issue the letter for a forgotten clock-out WITHOUT the person's acknowledgement
+ *  (the system noticed first). One lapse = one letter: an existing letter for that
+ *  work date is reused. Severity follows the same ladder as the certification form. */
+export function issueMissingOutLetter(args: { branchId: number; userId: number; workDate: string; via: "clock_in" | "afternoon" }): { id: number; severity: string; reused: boolean; acknowledged: boolean; excused: boolean } {
+  const db = getDb();
+  // An admin who voided this lapse's letter excused it — never re-issue (the raw gap is still in the punches).
+  const voided = db.prepare(
+    `SELECT 1 FROM missing_out_lapses l JOIN disciplinary_warnings w ON w.id = l.warning_id
+      WHERE l.user_id = ? AND l.work_date = ? AND w.voided_at IS NOT NULL LIMIT 1`
+  ).get(args.userId, args.workDate);
+  if (voided) return { id: 0, severity: "", reused: true, acknowledged: false, excused: true };
+  const existing = db.prepare(
+    `SELECT id, severity, acknowledged_at FROM disciplinary_warnings
+      WHERE user_id = ? AND reason_category = 'ลงเวลา' AND ${MISSING_OUT_TITLE} AND effective_date = ? AND voided_at IS NULL
+      ORDER BY id DESC LIMIT 1`
+  ).get(args.userId, args.workDate) as { id: number; severity: string; acknowledged_at: string | null } | undefined;
+  if (existing) {
+    recordLapse({ ...args, warningId: existing.id, acknowledged: !!existing.acknowledged_at });
+    return { id: existing.id, severity: existing.severity, reused: true, acknowledged: !!existing.acknowledged_at, excused: false };
+  }
+  const prior = recentMissingOutWarnings(args.userId);
+  const w = missingOutLetterText(prior, args.workDate);
+  const id = createWarning({
+    branchId: args.branchId, userId: args.userId, issuedByUserId: args.userId,
+    severity: w.severity, title: w.title, body: w.body, reasonCategory: "ลงเวลา",
+    effectiveDate: args.workDate, validityMonths: 12, acknowledged: false
+  });
+  recordLapse({ ...args, warningId: id, acknowledged: false });
+  return { id, severity: w.severity, reused: false, acknowledged: false, excused: false };
+}
+
+/** The oldest missing-out letter this person has not acknowledged yet (voided ones are
+ *  excused). While one exists the person cannot clock in. */
+export function blockingMissingOutLetter(userId: number): { id: number; workDate: string; branchId: number } | null {
+  const r = getDb().prepare(
+    `SELECT id, branch_id, COALESCE(effective_date, substr(issued_at, 1, 10)) AS d FROM disciplinary_warnings
+      WHERE user_id = ? AND reason_category = 'ลงเวลา' AND ${MISSING_OUT_TITLE} AND voided_at IS NULL AND acknowledged_at IS NULL
+      ORDER BY d LIMIT 1`
+  ).get(userId) as { id: number; branch_id: number; d: string } | undefined;
+  return r ? { id: r.id, workDate: r.d, branchId: r.branch_id } : null;
+}
+
+/** True when this warning is a missing-out letter (the page-leave auto-acknowledge must
+ *  not clear these — the person has to press รับทราบ with their PIN). */
+export function isMissingOutLetter(w: { reason_category?: string | null; title?: string | null }): boolean {
+  return w.reason_category === "ลงเวลา" && /ไม่ลงเวลาออกงาน|ลืมลงเวลาออกงาน/.test(w.title ?? "");
 }
 
 /** Record the warning for a forgotten clock-out, already acknowledged by the
@@ -100,7 +165,13 @@ export function createMissingOutWarning(args: { branchId: number; userId: number
       WHERE user_id = ? AND reason_category = 'ลงเวลา' AND ${MISSING_OUT_TITLE} AND effective_date = ? AND voided_at IS NULL
       ORDER BY id DESC LIMIT 1`
   ).get(args.userId, args.workDate) as { id: number; severity: string } | undefined;
-  if (existing) return { id: existing.id, severity: existing.severity, priorCount: Math.max(0, recentMissingOutWarnings(args.userId) - 1), reused: true };
+  if (existing) {
+    // The system may already have issued this letter (clock-in gate / afternoon run): the
+    // person acknowledging it here (PIN checked by the caller) is the acknowledgement.
+    if (acknowledgeWarning(existing.id, "pin_explicit")) logPersonaAction(args.userId, "discipline.ack_pin", existing.id);
+    recordLapse({ userId: args.userId, branchId: args.branchId, workDate: args.workDate, warningId: existing.id, via: "certification", acknowledged: true });
+    return { id: existing.id, severity: existing.severity, priorCount: Math.max(0, recentMissingOutWarnings(args.userId, args.workDate)), reused: true };
+  }
   const prior = recentMissingOutWarnings(args.userId);
   const w = missingOutWarningText(prior, args.workDate);
   const id = createWarning({
@@ -108,6 +179,7 @@ export function createMissingOutWarning(args: { branchId: number; userId: number
     severity: w.severity, title: w.title, body: w.body, reasonCategory: "ลงเวลา",
     effectiveDate: args.workDate, validityMonths: 12, acknowledged: true
   });
+  recordLapse({ userId: args.userId, branchId: args.branchId, workDate: args.workDate, warningId: id, via: "certification", acknowledged: true });
   return { id, severity: w.severity, priorCount: prior, reused: false };
 }
 
@@ -259,5 +331,6 @@ export function acknowledgeWarning(
         auto_ack_reason = ?
     WHERE id = ? AND acknowledged_at IS NULL
   `).run(method, reason ?? null, id);
+  if (r.changes > 0) db.prepare("UPDATE missing_out_lapses SET acknowledged_at = CURRENT_TIMESTAMP WHERE warning_id = ? AND acknowledged_at IS NULL").run(id);
   return r.changes > 0;
 }

@@ -102,7 +102,7 @@ export default function StaffTimeCertificationPage({
         pendingEntryIds={[...pendingByEntry.keys()]}
         initialMissing={initialMissing}
         flags={flags}
-        priorTimeclockCount={recentMissingOutWarnings(user.id)}
+        priorTimeclockCount={recentMissingOutWarnings(user.id, initialMissing?.date)}
       />
     </div>
   );

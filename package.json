@@ -33,6 +33,7 @@
     "test:clinica-receivables": "node --import tsx scripts/test-clinica-receivables.ts",
     "test:clinica-accounta": "node --import tsx scripts/test-clinica-accounta.ts",
     "test:missing-out-ack": "node --import tsx scripts/test-missing-out-ack.ts",
+    "test:missing-out-gate": "node --import tsx scripts/test-missing-out-gate.ts",
     "test:payroll-resigned": "node --import tsx scripts/test-payroll-resigned-in-period.ts",
     "test:revshare-forecast": "node --import tsx scripts/test-revshare-forecast.ts",
     "test:svc-attendance": "node --import tsx scripts/test-svc-attendance.ts",
