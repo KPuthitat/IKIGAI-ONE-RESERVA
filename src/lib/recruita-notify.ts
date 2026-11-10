@@ -538,10 +538,50 @@ export async function notifyExecGroupStageChange(applicationId: number): Promise
   })]);
 }
 
+/** Exec-facing Flex card: a candidate uploaded their medical certificate. */
+export function execHealthCertFlex(args: {
+  applicantName: string;
+  positionTitle: string;
+  branchName: string | null;
+  applicationNo: string;
+  applicationId: number;
+}): LineMessage {
+  const rows: Array<Record<string, unknown>> = [
+    infoRow("ผู้สมัคร", args.applicantName),
+    infoRow("ตำแหน่ง", args.positionTitle)
+  ];
+  if (args.branchName) rows.push(infoRow("บริษัท/สาขา", args.branchName));
+  rows.push(infoRow("เลขที่ใบสมัคร", args.applicationNo));
+  return {
+    type: "flex",
+    altText: `ผู้สมัครอัปโหลดใบรับรองแพทย์แล้ว: ${args.applicantName}`,
+    contents: {
+      type: "bubble",
+      size: "giga",
+      header: brandHeader("ผู้สมัครอัปโหลดใบรับรองแพทย์แล้ว", "ตรวจสอบใบรับรองได้ในระบบ RECRUITA"),
+      body: {
+        type: "box", layout: "vertical", spacing: "md", paddingAll: "20px",
+        backgroundColor: "#ffffff",
+        contents: rows
+      },
+      footer: {
+        type: "box", layout: "vertical", paddingAll: "16px",
+        backgroundColor: "#ffffff",
+        contents: [
+          {
+            type: "button", style: "primary", color: COLOR_BRAND,
+            action: { type: "uri", label: "ตรวจสอบใบสมัคร", uri: reviewUrl(args.applicationId) }
+          }
+        ]
+      }
+    }
+  };
+}
+
 /** Notify the exec/HR group that a candidate just uploaded their medical
  *  certificate (owner 2026-06-18 — the owner wasn't being told, so an
- *  uploaded cert sat unnoticed). Concise text push via the platform OA;
- *  silent no-op when the group / OA isn't configured. */
+ *  uploaded cert sat unnoticed). Flex card (owner 2026-11-10: it arrived as plain
+ *  text) via the platform OA; silent no-op when the group / OA isn't configured. */
 export async function notifyExecGroupHealthCertUploaded(applicationId: number): Promise<void> {
   const db = getDb();
   const row = db.prepare(`
@@ -564,14 +604,13 @@ export async function notifyExecGroupHealthCertUploaded(applicationId: number): 
   if (!row) return;
 
   const name = [row.title_prefix, row.first_name_th, row.last_name_th].filter(Boolean).join(" ") || "—";
-  const appNo = formatApplicationNo(row.submitted_at, row.day_seq);
-  const text =
-    "ผู้สมัครอัปโหลดใบรับรองแพทย์แล้ว\n" +
-    `${name}\n` +
-    `${row.position_title}${row.branch_name ? " · " + row.branch_name : ""}\n` +
-    `ใบสมัคร ${appNo}\n` +
-    "ตรวจสอบได้ในระบบ RECRUITA → ใบสมัคร";
-  await pushToExecGroup([{ type: "text", text }]);
+  await pushToExecGroup([execHealthCertFlex({
+    applicantName: name,
+    positionTitle: row.position_title,
+    branchName: row.branch_name,
+    applicationNo: formatApplicationNo(row.submitted_at, row.day_seq),
+    applicationId: row.id
+  })]);
 }
 
 /** Fire-and-forget stage-change push to a candidate. Called from
