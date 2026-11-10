@@ -10,6 +10,7 @@ import { bkkDateIso } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import Switch from "@/app/components/Switch";
 import { RBAC_PERMISSIONS } from "@/lib/rbac";
+import type { HireOffer } from "@/lib/recruita-offer";
 
 export type EmployeeRow = {
   id: number;
@@ -126,9 +127,13 @@ export type RoleLite = { id: number; name: string; permissions: string[] };
 export default function EmployeesClient({
   employees, allBranches, grants, editableBranchIds,
   currentUserRole, canViewPayroll,
-  allRoles = [], roleIdsByUser = {},
+  allRoles = [], roleIdsByUser = {}, offers = {},
   statusFilter = "active", formerCount = 0, showTest = false
 }: {
+  /** The RECRUITA offer each employee was taken on (owner 2026-11-10): special terms sent when the
+   *  offer was made, viewable from the name cell. Pay is already blanked server-side for admins
+   *  without payroll access. Employees with no matching offer are simply absent. */
+  offers?: Record<number, HireOffer>;
   /** Employment-status view (owner 2026-09-20): "active" = current staff,
    *  "former" = resigned/terminated leavers, "all" = both. URL-driven so the
    *  server query changes; the chips below navigate by setting ?status=. */
@@ -155,6 +160,7 @@ export default function EmployeesClient({
   const { t, formatDate } = useLang();
   const [pending, startTransition] = useTransition();
   const [editTarget, setEditTarget] = useState<EmployeeRow | null>(null);
+  const [offerTarget, setOfferTarget] = useState<EmployeeRow | null>(null);
 
   // Inline "ไม่ต้องลงเวลา" toggle from the list (owner 2026-08-21): flip
   // track_attendance in one click without opening the edit modal. Optimistic
@@ -337,6 +343,46 @@ export default function EmployeesClient({
 
   return (
     <>
+      {offerTarget && (() => {
+        const o = offers[offerTarget.id];
+        const money = (n: number) => `${fmtMoney(n)} บาท${o?.offerSalaryType === "hourly" ? "/ชั่วโมง" : o?.offerSalaryType === "monthly" ? "/เดือน" : ""}`;
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+            onMouseDown={(e) => { if (e.target === e.currentTarget) setOfferTarget(null); }}>
+            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h3 className="font-bold text-slate-800">เงื่อนไขตอนรับเข้างาน</h3>
+                  <div className="text-sm text-slate-500">{nameWithPrefix(offerTarget.title_prefix, offerTarget.display_name)}</div>
+                </div>
+                <button type="button" className="text-slate-400 hover:text-slate-600 text-xl leading-none" onClick={() => setOfferTarget(null)} aria-label="ปิด">×</button>
+              </div>
+              {!o ? (
+                <p className="text-sm text-slate-500">ไม่พบข้อเสนอของคนนี้จาก RECRUITA — อาจไม่ได้รับเข้าผ่านระบบรับสมัคร หรือชื่อไม่ตรงกับใบสมัคร</p>
+              ) : (
+                <>
+                  <dl className="grid grid-cols-1 gap-y-1 text-sm">
+                    {o.positionTitle && <div className="flex gap-2"><dt className="w-36 text-slate-500">ตำแหน่งที่สมัคร</dt><dd className="font-medium text-slate-800">{o.positionTitle}</dd></div>}
+                    {o.offerStartDate && <div className="flex gap-2"><dt className="w-36 text-slate-500">วันเริ่มงานที่เสนอ</dt><dd className="font-medium text-slate-800">{formatDate(o.offerStartDate)}</dd></div>}
+                    {o.offerSalary != null && <div className="flex gap-2"><dt className="w-36 text-slate-500">ค่าตอบแทนที่เสนอ</dt><dd className="font-medium text-slate-800">{money(o.offerSalary)}</dd></div>}
+                    {o.hiredAt && <div className="flex gap-2"><dt className="w-36 text-slate-500">รับเข้าทำงานเมื่อ</dt><dd className="font-medium text-slate-800">{formatDate(o.hiredAt)}</dd></div>}
+                  </dl>
+                  {o.conditions ? (
+                    <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3">
+                      <div className="text-[11px] font-bold text-amber-800 mb-0.5">เงื่อนไขพิเศษที่ส่งให้ตอนเสนองาน</div>
+                      <p className="text-sm text-slate-800 whitespace-pre-line">{o.conditions}</p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">ตอนเสนองานไม่ได้ระบุเงื่อนไขพิเศษไว้</p>
+                  )}
+                  {o.matchedBy === "name" && <p className="text-[11px] text-slate-400">จับคู่จากชื่อ (พนักงานคนนี้ไม่ได้รับเข้าผ่านปุ่มรับเข้างานของ RECRUITA) — ตรวจชื่อให้ตรงก่อนอ้างอิง</p>}
+                  <Link href={`/admin/recruita/applications/${o.applicationId}`} className="inline-block text-xs text-brand underline">เปิดใบสมัครใน RECRUITA →</Link>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
       {/* Toolbar — search box + role chips + sort dropdown */}
       <div className="card flex flex-wrap items-center gap-3">
         <input
@@ -452,6 +498,17 @@ export default function EmployeesClient({
                       )}
                     </div>
                     <div className="text-xs text-slate-400">@{u.username}</div>
+                    {(() => {
+                      const o = offers[u.id];
+                      return (
+                        <button type="button" onClick={() => setOfferTarget(u)}
+                          className={`mt-1 inline-flex items-center gap-1 text-[11px] rounded-full border px-2 py-0.5 ${
+                            o?.conditions ? "border-amber-300 bg-amber-50 text-amber-800 font-semibold" : "border-slate-200 text-slate-500 hover:border-slate-400"
+                          }`}>
+                          📄 เงื่อนไขตอนรับเข้างาน{o?.conditions ? " · มีเงื่อนไขพิเศษ" : ""}
+                        </button>
+                      );
+                    })()}
                     {incomplete && (
                       <div className="text-xs text-amber-700 mt-0.5">
                         {t("admin.persona.employees.profileIncomplete")}
