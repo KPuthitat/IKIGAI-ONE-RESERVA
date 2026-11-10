@@ -289,13 +289,18 @@ export function parseReceipt(buf: Buffer | ArrayBuffer): SalesReceipt {
   const pre = readPreamble(rows);
   if (!pre.date) throw new Error("receipt: ไม่พบวันที่ในไฟล์ (Date:)");
 
-  // Header row: the one whose first cell is "Time".
-  const hdrIdx = rows.findIndex((r) => cell(r, 0).toLowerCase() === "time");
+  // Header row: the one that has a "Time" column. It used to be the first cell, but the
+  // POS now puts "Outlet" first (2026-11-10), so look at every cell and require "Items"
+  // too so a preamble line can never match.
+  const hdrIdx = rows.findIndex((r) => {
+    const cs = r.map((c) => String(c).trim().toLowerCase());
+    return cs.includes("time") && cs.includes("items");
+  });
   if (hdrIdx < 0) throw new Error("receipt: ไม่พบหัวตาราง (Time)");
   const header = rows[hdrIdx].map((c) => String(c).trim().toLowerCase());
   const col = (name: string) => header.indexOf(name);
   const ci = {
-    time: col("time"), no: col("no."), id: col("id"), table: col("table"), gross: col("gross"),
+    time: col("time"), no: col("no."), id: col("id"), table: col("table"), status: col("status"), gross: col("gross"),
     discount: col("discount"), nett: col("nett"), payment: col("payment"), items: col("items")
   };
 
@@ -307,6 +312,8 @@ export function parseReceipt(buf: Buffer | ArrayBuffer): SalesReceipt {
     const hm = timeStr.match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
     const hour = hm ? Number(hm[1]) : -1;
     if (hour < 0 || hour > 23) continue;
+    // New export carries a Status column; a cancelled/void bill is not a sale.
+    if (ci.status >= 0 && /cancel|void/i.test(cell(r, ci.status))) continue;
     const table = cell(r, ci.table);
     const gross = num(r[ci.gross]);
     const discount = num(r[ci.discount]);

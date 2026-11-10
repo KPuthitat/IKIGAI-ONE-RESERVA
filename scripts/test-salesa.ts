@@ -1135,6 +1135,16 @@ function overviewBuf(date: string, merchant: string, items: Array<[string, strin
   ])));
   ok("corporate: mismatched RD code is reported, then removable", corp.corporateCustomers(bidC, 2026, "2026-10-02").rdCodes.seen.join(",") === "00001,00002" && sdb.clearMismatchedTaxInvoices(bidC) === 1 && sdb.taxInvoiceRdCodes(bidC).join(",") === "00002");
 
+  // POS export of 2026-11-10 put an "Outlet" column before "Time" (header no longer starts with Time)
+  // and added "Complete time". It must still parse, and a cancelled bill is not a sale.
+  {
+    const hdr = ["Outlet", "Time", "Complete time", "No.", "Table", "Status", "ID", "Gross", "Discount", "VAT", "SC", "Other Charge", "Delivery fee", "Rounding", "Nett", "Payment", "Items"];
+    const row = (no: string, status: string, nett: string) => ["X", "10/11/2026 12:49:45", "10/11/2026 13:43:51", no, "S3", status, `RID-${no}`, "525", "0", "38.59", "26.25", "0", "0", "0.16", nett, "PromptPay", "1x A02 Caesar salad,1x D05 Mineral Water"];
+    const buf = wbBuf({ "1.": [...preamble("Receipt", "10/11/2026", "X"), hdr, row("1", "COMPLETED", "590"), row("2", "CANCELLED", "590")] });
+    const parsed = parse.parseReceipt(buf);
+    ok("receipt: new layout with a leading Outlet column parses", parse.isReceipt(buf) && parsed.bills.length === 1 && parsed.bills[0].billNo === "1" && parsed.bills[0].nett === 590 && parsed.bills[0].hour === 12 && parsed.bills[0].items.length === 2);
+  }
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
