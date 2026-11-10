@@ -161,6 +161,37 @@ export default function EmployeesClient({
   const [pending, startTransition] = useTransition();
   const [editTarget, setEditTarget] = useState<EmployeeRow | null>(null);
   const [offerTarget, setOfferTarget] = useState<EmployeeRow | null>(null);
+  // Hand-typed offer conditions (owner 2026-11-10): the draft being typed, and what was just saved
+  // (the server props refresh afterwards, this keeps the dialog right in the meantime).
+  const [manualDraft, setManualDraft] = useState("");
+  const [manualSaved, setManualSaved] = useState<Record<number, { text: string | null; at: string | null; by: string | null }>>({});
+  const [manualBusy, setManualBusy] = useState(false);
+  const [manualMsg, setManualMsg] = useState("");
+  const hasTerms = (id: number) => {
+    const m = manualSaved[id];
+    return !!((offers[id]?.conditions) || (m ? m.text : offers[id]?.manualConditions));
+  };
+  function openOffer(u: EmployeeRow) {
+    const o = offers[u.id];
+    setManualDraft(manualSaved[u.id] ? (manualSaved[u.id].text ?? "") : (o?.manualConditions ?? ""));
+    setManualMsg(""); setOfferTarget(u);
+  }
+  async function saveManual() {
+    if (!offerTarget || manualBusy) return;
+    setManualBusy(true); setManualMsg("");
+    try {
+      const res = await fetch(apiUrl(`/api/admin/persona/employees/${offerTarget.id}/offer-conditions`), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conditions: manualDraft })
+      });
+      const j = await res.json().catch(() => ({})) as { ok?: boolean; text?: string | null; at?: string | null; by?: string | null };
+      if (!res.ok || !j.ok) { setManualMsg("บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง"); return; }
+      setManualSaved((prev) => ({ ...prev, [offerTarget.id]: { text: j.text ?? null, at: j.at ?? null, by: j.by ?? null } }));
+      setManualDraft(j.text ?? "");
+      setManualMsg(j.text ? "บันทึกแล้ว" : "ล้างเงื่อนไขที่พิมพ์เองแล้ว");
+      router.refresh();
+    } catch { setManualMsg("เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง"); }
+    finally { setManualBusy(false); }
+  }
 
   // Inline "ไม่ต้องลงเวลา" toggle from the list (owner 2026-08-21): flip
   // track_attendance in one click without opening the edit modal. Optimistic
@@ -357,8 +388,8 @@ export default function EmployeesClient({
                 </div>
                 <button type="button" className="text-slate-400 hover:text-slate-600 text-xl leading-none" onClick={() => setOfferTarget(null)} aria-label="ปิด">×</button>
               </div>
-              {!o ? (
-                <p className="text-sm text-slate-500">ไม่พบข้อเสนอของคนนี้จาก RECRUITA — อาจไม่ได้รับเข้าผ่านระบบรับสมัคร หรือชื่อไม่ตรงกับใบสมัคร</p>
+              {!o || o.applicationId == null ? (
+                <p className="text-sm text-slate-500">ไม่พบข้อเสนอของคนนี้จาก RECRUITA — อาจไม่ได้รับเข้าผ่านระบบรับสมัคร หรือชื่อไม่ตรงกับใบสมัคร (พิมพ์เงื่อนไขเองได้ด้านล่าง)</p>
               ) : (
                 <>
                   <dl className="grid grid-cols-1 gap-y-1 text-sm">
@@ -379,6 +410,21 @@ export default function EmployeesClient({
                   <Link href={`/admin/recruita/applications/${o.applicationId}`} className="inline-block text-xs text-brand underline">เปิดใบสมัครใน RECRUITA →</Link>
                 </>
               )}
+              <div className="border-t border-slate-100 pt-3 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700" htmlFor="manual-offer">เงื่อนไขที่แอดมินพิมพ์เอง</label>
+                <textarea id="manual-offer" className="input w-full min-h-[96px] text-sm" maxLength={2000} value={manualDraft}
+                  onChange={(e) => setManualDraft(e.target.value)}
+                  placeholder="เช่น ปรับเงินเดือนเป็น 15,000 หลังผ่านโปร 3 เดือน · หยุดเพิ่มเดือนละ 1 วัน" />
+                {(() => {
+                  const m = manualSaved[offerTarget.id] ?? (o?.manualConditions ? { text: o.manualConditions, at: o.manualAt, by: o.manualBy } : null);
+                  return m?.text && m.at ? <p className="text-[11px] text-slate-400">บันทึกล่าสุด {new Date(m.at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}{m.by ? ` โดย ${m.by}` : ""}</p> : null;
+                })()}
+                <div className="flex items-center gap-3">
+                  <button type="button" disabled={manualBusy} onClick={saveManual}
+                    className="rounded-full bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{manualBusy ? "กำลังบันทึก…" : "บันทึกเงื่อนไข"}</button>
+                  <span className="text-[11px] text-slate-500">{manualMsg || "ล้างช่องแล้วกดบันทึก = ลบที่พิมพ์ไว้ (ข้อความจาก RECRUITA ไม่ถูกแก้)"}</span>
+                </div>
+              </div>
             </div>
           </div>
         );
@@ -501,11 +547,11 @@ export default function EmployeesClient({
                     {(() => {
                       const o = offers[u.id];
                       return (
-                        <button type="button" onClick={() => setOfferTarget(u)}
+                        <button type="button" onClick={() => openOffer(u)}
                           className={`mt-1 inline-flex items-center gap-1 text-[11px] rounded-full border px-2 py-0.5 ${
-                            o?.conditions ? "border-amber-300 bg-amber-50 text-amber-800 font-semibold" : "border-slate-200 text-slate-500 hover:border-slate-400"
+                            hasTerms(u.id) ? "border-amber-300 bg-amber-50 text-amber-800 font-semibold" : "border-slate-200 text-slate-500 hover:border-slate-400"
                           }`}>
-                          📄 เงื่อนไขตอนรับเข้างาน{o?.conditions ? " · มีเงื่อนไขพิเศษ" : ""}
+                          📄 เงื่อนไขตอนรับเข้างาน{hasTerms(u.id) ? " · มีเงื่อนไขพิเศษ" : ""}
                         </button>
                       );
                     })()}

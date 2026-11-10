@@ -4,7 +4,8 @@
 import { getDb } from "./db";
 
 export type HireOffer = {
-  applicationId: number;
+  /** null when there is no RECRUITA application behind this person (only hand-typed conditions). */
+  applicationId: number | null;
   positionTitle: string | null;
   hiredAt: string | null;
   offerStartDate: string | null;
@@ -14,7 +15,11 @@ export type HireOffer = {
   conditions: string | null;
   /** How the offer was tied to the person: the hire bridge (hired_user_id) or — for people who
    *  were taken on without it — a name (+ birth date) match against an offered/accepted application. */
-  matchedBy: "hire" | "name";
+  matchedBy: "hire" | "name" | "manual";
+  /** Conditions an admin typed by hand (separate from the RECRUITA text above); null = none. */
+  manualConditions: string | null;
+  manualAt: string | null;
+  manualBy: string | null;
 };
 
 const PREFIX = /^(นางสาว|นาย|นาง|น\.ส\.|ด\.ช\.|ด\.ญ\.|mr\.?|mrs\.?|miss|ms\.?)\s*/i;
@@ -37,8 +42,39 @@ function toOffer(r: OfferRow, matchedBy: "hire" | "name"): HireOffer {
     offerSalary: r.offer_salary,
     offerSalaryType: r.offer_salary_type === "monthly" || r.offer_salary_type === "hourly" ? r.offer_salary_type : null,
     conditions: conditions || null,
-    matchedBy
+    matchedBy,
+    manualConditions: null, manualAt: null, manualBy: null
   };
+}
+
+type ManualRow = { id: number; text: string | null; at: string | null; by: string | null };
+/** Hand-typed conditions for these people (only those that have some). */
+function manualRows(userIds: number[]): Map<number, ManualRow> {
+  const out = new Map<number, ManualRow>();
+  if (userIds.length === 0) return out;
+  const rows = getDb().prepare(`
+    SELECT u.id, u.manual_offer_conditions AS text, u.manual_offer_at AS at, b.display_name AS by
+      FROM users u LEFT JOIN users b ON b.id = u.manual_offer_by
+     WHERE u.id IN (${userIds.map(() => "?").join(",")}) AND TRIM(COALESCE(u.manual_offer_conditions, '')) <> ''`).all(...userIds) as ManualRow[];
+  for (const r of rows) out.set(r.id, r);
+  return out;
+}
+/** Put the hand-typed conditions on the offer, creating a manual-only offer when RECRUITA has none. */
+function withManual(offer: HireOffer | null, m: ManualRow | undefined): HireOffer | null {
+  if (!m) return offer;
+  const base: HireOffer = offer ?? {
+    applicationId: null, positionTitle: null, hiredAt: null, offerStartDate: null, offerSalary: null, offerSalaryType: null,
+    conditions: null, matchedBy: "manual", manualConditions: null, manualAt: null, manualBy: null
+  };
+  return { ...base, manualConditions: (m.text ?? "").trim() || null, manualAt: m.at, manualBy: m.by };
+}
+
+/** Save (or clear, with an empty text) the conditions an admin typed by hand for an employee. */
+export function setManualOfferConditions(userId: number, adminId: number, text: string): { ok: boolean; text: string | null; at: string | null } {
+  const t = text.trim().slice(0, 2000);
+  const at = new Date().toISOString();
+  const r = getDb().prepare("UPDATE users SET manual_offer_conditions = ?, manual_offer_by = ?, manual_offer_at = ? WHERE id = ?").run(t || null, adminId, at, userId);
+  return { ok: r.changes > 0, text: t || null, at };
 }
 
 const OFFER_COLS = `a.id, p.title AS position_title, a.hired_at, a.offer_start_date, a.offer_salary, a.offer_salary_type, a.offer_conditions`;
@@ -72,9 +108,10 @@ export function hireOfferFor(userId: number): HireOffer | null {
       FROM recruita_applications a LEFT JOIN recruita_positions p ON p.id = a.position_id
      WHERE a.hired_user_id = ?
      ORDER BY COALESCE(a.hired_at, a.submitted_at) DESC, a.id DESC LIMIT 1`).get(userId) as OfferRow | undefined;
-  if (r) return toOffer(r, "hire");
+  const manual = manualRows([userId]).get(userId);
+  if (r) return withManual(toOffer(r, "hire"), manual);
   const u = db.prepare("SELECT display_name, dob FROM users WHERE id = ?").get(userId) as { display_name: string | null; dob: string | null } | undefined;
-  return u ? matchByName(u, untiedOffers()) : null;
+  return withManual(u ? matchByName(u, untiedOffers()) : null, manual);
 }
 
 /** hireOfferFor for many people at once (the employee list): one candidate scan for all of them. */
@@ -95,5 +132,7 @@ export function hireOffersFor(userIds: number[]): Map<number, HireOffer> {
     const users = db.prepare(`SELECT id, display_name, dob FROM users WHERE id IN (${rest.map(() => "?").join(",")})`).all(...rest) as Array<{ id: number; display_name: string | null; dob: string | null }>;
     for (const u of users) { const m = matchByName(u, cands); if (m) out.set(u.id, m); }
   }
+  // Hand-typed conditions ride on top (or stand alone for people with no RECRUITA offer).
+  for (const [id, m] of manualRows(userIds)) { const merged = withManual(out.get(id) ?? null, m); if (merged) out.set(id, merged); }
   return out;
 }
