@@ -338,6 +338,9 @@ export default function MonthlyPayslipPage({
           <Link href={`/admin/persona/payroll/summary?m=${month}`} className="text-sm text-slate-500 hover:text-brand">
             ← {t(lang, "admin.persona.payroll.backToHub")}
           </Link>
+          <Link href={`/admin/persona/payroll/monthly-payslip/${userId}/bank?m=${month}`} className="text-sm font-medium text-brand hover:underline rounded-md border border-brand/40 px-3 py-1 hover:bg-amber-50">
+            สลิป A4 สำหรับยื่นภายนอก (ธนาคาร)
+          </Link>
           <PayslipPrintButton lang={lang} />
         </div>
       </div>

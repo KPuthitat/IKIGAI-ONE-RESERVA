@@ -216,6 +216,12 @@ export default function PayrollMonthlySummaryPage({
                     >
                       สลิปรายเดือน →
                     </Link>
+                    <Link
+                      href={`/admin/persona/payroll/monthly-payslip/${r.userId}/bank?m=${month}`}
+                      className="text-[11px] text-slate-500 hover:underline ml-2"
+                    >
+                      A4 ยื่นธนาคาร →
+                    </Link>
                   </td>
                   <td className="py-2 pr-3 text-xs text-slate-500 whitespace-nowrap">{homeByUser.get(r.userId) ?? "—"}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">
