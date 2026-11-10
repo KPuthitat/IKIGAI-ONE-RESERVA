@@ -10,7 +10,7 @@ import FlexRenderer from "./FlexRenderer";
 import { revshareDailyFlex, revshareWeeklyFlex, revshareSettlementFlex } from "@/lib/revshare-line";
 import { pendingDigestFlex } from "@/lib/pending-digest";
 import { personaClockInFlex, disciplinaryWarningFlex, customerBookingFlex, staffBookingFlex } from "@/lib/line";
-import { stageChangeFlex } from "@/lib/recruita-notify";
+import { stageChangeFlex, execHealthCertFlex } from "@/lib/recruita-notify";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "แคตตาล็อกการ์ดแจ้งเตือน · NOKHOOK OS" };
@@ -85,6 +85,10 @@ function cards(): CatalogCard[] {
   add("RECRUITA", "เปลี่ยนสเตจผู้สมัคร (ผู้สมัคร)", "กดเอง", build(() => stageChangeFlex({
     applicantName: "ชัยวัฒน์ ตั้งใจ", positionTitle: "พนักงานเสิร์ฟ", branchName: "NAMA PASTA SRIRACHA",
     stage: "interview", applicationNo: "AP2569-21"
+  }) as unknown as { contents: unknown }));
+  add("RECRUITA", "ผู้สมัครอัปโหลดใบรับรองแพทย์ (กลุ่มผู้บริหาร/HR)", "อัตโนมัติ", build(() => execHealthCertFlex({
+    applicantName: "นางสาว วิชญาพร แสนสิงห์", positionTitle: "พนักงานทั่วไปภายในร้าน (Part-time)", branchName: "HYPOPLARAEMIA",
+    applicationNo: "20261031001", applicationId: 1
   }) as unknown as { contents: unknown }));
 
   return out;
