@@ -4462,6 +4462,13 @@ function runMigrations(db: Database.Database): void {
     db.exec("ALTER TABLE users ADD COLUMN can_view_payroll INTEGER NOT NULL DEFAULT 0");
   }
 
+  // Conditions HR typed by hand for an employee (owner 2026-11-10): the terms sent at offer time
+  // live on the RECRUITA application, but people taken on another way have nothing there, and HR
+  // sometimes needs to add to or correct them. Separate from the RECRUITA text, which is never edited.
+  if (!unames3.has("manual_offer_conditions")) db.exec("ALTER TABLE users ADD COLUMN manual_offer_conditions TEXT");
+  if (!unames3.has("manual_offer_by")) db.exec("ALTER TABLE users ADD COLUMN manual_offer_by INTEGER");
+  if (!unames3.has("manual_offer_at")) db.exec("ALTER TABLE users ADD COLUMN manual_offer_at TEXT");
+
   // payroll_settings — singleton (id always = 1)
   // OT modes:
   //  'flat'  = ใช้เรทพิเศษของร้าน (default 25 บาท / 15 นาที = 100/ชม.)

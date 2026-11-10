@@ -139,10 +139,10 @@ export default function AdminEmployeeProfilePage({
       )}
 
       {offer && (
-        <section className={`card border-l-4 ${offer.conditions ? "border-amber-400" : "border-slate-200"}`}>
+        <section className={`card border-l-4 ${offer.conditions || offer.manualConditions ? "border-amber-400" : "border-slate-200"}`}>
           <div className="flex items-start justify-between gap-2 flex-wrap">
-            <h2 className="font-bold text-slate-800">ข้อเสนอตอนรับเข้าทำงาน <span className="text-xs font-normal text-slate-400">· จาก RECRUITA</span></h2>
-            {offer.conditions ? <span className="tag tag-warn">มีเงื่อนไขพิเศษ</span> : <span className="tag tag-mute">ไม่มีเงื่อนไขพิเศษ</span>}
+            <h2 className="font-bold text-slate-800">ข้อเสนอตอนรับเข้าทำงาน <span className="text-xs font-normal text-slate-400">· {offer.applicationId != null ? "จาก RECRUITA" : "แอดมินพิมพ์เอง"}</span></h2>
+            {offer.conditions || offer.manualConditions ? <span className="tag tag-warn">มีเงื่อนไขพิเศษ</span> : <span className="tag tag-mute">ไม่มีเงื่อนไขพิเศษ</span>}
           </div>
           <dl className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
             {offer.positionTitle && <div className="flex gap-2"><dt className="text-slate-500">ตำแหน่งที่สมัคร</dt><dd className="font-medium text-slate-800">{offer.positionTitle}</dd></div>}
@@ -158,8 +158,14 @@ export default function AdminEmployeeProfilePage({
               <div className="text-[11px] font-bold text-amber-800 mb-0.5">เงื่อนไขพิเศษที่เสนอไว้ตอนสมัคร</div>
               <p className="text-sm text-slate-800 whitespace-pre-line">{offer.conditions}</p>
             </div>
-          ) : (
+          ) : offer.applicationId != null && !offer.manualConditions ? (
             <p className="mt-2 text-xs text-slate-400">ตอนเสนองานไม่ได้ระบุเงื่อนไขพิเศษไว้</p>
+          ) : null}
+          {offer.manualConditions && (
+            <div className="mt-3 rounded-2xl bg-sky-50 border border-sky-200 p-3">
+              <div className="text-[11px] font-bold text-sky-800 mb-0.5">เงื่อนไขที่แอดมินพิมพ์เอง{offer.manualAt ? ` · ${fmtDate(offer.manualAt)}` : ""}{offer.manualBy ? ` · ${offer.manualBy}` : ""}</div>
+              <p className="text-sm text-slate-800 whitespace-pre-line">{offer.manualConditions}</p>
+            </div>
           )}
         </section>
       )}

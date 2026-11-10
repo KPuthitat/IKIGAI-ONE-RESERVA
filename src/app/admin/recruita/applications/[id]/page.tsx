@@ -28,6 +28,7 @@ type AppRow = {
   offer_salary: number | null;
   offer_salary_type: "monthly" | "hourly" | null;
   offer_start_date: string | null;
+  offer_conditions: string | null;
   why_join: string | null;
   custom_answers: string;
   consent_at: string | null;

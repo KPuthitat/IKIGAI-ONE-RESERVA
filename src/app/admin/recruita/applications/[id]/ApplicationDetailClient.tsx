@@ -23,6 +23,8 @@ type AppShape = {
   offer_salary: number | null;
   offer_salary_type: "monthly" | "hourly" | null;
   offer_start_date: string | null;
+  /** Special conditions typed when the offer was made (owner 2026-06-17) — kept on record and shown on this page. */
+  offer_conditions?: string | null;
   why_join: string | null; goals: string | null;
   info_source: string | null; can_travel: number | null;
   truth_declaration_accepted: number | null;
@@ -545,6 +547,32 @@ export default function ApplicationDetailClient({
             startTransition(() => router.refresh());
             return { ok: true };
           }} />
+      )}
+
+      {/* The offer as it was sent (owner 2026-11-10): start date, pay and the special conditions typed when the
+          card moved to 'offered'. Before this, the conditions vanished from the page once the offer was sent. */}
+      {(application.offer_salary != null || application.offer_start_date || (application.offer_conditions ?? "").trim()) && (
+        <div className="card space-y-2 border-l-4 border-amber-400">
+          <h2 className="font-bold text-slate-800 text-sm">ข้อเสนอที่ส่งให้ผู้สมัคร <span className="text-xs font-normal text-slate-400">· บันทึกไว้ตอนเปลี่ยนสถานะเป็น “เสนองาน”</span></h2>
+          <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            {application.offer_start_date && (
+              <div className="flex gap-2"><dt className="text-slate-500">วันเริ่มงานที่เสนอ</dt>
+                <dd className="font-medium text-slate-800">{new Date(`${application.offer_start_date}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}</dd></div>
+            )}
+            {application.offer_salary != null && (
+              <div className="flex gap-2"><dt className="text-slate-500">ค่าตอบแทนที่เสนอ</dt>
+                <dd className="font-medium text-slate-800">฿{application.offer_salary.toLocaleString("th-TH")}{application.offer_salary_type === "hourly" ? "/ชั่วโมง" : application.offer_salary_type === "monthly" ? "/เดือน" : ""}</dd></div>
+            )}
+          </dl>
+          {(application.offer_conditions ?? "").trim() ? (
+            <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3">
+              <div className="text-[11px] font-bold text-amber-800 mb-0.5">เงื่อนไขพิเศษที่ส่งให้ผู้สมัคร</div>
+              <p className="text-sm text-slate-800 whitespace-pre-line">{application.offer_conditions}</p>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">ตอนเสนองานไม่ได้ระบุเงื่อนไขพิเศษไว้</p>
+          )}
+        </div>
       )}
 
       {/* Hire bridge — appears only when not yet hired. The button stays

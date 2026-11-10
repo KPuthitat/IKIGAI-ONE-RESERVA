@@ -7,7 +7,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
 
 (async () => {
   const { getDb } = await import("../src/lib/db");
-  const { hireOfferFor, hireOffersFor, offerNameKey } = await import("../src/lib/recruita-offer");
+  const { hireOfferFor, hireOffersFor, offerNameKey, setManualOfferConditions } = await import("../src/lib/recruita-offer");
   const db = getDb();
   let failed = 0;
   const ok = (n: string, c: boolean) => { if (c) console.log(`  ✓ ${n}`); else { failed++; console.error(`  ✗ FAIL: ${n}`); } };
@@ -67,6 +67,23 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   const batch = hireOffersFor([withTerms, named, manual, 999999, noDob]);
   ok("batch: tied and name-matched people are found, others absent", batch.get(withTerms)?.matchedBy === "hire" && batch.get(named)?.matchedBy === "name" && !batch.has(manual) && !batch.has(999999) && batch.get(noDob)?.offerStartDate === "2026-11-01");
   ok("batch agrees with the single lookup", batch.get(named)?.conditions === hireOfferFor(named)?.conditions && hireOffersFor([]).size === 0);
+
+  // ── Conditions typed by an admin ──
+  const adminId = mkNamed("adm", "แอดมิน", null);
+  const solo = mkNamed("solo", "คนไม่มีใบเสนอ", null);
+  ok("manual-only: no offer before typing", hireOfferFor(solo) === null);
+  const r1 = setManualOfferConditions(solo, adminId, "  ทดลองงาน 2 เดือน  ");
+  const m1 = hireOfferFor(solo)!;
+  ok("manual-only: saved trimmed, no application", r1.ok && m1.applicationId === null && m1.matchedBy === "manual" && m1.manualConditions === "ทดลองงาน 2 เดือน" && m1.manualBy === "แอดมิน" && !!m1.manualAt);
+  setManualOfferConditions(withTerms, adminId, "เพิ่มเติมโดยแอดมิน");
+  const m2 = hireOfferFor(withTerms)!;
+  ok("manual + RECRUITA: both kept separately", m2.applicationId != null && m2.conditions === "ปรับเงินเดือน 1,000 บาทหลังผ่านโปร" && m2.manualConditions === "เพิ่มเติมโดยแอดมิน");
+  const bm = hireOffersFor([solo, withTerms]);
+  ok("batch includes manual", bm.get(solo)?.manualConditions === "ทดลองงาน 2 เดือน" && bm.get(withTerms)?.manualConditions === "เพิ่มเติมโดยแอดมิน");
+  setManualOfferConditions(solo, adminId, "   ");
+  ok("clearing removes the manual offer", hireOfferFor(solo) === null);
+  setManualOfferConditions(solo, adminId, "x".repeat(3000));
+  ok("capped at 2000 chars", hireOfferFor(solo)!.manualConditions!.length === 2000);
 
   cleanup(); process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); cleanup(); process.exit(1); });
