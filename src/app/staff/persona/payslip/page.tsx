@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
+import { paidBankPayslipMonths } from "@/lib/payslip-bank";
 import EmptyState from "@/app/components/EmptyState";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +40,9 @@ export default function StaffPayslipListPage() {
   `).all(user.id) as Row[];
 
   const lang = getLang();
+  const bankMonths = paidBankPayslipMonths(db, user.id);
+  const TH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  const monthLabel = (ym: string) => { const [y, m] = ym.split("-").map(Number); return `${TH[m - 1]} ${y + 543}`; };
 
   return (
     <div className="space-y-4">
@@ -49,6 +53,21 @@ export default function StaffPayslipListPage() {
       <p className="text-sm text-slate-500 -mt-2">
         เปิดดูรายละเอียดค่าตอบแทนแต่ละรอบ พร้อมวิธีคำนวณและตารางลงเวลารายวัน · แสดงเฉพาะรอบที่ทำจ่ายแล้ว
       </p>
+
+      {bankMonths.length > 0 && (
+        <div className="card">
+          <div className="text-sm font-semibold text-slate-800">สลิป A4 สำหรับยื่นภายนอก (ธนาคาร ฯลฯ)</div>
+          <p className="text-xs text-slate-500 mt-0.5">สลิปรายเดือนแบบทางการ พิมพ์หรือบันทึกเป็น PDF ได้ · เฉพาะเดือนที่จ่ายครบแล้ว</p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {bankMonths.slice(0, 12).map((ym) => (
+              <Link key={ym} href={`/staff/persona/payslip/bank?m=${ym}`}
+                className="text-xs rounded-md border border-brand/40 px-3 py-1.5 text-brand hover:bg-amber-50">
+                {monthLabel(ym)}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card overflow-x-auto">
         {rows.length === 0 ? (
