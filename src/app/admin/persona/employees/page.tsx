@@ -7,6 +7,7 @@ import EmployeesClient, { type EmployeeRow } from "./EmployeesClient";
 import AccountActions from "./AccountActions";
 import EmployeeExportDialog from "./EmployeeExportDialog";
 import { listEmployeeScopes, employeeFieldOptions } from "@/lib/employee-export";
+import { hireOffersFor, type HireOffer } from "@/lib/recruita-offer";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,13 @@ export default function AdminEmployeesPage({
         sso_start_month: null,
         ft_started_at: null
       }));
+
+  // The RECRUITA offer each employee was taken on, for the "เงื่อนไขตอนรับเข้างาน" button (owner 2026-11-10).
+  // Pay is blanked for admins without payroll access, like the rest of the row.
+  const offers: Record<number, HireOffer> = {};
+  for (const [id, o] of hireOffersFor(safeEmployees.map((e) => e.id))) {
+    offers[id] = canSeePayroll ? o : { ...o, offerSalary: null };
+  }
 
   // Quick count of hidden test accounts so admin knows they exist.
   const testCount = (db.prepare(`
@@ -212,6 +220,7 @@ export default function AdminEmployeesPage({
         formerCount={formerCount}
         showTest={showTest}
         employees={safeEmployees}
+        offers={offers}
         allBranches={allBranches}
         grants={grants}
         editableBranchIds={editableBranchIds}

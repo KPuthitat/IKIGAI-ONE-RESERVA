@@ -7,7 +7,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
 
 (async () => {
   const { getDb } = await import("../src/lib/db");
-  const { hireOfferFor } = await import("../src/lib/recruita-offer");
+  const { hireOfferFor, hireOffersFor, offerNameKey } = await import("../src/lib/recruita-offer");
   const db = getDb();
   let failed = 0;
   const ok = (n: string, c: boolean) => { if (c) console.log(`  ✓ ${n}`); else { failed++; console.error(`  ✗ FAIL: ${n}`); } };
@@ -41,5 +41,32 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("the most recent hire record wins", hireOfferFor(twice)!.conditions === "ใหม่");
   ok("someone who was not hired through RECRUITA has no offer card", hireOfferFor(manual) === null);
   ok("an unknown user has none", hireOfferFor(999999) === null);
+
+  // ── People taken on without the hire button: matched by name (+ birth date) ──
+  const mkNamed = (u: string, display: string, dob: string | null) => Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,dob) VALUES (?,?,?,'staff','active',?)").run(u, "x", display, dob).lastInsertRowid);
+  const namedApp = (first: string, last: string, dob: string | null, stage: string, extra: Record<string, unknown>) => {
+    const c = Number(db.prepare("INSERT INTO recruita_candidates (dedupe_hash, first_name_th, last_name_th, dob) VALUES (?,?,?,?)").run(`n${Math.random()}`, first, last, dob).lastInsertRowid);
+    const cols = ["candidate_id", "position_id", "stage", ...Object.keys(extra)];
+    return Number(db.prepare(`INSERT INTO recruita_applications (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`).run(c, pos, stage, ...Object.values(extra)).lastInsertRowid);
+  };
+  ok("name key drops the prefix, spaces and dots", offerNameKey("นางสาว วิชญาพร  แสนสิงห์") === "วิชญาพรแสนสิงห์" && offerNameKey("Miss Ann Lee") === "annlee");
+  const named = mkNamed("named", "วิชญาพร แสนสิงห์", "2002-05-01");
+  namedApp("วิชญาพร", "แสนสิงห์", "2002-05-01", "accepted", { offer_conditions: "ทดลองงาน 3 เดือน", offer_salary: 50, offer_salary_type: "hourly" });
+  const byName = hireOfferFor(named)!;
+  ok("someone never tied by the hire button is matched by name and shows the terms sent to them", byName.matchedBy === "name" && byName.conditions === "ทดลองงาน 3 เดือน" && byName.offerSalary === 50);
+  const otherDob = mkNamed("otherdob", "สมศรี ใจดี", "1990-01-01");
+  namedApp("สมศรี", "ใจดี", "1985-12-12", "hired", { offer_conditions: "ของคนละคน" });
+  ok("same name but a different birth date is not matched", hireOfferFor(otherDob) === null);
+  const noDob = mkNamed("nodob", "มานะ ขยัน", null);
+  namedApp("มานะ", "ขยัน", "1999-09-09", "offered", { offer_start_date: "2026-11-01" });
+  ok("no birth date on the employee side still matches on name", hireOfferFor(noDob)?.offerStartDate === "2026-11-01");
+  const rej = mkNamed("rej", "ปิติ มีสุข", null);
+  namedApp("ปิติ", "มีสุข", null, "rejected", { offer_conditions: "ถูกปฏิเสธ" });
+  ok("a rejected application is never matched", hireOfferFor(rej) === null);
+  ok("a tied hire wins over a name match", hireOfferFor(withTerms)!.matchedBy === "hire");
+  const batch = hireOffersFor([withTerms, named, manual, 999999, noDob]);
+  ok("batch: tied and name-matched people are found, others absent", batch.get(withTerms)?.matchedBy === "hire" && batch.get(named)?.matchedBy === "name" && !batch.has(manual) && !batch.has(999999) && batch.get(noDob)?.offerStartDate === "2026-11-01");
+  ok("batch agrees with the single lookup", batch.get(named)?.conditions === hireOfferFor(named)?.conditions && hireOffersFor([]).size === 0);
+
   cleanup(); process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); cleanup(); process.exit(1); });
