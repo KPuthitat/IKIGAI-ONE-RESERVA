@@ -164,6 +164,13 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("a different shot of the same spot is not flagged", fl(d12).length === 0);
   send(d13, 13, 13, { phash: "123456789abcdef0", takenAt: `${date(9)}T05:00:00Z` });
   ok("a picture dated before the duty day is flagged", fl(d13).some((x) => x.kind === "older_photo" && x.takenAt === date(9)));
+  // d13's picture is dated before the duty day: it cannot be sent back for a fix (the day is gone), only reported as not done.
+  ok("evidence of the wrong day cannot be sent back for correction", code(() => E.reviewEvidence({ dayId: d13, branchId: nama, managerId: owner, approve: false, note: "ภาพถ่ายก่อนวัน" })) === "wrong_day");
+  ok("not-done needs a reason", code(() => E.markNotDone({ dayId: d13, branchId: nama, managerId: owner, note: " " })) === "note_required");
+  ok("another branch's manager cannot report not-done", code(() => E.markNotDone({ dayId: d13, branchId: hypo, managerId: owner, note: "ภาพถ่ายก่อนวัน" })) === "not_found");
+  E.markNotDone({ dayId: d13, branchId: nama, managerId: owner, note: "ภาพถ่ายก่อนวัน" });
+  ok("not-done records the reason, stays unpaid (still submitted) and names who to tell", (() => { const r = db.prepare("SELECT status, review_note n, reviewed_by b FROM special_duty_days WHERE id = ?").get(d13) as { status: string; n: string; b: number }; const t = E.reviewTarget(d13); return r.status === "submitted" && r.n === "ภาพถ่ายก่อนวัน" && r.b === owner && t.performerId === cook && t.date === date(13); })());
+  ok("a normal day can still be sent back for correction", (() => { E.reviewEvidence({ dayId: d12, branchId: nama, managerId: owner, approve: false, note: "ภาพไม่ครบ" }); return (db.prepare("SELECT status FROM special_duty_days WHERE id = ?").get(d12) as { status: string }).status === "assigned"; })());
   ok("a malformed fingerprint is ignored, not stored", (() => { const dd = mkDay(14); send(dd, 14, 14, { phash: "zz" }); return (db.prepare("SELECT phash FROM special_duty_evidence WHERE day_id = ?").get(dd) as { phash: string | null }).phash === null; })());
   // ── changing who does a day, with a reason (owner 2026-11-01) ──
   const rd = (() => { const id = Number(db.prepare("INSERT INTO special_duty_days (position_id,duty_date,user_id,source,status) VALUES (?,?,?,'booked','booked')").run(toilet.id, date(20), holder).lastInsertRowid); return id; })();

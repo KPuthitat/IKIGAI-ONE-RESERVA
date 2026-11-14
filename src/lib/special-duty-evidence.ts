@@ -21,7 +21,7 @@ import { sqlNameWithPrefix } from "./name";
 export type EvidenceErrorCode =
   | "not_found" | "forbidden" | "wrong_stage" | "too_early" | "deadline_passed" | "wrong_status" | "not_present"
   | "photos_required" | "too_many_photos" | "photo_bad_format" | "photo_too_large" | "no_people_not_confirmed"
-  | "days_must_match" | "note_required" | "substitute_invalid" | "substitute_same_person" | "substitute_busy" | "reason_required" | "change_pending";
+  | "days_must_match" | "note_required" | "wrong_day" | "substitute_invalid" | "substitute_same_person" | "substitute_busy" | "reason_required" | "change_pending";
 
 export class EvidenceError extends Error { constructor(public code: EvidenceErrorCode) { super(code); } }
 
@@ -161,11 +161,36 @@ export function reviewEvidence(args: { dayId: number; branchId: number; managerI
       .run(args.managerId, now, note || null, d.id);
   } else {
     if (note.length < 3) throw new EvidenceError("note_required");
+    // A day that has passed cannot be re-done: evidence dated before the duty day can only be reported as not done (markNotDone).
+    if (evidenceFlags(d.id).some((f) => f.kind === "older_photo")) throw new EvidenceError("wrong_day");
     const back = d.performer_user_id != null ? "covered" : d.source === "assigned" ? "assigned" : "booked";
     db.prepare("UPDATE special_duty_days SET status = ?, reviewed_by = ?, reviewed_at = ?, review_note = ? WHERE id = ?")
       .run(back, args.managerId, now, note, d.id);
   }
   audit({ actorId: args.managerId, branchId: d.branch_id, yearMonth: d.year_month, entity: "evidence", entityId: d.id, action: args.approve ? "approve" : "reject", after: { note } });
+}
+
+/** Who to tell after a review, and about what. */
+export function reviewTarget(dayId: number): { performerId: number; positionName: string; date: string; yearMonth: string } {
+  const d = loadDay(dayId);
+  const pos = getDb().prepare("SELECT name FROM special_duty_positions WHERE id = ?").get(d.position_id) as { name: string };
+  return { performerId: performerOf(d), positionName: pos.name, date: d.duty_date, yearMonth: d.year_month };
+}
+
+/**
+ * "ทำไม่เรียบร้อย": the evidence is not of the duty day (or the work was not up to standard) and cannot be corrected
+ * afterwards, so there is nothing to send back — the manager records the reason and the employee is told. The day stays
+ * unpaid (still 'submitted', never approved); the manager can still record an absence or name the person who really did it.
+ */
+export function markNotDone(args: { dayId: number; branchId: number; managerId: number; note: string }): void {
+  const d = loadDay(args.dayId);
+  if (d.branch_id !== args.branchId) throw new EvidenceError("not_found");
+  if (d.status !== "submitted") throw new EvidenceError("wrong_status");
+  const note = args.note.trim();
+  if (note.length < 3) throw new EvidenceError("note_required");
+  getDb().prepare("UPDATE special_duty_days SET reviewed_by = ?, reviewed_at = ?, review_note = ? WHERE id = ?")
+    .run(args.managerId, new Date().toISOString(), note, d.id);
+  audit({ actorId: args.managerId, branchId: d.branch_id, yearMonth: d.year_month, entity: "evidence", entityId: d.id, action: "not_done", after: { note } });
 }
 
 // ── absence + substitute ──────────────────────────────────────────────────

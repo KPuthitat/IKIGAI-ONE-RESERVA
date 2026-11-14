@@ -40,3 +40,13 @@ export function pushChangeDecided(requesterId: number, positionName: string, dat
     url: `${base()}/staff/persona/special-duty?month=${ym}`, button: "เปิดดู"
   })).catch(log);
 }
+
+/** The manager reviewed the evidence: tell whoever did the day (owner 2026-11-14). */
+export function pushEvidenceReview(kind: "approved" | "rejected" | "not_done", performerId: number, positionName: string, date: string, note: string | null, ym: string): void {
+  const title = kind === "approved" ? "ตรวจรับงานแล้ว" : kind === "rejected" ? "ส่งกลับให้แก้ไขหลักฐาน" : "แจ้งผลการตรวจ: ทำไม่เรียบร้อย";
+  const lines = [`${positionName} · ${thDate(date)}`];
+  if (kind === "approved") lines.push("ผู้จัดการตรวจรับเรียบร้อย ค่าตอบแทนจะจ่ายพร้อมค่าบริการตามรอบ", ...(note ? [`หมายเหตุ: ${note}`] : []));
+  if (kind === "rejected") lines.push(`เหตุผล: ${note ?? "-"}`, "กรุณาส่งหลักฐานใหม่ในหน้าตำแหน่งงานของฉัน");
+  if (kind === "not_done") lines.push(`เหตุผล: ${note ?? "-"}`, "งานของวันนี้ไม่ผ่านการตรวจ และแก้ไขย้อนหลังไม่ได้ หากมีข้อสงสัยกรุณาติดต่อผู้จัดการ");
+  pushIndividually([lineOf(performerId)], noticeFlex({ title, lines, url: `${base()}/staff/persona/special-duty?month=${ym}`, button: "เปิดดู" })).catch(log);
+}

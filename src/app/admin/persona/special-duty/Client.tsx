@@ -326,7 +326,7 @@ export default function Client({ month }: { month: string }) {
                 <p className="rounded-lg bg-violet-50 px-3 py-2 text-sm text-violet-900">เปลี่ยนผู้ปฏิบัติงานจาก <b>{selected.replacement.fromName}</b> เป็น <b>{selected.replacement.toName}</b> · สาเหตุ: {selected.replacement.reasonText}</p>
               )}
               {selected.reviewNote && <p className="text-sm text-rose-700">หมายเหตุ: {selected.reviewNote}</p>}
-              {["submitted", "approved"].includes(selected.status) && (
+              {["approved"].includes(selected.status) && (
                 <p className={`text-sm ${selected.presentAtWork ? "text-emerald-700" : "text-rose-700"}`}>
                   {selected.presentAtWork ? "ตรวจพบการลงเวลาเข้างานปกติของผู้ปฏิบัติงานในวันนั้น" : "ไม่พบการลงเวลาเข้างานปกติของผู้ปฏิบัติงานในวันนั้น ตรวจรับไม่ได้"}
                 </p>
@@ -354,15 +354,44 @@ export default function Client({ month }: { month: string }) {
                   <div className="text-xs text-rose-700">เป็นเพียงสัญญาณเตือน ผู้จัดการเป็นผู้ตัดสิน — พื้นที่เดียวกันถ่ายใหม่ทุกวันไม่ถือว่าซ้ำ</div>
                 </div>
               )}
-              {selected.status === "submitted" && (
-                <div className="space-y-2">
-                  <input className="input w-full" placeholder="เหตุผล (ต้องกรอกเมื่อส่งกลับ)" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" className="btn-primary" disabled={busy || !selected.presentAtWork} onClick={async () => { if (flags.length > 0 && !window.confirm("พบสัญญาณภาพซ้ำในหลักฐานนี้ ยังต้องการตรวจรับหรือไม่")) return; const r = await act({ action: "approve", day_id: selected.id }); r.ok ? done("ตรวจรับเรียบร้อยแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ตรวจรับไม่สำเร็จ" }); }}>ตรวจรับ</button>
-                    <button type="button" className="btn-secondary" disabled={busy || rejectNote.trim().length < 3} onClick={async () => { const r = await act({ action: "reject", day_id: selected.id, note: rejectNote }); r.ok ? done("ส่งกลับให้แก้ไขแล้ว") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>ส่งกลับให้แก้ไข</button>
+              {selected.status === "submitted" && (() => {
+                const wrongDay = flags.some((f) => f.kind === "older_photo");
+                const dup = flags.some((f) => f.kind !== "older_photo");
+                const quick = wrongDay ? ["ภาพถ่ายก่อนวันปฏิบัติงาน", "ภาพไม่ใช่ของวันนั้น"] : ["ภาพไม่ชัด", "ภาพไม่ครบทุกพื้นที่", "พื้นที่ยังไม่สะอาดตามมาตรฐาน"];
+                const call = async (body: Record<string, unknown>, ok: string, fail: string) => { const r = await act(body); r.ok ? done(ok) : setMsg({ ok: false, text: r.j.message ?? fail }); };
+                return (
+                  <div className="space-y-3">
+                    <ul className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm space-y-1">
+                      <li className={selected.presentAtWork ? "text-emerald-700" : "text-rose-700"}>{selected.presentAtWork ? "✓" : "✗"} ลงเวลาเข้างานปกติในวันนั้น</li>
+                      <li className={wrongDay ? "text-rose-700" : "text-emerald-700"}>{wrongDay ? "✗ มีภาพที่ถ่ายก่อนวันปฏิบัติงาน" : "✓ ภาพถ่ายตรงกับวันปฏิบัติงาน"}</li>
+                      <li className={dup ? "text-amber-700" : "text-emerald-700"}>{dup ? "⚠ พบสัญญาณภาพซ้ำ" : "✓ ไม่พบภาพซ้ำกับงานอื่น"}</li>
+                    </ul>
+                    <button type="button" className="btn-primary w-full justify-center" disabled={busy || !selected.presentAtWork || wrongDay}
+                      onClick={async () => { if (dup && !window.confirm("พบสัญญาณภาพซ้ำในหลักฐานนี้ ยังต้องการตรวจรับหรือไม่")) return; await call({ action: "approve", day_id: selected.id }, "ตรวจรับเรียบร้อยแล้ว และแจ้งพนักงานแล้ว", "ตรวจรับไม่สำเร็จ"); }}>
+                      ✓ ตรวจรับ และแจ้งพนักงาน
+                    </button>
+                    <div className="rounded-xl border border-slate-200 p-3 space-y-2">
+                      <div className="text-sm font-semibold text-slate-700">ไม่ผ่าน? ระบุเหตุผล แล้วระบบจะแจ้งพนักงานทาง LINE</div>
+                      {wrongDay && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">หลักฐานไม่ใช่ของวันปฏิบัติงาน จึงสั่งให้แก้ไขย้อนหลังไม่ได้ — ทำได้เพียงแจ้งว่าทำไม่เรียบร้อย (วันนี้จะไม่ได้รับค่าตอบแทน)</p>}
+                      <div className="flex flex-wrap gap-1.5">
+                        {quick.map((q) => <button key={q} type="button" className="chip" onClick={() => setRejectNote(q)}>{q}</button>)}
+                      </div>
+                      <textarea className="input w-full" rows={2} placeholder="เหตุผล (ต้องกรอก)" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
+                      {wrongDay ? (
+                        <button type="button" className="btn-secondary w-full justify-center !text-rose-700" disabled={busy || rejectNote.trim().length < 3}
+                          onClick={() => call({ action: "not_done", day_id: selected.id, note: rejectNote }, "แจ้งพนักงานว่าทำไม่เรียบร้อยแล้ว", "ทำรายการไม่สำเร็จ")}>แจ้งว่าทำไม่เรียบร้อย</button>
+                      ) : (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <button type="button" className="btn-secondary justify-center" disabled={busy || rejectNote.trim().length < 3}
+                            onClick={() => call({ action: "reject", day_id: selected.id, note: rejectNote }, "ส่งกลับให้แก้ไข และแจ้งพนักงานแล้ว", "ทำรายการไม่สำเร็จ")}>ส่งกลับให้แก้ไข<span className="block text-[11px] font-normal text-slate-500">พนักงานส่งหลักฐานใหม่ได้</span></button>
+                          <button type="button" className="btn-secondary justify-center !text-rose-700" disabled={busy || rejectNote.trim().length < 3}
+                            onClick={() => { if (window.confirm("แจ้งว่าทำไม่เรียบร้อย? วันนี้จะไม่ได้รับค่าตอบแทน และพนักงานส่งใหม่ไม่ได้")) call({ action: "not_done", day_id: selected.id, note: rejectNote }, "แจ้งพนักงานว่าทำไม่เรียบร้อยแล้ว", "ทำรายการไม่สำเร็จ"); }}>แจ้งว่าทำไม่เรียบร้อย<span className="block text-[11px] font-normal text-slate-500">ไม่ให้ส่งใหม่</span></button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
               {selected.status === "absent" && (
                 <div className="space-y-2">
                   <p className="text-sm text-slate-600">เลือกผู้ปฏิบัติแทน (ต้องมีตารางทำงานในวันนั้น ไม่ลา และอยู่ในกลุ่มงานที่กำหนด)</p>

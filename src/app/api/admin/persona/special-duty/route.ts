@@ -10,9 +10,9 @@ import { bookingOpenFlex, noticeFlex, pushIndividually, pushWithOutcome, schedul
 import { audienceReport, AUDIENCE_REASON_TH, bookingAudience, branchHasRoster, openBookingOnPublish } from "@/lib/special-duty-roster";
 import { decideSwap, listPendingForManager, swapNotices, SwapError } from "@/lib/special-duty-swap";
 import { dutyMonthSummary, dutyOwnerAlerts } from "@/lib/special-duty-payout";
-import { assignSubstitute, dayBelongsToBranch, EvidenceError, evidenceFlags, listEvidence, decideDutyChange, listPendingChanges, listSubstituteCandidates, markAbsent, REPLACE_REASONS, replaceDutyWorker, reviewEvidence } from "@/lib/special-duty-evidence";
+import { assignSubstitute, dayBelongsToBranch, EvidenceError, evidenceFlags, listEvidence, decideDutyChange, listPendingChanges, listSubstituteCandidates, markAbsent, markNotDone, REPLACE_REASONS, replaceDutyWorker, reviewEvidence, reviewTarget } from "@/lib/special-duty-evidence";
 import { EVIDENCE_TEXT, RULE_TEXT, SWAP_TEXT, viewerOf } from "@/lib/special-duty-viewer";
-import { pushChangeDecided, pushReplacement } from "@/lib/special-duty-change-api";
+import { pushChangeDecided, pushEvidenceReview, pushReplacement } from "@/lib/special-duty-change-api";
 import { sqlNameWithPrefix } from "@/lib/name";
 
 // Manager console for ตำแหน่งงานค่าตอบแทนพิเศษ (active branch).
@@ -88,7 +88,7 @@ function missedList(report: ReturnType<typeof audienceReport>, outcome?: Map<num
 
 const Body = z.object({
   month: YM,
-  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "absent", "substitute", "replace", "approve_change", "reject_change", "approve_swap", "reject_swap", "invite_booking", "open_booking", "set_close_date", "audience_check"]),
+  action: z.enum(["close_booking", "start_filling", "suggest", "apply_suggestions", "assign", "remove", "publish", "approve", "reject", "not_done", "absent", "substitute", "replace", "approve_change", "reject_change", "approve_swap", "reject_swap", "invite_booking", "open_booking", "set_close_date", "audience_check"]),
   position_id: z.number().int().optional(), date: z.string().optional(), user_id: z.number().int().optional(), override: z.boolean().optional(),
   close_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), swap_id: z.number().int().optional(), day_id: z.number().int().optional(), allow_unfilled: z.boolean().optional(), note: z.string().max(300).optional(), reason_type: z.enum(REPLACE_REASONS).optional(), request_id: z.number().int().optional()
 });
@@ -157,6 +157,15 @@ export async function POST(req: Request) {
       case "approve": case "reject": {
         if (!d.day_id) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
         reviewEvidence({ dayId: d.day_id, branchId, managerId: actorId, approve: d.action === "approve", note: d.note });
+        const t = reviewTarget(d.day_id);
+        pushEvidenceReview(d.action === "approve" ? "approved" : "rejected", t.performerId, t.positionName, t.date, d.note?.trim() || null, t.yearMonth);
+        break;
+      }
+      case "not_done": {
+        if (!d.day_id) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+        markNotDone({ dayId: d.day_id, branchId, managerId: actorId, note: d.note ?? "" });
+        const t = reviewTarget(d.day_id);
+        pushEvidenceReview("not_done", t.performerId, t.positionName, t.date, d.note?.trim() || null, t.yearMonth);
         break;
       }
       case "approve_swap": case "reject_swap": {
