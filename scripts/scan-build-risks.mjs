@@ -61,6 +61,17 @@ for (const f of files) {
   });
 }
 
+// Annual check-up result tables are read / written through ONE gateway (src/lib/annual-checkup-db.ts; the schema and its
+// triggers live in annual-checkup-schema.ts + db.ts). Any other file touching them could leak a result to HR or a manager.
+const AC_GATEWAY_ONLY = /annual_checkup_(results|order_clinical|conclusions|result_revisions)\b/;
+const AC_ALLOWED = new Set(["src/lib/annual-checkup-db.ts", "src/lib/annual-checkup-schema.ts"]);
+for (const f of files) {
+  const rel = f.split("\\").join("/");
+  if (AC_ALLOWED.has(rel)) continue;
+  const text = readFileSync(f, "utf8");
+  if (AC_GATEWAY_ONLY.test(text)) issues.push(`${f}: touches an annual_checkup result table outside the gateway (use src/lib/annual-checkup-db.ts)`);
+}
+
 if (issues.length === 0) {
   console.log("scan-build-risks: OK");
   process.exit(0);
