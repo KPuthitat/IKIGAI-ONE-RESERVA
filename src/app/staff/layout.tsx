@@ -1,4 +1,4 @@
-import { getMyRounds, isRecorderEligible } from "@/lib/annual-checkup-db";
+import { getMyQueue, getMyRounds, isRecorderEligible } from "@/lib/annual-checkup-db";
 import { getSessionUser, canModule, isAdminUnlocked, isAdminCapable } from "@/lib/auth";
 import { ADMIN_MODULES } from "@/lib/admin-modules";
 import { getDb, getSystemSettings } from "@/lib/db";
@@ -68,6 +68,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   let clinicalCheckup = false;
   try { clinicalCheckup = isRecorderEligible(user.id); } catch { clinicalCheckup = false; }
   // Annual check-up (employee): the entry shows only once something has been released to this person.
+  let myQueue = false;
+  try { myQueue = getMyQueue(user).length > 0; } catch { myQueue = false; }
   let myCheckup = false;
   try { myCheckup = getMyRounds(user).length > 0; } catch { myCheckup = false; }
 
@@ -132,6 +134,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/persona/orgchart", label: "ผังองค์กร" },
         { href: "/staff/persona/policy-notices", label: "ประกาศนโยบาย" },
         { href: "/staff/persona/payslip", label: "สลิปเงินเดือน" },
+        ...(myQueue ? [{ href: "/staff/persona/checkup-queue", label: "ลำดับตรวจสุขภาพประจำปี" }] : []),
         { href: "/staff/persona/discipline", label: t(lang, "staff.persona.nav.discipline") },
         { href: "/staff/persona/leave", label: t(lang, "staff.nav.leave") },
         { href: "/staff/persona/shift-request", label: "คำขอเปลี่ยนเวลางาน" },
