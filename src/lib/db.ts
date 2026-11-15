@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import { encryptSecret, decryptSecret, isEncrypted } from "./secret-vault";
+import { ensureAnnualCheckupSchema } from "./annual-checkup-schema";
 
 const DB_PATH = process.env.DATABASE_PATH || "./data/reserva.db";
 
@@ -6212,6 +6213,10 @@ function runMigrations(db: Database.Database): void {
     if (!enrCols.has("pending_action_reason")) db.exec("ALTER TABLE mounjaro_enrollments ADD COLUMN pending_action_reason TEXT");
     if (!enrCols.has("pending_action_at")) db.exec("ALTER TABLE mounjaro_enrollments ADD COLUMN pending_action_at TEXT");
   }
+
+  // Annual health check-up programme — phase 2 schema (docs/annual-checkup-plan.md). Isolated from the rest of the boot: a
+  // failure here must never stop the clock-in system from starting, and it is idempotent so the next boot retries.
+  try { ensureAnnualCheckupSchema(db); } catch (e) { console.error("[migrate] annual check-up schema failed:", e); }
 
   // ══════════════════════════════════════════════════════════════════
   // RBAC — บทบาท/สิทธิ์การเข้าถึงโมดูล (2026-06-04)
