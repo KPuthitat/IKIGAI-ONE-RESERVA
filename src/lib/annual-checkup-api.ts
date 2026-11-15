@@ -28,6 +28,7 @@ export const ERROR_TEXT: Record<string, string> = {
   not_all_verified: "ยังมีรายการที่ยังไม่ได้ตรวจสอบ", nothing_to_release: "ไม่มีรายการที่ต้องเปิดผล",
   conclusion_released: "สรุปผลที่เปิดให้พนักงานดูแล้วแก้ไม่ได้",
   consent_required: "กรุณายอมรับข้อตกลงการคุ้มครองข้อมูลก่อน", pin_wrong: "รหัส PIN ไม่ถูกต้อง", no_pin: "ท่านยังไม่ได้ตั้งรหัส PIN กรุณาตั้งรหัสที่หน้าลงเวลาก่อน", too_many: "กรอกผิดหลายครั้ง กรุณารอ 10 นาทีแล้วลองใหม่", view_locked: "กรุณายืนยันตัวตนด้วย PIN ก่อนดูผล", not_released: "ผลของผู้เข้าตรวจรายนี้ยังไม่ถูกเปิด",
+  queue_not_found: "ไม่พบคิวนี้ (QR ไม่ถูกต้อง)", queue_no_taken: "ลำดับนี้มีผู้ใช้แล้วในรอบนี้", bad_queue_no: "ลำดับต้องเป็นเลขจำนวนเต็มตั้งแต่ 1",
   order_not_found: "ไม่พบรายการตรวจ", result_not_found: "ไม่พบผล", subject_not_found: "ไม่พบผู้เข้าตรวจ", test_not_found: "ไม่พบรายการตรวจนี้", round_not_found: "ไม่พบรอบ"
 };
 
