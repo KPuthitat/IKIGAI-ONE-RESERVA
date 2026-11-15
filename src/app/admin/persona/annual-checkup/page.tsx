@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { canImportCheckup } from "@/lib/annual-checkup-import";
+import { getActiveConsent } from "@/lib/annual-checkup-employee";
+import ConsentEditor from "./ConsentEditor";
 import ImportClient, { type RoundOption } from "./ImportClient";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +15,7 @@ export const metadata: Metadata = { title: "ตรวจสุขภาพปร
 export default function AnnualCheckupPage() {
   const user = requireAdmin();
   if (!canImportCheckup(user)) redirect("/admin?error=forbidden");
+  const consent = getActiveConsent();
   const rounds = getDb().prepare(`
     SELECT r.id, r.name, r.status,
            (SELECT COUNT(*) FROM annual_checkup_orders o WHERE o.round_id = r.id) AS orders,
@@ -26,6 +29,7 @@ export default function AnnualCheckupPage() {
         <p className="text-sm text-slate-500">นำเข้ารายชื่อและรายการตรวจของรอบจากไฟล์ Excel — ดูตัวอย่างก่อนเสมอ ระบบไม่เดาแถวที่จับคู่ไม่ได้ และนำเข้าซ้ำได้โดยไม่เกิดข้อมูลซ้ำ</p>
       </div>
       <ImportClient rounds={rounds} />
+      {user.role === "super_admin" && <ConsentEditor version={consent.version} body={consent.body} />}
     </div>
   );
 }

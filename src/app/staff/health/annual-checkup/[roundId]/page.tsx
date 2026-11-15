@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getRoundOverview, isAnnualCheckupInvalid } from "@/lib/annual-checkup-db";
+import { getRoundLineGaps, getRoundOverview, isAnnualCheckupInvalid } from "@/lib/annual-checkup-db";
 import { requireClinicalUser } from "@/lib/annual-checkup-api";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +17,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
   if (!Number.isInteger(roundId) || roundId <= 0) notFound();
   let data: ReturnType<typeof getRoundOverview>;
   try { data = getRoundOverview(user, roundId); } catch (e) { if (isAnnualCheckupInvalid(e)) notFound(); throw e; }
+  const lineGaps = getRoundLineGaps(user, roundId);
   const f = searchParams.f ?? "";
   const subjects = data.subjects.filter((s) => {
     if (f === "todo") return s.recorded < s.required;
@@ -33,6 +34,11 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
     <div className="space-y-4">
       <div className="flex items-center gap-3"><Link href="/staff/health/annual-checkup" className="text-sm text-slate-500 hover:text-brand">← รอบทั้งหมด</Link></div>
       <h1 className="text-xl font-bold text-slate-800">{data.round.name}</h1>
+      {lineGaps.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          ผลออกแล้วแต่ยังไม่ได้ผูก LINE จึงไม่ได้รับแจ้ง ({lineGaps.length} คน): {lineGaps.join(", ")} — แจ้งให้เปิดดูผลในพอร์ทัลได้เอง
+        </div>
+      )}
 
       <div className="card overflow-x-auto">
         <div className="text-sm font-semibold text-slate-800">ลงผลรายรายการ (ลงรายการเดียวให้หลายคนพร้อมกัน)</div>

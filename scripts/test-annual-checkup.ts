@@ -329,6 +329,88 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     return c.results.some((x) => x.has_file === 1) && !JSON.stringify(c).includes("lab-001.pdf");
   })());
 
+  // ── 8b. phase 5: the employee's own view, the LINE notice, the printable report for outside people ──
+  const EN = await import("../src/lib/annual-checkup-employee");
+  const SS = await import("../src/lib/annual-checkup-session");
+  const NT = await import("../src/lib/annual-checkup-notify");
+  const bcrypt = (await import("bcryptjs")).default;
+  const E = mkUser("emp-e", "staff", [nama]);
+  db.prepare("UPDATE users SET line_user_id = 'U-test-e', pin_hash = ? WHERE id = ?").run(bcrypt.hashSync("1234", 4), E);
+  const oE = order(E, "HAV", "ordered");
+  const resE = G.recordResult({ id: R }, oE, { valueText: "ปกติ", filePath: "annual-checkup/e/hav.pdf", fileMime: "application/pdf" });
+  ok("P1 before release the employee has no rounds, no file, and is not on the notify list", G.getMyRounds({ id: E }).length === 0 && G.getMyResultFile({ id: E }, resE) === null
+    && !G.listPendingNotifications().some((x) => x.user_id === E));
+  G.verifyResult({ id: D }, resE, { licenseUnlocked: true });
+  G.saveConclusion({ id: D }, round, { userId: E }, { summary: "normal", doctorComment: "สุขภาพดี" }, { licenseUnlocked: true });
+  G.releaseSubject({ id: D }, round, { userId: E }, { licenseUnlocked: true });
+  ok("P2 after release: one round listed; own file opens, with an audit row; someone else's result id gives nothing", (() => {
+    const f = G.getMyResultFile({ id: E }, resE);
+    const own = G.getMyRounds({ id: E });
+    const other = [A, B, HR, M, W, S].every((u) => G.getMyResultFile({ id: u }, resE) === null);
+    return own.length === 1 && own[0].id === round && f?.path === "annual-checkup/e/hav.pdf" && other
+      && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'self.file' AND actor_id = ?").get(E) as { n: number }).n === 1;
+  })());
+  ok("P3 the employee's result list carries a result id and a file flag but never the stored path", (() => {
+    const j = JSON.stringify(G.getMyReleasedResults({ id: E }, round));
+    return !j.includes("hav.pdf") && !j.includes("file_path") && j.includes("result_id") && j.includes("has_file");
+  })());
+  ok("P4 a verified-but-unreleased file of B cannot be opened by B", (() => {
+    const id = (db.prepare("SELECT id FROM annual_checkup_results WHERE order_id = ?").get(bHav) as { id: number }).id;
+    return G.getMyResultFile({ id: B }, id) === null;
+  })());
+  ok("P5 the notify list holds E (LINE linked) and not A (no LINE); marking it twice sends nothing more", (() => {
+    const first = G.listPendingNotifications().filter((x) => x.user_id === E);
+    const noA = !G.listPendingNotifications().some((x) => x.user_id === A);
+    G.markNotified(first[0].conclusion_id); G.markNotified(first[0].conclusion_id);
+    return first.length === 1 && first[0].line_user_id === "U-test-e" && noA && !G.listPendingNotifications().some((x) => x.user_id === E);
+  })());
+  ok("P6 recorders see who has no LINE (names only); nobody else may ask", (() => {
+    const gaps = G.getRoundLineGaps({ id: R }, round);
+    return gaps.length >= 1 && gaps.every((x) => typeof x === "string") && !gaps.some((x) => /emp-e/.test(x))
+      && [A, HR, M, W, S].every((u) => err(() => G.getRoundLineGaps({ id: u }, round)) === "not_recorder");
+  })());
+  ok("P7 the LINE card says the results are ready and nothing else: no value, no verdict, no test name", (() => {
+    const j = JSON.stringify(NT.resultsReadyCard());
+    return j.includes("ผลตรวจสุขภาพประจำปีของท่านพร้อมแล้ว") && !/ผิดปกติ|ปกติ|ต้องติดตาม|HAV|CXR|ไวรัส|เอกซเรย์|[0-9]+(\.[0-9]+)? ?(mg|g\/dL|%)/.test(j) && j.includes("/staff/health/annual");
+  })());
+  ok("P8 consent: a default text exists, nobody has agreed yet, agreeing is recorded once per version", (() => {
+    const v = EN.getActiveConsent();
+    if (!v.body || EN.hasConsented(E)) return false;
+    EN.recordConsent(E, "10.0.0.1"); EN.recordConsent(E, "10.0.0.1");
+    return EN.hasConsented(E) && !EN.hasConsented(A) && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_consents WHERE user_id = ?").get(E) as { n: number }).n === 1;
+  })());
+  ok("P9 a new consent text is published by a super_admin only, and everyone is asked again", (() => {
+    let refused = false; try { EN.publishConsentVersion(W, "2.0", "ข้อความใหม่"); } catch { refused = true; }
+    EN.publishConsentVersion(S, "2.0", "ข้อความใหม่");
+    const again = !EN.hasConsented(E) && EN.getActiveConsent().version === "2.0";
+    let dup = false; try { EN.publishConsentVersion(S, "2.0", "x"); } catch { dup = true; }
+    return refused && again && dup && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_consent_versions WHERE active = 1").get() as { n: number }).n === 1;
+  })());
+  ok("P10 PIN: right PIN passes; wrong ones are counted and the 6th try is blocked even with the right PIN; no PIN is its own answer", (() => {
+    const t0 = Date.now();
+    const good = EN.checkViewPin(E, "1234", t0) === "ok";
+    for (let i = 0; i < 5; i++) if (EN.checkViewPin(E, "0000", t0 + i) !== "wrong") return false;
+    const blocked = EN.checkViewPin(E, "1234", t0 + 10) === "too_many";
+    const later = EN.checkViewPin(E, "1234", t0 + 11 * 60_000) === "ok";
+    return good && blocked && later && EN.checkViewPin(A, "1234") === "no_pin";
+  })());
+  ok("P11 the viewing window: valid for its owner, not for another person, not after 15 minutes, not if tampered", (() => {
+    const now = Date.now(), t = SS.makeViewToken(E, now);
+    return SS.readViewToken(t, E, now + 60_000) !== null && SS.readViewToken(t, A, now + 60_000) === null
+      && SS.readViewToken(t, E, now + 16 * 60_000) === null && SS.readViewToken(t + "x", E, now) === null && SS.readViewToken(undefined, E, now) === null;
+  })());
+  ok("P12 the printable report for an outside person: refused before release, then clinical staff only, audited", (() => {
+    const before = err(() => G.getExternalReport({ id: R }, round, ext)) === "not_released";
+    const resExt = (db.prepare("SELECT id FROM annual_checkup_results WHERE order_id = ?").get(oExt) as { id: number }).id;
+    G.verifyResult({ id: D }, resExt, { licenseUnlocked: true });
+    G.saveConclusion({ id: D }, round, { externalId: ext }, { summary: "normal", doctorComment: "ปกติ" }, { licenseUnlocked: true });
+    G.releaseSubject({ id: D }, round, { externalId: ext }, { licenseUnlocked: true });
+    const rep = G.getExternalReport({ id: R }, round, ext);
+    const refused = [A, B, HR, M, W, S].every((u) => err(() => G.getExternalReport({ id: u }, round, ext)) === "not_recorder");
+    return before && rep.person.label === "คนนอก ทดสอบ" && rep.results.length === 1 && rep.conclusion.doctor === "doctor" && refused
+      && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'external.report' AND actor_id = ?").get(R) as { n: number }).n === 1;
+  })());
+
   // ── 9. revoking ──
   ok("9a only a super_admin revokes; the flag drops and the recorder is refused at once", (() => {
     const notSuper = err(() => G.revokeCapability({ id: W }, R, "recorder", "x")) === "super_admin_only";

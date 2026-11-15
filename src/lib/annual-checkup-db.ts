@@ -361,8 +361,10 @@ export function getMyReleasedResults(actor: AcActor, roundId: number): {
   const a = loadActor(actor);
   const db = getDb();
   // The employee is the subject by construction: a.id comes from the session, never from a parameter.
+  // The stored file path never leaves here — the page gets a result id and a flag, and opens the file through getMyResultFile.
   const results = db.prepare(`
-    SELECT t.code, t.name_th, t.name_en, r.value_num, r.value_text, r.value_json, r.unit, r.ref_text, r.interpretation, r.file_path, r.released_at
+    SELECT r.id AS result_id, t.code, t.name_th, t.name_en, t.value_kind, r.value_num, r.value_text, r.value_json, r.unit, r.ref_text, r.interpretation,
+           CASE WHEN r.file_path IS NOT NULL THEN 1 ELSE 0 END AS has_file, r.released_at
       FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id
       JOIN annual_checkup_results r ON r.order_id = o.id
      WHERE o.round_id = ? AND o.user_id = ? AND r.status = 'released' ORDER BY t.sort_no
@@ -371,6 +373,84 @@ export function getMyReleasedResults(actor: AcActor, roundId: number): {
     .get(roundId, a.id) as { summary: string | null; doctor_comment: string | null; released_at: string } | undefined) ?? null;
   audit(a.id, "self.view", { user_id: a.id, external_id: null }, roundId, null);
   return { results, conclusion };
+}
+
+/** Rounds in which the signed-in employee has results released to them (newest first). Nothing about the content. */
+export function getMyRounds(actor: AcActor): Array<{ id: number; name: string; year_be: number | null; released_at: string }> {
+  const a = loadActor(actor);
+  return getDb().prepare(`
+    SELECT r.id, r.name, r.year_be, c.released_at
+      FROM annual_checkup_conclusions c JOIN annual_checkup_rounds r ON r.id = c.round_id
+     WHERE c.user_id = ? AND c.released_at IS NOT NULL ORDER BY c.released_at DESC, r.id DESC
+  `).all(a.id) as Array<{ id: number; name: string; year_be: number | null; released_at: string }>;
+}
+
+/** The file behind one of the employee's OWN released results; null for anyone else's, or one not released. Audited. */
+export function getMyResultFile(actor: AcActor, resultId: number): { path: string; mime: string } | null {
+  const a = loadActor(actor);
+  const r = getDb().prepare(`
+    SELECT r.file_path, r.file_mime, o.round_id FROM annual_checkup_results r JOIN annual_checkup_orders o ON o.id = r.order_id
+     WHERE r.id = ? AND o.user_id = ? AND r.status = 'released' AND r.file_path IS NOT NULL
+  `).get(resultId, a.id) as { file_path: string; file_mime: string | null; round_id: number } | undefined;
+  if (!r) return null;
+  audit(a.id, "self.file", { user_id: a.id, external_id: null }, r.round_id, resultId);
+  return { path: r.file_path, mime: r.file_mime ?? "application/octet-stream" };
+}
+
+// ── LINE notice bookkeeping (system job: no signed-in person) ─────────────────────────────────────────────────────────
+
+/** People whose results were released but who have not been told yet and can be (an active account linked to LINE). */
+export function listPendingNotifications(limit = 50): Array<{ conclusion_id: number; user_id: number; line_user_id: string }> {
+  return getDb().prepare(`
+    SELECT c.id AS conclusion_id, c.user_id, u.line_user_id
+      FROM annual_checkup_conclusions c JOIN users u ON u.id = c.user_id
+     WHERE c.released_at IS NOT NULL AND c.notified_at IS NULL AND c.user_id IS NOT NULL
+       AND u.status NOT IN ('disabled', 'resigned', 'terminated') AND u.line_user_id IS NOT NULL AND u.line_user_id <> ''
+     ORDER BY c.id LIMIT ?
+  `).all(limit) as Array<{ conclusion_id: number; user_id: number; line_user_id: string }>;
+}
+export function markNotified(conclusionId: number): void {
+  getDb().prepare("UPDATE annual_checkup_conclusions SET notified_at = CURRENT_TIMESTAMP WHERE id = ? AND notified_at IS NULL").run(conclusionId);
+}
+
+/** For the recorders: who has released results but no LINE linked, so nobody told them (names only, never a result). */
+export function getRoundLineGaps(actor: AcActor, roundId: number): string[] {
+  requireRecorder(actor);
+  return (getDb().prepare(`
+    SELECT u.display_name, u.title_prefix
+      FROM annual_checkup_conclusions c JOIN users u ON u.id = c.user_id
+     WHERE c.round_id = ? AND c.released_at IS NOT NULL AND (u.line_user_id IS NULL OR u.line_user_id = '')
+       AND u.status NOT IN ('disabled', 'resigned', 'terminated') ORDER BY u.display_name
+  `).all(roundId) as Array<{ display_name: string; title_prefix: string | null }>).map((x) => nameWithPrefix(x.title_prefix, x.display_name));
+}
+
+// ── printable report for a person without an account (clinical staff, after release) ──────────────────────────────────
+
+export function getExternalReport(actor: AcActor, roundId: number, externalId: number): {
+  round: { name: string; year_be: number | null }; person: { label: string; sex: "M" | "F" | null; dob: string | null; payer: string };
+  results: Array<Record<string, unknown>>; conclusion: { summary: string | null; doctor_comment: string | null; released_at: string; doctor: string | null; license_no: string | null };
+} {
+  const a = requireRecorder(actor);
+  const db = getDb();
+  const e = db.prepare("SELECT e.full_name, e.sort_no, e.sex, e.dob, p.name_th AS payer FROM annual_checkup_externals e JOIN annual_checkup_payers p ON p.id = e.payer_id WHERE e.id = ? AND e.round_id = ?")
+    .get(externalId, roundId) as { full_name: string | null; sort_no: number; sex: "M" | "F" | null; dob: string | null; payer: string } | undefined;
+  if (!e) throw new AnnualCheckupInvalid("subject_not_found");
+  const round = db.prepare("SELECT name, year_be FROM annual_checkup_rounds WHERE id = ?").get(roundId) as { name: string; year_be: number | null };
+  const c = db.prepare(`
+    SELECT c.summary, c.doctor_comment, c.released_at, u.display_name AS doctor, u.title_prefix AS doctor_prefix, u.license_no
+      FROM annual_checkup_conclusions c LEFT JOIN users u ON u.id = c.released_by WHERE c.round_id = ? AND c.external_id = ? AND c.released_at IS NOT NULL
+  `).get(roundId, externalId) as { summary: string | null; doctor_comment: string | null; released_at: string; doctor: string | null; doctor_prefix: string | null; license_no: string | null } | undefined;
+  if (!c) throw new AnnualCheckupInvalid("not_released");
+  const results = db.prepare(`
+    SELECT t.code, t.name_th, t.value_kind, r.value_num, r.value_text, r.value_json, r.unit, r.ref_text, r.interpretation
+      FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id JOIN annual_checkup_results r ON r.order_id = o.id
+     WHERE o.round_id = ? AND o.external_id = ? AND r.status = 'released' ORDER BY t.sort_no
+  `).all(roundId, externalId) as Array<Record<string, unknown>>;
+  audit(a.id, "external.report", { user_id: null, external_id: externalId }, roundId, null);
+  return {
+    round, person: { label: externalLabel(e.full_name, e.sort_no, e.payer), sex: e.sex, dob: e.dob, payer: e.payer }, results,
+    conclusion: { summary: c.summary, doctor_comment: c.doctor_comment, released_at: c.released_at, doctor: c.doctor ? nameWithPrefix(c.doctor_prefix, c.doctor) : null, license_no: c.license_no }
+  };
 }
 
 /** "Who opened my results" — everything done to this person's results by someone else. */

@@ -26,8 +26,10 @@ process.env.DATABASE_PATH = DB; process.env.RESERVA_SECRET_KEY = "e2e-secret-key
   const tid = (c: string) => (db.prepare("SELECT id FROM annual_checkup_tests WHERE code=?").get(c) as { id: number }).id;
   const oHav = Number(db.prepare("INSERT INTO annual_checkup_orders (round_id,user_id,payer_id,test_id,status) VALUES (?,?,?,?,'ordered')").run(round, A, payer, tid("HAV")).lastInsertRowid);
   const oUr = Number(db.prepare("INSERT INTO annual_checkup_orders (round_id,user_id,payer_id,test_id,status) VALUES (?,?,?,?,'waived')").run(round, A, payer, tid("URINE")).lastInsertRowid);
+  const bcrypt = (await import("bcryptjs")).default;
+  const E = mk("emp-e", "staff", { pin_hash: bcrypt.hashSync("4321", 4) }, nama);
   const sess = (uid: number) => { const id = `e2e-${uid}-${Math.random().toString(16).slice(2)}`; db.prepare("INSERT INTO sessions (id,user_id,active_branch_id,expires_at) VALUES (?,?,?,?)").run(id, uid, null, new Date(Date.now() + 3600_000).toISOString()); return id; };
-  const cookie = { R: sess(R), D: sess(D), A: sess(A), HR: sess(HR) };
+  const cookie = { R: sess(R), D: sess(D), A: sess(A), HR: sess(HR), E: sess(E) };
 
   const port = 3999;
   const srv = spawn("npx", ["next", "start", "-p", String(port)], { env: { ...process.env, PORT: String(port) }, stdio: ["ignore", "pipe", "pipe"], detached: true });
@@ -105,6 +107,48 @@ process.env.DATABASE_PATH = DB; process.env.RESERVA_SECRET_KEY = "e2e-secret-key
       ok("no session → the file is not served", (await call(href)).status === 401);
     }
     ok("every file open and the writes are audited", (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action='file.view'").get() as { n: number }).n >= 1 && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit").get() as { n: number }).n > 8);
+    // ── phase 5: the employee's own page ──
+    const oE = Number(db.prepare("INSERT INTO annual_checkup_orders (round_id,user_id,payer_id,test_id,status) VALUES (?,?,?,?,'ordered')").run(round, E, payer, tid("HAV")).lastInsertRowid);
+    await call("/api/annual-checkup/result", { who: "R", json: { orderId: oE, valueText: "พบภูมิคุ้มกัน", interpretation: "normal" } });
+    const fe = new FormData(); fe.set("orderId", String(oE)); fe.set("file", new File([Buffer.from("%PDF-1.4 mine")], "mine.pdf", { type: "application/pdf" }));
+    await call("/api/annual-checkup/file/upload", { who: "R", form: fe });
+    const un2 = await call("/api/annual-checkup/unlock", { who: "D", json: { license: "ว.12345" } });
+    const ck2 = /(ac_unlock=[^;]+)/.exec(un2.setCookie)?.[1] ?? "";
+    const resE = (db.prepare("SELECT id FROM annual_checkup_results WHERE order_id = ?").get(oE) as { id: number }).id;
+    await call("/api/annual-checkup/verify", { who: "D", extraCookie: ck2, json: { ids: [resE] } });
+    await call("/api/annual-checkup/conclusion", { who: "D", extraCookie: ck2, json: { roundId: round, subject: `u${E}`, summary: "normal", doctorComment: "สุขภาพดีมาก" } });
+    ok("the doctor releases E's result", (await call("/api/annual-checkup/release", { who: "D", extraCookie: ck2, json: { roundId: round, subject: `u${E}` } })).json?.released === 1);
+    const first = await call("/staff/health/annual", { who: "E" });
+    ok("E first sees the consent notice and no result", first.status === 200 && first.text.includes("ข้อตกลงการคุ้มครองข้อมูลส่วนบุคคล") && !first.text.includes("พบภูมิคุ้มกัน"), `status ${first.status}`);
+    ok("the PIN step is refused until consent is given", (await call("/api/annual-checkup/me/unlock", { who: "E", json: { pin: "4321" } })).status === 403);
+    ok("E accepts the consent", (await call("/api/annual-checkup/me/consent", { who: "E", json: {} })).json?.ok === true);
+    const second = await call("/staff/health/annual", { who: "E" });
+    ok("then E is asked for the PIN and still sees no result", second.text.includes("ยืนยันตัวตนเพื่อดูผลตรวจ") && !second.text.includes("พบภูมิคุ้มกัน"));
+    ok("a wrong PIN is refused", (await call("/api/annual-checkup/me/unlock", { who: "E", json: { pin: "0000" } })).status === 403);
+    ok("a hand-made view cookie (the bare user id) opens nothing", !(await call("/staff/health/annual", { who: "E", extraCookie: `ac_view=${E}` })).text.includes("พบภูมิคุ้มกัน"));
+    const okPin = await call("/api/annual-checkup/me/unlock", { who: "E", json: { pin: "4321" } });
+    const viewCk = /(ac_view=[^;]+)/.exec(okPin.setCookie)?.[1] ?? "";
+    ok("the right PIN opens a signed, httpOnly viewing window", okPin.json?.ok === true && !!viewCk && /HttpOnly/i.test(okPin.setCookie) && decodeURIComponent(viewCk).includes("."), okPin.setCookie);
+    const mine = await call("/staff/health/annual", { who: "E", extraCookie: viewCk });
+    ok("E now sees their result, the doctor's comment and the audit list", mine.text.includes("พบภูมิคุ้มกัน") && mine.text.includes("สุขภาพดีมาก") && mine.text.includes("ใครเปิดดูข้อมูลฉัน"));
+    ok("the viewing window of E is no use to another employee", !(await call("/staff/health/annual", { who: "A", extraCookie: viewCk })).text.includes("พบภูมิคุ้มกัน"));
+    const mhref = /href="(\/api\/annual-checkup\/me\/file\/\d+\?t=[^"]+)"/.exec(mine.text)?.[1]?.replace(/&amp;/g, "&");
+    ok("the page links the file with a signed link", !!mhref);
+    if (mhref) {
+      const f = await call(mhref, { who: "E", extraCookie: viewCk });
+      ok("E opens their own file", f.status === 200 && f.text.startsWith("%PDF"));
+      ok("without the open viewing window the link is refused", (await call(mhref, { who: "E" })).status === 403);
+      ok("another employee cannot use the link", (await call(mhref, { who: "A", extraCookie: viewCk })).status === 403);
+      ok("clinical staff cannot use the employee route", (await call(mhref, { who: "R", extraCookie: viewCk })).status === 403);
+      ok("no session → 401", (await call(mhref)).status === 401);
+    }
+    ok("releasing is audited and E sees who opened their data", (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action='self.view' AND actor_id = ?").get(E) as { n: number }).n >= 1);
+    const hr = await call("/admin/annual-checkup-status", { who: "HR" });
+    ok("HR sees counts and no name or result", hr.status === 200 && hr.text.includes("ความคืบหน้าตรวจสุขภาพประจำปี") && !/emp-e|emp-a|พบภูมิคุ้มกัน|สุขภาพดีมาก/.test(hr.text), `status ${hr.status}`);
+    const stA = await call("/admin/annual-checkup-status", { who: "A" });
+    ok("an ordinary employee cannot open the HR status page", stA.status !== 200 || !stA.text.includes("แยกตามบริษัทผู้จ่าย"), `status ${stA.status}`);
+    ok("the clinic recorder is not an HR viewer either", !(await call("/admin/annual-checkup-status", { who: "R" })).text.includes("แยกตามบริษัทผู้จ่าย"));
+    ok("the consent route is for the owner only", (await call("/api/admin/persona/annual-checkup/consent", { who: "HR", json: { version: "9", body: "x" } })).status === 403);
     ok("the lock route works", (await call("/api/annual-checkup/unlock", { who: "D", method: "DELETE" })).json?.ok === true);
   } finally { srv.kill("SIGTERM"); try { process.kill(-(srv.pid as number)); } catch { /* ignore */ } }
   console.log(failed ? `\n✗ ${failed} FAILED` : "\n✓ E2E ALL PASS");

@@ -33,3 +33,17 @@ export function readFileToken(token: string | null | undefined, resultId: number
 }
 /** The link a page shows for a result file. */
 export const fileLink = (resultId: number, userId: number) => `/api/annual-checkup/file/${resultId}?t=${encodeURIComponent(makeFileToken(resultId, userId))}`;
+
+// ── the employee's own view (phase 5): consent + PIN unlock a 15-minute viewing window ──
+export const VIEW_COOKIE = "ac_view";
+export const VIEW_MINUTES = 15;
+export function makeViewToken(userId: number, now = Date.now()): string {
+  return signValue(`${userId}|${now + minutes(VIEW_MINUTES)}`, "ac-view");
+}
+/** Expiry (ms) when the viewing window is open for this user right now, else null. */
+export function readViewToken(token: string | null | undefined, userId: number, now = Date.now()): number | null {
+  const v = verifySignedValue(token, "ac-view");
+  if (!v) return null;
+  const [uid, exp] = v.split("|").map(Number);
+  return uid === userId && Number.isFinite(exp) && exp > now ? exp : null;
+}

@@ -10,6 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { getDb, type Branch, type Booking } from "@/lib/db";
+import { notifyReleasedResults } from "@/lib/annual-checkup-notify";
 import { upcomingBirthdays, birthdayReminderFlex, birthdayReminderSent, markBirthdayReminderSent } from "@/lib/birthday-reminder";
 import { runSpecialDutyDaily } from "@/lib/special-duty-cron";
 import { sendMissingOutLetters } from "@/lib/missing-out";
@@ -122,6 +123,15 @@ async function runCron(): Promise<NextResponse> {
   const nowBkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
   const todayBkk = nowBkk.toISOString().slice(0, 10);  // YYYY-MM-DD
   const nowHhmmBkk = nowBkk.toISOString().slice(11, 16); // HH:MM
+
+  // ── Annual check-up: tell people their results are ready (card has no values) ──
+  let checkupNotices = 0;
+  try {
+    checkupNotices = await notifyReleasedResults();
+  } catch (e) {
+    console.error("cron annual check-up notice error", e);
+    reportError(e, "cron annual check-up notice", {});
+  }
 
   // ── Recurring expenses (owner 2026-06-30) ────────────────────────
   // Auto-post monthly รายจ่ายประจำ that are due today. Idempotent (last_posted_
@@ -635,6 +645,7 @@ async function runCron(): Promise<NextResponse> {
     ok: true,
     reminders_sent: remindersSent,
     recurring_expenses_posted: recurringExpensesPosted,
+    checkup_notices: checkupNotices,
     due_bills_reminded: dueBillsReminded,
     attendance_summaries_sent: attendanceSummariesSent,
     mealpass_accrued: mealpassAccrued,

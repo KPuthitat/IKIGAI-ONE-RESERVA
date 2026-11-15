@@ -6,7 +6,9 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSessionUser, requireUser, type SessionUser } from "./auth";
 import { isAnnualCheckupForbidden, isAnnualCheckupInvalid, isRecorderEligible } from "./annual-checkup-db";
-import { UNLOCK_COOKIE, UNLOCK_MINUTES, makeUnlockToken, readUnlockToken } from "./annual-checkup-session";
+import { promises as fs } from "fs";
+import path from "path";
+import { UNLOCK_COOKIE, UNLOCK_MINUTES, makeUnlockToken, readUnlockToken, VIEW_COOKIE, VIEW_MINUTES, makeViewToken, readViewToken } from "./annual-checkup-session";
 
 export const ERROR_TEXT: Record<string, string> = {
   unauthenticated: "กรุณาเข้าสู่ระบบใหม่",
@@ -25,6 +27,7 @@ export const ERROR_TEXT: Record<string, string> = {
   result_empty: "ยังไม่มีค่าหรือไฟล์ให้ตรวจสอบ", no_conclusion: "ต้องบันทึกสรุปผลของแพทย์ก่อนเปิดผล",
   not_all_verified: "ยังมีรายการที่ยังไม่ได้ตรวจสอบ", nothing_to_release: "ไม่มีรายการที่ต้องเปิดผล",
   conclusion_released: "สรุปผลที่เปิดให้พนักงานดูแล้วแก้ไม่ได้",
+  consent_required: "กรุณายอมรับข้อตกลงการคุ้มครองข้อมูลก่อน", pin_wrong: "รหัส PIN ไม่ถูกต้อง", no_pin: "ท่านยังไม่ได้ตั้งรหัส PIN กรุณาตั้งรหัสที่หน้าลงเวลาก่อน", too_many: "กรอกผิดหลายครั้ง กรุณารอ 10 นาทีแล้วลองใหม่", view_locked: "กรุณายืนยันตัวตนด้วย PIN ก่อนดูผล", not_released: "ผลของผู้เข้าตรวจรายนี้ยังไม่ถูกเปิด",
   order_not_found: "ไม่พบรายการตรวจ", result_not_found: "ไม่พบผล", subject_not_found: "ไม่พบผู้เข้าตรวจ", test_not_found: "ไม่พบรายการตรวจนี้", round_not_found: "ไม่พบรอบ"
 };
 
@@ -68,3 +71,26 @@ export function licenseAttemptsLeft(userId: number, now = Date.now()): number {
   return Math.max(0, 5 - recent.length);
 }
 export function noteWrongLicense(userId: number, now = Date.now()): void { attempts.set(userId, [...(attempts.get(userId) ?? []), now]); }
+
+// ── the employee's own viewing window (consent + PIN → signed cookie, 15 minutes) ──
+export function viewExpiry(user: SessionUser): number | null { return readViewToken(cookies().get(VIEW_COOKIE)?.value, user.id); }
+export const isViewOpen = (user: SessionUser): boolean => viewExpiry(user) !== null;
+export function setViewCookie(user: SessionUser): number {
+  cookies().set(VIEW_COOKIE, makeViewToken(user.id), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: VIEW_MINUTES * 60 });
+  return Date.now() + VIEW_MINUTES * 60_000;
+}
+export function clearViewCookie(): void {
+  cookies().set(VIEW_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
+}
+
+// ── private files ──
+const DATA_ROOT = process.env.HEALTH_DATA_ROOT ?? path.join(process.cwd(), "data", "health");
+/** Stream a stored file, never leaving the health data folder. */
+export async function serveStoredFile(rel: string, mime: string): Promise<NextResponse> {
+  const full = path.resolve(DATA_ROOT, rel);
+  if (!full.startsWith(path.resolve(DATA_ROOT) + path.sep)) return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
+  try {
+    const buf = await fs.readFile(full);
+    return new NextResponse(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength), { headers: { "Content-Type": mime, "Content-Disposition": "inline", "Cache-Control": "private, no-store" } });
+  } catch { return NextResponse.json({ ok: false, error: "file_missing" }, { status: 404 }); }
+}
