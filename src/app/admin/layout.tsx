@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSessionUser, userCanViewPayroll, canModule, isAdminCapable, isAdminUnlocked } from "@/lib/auth";
 import { getDb, getSystemSettings } from "@/lib/db";
+import { canImportCheckup } from "@/lib/annual-checkup-import";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { autoExpireStaleBookings } from "@/lib/stale-bookings";
@@ -194,6 +195,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/manager-reports", label: "รายงานผู้จัดการ" },
         { href: "/admin/persona/exec-meetings", label: "ประชุมผู้บริหาร" },
         { href: "/admin/persona/special-duty", label: "ตำแหน่งงานค่าตอบแทนพิเศษ" },
+        ...(canImportCheckup(user) ? [{ href: "/admin/persona/annual-checkup", label: "ตรวจสุขภาพประจำปี" }] : []),
         { href: "/admin/persona/policy-notices", label: "ประกาศนโยบาย" },
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
