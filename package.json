@@ -14,6 +14,7 @@
     "test:mounjaro": "node --import tsx scripts/test-mounjaro.ts",
     "test:mealpass": "node --import tsx scripts/test-mealpass.ts",
     "test:rbac": "node --import tsx scripts/test-rbac.ts",
+    "test:annual-checkup-import": "node --import tsx scripts/test-annual-checkup-import.ts",
     "test:annual-checkup": "node --import tsx scripts/test-annual-checkup.ts",
     "test:purchase-trend": "node --import tsx scripts/test-purchase-trend.ts",
     "test:recruita-offer": "node --import tsx scripts/test-recruita-offer.ts",

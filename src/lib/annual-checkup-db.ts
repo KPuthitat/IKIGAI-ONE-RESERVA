@@ -86,6 +86,21 @@ function audit(actorId: number, action: string, subject: { user_id: number | nul
 const subjectCols = (s: AcSubject) => ({ user_id: s.userId ?? null, external_id: s.externalId ?? null });
 const clean = (v: unknown, max = 2000): string | null => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
 
+// ── for the importer: which orders must not be changed or removed ──────────────────────────────────────────────────────
+
+/**
+ * Orders of a round that already have a result or clinical data (a waive reason / an outside lab's name). The import never changes
+ * or removes these — it reports them as conflicts for clinical staff to settle. Returns ids only, so nothing clinical leaks to the caller.
+ */
+export function lockedOrderIds(roundId: number): Set<number> {
+  const rows = getDb().prepare(`
+    SELECT o.id FROM annual_checkup_orders o
+     WHERE o.round_id = ? AND (EXISTS (SELECT 1 FROM annual_checkup_results r WHERE r.order_id = o.id)
+                            OR EXISTS (SELECT 1 FROM annual_checkup_order_clinical c WHERE c.order_id = o.id))
+  `).all(roundId) as Array<{ id: number }>;
+  return new Set(rows.map((r) => r.id));
+}
+
 // ── grants (super_admin only) ──────────────────────────────────────────────────────────────────────────────────────
 
 const FLAG: Record<Capability, "health_result_recorder" | "health_result_approver"> = {
