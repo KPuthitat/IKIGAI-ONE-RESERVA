@@ -1,4 +1,4 @@
-import { isRecorderEligible } from "@/lib/annual-checkup-db";
+import { getMyRounds, isRecorderEligible } from "@/lib/annual-checkup-db";
 import { getSessionUser, canModule, isAdminUnlocked, isAdminCapable } from "@/lib/auth";
 import { ADMIN_MODULES } from "@/lib/admin-modules";
 import { getDb, getSystemSettings } from "@/lib/db";
@@ -67,6 +67,9 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   // Annual check-up (clinic): the entry shows only for clinic staff who can record results right now (checked live, like the pages).
   let clinicalCheckup = false;
   try { clinicalCheckup = isRecorderEligible(user.id); } catch { clinicalCheckup = false; }
+  // Annual check-up (employee): the entry shows only once something has been released to this person.
+  let myCheckup = false;
+  try { myCheckup = getMyRounds(user).length > 0; } catch { myCheckup = false; }
 
   const isAdminUser = isAdminCapable(user);
   // Admin mode is driven ONLY by the httpOnly PIN-unlock (owner 2026-09-22:
@@ -196,6 +199,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       label: "สุขภาพพนักงาน",
       items: [
         { href: "/staff/health/exams", label: "ผลตรวจสุขภาพ" },
+        ...(myCheckup ? [{ href: "/staff/health/annual", label: "ผลตรวจสุขภาพประจำปี" }] : []),
         ...(clinicalCheckup ? [{ href: "/staff/health/annual-checkup", label: "ลงผลตรวจประจำปี (คลินิก)" }] : []),
         ...(mjEnrolled
           ? [{ href: "/staff/health/mounjaro", label: "โครงการควบคุมน้ำหนัก" }]

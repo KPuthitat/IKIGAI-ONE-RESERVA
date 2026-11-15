@@ -44,6 +44,9 @@ export default function PersonPage({ params }: { params: { roundId: string; key:
         <h1 className="text-xl font-bold text-slate-800">{header.label}</h1>
         <p className="text-sm text-slate-500">{header.code ?? "ผู้เข้าตรวจภายนอก (ไม่มีบัญชี)"} · ผู้จ่าย: {header.payer ?? "—"}</p>
       </div>
+      {header.kind === "external" && conclusion?.released_at && (
+        <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/report`} className="btn-secondary text-sm inline-block">พิมพ์รายงานผลตรวจ (A4) ส่งบริษัทผู้จ่าย</Link>
+      )}
       {approver && <UnlockPanel unlockedUntil={unlockExpiry(user)} />}
       <PersonClient rows={rows} conclusion={conclusion} roundId={roundId} subject={params.key} externalId={subject.externalId ?? null}
         needsName={header.kind === "external" && /^รอเพิ่มรายชื่อ/.test(header.label)} isApprover={approver} unlocked={isUnlocked(user)} />

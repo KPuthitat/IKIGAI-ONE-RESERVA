@@ -292,6 +292,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           ? [{ href: "/admin/mounjaro", label: "โครงการควบคุมน้ำหนัก (แพทย์)" }] : []),
         ...(user.is_hr_analytics === 1
           ? [{ href: "/admin/mounjaro-hr", label: "ภาพรวมสุขภาพพนักงาน (HR)" }] : []),
+        ...(user.role === "super_admin" || user.role === "admin" || user.is_hr_analytics === 1
+          ? [{ href: "/admin/annual-checkup-status", label: "ความคืบหน้าตรวจสุขภาพประจำปี" }] : []),
         // System-level health config — super_admin only (the pages also
         // enforce requireSuperAdmin server-side). Moved here from the
         // global section so all health settings live under one menu.
