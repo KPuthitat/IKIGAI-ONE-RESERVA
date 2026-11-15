@@ -149,6 +149,35 @@ process.env.DATABASE_PATH = DB; process.env.RESERVA_SECRET_KEY = "e2e-secret-key
     ok("an ordinary employee cannot open the HR status page", stA.status !== 200 || !stA.text.includes("แยกตามบริษัทผู้จ่าย"), `status ${stA.status}`);
     ok("the clinic recorder is not an HR viewer either", !(await call("/admin/annual-checkup-status", { who: "R" })).text.includes("แยกตามบริษัทผู้จ่าย"));
     ok("the consent route is for the owner only", (await call("/api/admin/persona/annual-checkup/consent", { who: "HR", json: { version: "9", body: "x" } })).status === 403);
+    // ── queue number + QR check-in ──
+    db.prepare("UPDATE annual_checkup_rounds SET start_date = '2026-12-10', location = 'AT HOME CLINIC', appt_time = '08:00' WHERE id = ?").run(round);
+    db.prepare("INSERT INTO annual_checkup_queue (round_id, user_id, queue_no) VALUES (?,?,1)").run(round, A);
+    db.prepare("INSERT INTO annual_checkup_queue (round_id, user_id, queue_no) VALUES (?,?,2)").run(round, E);
+    const tokA = (db.prepare("SELECT checkin_token t FROM annual_checkup_queue WHERE user_id = ?").get(A) as { t: string }).t;
+    const tokE = (db.prepare("SELECT checkin_token t FROM annual_checkup_queue WHERE user_id = ?").get(E) as { t: string }).t;
+    const qa = await call("/staff/persona/checkup-queue", { who: "A" });
+    ok("the employee page shows their number, the fasting advice and no other person's token", qa.status === 200 && qa.text.includes("ลำดับตรวจสุขภาพประจำปี") && qa.text.includes("งดน้ำและงดอาหาร 8 ชั่วโมง") && !qa.text.includes(tokE), `status ${qa.status}`);
+    ok("the QR is made from the token alone (the page never prints the name or code in the QR value)", !qa.text.includes("IKG-") && !/QR emp-/.test(qa.text));
+    ok("someone with no queue place sees the empty state, not another person's", (await call("/staff/persona/checkup-queue", { who: "HR" })).text.includes("ยังไม่มีลำดับตรวจของท่าน"));
+    ok("no session → the queue page is not served", !(await call("/staff/persona/checkup-queue")).text.includes("ลำดับของท่าน"));
+    ok("an employee cannot scan (403)", (await call("/api/annual-checkup/queue/scan", { who: "A", json: { token: tokE } })).status === 403);
+    ok("HR cannot scan or check in (403)", (await call("/api/annual-checkup/queue/scan", { who: "HR", json: { token: tokA } })).status === 403 && (await call("/api/annual-checkup/queue/checkin", { who: "HR", json: { token: tokA } })).status === 403);
+    ok("no session → 401", (await call("/api/annual-checkup/queue/scan", { json: { token: tokA } })).status === 401);
+    ok("an unknown or malformed token is a plain 404, never an error page", (await call("/api/annual-checkup/queue/scan", { who: "R", json: { token: "0".repeat(32) } })).status === 404 && (await call("/api/annual-checkup/queue/scan", { who: "R", json: { token: "x' OR '1'='1" } })).status === 404);
+    const sc = await call("/api/annual-checkup/queue/scan", { who: "R", json: { token: tokA } });
+    ok("the clinic recorder's scan shows the name, number and tests", sc.json?.ok === true && sc.json.scan.label === "emp-a" && sc.json.scan.queue_no === 1 && Array.isArray(sc.json.scan.tests));
+    const c1 = await call("/api/annual-checkup/queue/checkin", { who: "R", json: { token: tokA } });
+    ok("check-in is recorded with the staff member", c1.json?.ok === true && c1.json.already === false && c1.json.scan.checked_in_by === "recorder");
+    const c2 = await call("/api/annual-checkup/queue/checkin", { who: "R", json: { token: tokA } });
+    ok("scanning the same QR again changes nothing and says it was already checked in", c2.json?.already === true && c2.json.scan.checked_in_at === c1.json.scan.checked_in_at
+      && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'queue.checkin'").get() as { n: number }).n === 1);
+    ok("the employee page then shows they are checked in (no QR needed any more)", (await call("/staff/persona/checkup-queue", { who: "A" })).text.includes("เช็กอินแล้ว"));
+    const qpage = await call("/staff/health/annual-checkup/queue", { who: "R" });
+    ok("the clinic roster page lists the round in queue order with arrived / not yet", qpage.status === 200 && qpage.text.includes("emp-a") && qpage.text.includes("emp-e"));
+    ok("the roster is not served to HR or an employee", !(await call("/staff/health/annual-checkup/queue", { who: "HR" })).text.includes("emp-e") && !(await call("/staff/health/annual-checkup/queue", { who: "A" })).text.includes("emp-e"));
+    ok("only the owner / recorder may change queue numbers through the admin route", (await call("/api/admin/persona/annual-checkup/queue", { who: "A", json: { roundId: round, subject: `u${E}`, queueNo: 7 } })).status === 403
+      && (await call("/api/admin/persona/annual-checkup/queue", { who: "R", json: { roundId: round, subject: `u${E}`, queueNo: 1 } })).status === 422
+      && (await call("/api/admin/persona/annual-checkup/queue", { who: "R", json: { roundId: round, subject: `u${E}`, queueNo: 7 } })).json?.ok === true);
     ok("the lock route works", (await call("/api/annual-checkup/unlock", { who: "D", method: "DELETE" })).json?.ok === true);
   } finally { srv.kill("SIGTERM"); try { process.kill(-(srv.pid as number)); } catch { /* ignore */ } }
   console.log(failed ? `\n✗ ${failed} FAILED` : "\n✓ E2E ALL PASS");
