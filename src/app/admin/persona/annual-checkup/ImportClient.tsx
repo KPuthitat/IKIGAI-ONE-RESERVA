@@ -84,7 +84,7 @@ export default function ImportClient({ rounds }: { rounds: RoundOption[] }) {
       {result && (
         <div className="card space-y-1 text-sm">
           <div className="font-semibold text-slate-800">ผลการนำเข้า</div>
-          <div>{result.created ? "สร้างรอบใหม่" : "ปรับรอบเดิม"} · เพิ่มคำสั่งตรวจ {result.ordersAdded} · เปลี่ยน {result.ordersChanged} · ลบ {result.ordersRemoved} · เพิ่มช่องรอเติมชื่อ {result.externalsAdded}</div>
+          <div>{result.created ? "สร้างรอบใหม่" : "ปรับรอบเดิม"} · เพิ่มคำสั่งตรวจ {result.ordersAdded} · เปลี่ยน {result.ordersChanged} · ลบ {result.ordersRemoved} · เพิ่มช่องรอเติมชื่อ {result.externalsAdded} · ลำดับคิวเพิ่ม {result.queueAdded} เปลี่ยน {result.queueChanged}</div>
           {result.skippedRows > 0 && <div className="text-amber-700">ข้ามแถวที่ต้องแก้ {result.skippedRows} แถว — แก้ข้อมูลแล้วนำเข้าไฟล์เดิมอีกครั้งได้ ไม่เกิดข้อมูลซ้ำ</div>}
           {result.conflicts > 0 && <div className="text-amber-700">มี {result.conflicts} รายการที่ขัดแย้งกับผล/ข้อมูลทางคลินิก ไม่ได้เปลี่ยน</div>}
         </div>
@@ -103,7 +103,16 @@ export default function ImportClient({ rounds }: { rounds: RoundOption[] }) {
               <Stat label="เหมือนเดิม" value={plan.orders.same} />
               <Stat label="ลบ" value={plan.orders.remove} />
               <Stat label="ขัดแย้ง (มีผลแล้ว)" value={plan.orders.conflict} tone={plan.orders.conflict ? "warn" : "ok"} />
+              <Stat label="ลำดับคิวที่เพิ่ม" value={plan.queue.add} />
+              <Stat label="ลำดับคิวที่เปลี่ยน" value={plan.queue.change} />
+              <Stat label="ลำดับคิวเหมือนเดิม" value={plan.queue.same} />
+              <Stat label="ลำดับคิวที่จัดไม่ได้" value={plan.queue.clashes.length} tone={plan.queue.clashes.length ? "warn" : "ok"} />
             </div>
+            {plan.queue.clashes.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <ul className="list-disc pl-5">{plan.queue.clashes.map((m, i) => <li key={i}>{m}</li>)}</ul>
+              </div>
+            )}
 
             {plan.fileIssues.length > 0 && (
               <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">

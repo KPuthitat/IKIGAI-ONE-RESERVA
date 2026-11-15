@@ -36,18 +36,19 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   const rec = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,health_result_recorder) VALUES ('rec','x','rec','staff','active',1)").run().lastInsertRowid);
   db.prepare("INSERT INTO user_branches (user_id, branch_id, is_admin) VALUES (?,?,0)").run(rec, clinic);
   const admin = mkUser("IKG-ADM", null, "แอดมิน นำเข้า");
+  db.prepare("UPDATE users SET role = 'super_admin' WHERE id = ?").run(admin);   // the importer is the owner (the route checks canImportCheckup)
 
   const tests = db.prepare("SELECT id, code, name_th FROM annual_checkup_tests ORDER BY sort_no").all() as Array<{ id: number; code: string; name_th: string }>;
   const T = (code: string) => tests.find((t) => t.code === code)!;
 
   // ── workbook builder ──
-  type Row = { code: string; name: string; payer: string; marks?: Record<string, string>; lung?: boolean };
+  type Row = { code: string; name: string; payer: string; marks?: Record<string, string>; lung?: boolean; seq?: number | null };
   const BASIC = ["PHYSICAL", "CXR", "CBC", "URINE", "BUN", "CREAT", "SGOT", "SGPT", "CHOL", "TG", "HDL", "LDL", "GLUCOSE", "URIC"];
   const book = (rows: Row[], o: { totals?: boolean; extraHeader?: string; details?: Array<[string, string, string, string]>; badMark?: boolean } = {}) => {
     const header = ["ลำดับ", "รหัสพนักงาน", "ชื่อ-นามสกุล", "บริษัทที่รับค่าใช้จ่าย", "ตรวจปอดเพิ่ม", ...tests.map((t) => t.name_th), ...(o.extraHeader ? [o.extraHeader] : []), "จำนวนรายการ", "รายการตรวจเพิ่มจากพื้นฐาน และรายการที่งด"];
     const body = rows.map((r, i) => {
       const marks = tests.map((t) => r.marks?.[t.code] ?? (BASIC.includes(t.code) ? "✓" : ""));
-      return [String(i + 1), r.code, r.name, r.payer, r.lung ? "ตรวจ" : "", ...marks, ...(o.extraHeader ? [""] : []), String(marks.filter((m) => m === "✓").length), ""];
+      return [r.seq === null ? "" : String(r.seq ?? i + 1), r.code, r.name, r.payer, r.lung ? "ตรวจ" : "", ...marks, ...(o.extraHeader ? [""] : []), String(marks.filter((m) => m === "✓").length), ""];
     });
     if (o.badMark) body[0][6] = "??";
     const totals = ["", "", "รวมจำนวนคนที่ตรวจแต่ละรายการ", "", "", ...tests.map((t) => String(rows.filter((r) => (r.marks?.[t.code] ?? (BASIC.includes(t.code) ? "✓" : "")) === "✓").length)), ...(o.extraHeader ? [""] : []), "", ""];
@@ -188,6 +189,49 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     const a = db.prepare("SELECT status FROM annual_checkup_orders WHERE id = ?").get(oCxr2) as { status: string };
     const b = db.prepare("SELECT status FROM annual_checkup_orders WHERE id = ?").get(oLock) as { status: string };
     return a.status === "ordered" && b.status === "waived" && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_results").get() as { n: number }).n === 1;
+  })());
+
+  // ── queue numbers from the "ลำดับ" column ──
+  const Q = await import("../src/lib/annual-checkup-db");
+  const qOf = (userId: number) => (Q.listQueueForImport(round).find((x) => x.user_id === userId))?.queue_no ?? null;
+  ok("Q-I1 the parser reads the ลำดับ column as the starting queue number (blank / non-numeric → none)", (() => {
+    const w = parse([{ ...clean[0], seq: 7 }, { ...clean[1], seq: null }, clean[2]]);
+    return w.people[0].seq === 7 && w.people[1].seq === null && w.people[2].seq === 3;
+  })());
+  ok("Q-I2 a named employee row with NO code is skipped (reported, never matched on the name alone) and does not block the file", (() => {
+    const w = parse([...clean, { code: "", name: "นาย ไม่มี รหัส", payer: CLINIC }]);
+    const pl = I.buildImportPlan(db, w, { roundId: round });
+    return w.skippedNoCode.length === 1 && w.issues.length === 0 && pl.fileIssues.length === 0 && pl.queue.skippedNoCode.length === 1 && pl.warnings.some((x) => /ยังไม่มีรหัสพนักงาน/.test(x));
+  })());
+  ok("Q-I3 the earlier import already placed people: numbers 1 and 2 for staff, 4 and 5 for the empty slots", qOf(u1) === 1 && qOf(u2) === 2 && qOf(u3) === 3
+    && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_queue WHERE round_id = ? AND external_id IS NOT NULL").get(round) as { n: number }).n === 2);
+  ok("Q-I4 importing the same file again leaves every number as it was", (() => {
+    const pl = I.buildImportPlan(db, parse(clean), { roundId: round });
+    return pl.queue.add === 0 && pl.queue.change === 0 && pl.queue.same === 5 && pl.queue.clashes.length === 0;
+  })());
+  ok("Q-I5 a repeated number in the file is a file issue and blocks the commit", (() => {
+    const w = parse([{ ...clean[0], seq: 1 }, { ...clean[1], seq: 1 }, clean[2]]);
+    const pl = I.buildImportPlan(db, w, { roundId: round });
+    return pl.fileIssues.some((x) => /ลำดับ 1 ซ้ำ/.test(x)) && refused(() => I.commitImport(db, w, { roundId: round }, admin, { planHash: pl.hash, skipUnresolved: true })) === "file_issues";
+  })());
+  ok("Q-I6 two people swapping numbers in the file works (no clash with each other) and is applied all at once", (() => {
+    const swapped = clean.map((r, i) => (i === 0 ? { ...r, seq: 2 } : i === 1 ? { ...r, seq: 1 } : r));
+    const pl = I.buildImportPlan(db, parse(swapped), { roundId: round });
+    const r = I.commitImport(db, parse(swapped), { roundId: round }, admin, { planHash: pl.hash, skipUnresolved: false });
+    return pl.queue.change === 2 && r.queueChanged === 2 && qOf(u1) === 2 && qOf(u2) === 1;
+  })());
+  ok("Q-I7 a number held by someone who is not in the file is a clash: that person is not moved, the rest are placed", (() => {
+    const only = clean.filter((r) => r.code !== "IKG-003");           // u3 (number 3) is now outside the file
+    const asks3 = only.map((r, i) => ({ ...r, seq: [3, 2, 4, 5][i] }));
+    const pl = I.buildImportPlan(db, parse(asks3), { roundId: round });
+    return pl.queue.clashes.length === 1 && /ลำดับ 3/.test(pl.queue.clashes[0]);
+  })());
+  ok("Q-I8 the administrator can fix a number afterwards, and a number already taken is refused", (() => {
+    Q.upsertQueueRow({ id: admin }, round, { userId: u1 }, 9);
+    return qOf(u1) === 9 && (() => { try { Q.upsertQueueRow({ id: admin }, round, { userId: u2 }, 9); return false; } catch (e) { return Q.isAnnualCheckupInvalid(e) && e.code === "queue_no_taken"; } })();
+  })());
+  ok("Q-I9 the importer's queue step is for the owner or a clinic recorder only", (() => {
+    try { Q.applyQueuePlan({ id: u1 }, round, [{ subject: { userId: u1 }, queueNo: 20 }]); return false; } catch (e) { return Q.isAnnualCheckupForbidden(e); }
   })());
 
   console.log(failed === 0 ? "\n✓ ALL PASS" : `\n✗ ${failed} FAILED`);

@@ -815,3 +815,73 @@ export function upsertQueueRow(actor: AcActor, roundId: number, subject: AcSubje
     return { id: mine.id, action: "changed" as const };
   })());
 }
+
+/** Importer: who is already in the line (numbers and names only), so a plan can say add / change / same / clash. */
+export function listQueueForImport(roundId: number): Array<{ user_id: number | null; ext_payer: string | null; ext_sort: number | null; label: string; queue_no: number; checked_in: boolean }> {
+  return (getDb().prepare(`
+    SELECT q.user_id, ep.name_th AS ext_payer, e.sort_no AS ext_sort, q.queue_no, q.checked_in_at, u.display_name, u.title_prefix, e.full_name
+      FROM annual_checkup_queue q LEFT JOIN users u ON u.id = q.user_id LEFT JOIN annual_checkup_externals e ON e.id = q.external_id
+      LEFT JOIN annual_checkup_payers ep ON ep.id = e.payer_id WHERE q.round_id = ?
+  `).all(roundId) as Array<{ user_id: number | null; ext_payer: string | null; ext_sort: number | null; queue_no: number; checked_in_at: string | null; display_name: string | null; title_prefix: string | null; full_name: string | null }>)
+    .map((r) => ({ user_id: r.user_id, ext_payer: r.ext_payer, ext_sort: r.ext_sort, queue_no: r.queue_no, checked_in: !!r.checked_in_at,
+      label: r.user_id != null ? nameWithPrefix(r.title_prefix, r.display_name ?? "") : externalLabel(r.full_name, r.ext_sort, r.ext_payer ?? "") }));
+}
+
+/**
+ * Importer: set many people's numbers at once. All-or-nothing and swap-safe (a person moving to a number another person is leaving works):
+ * rows that change are first parked above the range, then given their new numbers. Refused if two items want the same number or a number is
+ * held by someone who is not part of this batch. The owner or a clinic recorder only.
+ */
+export function applyQueuePlan(actor: AcActor, roundId: number, items: Array<{ subject: AcSubject; queueNo: number }>): { added: number; changed: number; same: number } {
+  const a = loadActor(actor);
+  if (!(a.role === "super_admin" || isRecorderEligible(a.id))) throw new AnnualCheckupForbidden("not_allowed");
+  const db = getDb();
+  const wantedNos = new Set<number>();
+  for (const it of items) {
+    if (!Number.isInteger(it.queueNo) || it.queueNo <= 0 || it.queueNo >= 1_000_000) throw new AnnualCheckupInvalid("bad_queue_no");
+    if (wantedNos.has(it.queueNo)) throw new AnnualCheckupInvalid("queue_no_taken");
+    wantedNos.add(it.queueNo);
+  }
+  return guard(() => db.transaction(() => {
+    const col = (s: AcSubject) => (s.userId != null ? "user_id" : "external_id");
+    const sid = (s: AcSubject) => (s.userId ?? s.externalId) as number;
+    const mineOf = (s: AcSubject) => db.prepare(`SELECT id, queue_no FROM annual_checkup_queue WHERE round_id = ? AND ${col(s)} = ?`).get(roundId, sid(s)) as { id: number; queue_no: number } | undefined;
+    const batchIds = new Set<number>();
+    for (const it of items) { const m = mineOf(it.subject); if (m) batchIds.add(m.id); }
+    for (const it of items) {
+      const holder = db.prepare("SELECT id FROM annual_checkup_queue WHERE round_id = ? AND queue_no = ?").get(roundId, it.queueNo) as { id: number } | undefined;
+      if (holder && !batchIds.has(holder.id)) throw new AnnualCheckupInvalid("queue_no_taken");
+    }
+    let added = 0, changed = 0, same = 0;
+    const toSet: Array<{ id: number; no: number; subject: AcSubject }> = [];
+    for (const it of items) {
+      const m = mineOf(it.subject);
+      if (!m) { toSet.push({ id: -1, no: it.queueNo, subject: it.subject }); continue; }
+      if (m.queue_no === it.queueNo) { same++; continue; }
+      db.prepare("UPDATE annual_checkup_queue SET queue_no = queue_no + 1000000, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(m.id);
+      toSet.push({ id: m.id, no: it.queueNo, subject: it.subject });
+    }
+    for (const t of toSet) {
+      if (t.id < 0) {
+        db.prepare(`INSERT INTO annual_checkup_queue (round_id, ${col(t.subject)}, queue_no) VALUES (?, ?, ?)`).run(roundId, sid(t.subject), t.no);
+        audit(a.id, "queue.add", subjectCols(t.subject), roundId, null, `no ${t.no}`); added++;
+      } else {
+        db.prepare("UPDATE annual_checkup_queue SET queue_no = ? WHERE id = ?").run(t.no, t.id);
+        audit(a.id, "queue.change", subjectCols(t.subject), roundId, null, `-> ${t.no}`); changed++;
+      }
+    }
+    return { added, changed, same };
+  })());
+}
+
+/** The owner's / a recorder's list for editing numbers and times (no check-in controls, no tests). */
+export function listQueueForAdmin(actor: AcActor, roundId: number): QueueRosterRow[] {
+  const a = loadActor(actor);
+  if (!(a.role === "super_admin" || isRecorderEligible(a.id))) throw new AnnualCheckupForbidden("not_allowed");
+  const ids = getDb().prepare("SELECT id, user_id, external_id FROM annual_checkup_queue WHERE round_id = ? ORDER BY queue_no").all(roundId) as Array<{ id: number; user_id: number | null; external_id: number | null }>;
+  return ids.map((r) => {
+    const s = loadQueueScan("q.id = ?", r.id) as QueueScan;
+    return { queue_id: s.queue_id, key: r.user_id != null ? `u${r.user_id}` : `e${r.external_id}`, kind: s.kind, label: s.label, code: s.code, payer: s.payer,
+      queue_no: s.queue_no, appt_time: s.appt_time, checked_in_at: s.checked_in_at, checked_in_by: s.checked_in_by };
+  });
+}

@@ -14,7 +14,7 @@
 import crypto from "node:crypto";
 import type Database from "better-sqlite3";
 import { logPersonaAction } from "./db";
-import { isRecorderEligible, lockedOrderIds } from "./annual-checkup-db";
+import { applyQueuePlan, isRecorderEligible, listQueueForImport, lockedOrderIds } from "./annual-checkup-db";
 import { offerNameKey } from "./recruita-offer";
 import { nameWithPrefix } from "./name";
 import type { ParsedMark, ParsedWorkbook } from "./annual-checkup-xlsx";
@@ -26,8 +26,10 @@ export type PersonMatch =
   | { state: "needs_fix"; reason: "not_found" | "name_mismatch" | "ambiguous" | "inactive" | "duplicate_row"; message: string }
   | { state: "placeholder"; sortNo: number };
 
-export type PlanPerson = { sheetRow: number; kind: "employee" | "placeholder"; code: string | null; name: string; payer: string; match: PersonMatch; ordered: number; waived: number; externalLab: number };
+export type PlanPerson = { sheetRow: number; kind: "employee" | "placeholder"; code: string | null; name: string; payer: string; queueNo: number | null; match: PersonMatch; ordered: number; waived: number; externalLab: number };
 export type PlanCounts = { add: number; change: number; same: number; remove: number; conflict: number };
+/** The queue numbers ("ลำดับ" column): what would be added / changed / left alone, and what could not be placed. */
+export type QueuePlan = { add: number; change: number; same: number; noNumber: number; clashes: string[]; skippedNoCode: string[] };
 export type ImportPlan = {
   fileIssues: string[];
   round: { mode: "new" | "existing"; id: number | null; name: string; yearBe: number | null; startDate: string | null; endDate: string | null; location: string | null };
@@ -35,6 +37,7 @@ export type ImportPlan = {
   programmes: Array<{ payer: string; testCount: number }>;
   people: PlanPerson[];
   orders: PlanCounts;
+  queue: QueuePlan;
   conflicts: Array<{ who: string; test: string; reason: string }>;
   perTest: Array<{ code: string; nameTh: string; ordered: number; waived: number; externalLab: number; fileTotal: number | null }>;
   warnings: string[];
@@ -59,6 +62,7 @@ type Ops = {
   programmes: Array<{ payer: string; tests: Array<{ testId: number; scope: "all" | "selected" }> }>;
   placeholders: Array<{ payer: string; sortNo: number }>;
   orders: OrderOp[];
+  queue: Array<{ userId: number | null; ph: { payer: string; sortNo: number } | null; queueNo: number }>;
 };
 
 const INACTIVE = new Set(["disabled", "resigned", "terminated"]);
@@ -120,7 +124,7 @@ function compute(db: Database.Database, parsed: ParsedWorkbook, input: RoundInpu
 
   for (const p of parsed.people) {
     const marks = Object.values(p.marks);
-    const base = { sheetRow: p.sheetRow, kind: p.kind, code: p.code, name: p.name, payer: norm(p.payer), ordered: marks.filter((m) => m === "ordered").length, waived: marks.filter((m) => m === "waived").length, externalLab: marks.filter((m) => m === "external_lab").length };
+    const base = { sheetRow: p.sheetRow, kind: p.kind, code: p.code, name: p.name, payer: norm(p.payer), queueNo: p.seq, ordered: marks.filter((m) => m === "ordered").length, waived: marks.filter((m) => m === "waived").length, externalLab: marks.filter((m) => m === "external_lab").length };
     if (p.kind === "placeholder") {
       const payer = norm(p.payer);
       const sortNo = p.placeholderNo ?? (phCounter.get(payer) ?? 0) + 1;
@@ -161,6 +165,35 @@ function compute(db: Database.Database, parsed: ParsedWorkbook, input: RoundInpu
     people.push({ ...base, match: fix });
   }
   const needsFix = people.filter((p) => p.match.state === "needs_fix").length;
+
+  // ── queue numbers: the "ลำดับ" column, placed for everyone who is imported (matched staff and placeholders) ──
+  const queueAsk: Array<{ key: string; label: string; userId: number | null; ph: { payer: string; sortNo: number } | null; no: number | null; sheetRow: number }> = [
+    ...matched.map((m) => ({ key: `u${m.userId}`, label: userLabel(users.find((u) => u.id === m.userId) as UserRow), userId: m.userId, ph: null, no: m.person.seq, sheetRow: m.person.sheetRow })),
+    ...placeholders.map((x) => ({ key: `p${x.payer}#${x.sortNo}`, label: `${x.payer} คนที่ ${x.sortNo}`, userId: null, ph: { payer: x.payer, sortNo: x.sortNo }, no: x.person.seq, sheetRow: x.person.sheetRow }))
+  ];
+  const queuePlan: QueuePlan = { add: 0, change: 0, same: 0, noNumber: 0, clashes: [], skippedNoCode: parsed.skippedNoCode.map((x) => `แถว ${x.sheetRow} ${x.name}`) };
+  if (queuePlan.skippedNoCode.length > 0) warnings.push(`ข้าม ${queuePlan.skippedNoCode.length} แถวที่ยังไม่มีรหัสพนักงาน (ไม่จับคู่ด้วยชื่ออย่างเดียว): ${queuePlan.skippedNoCode.join(", ")}`);
+  const seenNo = new Map<number, string>();
+  for (const q of queueAsk) {
+    if (q.no == null) continue;
+    const dup = seenNo.get(q.no);
+    if (dup) fileIssues.push(`ลำดับ ${q.no} ซ้ำในไฟล์ (${dup} และแถว ${q.sheetRow})`);
+    else seenNo.set(q.no, `แถว ${q.sheetRow}`);
+  }
+  const existingQueue = round.id ? listQueueForImport(round.id) : [];
+  const exKey = (e: (typeof existingQueue)[number]) => (e.user_id != null ? `u${e.user_id}` : `p${norm(e.ext_payer ?? "")}#${e.ext_sort}`);
+  const exByKey = new Map(existingQueue.map((e) => [exKey(e), e]));
+  const askKeys = new Set(queueAsk.map((q) => q.key));
+  const queueOps: Ops["queue"] = [];
+  for (const q of queueAsk) {
+    if (q.no == null) { queuePlan.noNumber++; continue; }
+    const holder = existingQueue.find((e) => e.queue_no === q.no && !askKeys.has(exKey(e)));
+    if (holder) { queuePlan.clashes.push(`ลำดับ ${q.no} ของ ${q.label} ชนกับ ${holder.label} ที่มีอยู่ในรอบแล้วแต่ไม่อยู่ในไฟล์ — ไม่จัดลำดับให้ (แก้ที่หน้าลำดับคิว)`); continue; }
+    const have = exByKey.get(q.key);
+    if (!have) queuePlan.add++; else if (have.queue_no === q.no) queuePlan.same++; else queuePlan.change++;
+    queueOps.push({ userId: q.userId, ph: q.ph, queueNo: q.no });
+  }
+  if (queuePlan.noNumber > 0) warnings.push(`${queuePlan.noNumber} คนในไฟล์ไม่มีเลขในคอลัมน์ “ลำดับ” จึงยังไม่มีคิว (กำหนดภายหลังที่หน้าลำดับคิว)`);
 
   // ── orders: file vs what is already there ──
   const locked = round.id ? lockedOrderIds(round.id) : new Set<number>();
@@ -232,9 +265,9 @@ function compute(db: Database.Database, parsed: ParsedWorkbook, input: RoundInpu
   });
 
   const ordersOut = ops.map((o) => ({ ...o, subject: "userId" in o.subject ? { u: o.subject.userId } : o.subject.placeholder }));
-  const ops2: Ops = { round, payers, programmes, placeholders: placeholders.map((p) => ({ payer: p.payer, sortNo: p.sortNo })), orders: ops };
-  const hash = crypto.createHash("sha256").update(JSON.stringify({ round, payers, programmes, ph: ops2.placeholders, orders: ordersOut, needsFix, fileIssues })).digest("hex").slice(0, 24);
-  return { plan: { fileIssues, round, payers, programmes: programmes.map((p) => ({ payer: p.payer, testCount: p.tests.length })), people, orders: counts, conflicts, perTest, warnings, needsFix, hash }, ops: ops2 };
+  const ops2: Ops = { round, payers, programmes, placeholders: placeholders.map((p) => ({ payer: p.payer, sortNo: p.sortNo })), orders: ops, queue: queueOps };
+  const hash = crypto.createHash("sha256").update(JSON.stringify({ round, payers, programmes, ph: ops2.placeholders, orders: ordersOut, queue: queueOps, needsFix, fileIssues })).digest("hex").slice(0, 24);
+  return { plan: { fileIssues, round, payers, programmes: programmes.map((p) => ({ payer: p.payer, testCount: p.tests.length })), people, orders: counts, queue: queuePlan, conflicts, perTest, warnings, needsFix, hash }, ops: ops2 };
 }
 
 /** What importing this file would do. Writes nothing. */
@@ -242,7 +275,7 @@ export function buildImportPlan(db: Database.Database, parsed: ParsedWorkbook, i
   return compute(db, parsed, input).plan;
 }
 
-export type CommitResult = { roundId: number; created: boolean; ordersAdded: number; ordersChanged: number; ordersRemoved: number; externalsAdded: number; skippedRows: number; conflicts: number };
+export type CommitResult = { roundId: number; created: boolean; ordersAdded: number; ordersChanged: number; ordersRemoved: number; externalsAdded: number; skippedRows: number; conflicts: number; queueAdded: number; queueChanged: number };
 
 /**
  * Write the plan the user looked at. Refused if the file has problems of its own, if rows still need fixing (unless the user chose to skip
@@ -304,7 +337,12 @@ export function commitImport(db: Database.Database, parsed: ParsedWorkbook, inpu
       db.prepare("INSERT INTO annual_checkup_orders (round_id, user_id, external_id, payer_id, test_id, status) VALUES (?,?,?,?,?,?)").run(rid, userId, extId, pid, o.testId, o.status);
       added++;
     }
+    // queue numbers (swap-safe, all or nothing); placeholders' externals exist by now
+    const q = applyQueuePlan({ id: actorId }, rid, ops.queue.map((x) => ({
+      subject: x.userId != null ? { userId: x.userId } : { externalId: externalId.get(`${(x.ph as { payer: string }).payer}#${(x.ph as { sortNo: number }).sortNo}`) as number },
+      queueNo: x.queueNo
+    })));
     logPersonaAction(actorId, "annual_checkup.import", rid);
-    return { roundId: rid, created, ordersAdded: added, ordersChanged: changed, ordersRemoved: removed, externalsAdded, skippedRows: plan.needsFix, conflicts: plan.orders.conflict };
+    return { roundId: rid, created, ordersAdded: added, ordersChanged: changed, ordersRemoved: removed, externalsAdded, skippedRows: plan.needsFix, conflicts: plan.orders.conflict, queueAdded: q.added, queueChanged: q.changed };
   })();
 }
