@@ -14,6 +14,7 @@
 // read or write of a result leaves a row in annual_checkup_audit in the same transaction.
 import { getDb, logPersonaAction } from "./db";
 import { approverOk, recorderOk } from "./annual-checkup-schema";
+import { nameWithPrefix } from "./name";
 
 export type AcActor = { id: number };
 export type AcSubject = { userId: number; externalId?: undefined } | { externalId: number; userId?: undefined };
@@ -174,8 +175,9 @@ export function recordResult(actor: AcActor, orderId: number, data: ResultInput)
   return guard(() => db.transaction(() => {
     const o = loadOrder(orderId);
     if (o.status === "waived") throw new AnnualCheckupInvalid("order_waived");
-    if (o.status === "external_lab" && !v.file_path) throw new AnnualCheckupInvalid("external_lab_needs_file");
-    const cur = db.prepare("SELECT id, status FROM annual_checkup_results WHERE order_id = ?").get(orderId) as { id: number; status: string } | undefined;
+    const cur = db.prepare("SELECT id, status, file_path FROM annual_checkup_results WHERE order_id = ?").get(orderId) as { id: number; status: string; file_path: string | null } | undefined;
+    const keepFile = data.filePath === undefined && data.fileMime === undefined;     // editing the values must not drop an attached file
+    if (o.status === "external_lab" && !v.file_path && !(keepFile && cur?.file_path)) throw new AnnualCheckupInvalid("external_lab_needs_file");
     let id: number;
     if (!cur) {
       id = Number(db.prepare(`
@@ -187,9 +189,10 @@ export function recordResult(actor: AcActor, orderId: number, data: ResultInput)
       id = cur.id;
       db.prepare(`
         UPDATE annual_checkup_results SET value_num=@value_num, value_text=@value_text, value_json=@value_json, unit=@unit, ref_text=@ref_text,
-               interpretation=@interpretation, file_path=@file_path, file_mime=@file_mime, recorded_by=@by, recorded_at=CURRENT_TIMESTAMP
+               interpretation=@interpretation, file_path = CASE WHEN @keep = 1 THEN file_path ELSE @file_path END,
+               file_mime = CASE WHEN @keep = 1 THEN file_mime ELSE @file_mime END, recorded_by=@by, recorded_at=CURRENT_TIMESTAMP
          WHERE id=@id
-      `).run({ id, ...v, by: a.id });
+      `).run({ id, ...v, by: a.id, keep: keepFile ? 1 : 0 });
     }
     audit(a.id, cur ? "result.update" : "result.record", o, o.round_id, o.id);
     return id;
@@ -231,7 +234,7 @@ export function getSubjectClinical(actor: AcActor, roundId: number, subject: AcS
     SELECT o.id AS order_id, o.status AS order_status, t.code, t.name_th, t.name_en, t.unit AS test_unit,
            oc.waive_reason, oc.external_lab_name,
            r.id AS result_id, r.revision, r.status AS result_status, r.value_num, r.value_text, r.value_json, r.unit, r.ref_text,
-           r.interpretation, r.file_path, r.recorded_by, r.recorded_at, r.verified_by, r.verified_at, r.released_at
+           t.value_kind, r.interpretation, CASE WHEN r.file_path IS NOT NULL THEN 1 ELSE 0 END AS has_file, r.recorded_by, r.recorded_at, r.verified_by, r.verified_at, r.released_at
       FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id
       LEFT JOIN annual_checkup_order_clinical oc ON oc.order_id = o.id
       LEFT JOIN annual_checkup_results r ON r.order_id = o.id
@@ -416,3 +419,171 @@ export function getProgress(actor: AcActor, roundId: number): Progress {
   out.byPayer = [...payer.values()];
   return out;
 }
+
+
+// ── clinical screens (phase 4): lists, sheets, files ───────────────────────────────────────────────────────────────
+
+export const subjectKey = (s: AcSubject): string => (s.userId != null ? `u${s.userId}` : `e${s.externalId}`);
+export function parseSubjectKey(k: string): AcSubject | null {
+  const m = /^([ue])(\d{1,9})$/.exec(k ?? "");
+  return m ? (m[1] === "u" ? { userId: Number(m[2]) } : { externalId: Number(m[2]) }) : null;
+}
+
+export type RoundSummary = { id: number; name: string; status: string; year_be: number | null; subjects: number; required: number; recorded: number; verified: number; released: number };
+
+export function listRoundsClinical(actor: AcActor): RoundSummary[] {
+  requireRecorder(actor);
+  return getDb().prepare(`
+    SELECT r.id, r.name, r.status, r.year_be,
+           (SELECT COUNT(DISTINCT COALESCE(o.user_id, -o.external_id)) FROM annual_checkup_orders o WHERE o.round_id = r.id) AS subjects,
+           (SELECT COUNT(*) FROM annual_checkup_orders o WHERE o.round_id = r.id AND o.status <> 'waived') AS required,
+           (SELECT COUNT(*) FROM annual_checkup_orders o JOIN annual_checkup_results x ON x.order_id = o.id WHERE o.round_id = r.id AND o.status <> 'waived') AS recorded,
+           (SELECT COUNT(*) FROM annual_checkup_orders o JOIN annual_checkup_results x ON x.order_id = o.id WHERE o.round_id = r.id AND o.status <> 'waived' AND x.status IN ('verified','released')) AS verified,
+           (SELECT COUNT(*) FROM annual_checkup_orders o JOIN annual_checkup_results x ON x.order_id = o.id WHERE o.round_id = r.id AND o.status <> 'waived' AND x.status = 'released') AS released
+      FROM annual_checkup_rounds r ORDER BY r.id DESC
+  `).all() as RoundSummary[];
+}
+
+export type SubjectRow = {
+  key: string; kind: "employee" | "external"; label: string; code: string | null; payer: string;
+  required: number; recorded: number; verified: number; released: number; hasConclusion: boolean; conclusionReleased: boolean;
+};
+export type TestRow = { code: string; nameTh: string; required: number; recorded: number; verified: number; released: number };
+
+const externalLabel = (full: string | null, sortNo: number | null, payer: string) => full ?? `รอเพิ่มรายชื่อ คนที่ ${sortNo ?? "?"} (${payer})`;
+
+export function getRoundOverview(actor: AcActor, roundId: number): { round: { id: number; name: string; status: string }; subjects: SubjectRow[]; tests: TestRow[] } {
+  const a = requireRecorder(actor);
+  const db = getDb();
+  const round = db.prepare("SELECT id, name, status FROM annual_checkup_rounds WHERE id = ?").get(roundId) as { id: number; name: string; status: string } | undefined;
+  if (!round) throw new AnnualCheckupInvalid("round_not_found");
+  const rows = db.prepare(`
+    SELECT o.user_id, o.external_id, u.display_name, u.title_prefix, u.employee_code, e.full_name, e.sort_no,
+           COALESCE(p.name_th, ep.name_th, 'ไม่ระบุ') AS payer,
+           SUM(o.status <> 'waived') AS required,
+           SUM(o.status <> 'waived' AND r.id IS NOT NULL) AS recorded,
+           SUM(o.status <> 'waived' AND r.status IN ('verified','released')) AS verified,
+           SUM(o.status <> 'waived' AND r.status = 'released') AS released,
+           MAX(c.id) AS concl_id, MAX(c.released_at) AS concl_released
+      FROM annual_checkup_orders o
+      LEFT JOIN users u ON u.id = o.user_id LEFT JOIN annual_checkup_externals e ON e.id = o.external_id
+      LEFT JOIN annual_checkup_payers p ON p.id = o.payer_id LEFT JOIN annual_checkup_payers ep ON ep.id = e.payer_id
+      LEFT JOIN annual_checkup_results r ON r.order_id = o.id
+      LEFT JOIN annual_checkup_conclusions c ON c.round_id = o.round_id AND ((o.user_id IS NOT NULL AND c.user_id = o.user_id) OR (o.external_id IS NOT NULL AND c.external_id = o.external_id))
+     WHERE o.round_id = ? GROUP BY o.user_id, o.external_id
+  `).all(roundId) as Array<{ user_id: number | null; external_id: number | null; display_name: string | null; title_prefix: string | null; employee_code: string | null;
+    full_name: string | null; sort_no: number | null; payer: string; required: number; recorded: number; verified: number; released: number; concl_id: number | null; concl_released: string | null }>;
+  const subjects: SubjectRow[] = rows.map((r) => ({
+    key: r.user_id != null ? `u${r.user_id}` : `e${r.external_id}`, kind: (r.user_id != null ? "employee" : "external") as SubjectRow["kind"],
+    label: r.user_id != null ? nameWithPrefix(r.title_prefix, r.display_name ?? "") : externalLabel(r.full_name, r.sort_no, r.payer),
+    code: r.employee_code, payer: r.payer, required: r.required, recorded: r.recorded, verified: r.verified, released: r.released,
+    hasConclusion: r.concl_id != null, conclusionReleased: !!r.concl_released
+  })).sort((x, y) => (x.kind === y.kind ? x.label.localeCompare(y.label, "th") : x.kind === "employee" ? -1 : 1));
+  const tests = db.prepare(`
+    SELECT t.code, t.name_th AS nameTh, SUM(o.status <> 'waived') AS required, SUM(o.status <> 'waived' AND r.id IS NOT NULL) AS recorded,
+           SUM(o.status <> 'waived' AND r.status IN ('verified','released')) AS verified, SUM(o.status <> 'waived' AND r.status = 'released') AS released
+      FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id LEFT JOIN annual_checkup_results r ON r.order_id = o.id
+     WHERE o.round_id = ? GROUP BY t.id ORDER BY t.sort_no
+  `).all(roundId) as TestRow[];
+  audit(a.id, "round.view", null, roundId, null);
+  return { round, subjects, tests };
+}
+
+/** Name and payer of one person in a round, for the top of their page. */
+export function getSubjectHeader(actor: AcActor, roundId: number, subject: AcSubject): { key: string; kind: "employee" | "external"; label: string; code: string | null; payer: string | null; sex: "M" | "F" | null } {
+  requireRecorder(actor);
+  const db = getDb();
+  if (subject.userId != null) {
+    const u = db.prepare("SELECT display_name, title_prefix, employee_code, gender FROM users WHERE id = ?").get(subject.userId) as { display_name: string; title_prefix: string | null; employee_code: string | null; gender: string | null } | undefined;
+    if (!u) throw new AnnualCheckupInvalid("subject_not_found");
+    const p = db.prepare("SELECT p.name_th FROM annual_checkup_orders o LEFT JOIN annual_checkup_payers p ON p.id = o.payer_id WHERE o.round_id = ? AND o.user_id = ? LIMIT 1").get(roundId, subject.userId) as { name_th: string | null } | undefined;
+    return { key: subjectKey(subject), kind: "employee", label: nameWithPrefix(u.title_prefix, u.display_name), code: u.employee_code, payer: p?.name_th ?? null, sex: u.gender === "male" ? "M" : u.gender === "female" ? "F" : null };
+  }
+  const e = db.prepare("SELECT e.full_name, e.sort_no, e.sex, p.name_th AS payer FROM annual_checkup_externals e JOIN annual_checkup_payers p ON p.id = e.payer_id WHERE e.id = ? AND e.round_id = ?").get(subject.externalId, roundId) as { full_name: string | null; sort_no: number; sex: "M" | "F" | null; payer: string } | undefined;
+  if (!e) throw new AnnualCheckupInvalid("subject_not_found");
+  return { key: subjectKey(subject), kind: "external", label: externalLabel(e.full_name, e.sort_no, e.payer), code: null, payer: e.payer, sex: e.sex };
+}
+
+/** Give a "รอเพิ่มรายชื่อ" place its name (people without an account). */
+export function setExternalName(actor: AcActor, externalId: number, d: { fullName: string; sex?: "M" | "F" | null; dob?: string | null }): void {
+  const a = requireRecorder(actor);
+  const name = clean(d.fullName, 200);
+  if (!name) throw new AnnualCheckupInvalid("name_required");
+  if (d.sex != null && d.sex !== "M" && d.sex !== "F") throw new AnnualCheckupInvalid("bad_value");
+  if (d.dob != null && !/^\d{4}-\d{2}-\d{2}$/.test(d.dob)) throw new AnnualCheckupInvalid("bad_value");
+  const db = getDb();
+  guard(() => db.transaction(() => {
+    const e = db.prepare("SELECT id, round_id FROM annual_checkup_externals WHERE id = ?").get(externalId) as { id: number; round_id: number } | undefined;
+    if (!e) throw new AnnualCheckupInvalid("subject_not_found");
+    db.prepare("UPDATE annual_checkup_externals SET full_name = ?, is_placeholder = 0, sex = ?, dob = ? WHERE id = ?").run(name, d.sex ?? null, d.dob ?? null, externalId);
+    audit(a.id, "external.name", { user_id: null, external_id: externalId }, e.round_id, null);
+  })());
+}
+
+export type SheetRow = {
+  order_id: number; order_status: "ordered" | "waived" | "external_lab"; key: string; label: string; code: string | null; payer: string;
+  result_id: number | null; revision: number | null; result_status: "draft" | "verified" | "released" | null;
+  value_num: number | null; value_text: string | null; unit: string | null; ref_text: string | null; interpretation: Interpretation | null; has_file: boolean;
+};
+
+/** One test across every person in a round, for entering the same test for many people at once. */
+export function getTestSheet(actor: AcActor, roundId: number, testCode: string): { test: { code: string; nameTh: string; valueKind: string; unit: string | null }; rows: SheetRow[] } {
+  const a = requireRecorder(actor);
+  const db = getDb();
+  const t = db.prepare("SELECT id, code, name_th, value_kind, unit FROM annual_checkup_tests WHERE code = ?").get(testCode) as { id: number; code: string; name_th: string; value_kind: string; unit: string | null } | undefined;
+  if (!t) throw new AnnualCheckupInvalid("test_not_found");
+  const raw = db.prepare(`
+    SELECT o.id AS order_id, o.status AS order_status, o.user_id, o.external_id, u.display_name, u.title_prefix, u.employee_code, e.full_name, e.sort_no,
+           COALESCE(p.name_th, ep.name_th, 'ไม่ระบุ') AS payer,
+           r.id AS result_id, r.revision, r.status AS result_status, r.value_num, r.value_text, r.unit, r.ref_text, r.interpretation,
+           CASE WHEN r.file_path IS NOT NULL THEN 1 ELSE 0 END AS has_file
+      FROM annual_checkup_orders o LEFT JOIN users u ON u.id = o.user_id LEFT JOIN annual_checkup_externals e ON e.id = o.external_id
+      LEFT JOIN annual_checkup_payers p ON p.id = o.payer_id LEFT JOIN annual_checkup_payers ep ON ep.id = e.payer_id
+      LEFT JOIN annual_checkup_results r ON r.order_id = o.id
+     WHERE o.round_id = ? AND o.test_id = ?
+  `).all(roundId, t.id) as Array<Record<string, unknown>>;
+  const rows: SheetRow[] = raw.map((r) => ({
+    order_id: r.order_id as number, order_status: r.order_status as SheetRow["order_status"],
+    key: r.user_id != null ? `u${r.user_id}` : `e${r.external_id}`,
+    label: r.user_id != null ? nameWithPrefix(r.title_prefix as string | null, r.display_name as string) : externalLabel(r.full_name as string | null, r.sort_no as number | null, r.payer as string),
+    code: (r.employee_code as string | null) ?? null, payer: r.payer as string, result_id: (r.result_id as number | null) ?? null, revision: (r.revision as number | null) ?? null,
+    result_status: (r.result_status as SheetRow["result_status"]) ?? null, value_num: (r.value_num as number | null) ?? null, value_text: (r.value_text as string | null) ?? null,
+    unit: (r.unit as string | null) ?? null, ref_text: (r.ref_text as string | null) ?? null, interpretation: (r.interpretation as Interpretation | null) ?? null, has_file: !!r.has_file
+  })).sort((x, y) => (x.key[0] === y.key[0] ? x.label.localeCompare(y.label, "th") : x.key[0] === "u" ? -1 : 1));
+  audit(a.id, "test.view", null, roundId, null, testCode);
+  return { test: { code: t.code, nameTh: t.name_th, valueKind: t.value_kind, unit: t.unit }, rows };
+}
+
+/** Attach a lab file to a draft result (creating the draft if there is none yet). The server has already stored the file. */
+export function attachResultFile(actor: AcActor, orderId: number, f: { filePath: string; fileMime: string }): number {
+  const a = requireRecorder(actor);
+  if (!clean(f.filePath, 500)) throw new AnnualCheckupInvalid("bad_value");
+  const db = getDb();
+  return guard(() => db.transaction(() => {
+    const o = loadOrder(orderId);
+    if (o.status === "waived") throw new AnnualCheckupInvalid("order_waived");
+    const cur = db.prepare("SELECT id, status FROM annual_checkup_results WHERE order_id = ?").get(orderId) as { id: number; status: string } | undefined;
+    let id: number;
+    if (!cur) id = Number(db.prepare("INSERT INTO annual_checkup_results (order_id, file_path, file_mime, recorded_by) VALUES (?,?,?,?)").run(orderId, f.filePath, clean(f.fileMime, 100), a.id).lastInsertRowid);
+    else {
+      if (cur.status !== "draft") throw new AnnualCheckupInvalid("result_locked");
+      id = cur.id;
+      db.prepare("UPDATE annual_checkup_results SET file_path = ?, file_mime = ?, recorded_by = ?, recorded_at = CURRENT_TIMESTAMP WHERE id = ?").run(f.filePath, clean(f.fileMime, 100), a.id, id);
+    }
+    audit(a.id, "result.attach", o, o.round_id, o.id);
+    return id;
+  })());
+}
+
+/** Where a result's file is, for clinical staff (the route streams it). Audited. */
+export function getResultFileClinical(actor: AcActor, resultId: number): { path: string; mime: string } | null {
+  const a = requireRecorder(actor);
+  const r = getDb().prepare("SELECT r.file_path, r.file_mime, o.id AS order_id, o.round_id, o.user_id, o.external_id FROM annual_checkup_results r JOIN annual_checkup_orders o ON o.id = r.order_id WHERE r.id = ?")
+    .get(resultId) as { file_path: string | null; file_mime: string | null; order_id: number; round_id: number; user_id: number | null; external_id: number | null } | undefined;
+  if (!r || !r.file_path) return null;
+  audit(a.id, "file.view", r, r.round_id, r.order_id);
+  return { path: r.file_path, mime: r.file_mime ?? "application/octet-stream" };
+}
+
+/** The doctor's draft conclusion, so the person page can pre-fill it. */
+export const isApproverUser = (userId: number): boolean => isApproverEligible(userId);

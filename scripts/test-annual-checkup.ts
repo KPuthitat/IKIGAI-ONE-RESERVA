@@ -249,6 +249,86 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     return (db.prepare("SELECT COUNT(*) n FROM annual_checkup_results").get() as { n: number }).n === before;
   })());
 
+  // ── 8b. phase 4: the clinical screens' reads, files and the unforgeable tokens ──
+  const SES = await import("../src/lib/annual-checkup-session");
+  const NOW = Date.UTC(2026, 10, 15, 8, 0, 0);
+  ok("S1 an unlock token works for its user only, and only until it expires", (() => {
+    const t = SES.makeUnlockToken(D, NOW);
+    return SES.readUnlockToken(t, D, NOW + 1000) !== null && SES.readUnlockToken(t, R, NOW + 1000) === null && SES.readUnlockToken(t, D, NOW + 31 * 60_000) === null && SES.readUnlockToken(t, D, NOW + 29 * 60_000) !== null;
+  })());
+  ok("S2 a token that was edited, made for another purpose, or is just a user id is refused", (() => {
+    const t = SES.makeUnlockToken(D, NOW);
+    const forged = t.replace(`${D}|`, `${R}|`);
+    return SES.readUnlockToken(forged, R, NOW + 1000) === null && SES.readUnlockToken(String(D), D, NOW + 1000) === null && SES.readUnlockToken("", D, NOW) === null
+      && SES.readFileToken(t, 1, D, NOW + 1000) === false && SES.readUnlockToken(SES.makeFileToken(1, D, NOW), D, NOW + 1000) === null;
+  })());
+  ok("S3 a file link is for one result and one person and lasts 5 minutes", (() => {
+    const t = SES.makeFileToken(77, R, NOW);
+    return SES.readFileToken(t, 77, R, NOW + 60_000) && !SES.readFileToken(t, 78, R, NOW + 60_000) && !SES.readFileToken(t, 77, D, NOW + 60_000) && !SES.readFileToken(t, 77, R, NOW + 6 * 60_000);
+  })());
+
+  ok("L1 only clinical staff list the rounds; HR / admin / super_admin / the employee are refused", G.listRoundsClinical({ id: R }).length === 1 && [HR, M, W, S, A].every((u) => err(() => G.listRoundsClinical({ id: u })) === "not_recorder"));
+  const ov = G.getRoundOverview({ id: R }, round);
+  ok("L2 the round overview lists every person with their progress and the tests with counts", ov.subjects.length >= 4 && ov.tests.length > 0 && ov.subjects.every((x) => x.required >= 0) && !!ov.subjects.find((x) => x.label.includes("emp-a")));
+  ok("L3 the overview carries no value, comment or waive reason", !/ติดตามภูมิคุ้มกัน|งดตามคำสั่งแพทย์|value_|doctor_comment/.test(JSON.stringify(ov)));
+  ok("L4 the overview is clinical-only (HR / manager / admin / employee refused)", [HR, M, W, S, A].every((u) => err(() => G.getRoundOverview({ id: u }, round)) === "not_recorder"));
+  const aRow = ov.subjects.find((x) => x.key === `u${A}`)!;
+  ok("L5 person A shows all required tests recorded and released, conclusion released", aRow.required === 3 && aRow.recorded === 3 && aRow.released === 3 && aRow.conclusionReleased);
+  ok("L6 the person header gives the name and payer; an unknown person is refused", G.getSubjectHeader({ id: R }, round, { userId: A }).label === "emp-a" && err(() => G.getSubjectHeader({ id: R }, round, { externalId: 999999 })) === "subject_not_found" && err(() => G.getSubjectHeader({ id: HR }, round, { userId: A })) === "not_recorder");
+  ok("L7 key helpers round-trip", G.subjectKey({ userId: 5 }) === "u5" && G.subjectKey({ externalId: 9 }) === "e9" && G.parseSubjectKey("u5")?.userId === 5 && G.parseSubjectKey("e9")?.externalId === 9 && G.parseSubjectKey("x5") === null && G.parseSubjectKey("u5; DROP") === null);
+
+  const ph = Number(db.prepare("INSERT INTO annual_checkup_externals (round_id, payer_id, is_placeholder, sort_no) VALUES (?,?,1,1)").run(round, payer).lastInsertRowid);
+  const oPh = Number(db.prepare("INSERT INTO annual_checkup_orders (round_id, external_id, payer_id, test_id, status) VALUES (?,?,?,?,'ordered')").run(round, ph, payer, test("CXR")).lastInsertRowid);
+  ok("E1 a 'waiting for a name' place shows that way, then takes the name a recorder gives it", (() => {
+    const before = G.getSubjectHeader({ id: R }, round, { externalId: ph }).label;
+    G.setExternalName({ id: R }, ph, { fullName: "นาย คนนอก สอง", sex: "M", dob: "1990-05-01" });
+    const after = G.getSubjectHeader({ id: R }, round, { externalId: ph });
+    return /รอเพิ่มรายชื่อ คนที่ 1/.test(before) && after.label === "นาย คนนอก สอง" && after.sex === "M";
+  })());
+  ok("E2 naming needs a name, valid values, and a recorder", err(() => G.setExternalName({ id: R }, ph, { fullName: " " })) === "name_required" && err(() => G.setExternalName({ id: R }, ph, { fullName: "x", dob: "ไม่ใช่วันที่" })) === "bad_value"
+    && [HR, M, W, S, A].every((u) => err(() => G.setExternalName({ id: u }, ph, { fullName: "แก้ชื่อ" })) === "not_recorder"));
+
+  const bCxr = order(B, "CXR"), bEye = order(B, "EYE");
+  const sheet = G.getTestSheet({ id: R }, round, "CXR");
+  ok("T1 the test sheet lists everyone ordered that test, waived ones flagged, no server path or reason leaks", sheet.rows.length >= 4 && sheet.test.code === "CXR" && !JSON.stringify(sheet).includes("lab-001.pdf") && !/งดตามคำสั่งแพทย์/.test(JSON.stringify(sheet)));
+  ok("T2 the test sheet is clinical-only; an unknown test is refused", [HR, M, W, S, A].every((u) => err(() => G.getTestSheet({ id: u }, round, "CXR")) === "not_recorder") && err(() => G.getTestSheet({ id: R }, round, "NOPE")) === "test_not_found");
+
+  ok("F1 attaching a file creates a draft that holds only the file", (() => {
+    const id = G.attachResultFile({ id: R }, bEye, { filePath: "annual-checkup/1/eye-b.pdf", fileMime: "application/pdf" });
+    const r = db.prepare("SELECT status, file_path, value_text FROM annual_checkup_results WHERE id = ?").get(id) as { status: string; file_path: string; value_text: string | null };
+    return r.status === "draft" && r.file_path === "annual-checkup/1/eye-b.pdf" && r.value_text === null;
+  })());
+  ok("F2 editing the values afterwards does NOT drop the attached file", (() => {
+    G.recordResult({ id: R }, bEye, { valueText: "สายตาปกติ", interpretation: "normal" });
+    return (db.prepare("SELECT file_path, value_text FROM annual_checkup_results WHERE order_id = ?").get(bEye) as { file_path: string; value_text: string }).file_path === "annual-checkup/1/eye-b.pdf";
+  })());
+  ok("F3 sending a file explicitly replaces it; sending null removes it", (() => {
+    G.recordResult({ id: R }, bEye, { valueText: "สายตาปกติ", filePath: "annual-checkup/1/eye-b2.pdf", fileMime: "application/pdf" });
+    const a = (db.prepare("SELECT file_path FROM annual_checkup_results WHERE order_id = ?").get(bEye) as { file_path: string }).file_path;
+    G.recordResult({ id: R }, bEye, { valueText: "สายตาปกติ", filePath: null, fileMime: null });
+    return a === "annual-checkup/1/eye-b2.pdf" && (db.prepare("SELECT file_path FROM annual_checkup_results WHERE order_id = ?").get(bEye) as { file_path: string | null }).file_path === null;
+  })());
+  ok("F4 an external-lab test is satisfied by a file attached earlier (values saved later keep it)", (() => {
+    const bLab = order(B, "STOOL", "external_lab");
+    G.attachResultFile({ id: R }, bLab, { filePath: "annual-checkup/1/lab-b.pdf", fileMime: "application/pdf" });
+    G.recordResult({ id: R }, bLab, { valueText: "ไม่พบเชื้อ" });
+    return (db.prepare("SELECT file_path FROM annual_checkup_results WHERE order_id = ?").get(bLab) as { file_path: string }).file_path === "annual-checkup/1/lab-b.pdf";
+  })());
+  ok("F5 a locked result takes no file; a waived test takes none; non-clinical callers are refused", err(() => G.attachResultFile({ id: R }, oCxr, { filePath: "x.pdf", fileMime: "application/pdf" })) === "result_locked"
+    && err(() => G.attachResultFile({ id: R }, oUrine, { filePath: "x.pdf", fileMime: "application/pdf" })) === "order_waived"
+    && [HR, M, W, S, A].every((u) => err(() => G.attachResultFile({ id: u }, bCxr, { filePath: "x.pdf", fileMime: "application/pdf" })) === "not_recorder"));
+  ok("F6 the file's location is given to clinical staff only, and each open is audited", (() => {
+    const id = (db.prepare("SELECT id FROM annual_checkup_results WHERE order_id = ?").get(oStool) as { id: number }).id;
+    const f = G.getResultFileClinical({ id: R }, id);
+    const refusedAll = [HR, M, W, S, A].every((u) => err(() => G.getResultFileClinical({ id: u }, id)) === "not_recorder");
+    return f?.path === "data/health/annual-checkup/lab-001.pdf" && refusedAll && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'file.view' AND actor_id = ?").get(R) as { n: number }).n === 1
+      && G.getResultFileClinical({ id: R }, 999999) === null;
+  })());
+  ok("F7 the person page rows say a file exists but never give its path", (() => {
+    const c = G.getSubjectClinical({ id: R }, round, { userId: A });
+    return c.results.some((x) => x.has_file === 1) && !JSON.stringify(c).includes("lab-001.pdf");
+  })());
+
   // ── 9. revoking ──
   ok("9a only a super_admin revokes; the flag drops and the recorder is refused at once", (() => {
     const notSuper = err(() => G.revokeCapability({ id: W }, R, "recorder", "x")) === "super_admin_only";

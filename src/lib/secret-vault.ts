@@ -17,7 +17,7 @@
 // the ciphertext blob before base64 encoding so a single roundtrip
 // carries IV + tag + ciphertext.
 
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, scryptSync, timingSafeEqual } from "crypto";
 
 const PREFIX = "enc:v1:";
 const ALGO = "aes-256-gcm";
@@ -101,4 +101,25 @@ export function decryptSecret(stored: string | null | undefined): string | null 
  *  the admin UI to show a "encrypted at rest" badge. */
 export function isEncrypted(stored: string | null | undefined): boolean {
   return !!stored && stored.startsWith(PREFIX);
+}
+
+
+/**
+ * HMAC-sign a short string so the browser can carry it (a cookie, a link) without being able to make or change one.
+ * `purpose` keeps tokens of one use from being accepted for another. Returns "<value>.<signature>".
+ */
+export function signValue(value: string, purpose: string): string {
+  const sig = createHmac("sha256", getKey()).update(`${purpose}|${value}`).digest("base64url");
+  return `${value}.${sig}`;
+}
+
+/** The value of a token made by signValue(), or null if it was altered, made for another purpose, or is malformed. */
+export function verifySignedValue(signed: string | null | undefined, purpose: string): string | null {
+  if (!signed) return null;
+  const i = signed.lastIndexOf(".");
+  if (i <= 0) return null;
+  const value = signed.slice(0, i), sig = signed.slice(i + 1);
+  const want = createHmac("sha256", getKey()).update(`${purpose}|${value}`).digest("base64url");
+  const a = Buffer.from(sig), b = Buffer.from(want);
+  return a.length === b.length && timingSafeEqual(a, b) ? value : null;
 }
