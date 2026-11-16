@@ -270,7 +270,31 @@ export function ensureAnnualCheckupSchema(db: Database.Database): void {
       signed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       ip        TEXT
     );
+
+    -- Queue number + QR check-in on the day (phase 6). Holds NO health data: a place in the line, an appointment time and when the
+    -- person arrived. What they are being tested for is read from annual_checkup_orders when a screen needs it, never copied here.
+    -- The token is the ONLY thing a QR code carries (128 random bits; no name, no employee code).
+    CREATE TABLE IF NOT EXISTS annual_checkup_queue (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      round_id      INTEGER NOT NULL REFERENCES annual_checkup_rounds(id) ON DELETE CASCADE,
+      user_id       INTEGER REFERENCES users(id),
+      external_id   INTEGER REFERENCES annual_checkup_externals(id),
+      queue_no      INTEGER NOT NULL CHECK (queue_no > 0),
+      appt_time     TEXT,
+      checkin_token TEXT NOT NULL UNIQUE DEFAULT (lower(hex(randomblob(16)))),
+      checked_in_at TEXT,
+      checked_in_by INTEGER REFERENCES users(id),
+      created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at    TEXT,
+      CHECK ((user_id IS NOT NULL AND external_id IS NULL) OR (user_id IS NULL AND external_id IS NOT NULL)),
+      CHECK ((checked_in_at IS NULL AND checked_in_by IS NULL) OR (checked_in_at IS NOT NULL AND checked_in_by IS NOT NULL))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_queue_no   ON annual_checkup_queue(round_id, queue_no);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_queue_user ON annual_checkup_queue(round_id, user_id) WHERE user_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_queue_ext  ON annual_checkup_queue(round_id, external_id) WHERE external_id IS NOT NULL;
   `);
+  // Default appointment time of the day (HH:MM); a person's own appt_time overrides it. The date is the round's start_date.
+  if (!hasCol("annual_checkup_rounds", "appt_time")) db.exec("ALTER TABLE annual_checkup_rounds ADD COLUMN appt_time TEXT");
 
   // ── Triggers: what the database itself refuses. Recreated each boot so the definitions always match this file. ──
   const triggers: Array<[name: string, sql: string]> = [
@@ -352,6 +376,20 @@ export function ensureAnnualCheckupSchema(db: Database.Database): void {
     ["annual_checkup_order_clinical_upd", `
       CREATE TRIGGER annual_checkup_order_clinical_upd BEFORE UPDATE ON annual_checkup_order_clinical
       BEGIN ${abort(`NOT ${recorderOk("NEW.set_by")}`, "annual_checkup: recorder not eligible (clinic staff with the recorder flag only)")} END;`],
+    ["annual_checkup_queue_ins", `
+      CREATE TRIGGER annual_checkup_queue_ins BEFORE INSERT ON annual_checkup_queue
+      BEGIN ${abort("NEW.checked_in_by IS NOT NULL", "annual_checkup: a queue row starts not checked in")} END;`],
+    ["annual_checkup_queue_upd", `
+      CREATE TRIGGER annual_checkup_queue_upd BEFORE UPDATE ON annual_checkup_queue
+      BEGIN
+        ${abort("NEW.checkin_token IS NOT OLD.checkin_token OR NEW.round_id IS NOT OLD.round_id OR NEW.user_id IS NOT OLD.user_id OR NEW.external_id IS NOT OLD.external_id", "annual_checkup: the token, round and person of a queue row never change")}
+        -- checking in is the one write clinic staff make; it needs a live eligible recorder and can never be undone or re-stamped
+        ${abort(`NEW.checked_in_by IS NOT NULL AND OLD.checked_in_by IS NULL AND NOT ${recorderOk("NEW.checked_in_by")}`, "annual_checkup: only clinic staff with the recorder flag may check people in")}
+        ${abort("OLD.checked_in_at IS NOT NULL AND (NEW.checked_in_at IS NOT OLD.checked_in_at OR NEW.checked_in_by IS NOT OLD.checked_in_by)", "annual_checkup: a check-in cannot be changed or undone")}
+      END;`],
+    ["annual_checkup_queue_del", `
+      CREATE TRIGGER annual_checkup_queue_del BEFORE DELETE ON annual_checkup_queue
+      BEGIN ${abort("OLD.checked_in_at IS NOT NULL", "annual_checkup: a checked-in queue row cannot be removed")} END;`],
     ["annual_checkup_orders_upd", `
       CREATE TRIGGER annual_checkup_orders_upd BEFORE UPDATE ON annual_checkup_orders
       BEGIN ${abort("NEW.status = 'waived' AND EXISTS (SELECT 1 FROM annual_checkup_results WHERE order_id = OLD.id)", "annual_checkup: a test that has a result cannot be waived")} END;`],

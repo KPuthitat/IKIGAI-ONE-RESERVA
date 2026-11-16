@@ -15,6 +15,7 @@ export type ParsedPerson = {
   kind: "employee" | "placeholder";       // placeholder = "รอเพิ่มรายชื่อ คนที่ N": no name yet, no account
   code: string | null;
   name: string;
+  seq: number | null;                     // the "ลำดับ" column = the person's starting queue number (blank / not a positive whole number → null)
   payer: string;
   placeholderNo: number | null;           // the N of "คนที่ N"
   lungExtra: boolean;                     // ticked "ตรวจปอดเพิ่ม"
@@ -27,6 +28,7 @@ export type ParsedWorkbook = {
   programmes: ParsedProgramme[];
   fileTotals: Record<string, number> | null;     // the "รวมจำนวนคนที่ตรวจแต่ละรายการ" row, by test name_th
   detailNames: Map<string, string>;       // code → "prefix first last" from the staff-details sheet
+  skippedNoCode: Array<{ sheetRow: number; name: string }>;   // named rows with no employee code: left out (not an error, never guessed)
   issues: Array<{ sheet: string; row: number | null; message: string }>;   // problems with the FILE itself (block the import)
 };
 
@@ -47,7 +49,7 @@ function sheetRows(wb: XLSX.WorkBook, name: string): Rows | null {
 const headerRowIndex = (rows: Rows, needs: string[]): number => rows.findIndex((r) => needs.every((n) => r.includes(n)));
 
 export function parseCheckupWorkbook(buf: Buffer | ArrayBuffer): ParsedWorkbook {
-  const out: ParsedWorkbook = { testHeaders: [], people: [], programmes: [], fileTotals: null, detailNames: new Map(), issues: [] };
+  const out: ParsedWorkbook = { testHeaders: [], people: [], programmes: [], fileTotals: null, detailNames: new Map(), skippedNoCode: [], issues: [] };
   let wb: XLSX.WorkBook;
   try { wb = XLSX.read(buf, { type: "buffer" }); }
   catch { out.issues.push({ sheet: "", row: null, message: "อ่านไฟล์ไม่ได้ (ต้องเป็นไฟล์ Excel .xlsx)" }); return out; }
@@ -67,7 +69,7 @@ export function parseCheckupWorkbook(buf: Buffer | ArrayBuffer): ParsedWorkbook 
   if (h < 0) { out.issues.push({ sheet: peopleName, row: null, message: "ไม่พบแถวหัวตาราง (รหัสพนักงาน / ชื่อ-นามสกุล)" }); return out; }
   const header = rows[h];
   const col = (name: string) => header.indexOf(name);
-  const cCode = col("รหัสพนักงาน"), cName = col("ชื่อ-นามสกุล"), cPayer = col("บริษัทที่รับค่าใช้จ่าย"), cLung = col(LUNG_FLAG);
+  const cSeq = col("ลำดับ"), cCode = col("รหัสพนักงาน"), cName = col("ชื่อ-นามสกุล"), cPayer = col("บริษัทที่รับค่าใช้จ่าย"), cLung = col(LUNG_FLAG);
   if (cPayer < 0) out.issues.push({ sheet: peopleName, row: h + 1, message: "ไม่พบคอลัมน์ “บริษัทที่รับค่าใช้จ่าย”" });
   // test columns = everything after the payer / lung-flag columns up to the count column ("จำนวนรายการ")
   const cEnd = header.findIndex((x, i) => i > Math.max(cPayer, cLung) && /^จำนวนรายการ/.test(x));
@@ -98,15 +100,17 @@ export function parseCheckupWorkbook(buf: Buffer | ArrayBuffer): ParsedWorkbook 
       else if (v === "แล็บนอก") marks[c.name] = "external_lab";
       else out.issues.push({ sheet: peopleName, row: r + 1, message: `ค่าในช่อง “${c.name}” ของ ${name || row[cCode]} ไม่รู้จัก: “${v}” (ใช้ได้ ✓ / งด / แล็บนอก / ว่าง)` });
     }
+    // a named employee row without a code is left out, never matched on the name alone (placeholders have no code by design)
+    if (!ph && !row[cCode]) { out.skippedNoCode.push({ sheetRow: r + 1, name }); continue; }
+    const seqNum = cSeq >= 0 && /^\d+$/.test(row[cSeq] ?? "") ? Number(row[cSeq]) : null;
     out.people.push({
-      sheetRow: r + 1, kind: ph ? "placeholder" : "employee", code: row[cCode] || null, name, payer: cPayer >= 0 ? row[cPayer] ?? "" : "",
+      sheetRow: r + 1, kind: ph ? "placeholder" : "employee", code: row[cCode] || null, name, seq: seqNum && seqNum > 0 ? seqNum : null, payer: cPayer >= 0 ? row[cPayer] ?? "" : "",
       placeholderNo: ph && ph[1] ? Number(ph[1]) : null, lungExtra: cLung >= 0 && row[cLung] === "ตรวจ", marks
     });
   }
   if (out.people.length === 0) out.issues.push({ sheet: peopleName, row: null, message: "ไม่พบรายชื่อผู้เข้าตรวจ" });
   for (const p of out.people) {
     if (!p.payer) out.issues.push({ sheet: peopleName, row: p.sheetRow, message: `${p.name || p.code} ไม่ระบุบริษัทที่รับค่าใช้จ่าย` });
-    if (p.kind === "employee" && !p.code) out.issues.push({ sheet: peopleName, row: p.sheetRow, message: `${p.name} ไม่มีรหัสพนักงาน` });
   }
 
   // ── programme per paying company ──

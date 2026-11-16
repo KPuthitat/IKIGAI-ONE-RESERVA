@@ -73,10 +73,10 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
 
   // ── catalogue + migration ──
   ok("catalogue seeded with the 20 tests of the programme", (db.prepare("SELECT COUNT(*) n FROM annual_checkup_tests").get() as { n: number }).n === 20);
-  ok("migration is idempotent (run again: still 20 tests, 17 triggers, no error)", (() => {
+  ok("migration is idempotent (run again: still 20 tests, 20 triggers, no error)", (() => {
     ensureAnnualCheckupSchema(db); ensureAnnualCheckupSchema(db);
     return (db.prepare("SELECT COUNT(*) n FROM annual_checkup_tests").get() as { n: number }).n === 20
-      && (db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='trigger' AND name LIKE 'annual_checkup%'").get() as { n: number }).n === 17;
+      && (db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='trigger' AND name LIKE 'annual_checkup%'").get() as { n: number }).n === 20;
   })());
   ok("orders have no medical / reason column (HR-readable by design)", !(db.prepare("PRAGMA table_info(annual_checkup_orders)").all() as Array<{ name: string }>).some((c) => /reason|waive|clinical/i.test(c.name)));
   ok("the same person cannot be ordered the same test twice in a round (also for people without an account)", err(() => order(A, "HAV")) !== "" && err(() => db.prepare("INSERT INTO annual_checkup_orders (round_id, external_id, payer_id, test_id) VALUES (?,?,?,?)").run(round, ext, payer, test("CXR"))) !== "");
@@ -431,7 +431,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
         const p = path.join(dir, e.name);
         if (e.isDirectory()) walk(p);
         else if (/\.(ts|tsx)$/.test(e.name) && !["annual-checkup-db.ts", "annual-checkup-schema.ts"].includes(e.name)
-          && /annual_checkup_(results|order_clinical|conclusions|result_revisions)\b/.test(fs.readFileSync(p, "utf8"))) bad.push(p);
+          && /annual_checkup_(results|order_clinical|conclusions|result_revisions|queue)\b/.test(fs.readFileSync(p, "utf8"))) bad.push(p);
       }
     };
     walk(path.join(process.cwd(), "src"));

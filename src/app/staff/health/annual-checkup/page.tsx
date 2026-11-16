@@ -20,6 +20,7 @@ export default function AnnualCheckupRoundsPage() {
           <h1 className="text-xl font-bold text-slate-800">ผลตรวจสุขภาพประจำปี</h1>
           <p className="text-sm text-slate-500">ลงผลตรวจ แนบไฟล์ผลแล็บ และ{approver ? "ตรวจสอบ/เปิดผลให้พนักงาน" : "ส่งให้แพทย์ตรวจสอบ"} · ทุกการเปิดดูและแก้ไขมีบันทึกไว้</p>
         </div>
+        <Link href="/staff/health/annual-checkup/queue" className="btn-primary text-sm">เช็กอิน / คิวตรวจ</Link>
         {canImportCheckup(user) && <Link href="/admin/persona/annual-checkup" className="btn-secondary text-sm">นำเข้ารายชื่อจาก Excel</Link>}
       </div>
       {approver && <UnlockPanel unlockedUntil={unlockExpiry(user)} />}

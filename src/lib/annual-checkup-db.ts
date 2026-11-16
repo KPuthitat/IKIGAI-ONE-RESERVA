@@ -667,3 +667,221 @@ export function getResultFileClinical(actor: AcActor, resultId: number): { path:
 
 /** The doctor's draft conclusion, so the person page can pre-fill it. */
 export const isApproverUser = (userId: number): boolean => isApproverEligible(userId);
+
+// ── queue number + QR check-in (phase 6) ───────────────────────────────────────────────────────────────────────────────
+// The queue table holds a place in the line, an appointment time and the arrival stamp — no health data. Who sees what:
+//   • employee        → only their own row, and only in an OPEN round; they get their own QR token (nobody else's)
+//   • clinic recorder → every row of every round, may look a token up and check people in (live eligibility, audited)
+//   • branch manager  → name + queue number + arrived / not yet, only for employees of the branches they administer; never the
+//                       tests, the payer or the token
+//   • HR / others     → nothing
+// Waived tests are never shown to the employee (a waiver can hint at a medical reason).
+
+export type QueueTest = { code: string; name_th: string };
+export type MyQueue = { round_id: number; round_name: string; location: string | null; date: string | null; appt_time: string | null;
+  queue_no: number; tests: QueueTest[]; checkin_token: string; checked_in_at: string | null };
+
+const orderedTests = (roundId: number, col: "user_id" | "external_id", id: number): QueueTest[] =>
+  getDb().prepare(`
+    SELECT t.code, t.name_th FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id
+     WHERE o.round_id = ? AND o.${col} = ? AND o.status <> 'waived' ORDER BY t.sort_no
+  `).all(roundId, id) as QueueTest[];
+
+/** The signed-in employee's own place in line for each open round. The token returned is theirs alone. */
+export function getMyQueue(actor: AcActor): MyQueue[] {
+  const a = loadActor(actor);
+  const rows = getDb().prepare(`
+    SELECT r.id AS round_id, r.name AS round_name, r.location, r.start_date AS date, COALESCE(q.appt_time, r.appt_time) AS appt_time,
+           q.queue_no, q.checkin_token, q.checked_in_at
+      FROM annual_checkup_queue q JOIN annual_checkup_rounds r ON r.id = q.round_id
+     WHERE q.user_id = ? AND r.status = 'open' ORDER BY r.id DESC
+  `).all(a.id) as Array<Omit<MyQueue, "tests">>;
+  return rows.map((r) => ({ ...r, tests: orderedTests(r.round_id, "user_id", a.id) }));
+}
+
+export type QueueScan = { queue_id: number; round_id: number; round_name: string; kind: "employee" | "external"; label: string; code: string | null;
+  payer: string | null; queue_no: number; appt_time: string | null; tests: QueueTest[]; checked_in_at: string | null; checked_in_by: string | null };
+
+function loadQueueScan(where: string, arg: string | number): QueueScan | null {
+  const q = getDb().prepare(`
+    SELECT q.id AS queue_id, q.round_id, r.name AS round_name, q.user_id, q.external_id, q.queue_no, COALESCE(q.appt_time, r.appt_time) AS appt_time,
+           q.checked_in_at, ci.display_name AS ci_name, ci.title_prefix AS ci_prefix,
+           u.display_name, u.title_prefix, u.employee_code, e.full_name, e.sort_no, ep.name_th AS ext_payer
+      FROM annual_checkup_queue q JOIN annual_checkup_rounds r ON r.id = q.round_id
+      LEFT JOIN users u ON u.id = q.user_id LEFT JOIN annual_checkup_externals e ON e.id = q.external_id
+      LEFT JOIN annual_checkup_payers ep ON ep.id = e.payer_id LEFT JOIN users ci ON ci.id = q.checked_in_by
+     WHERE ${where}
+  `).get(arg) as { queue_id: number; round_id: number; round_name: string; user_id: number | null; external_id: number | null; queue_no: number; appt_time: string | null;
+    checked_in_at: string | null; ci_name: string | null; ci_prefix: string | null; display_name: string | null; title_prefix: string | null; employee_code: string | null;
+    full_name: string | null; sort_no: number | null; ext_payer: string | null } | undefined;
+  if (!q) return null;
+  const isUser = q.user_id != null;
+  const payer = isUser
+    ? ((getDb().prepare("SELECT p.name_th FROM annual_checkup_orders o LEFT JOIN annual_checkup_payers p ON p.id = o.payer_id WHERE o.round_id = ? AND o.user_id = ? AND p.id IS NOT NULL LIMIT 1").get(q.round_id, q.user_id) as { name_th: string } | undefined)?.name_th ?? null)
+    : q.ext_payer;
+  return {
+    queue_id: q.queue_id, round_id: q.round_id, round_name: q.round_name, kind: isUser ? "employee" : "external",
+    label: isUser ? nameWithPrefix(q.title_prefix, q.display_name ?? "") : externalLabel(q.full_name, q.sort_no ?? 0, q.ext_payer ?? ""),
+    code: q.employee_code, payer, queue_no: q.queue_no, appt_time: q.appt_time,
+    tests: orderedTests(q.round_id, isUser ? "user_id" : "external_id", (isUser ? q.user_id : q.external_id) as number),
+    checked_in_at: q.checked_in_at, checked_in_by: q.ci_name ? nameWithPrefix(q.ci_prefix, q.ci_name) : null
+  };
+}
+
+/** Clinic staff scan a QR: the token → who it is, their number and tests. null for an unknown token (nothing is revealed about why). */
+export function lookupQueueByToken(actor: AcActor, token: string): QueueScan | null {
+  const a = requireRecorder(actor);
+  if (typeof token !== "string" || !/^[0-9a-f]{32}$/.test(token)) return null;
+  const s = loadQueueScan("q.checkin_token = ?", token);
+  if (!s) return null;
+  audit(a.id, "queue.scan", s.kind === "employee" ? { user_id: userOfQueue(s.queue_id), external_id: null } : { user_id: null, external_id: externalOfQueue(s.queue_id) }, s.round_id, null);
+  return s;
+}
+const userOfQueue = (qid: number): number | null => (getDb().prepare("SELECT user_id FROM annual_checkup_queue WHERE id = ?").get(qid) as { user_id: number | null } | undefined)?.user_id ?? null;
+const externalOfQueue = (qid: number): number | null => (getDb().prepare("SELECT external_id FROM annual_checkup_queue WHERE id = ?").get(qid) as { external_id: number | null } | undefined)?.external_id ?? null;
+
+/**
+ * Check a person in (by scanned token, or by the row's id from the roster — the way people without an account are checked in).
+ * Idempotent: a second scan changes nothing and says who checked them in and when. The trigger refuses anyone but a live eligible recorder.
+ */
+export function checkIn(actor: AcActor, ref: { token: string } | { queueId: number }): { already: boolean; scan: QueueScan } {
+  const a = requireRecorder(actor);
+  const scan = "token" in ref
+    ? (typeof ref.token === "string" && /^[0-9a-f]{32}$/.test(ref.token) ? loadQueueScan("q.checkin_token = ?", ref.token) : null)
+    : loadQueueScan("q.id = ?", ref.queueId);
+  if (!scan) throw new AnnualCheckupInvalid("queue_not_found");
+  if (scan.checked_in_at) return { already: true, scan };
+  const subj = scan.kind === "employee" ? { user_id: userOfQueue(scan.queue_id), external_id: null } : { user_id: null, external_id: externalOfQueue(scan.queue_id) };
+  guard(() => getDb().transaction(() => {
+    getDb().prepare("UPDATE annual_checkup_queue SET checked_in_at = CURRENT_TIMESTAMP, checked_in_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND checked_in_at IS NULL").run(a.id, scan.queue_id);
+    audit(a.id, "queue.checkin", subj, scan.round_id, null);
+  })());
+  return { already: false, scan: loadQueueScan("q.id = ?", scan.queue_id) as QueueScan };
+}
+
+export type QueueRosterRow = { queue_id: number; key: string; kind: "employee" | "external"; label: string; code: string | null; payer: string | null;
+  queue_no: number; appt_time: string | null; checked_in_at: string | null; checked_in_by: string | null };
+
+/** The whole round's roster in queue order, for the clinic. */
+export function listQueue(actor: AcActor, roundId: number): QueueRosterRow[] {
+  const a = requireRecorder(actor);
+  const ids = getDb().prepare("SELECT id, user_id, external_id FROM annual_checkup_queue WHERE round_id = ? ORDER BY queue_no").all(roundId) as Array<{ id: number; user_id: number | null; external_id: number | null }>;
+  const out = ids.map((r) => {
+    const s = loadQueueScan("q.id = ?", r.id) as QueueScan;
+    return { queue_id: s.queue_id, key: r.user_id != null ? `u${r.user_id}` : `e${r.external_id}`, kind: s.kind, label: s.label, code: s.code, payer: s.payer,
+      queue_no: s.queue_no, appt_time: s.appt_time, checked_in_at: s.checked_in_at, checked_in_by: s.checked_in_by };
+  });
+  audit(a.id, "queue.list", null, roundId, null);
+  return out;
+}
+
+/** A branch manager's view: only employees of the branches they administer; name, number and arrived-or-not, nothing else. */
+export function listQueueForManager(actor: AcActor, roundId: number): Array<{ label: string; queue_no: number; arrived: boolean }> {
+  const a = loadActor(actor);
+  if (a.role !== "admin") throw new AnnualCheckupForbidden("not_allowed");
+  const rows = getDb().prepare(`
+    SELECT DISTINCT q.queue_no, q.checked_in_at, u.display_name, u.title_prefix
+      FROM annual_checkup_queue q JOIN users u ON u.id = q.user_id
+      JOIN user_branches ub ON ub.user_id = q.user_id
+      JOIN user_branches mine ON mine.branch_id = ub.branch_id AND mine.user_id = ? AND mine.is_admin = 1
+     WHERE q.round_id = ? AND u.status NOT IN ('disabled', 'resigned', 'terminated') ORDER BY q.queue_no
+  `).all(a.id, roundId) as Array<{ queue_no: number; checked_in_at: string | null; display_name: string; title_prefix: string | null }>;
+  return rows.map((r) => ({ label: nameWithPrefix(r.title_prefix, r.display_name), queue_no: r.queue_no, arrived: !!r.checked_in_at }));
+}
+
+/** Importer / admin: place a person in the line (add, or change their number / appointment time). The owner or a clinic recorder only. */
+export function upsertQueueRow(actor: AcActor, roundId: number, subject: AcSubject, queueNo: number, apptTime?: string | null): { id: number; action: "added" | "changed" | "same" } {
+  const a = loadActor(actor);
+  if (!(a.role === "super_admin" || isRecorderEligible(a.id))) throw new AnnualCheckupForbidden("not_allowed");
+  if (!Number.isInteger(queueNo) || queueNo <= 0) throw new AnnualCheckupInvalid("bad_queue_no");
+  if (apptTime != null && apptTime !== "" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(apptTime)) throw new AnnualCheckupInvalid("bad_value");
+  const db = getDb();
+  if (!db.prepare("SELECT 1 FROM annual_checkup_rounds WHERE id = ?").get(roundId)) throw new AnnualCheckupInvalid("round_not_found");
+  const col = subject.userId != null ? "user_id" : "external_id";
+  const sid = (subject.userId ?? subject.externalId) as number;
+  const taken = db.prepare("SELECT id, user_id, external_id FROM annual_checkup_queue WHERE round_id = ? AND queue_no = ?").get(roundId, queueNo) as { id: number; user_id: number | null; external_id: number | null } | undefined;
+  const mine = db.prepare(`SELECT id, queue_no, appt_time FROM annual_checkup_queue WHERE round_id = ? AND ${col} = ?`).get(roundId, sid) as { id: number; queue_no: number; appt_time: string | null } | undefined;
+  if (taken && taken.id !== mine?.id) throw new AnnualCheckupInvalid("queue_no_taken");
+  const appt = apptTime ? apptTime : null;
+  return guard(() => db.transaction(() => {
+    if (!mine) {
+      const id = Number(db.prepare(`INSERT INTO annual_checkup_queue (round_id, ${col}, queue_no, appt_time) VALUES (?, ?, ?, ?)`).run(roundId, sid, queueNo, appt).lastInsertRowid);
+      audit(a.id, "queue.add", subjectCols(subject), roundId, null, `no ${queueNo}`);
+      return { id, action: "added" as const };
+    }
+    if (mine.queue_no === queueNo && (apptTime === undefined || mine.appt_time === appt)) return { id: mine.id, action: "same" as const };
+    db.prepare("UPDATE annual_checkup_queue SET queue_no = ?, appt_time = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(queueNo, apptTime === undefined ? mine.appt_time : appt, mine.id);
+    audit(a.id, "queue.change", subjectCols(subject), roundId, null, `no ${mine.queue_no} -> ${queueNo}`);
+    return { id: mine.id, action: "changed" as const };
+  })());
+}
+
+/** Importer: who is already in the line (numbers and names only), so a plan can say add / change / same / clash. */
+export function listQueueForImport(roundId: number): Array<{ user_id: number | null; ext_payer: string | null; ext_sort: number | null; label: string; queue_no: number; checked_in: boolean }> {
+  return (getDb().prepare(`
+    SELECT q.user_id, ep.name_th AS ext_payer, e.sort_no AS ext_sort, q.queue_no, q.checked_in_at, u.display_name, u.title_prefix, e.full_name
+      FROM annual_checkup_queue q LEFT JOIN users u ON u.id = q.user_id LEFT JOIN annual_checkup_externals e ON e.id = q.external_id
+      LEFT JOIN annual_checkup_payers ep ON ep.id = e.payer_id WHERE q.round_id = ?
+  `).all(roundId) as Array<{ user_id: number | null; ext_payer: string | null; ext_sort: number | null; queue_no: number; checked_in_at: string | null; display_name: string | null; title_prefix: string | null; full_name: string | null }>)
+    .map((r) => ({ user_id: r.user_id, ext_payer: r.ext_payer, ext_sort: r.ext_sort, queue_no: r.queue_no, checked_in: !!r.checked_in_at,
+      label: r.user_id != null ? nameWithPrefix(r.title_prefix, r.display_name ?? "") : externalLabel(r.full_name, r.ext_sort, r.ext_payer ?? "") }));
+}
+
+/**
+ * Importer: set many people's numbers at once. All-or-nothing and swap-safe (a person moving to a number another person is leaving works):
+ * rows that change are first parked above the range, then given their new numbers. Refused if two items want the same number or a number is
+ * held by someone who is not part of this batch. The owner or a clinic recorder only.
+ */
+export function applyQueuePlan(actor: AcActor, roundId: number, items: Array<{ subject: AcSubject; queueNo: number }>): { added: number; changed: number; same: number } {
+  const a = loadActor(actor);
+  if (!(a.role === "super_admin" || isRecorderEligible(a.id))) throw new AnnualCheckupForbidden("not_allowed");
+  const db = getDb();
+  const wantedNos = new Set<number>();
+  for (const it of items) {
+    if (!Number.isInteger(it.queueNo) || it.queueNo <= 0 || it.queueNo >= 1_000_000) throw new AnnualCheckupInvalid("bad_queue_no");
+    if (wantedNos.has(it.queueNo)) throw new AnnualCheckupInvalid("queue_no_taken");
+    wantedNos.add(it.queueNo);
+  }
+  return guard(() => db.transaction(() => {
+    const col = (s: AcSubject) => (s.userId != null ? "user_id" : "external_id");
+    const sid = (s: AcSubject) => (s.userId ?? s.externalId) as number;
+    const mineOf = (s: AcSubject) => db.prepare(`SELECT id, queue_no FROM annual_checkup_queue WHERE round_id = ? AND ${col(s)} = ?`).get(roundId, sid(s)) as { id: number; queue_no: number } | undefined;
+    const batchIds = new Set<number>();
+    for (const it of items) { const m = mineOf(it.subject); if (m) batchIds.add(m.id); }
+    for (const it of items) {
+      const holder = db.prepare("SELECT id FROM annual_checkup_queue WHERE round_id = ? AND queue_no = ?").get(roundId, it.queueNo) as { id: number } | undefined;
+      if (holder && !batchIds.has(holder.id)) throw new AnnualCheckupInvalid("queue_no_taken");
+    }
+    let added = 0, changed = 0, same = 0;
+    const toSet: Array<{ id: number; no: number; subject: AcSubject }> = [];
+    for (const it of items) {
+      const m = mineOf(it.subject);
+      if (!m) { toSet.push({ id: -1, no: it.queueNo, subject: it.subject }); continue; }
+      if (m.queue_no === it.queueNo) { same++; continue; }
+      db.prepare("UPDATE annual_checkup_queue SET queue_no = queue_no + 1000000, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(m.id);
+      toSet.push({ id: m.id, no: it.queueNo, subject: it.subject });
+    }
+    for (const t of toSet) {
+      if (t.id < 0) {
+        db.prepare(`INSERT INTO annual_checkup_queue (round_id, ${col(t.subject)}, queue_no) VALUES (?, ?, ?)`).run(roundId, sid(t.subject), t.no);
+        audit(a.id, "queue.add", subjectCols(t.subject), roundId, null, `no ${t.no}`); added++;
+      } else {
+        db.prepare("UPDATE annual_checkup_queue SET queue_no = ? WHERE id = ?").run(t.no, t.id);
+        audit(a.id, "queue.change", subjectCols(t.subject), roundId, null, `-> ${t.no}`); changed++;
+      }
+    }
+    return { added, changed, same };
+  })());
+}
+
+/** The owner's / a recorder's list for editing numbers and times (no check-in controls, no tests). */
+export function listQueueForAdmin(actor: AcActor, roundId: number): QueueRosterRow[] {
+  const a = loadActor(actor);
+  if (!(a.role === "super_admin" || isRecorderEligible(a.id))) throw new AnnualCheckupForbidden("not_allowed");
+  const ids = getDb().prepare("SELECT id, user_id, external_id FROM annual_checkup_queue WHERE round_id = ? ORDER BY queue_no").all(roundId) as Array<{ id: number; user_id: number | null; external_id: number | null }>;
+  return ids.map((r) => {
+    const s = loadQueueScan("q.id = ?", r.id) as QueueScan;
+    return { queue_id: s.queue_id, key: r.user_id != null ? `u${r.user_id}` : `e${r.external_id}`, kind: s.kind, label: s.label, code: s.code, payer: s.payer,
+      queue_no: s.queue_no, appt_time: s.appt_time, checked_in_at: s.checked_in_at, checked_in_by: s.checked_in_by };
+  });
+}
