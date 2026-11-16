@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ผลตรวจสุขภาพประจำปี · NOKHOOK OS PORTAL" };
 
 const FILTERS: Array<{ v: string; th: string }> = [
-  { v: "", th: "ทั้งหมด" }, { v: "todo", th: "ยังลงผลไม่ครบ" }, { v: "verify", th: "รอแพทย์ตรวจสอบ" }, { v: "release", th: "รอเปิดผล" }, { v: "done", th: "เปิดผลแล้ว" }
+  { v: "", th: "ทั้งหมด" }, { v: "todo", th: "ยังลงผลไม่ครบ" }, { v: "verify", th: "ส่งแพทย์แล้ว รอตรวจสอบ" }, { v: "release", th: "รอเปิดผล" }, { v: "done", th: "เปิดผลแล้ว" }
 ];
 
 export default function RoundOverviewPage({ params, searchParams }: { params: { roundId: string }; searchParams: { f?: string } }) {
@@ -21,14 +21,14 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
   const f = searchParams.f ?? "";
   const subjects = data.subjects.filter((s) => {
     if (f === "todo") return s.recorded < s.required;
-    if (f === "verify") return s.recorded === s.required && s.verified < s.required;
+    if (f === "verify") return s.recorded === s.required && s.submitted && s.verified < s.required;
     if (f === "release") return s.verified === s.required && s.released < s.required;
     if (f === "done") return s.required > 0 && s.released === s.required;
     return true;
   });
   const state = (s: (typeof data.subjects)[number]) => s.required > 0 && s.released === s.required ? { th: "เปิดผลแล้ว", cls: "bg-emerald-100 text-emerald-700" }
     : s.verified === s.required && s.required > 0 ? { th: "รอเปิดผล", cls: "bg-sky-100 text-sky-700" }
-    : s.recorded === s.required && s.required > 0 ? { th: "รอแพทย์ตรวจสอบ", cls: "bg-violet-100 text-violet-700" }
+    : s.recorded === s.required && s.required > 0 ? (s.submitted ? { th: "รอแพทย์ตรวจสอบ", cls: "bg-violet-100 text-violet-700" } : { th: "ลงผลครบ ยังไม่ส่งแพทย์", cls: "bg-indigo-100 text-indigo-700" })
     : s.recorded === 0 ? { th: "ยังไม่ลงผล", cls: "bg-slate-100 text-slate-600" } : { th: "ลงผลบางส่วน", cls: "bg-amber-100 text-amber-800" };
   return (
     <div className="space-y-4">

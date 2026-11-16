@@ -40,6 +40,28 @@ export default function CheckupQueuePage() {
             <div className="flex justify-between gap-3"><dt className="text-slate-500">เวลานัด</dt><dd className="text-slate-800 text-right">{q.appt_time ? time(q.appt_time) : "รอประกาศ"}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-slate-500">สถานที่</dt><dd className="text-slate-800 text-right">{q.location ?? "รอประกาศ"}</dd></div>
           </dl>
+          {q.checked_in_at ? (
+            <div className="text-left space-y-2">
+              <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex items-baseline justify-between gap-3">
+                <span className="text-sm text-slate-600">หมายเลขชุดเก็บตัวอย่างของท่าน</span>
+                <span className="text-xl font-bold tabular-nums text-slate-900">{q.kit_no ?? "รอเจ้าหน้าที่ระบุ"}</span>
+              </div>
+              <div className="text-sm font-semibold text-slate-700">สถานีที่ต้องไป ({q.stations.filter((x) => x.passed).length}/{q.stations.length})</div>
+              {q.stations.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีสถานีสำหรับรายการตรวจของท่าน สอบถามเจ้าหน้าที่</p> : (
+                <ol className="space-y-1.5">
+                  {q.stations.map((st, i) => (
+                    <li key={st.code} className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${st.passed ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-white border-slate-200 text-slate-800"}`}>
+                      <span className={`flex h-6 w-6 flex-none items-center justify-center rounded-full text-xs font-bold ${st.passed ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700"}`}>{st.passed ? "✓" : i + 1}</span>
+                      <span className="grow">{st.name_th}</span>
+                      <span className="text-xs">{st.passed ? "ผ่านแล้ว" : "ยังไม่ได้ตรวจ"}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">เมื่อเจ้าหน้าที่สแกนเช็กอินแล้ว ระบบจะแสดงสถานีที่ท่านต้องไปและหมายเลขชุดเก็บตัวอย่างที่นี่</p>
+          )}
           <div className="text-left">
             <div className="text-sm font-semibold text-slate-700 mb-1">รายการตรวจของท่าน</div>
             {q.tests.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีรายการ</p> : (

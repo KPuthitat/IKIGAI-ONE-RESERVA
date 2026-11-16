@@ -28,7 +28,8 @@ export const ERROR_TEXT: Record<string, string> = {
   not_all_verified: "ยังมีรายการที่ยังไม่ได้ตรวจสอบ", nothing_to_release: "ไม่มีรายการที่ต้องเปิดผล",
   conclusion_released: "สรุปผลที่เปิดให้พนักงานดูแล้วแก้ไม่ได้",
   consent_required: "กรุณายอมรับข้อตกลงการคุ้มครองข้อมูลก่อน", pin_wrong: "รหัส PIN ไม่ถูกต้อง", no_pin: "ท่านยังไม่ได้ตั้งรหัส PIN กรุณาตั้งรหัสที่หน้าลงเวลาก่อน", too_many: "กรอกผิดหลายครั้ง กรุณารอ 10 นาทีแล้วลองใหม่", view_locked: "กรุณายืนยันตัวตนด้วย PIN ก่อนดูผล", not_released: "ผลของผู้เข้าตรวจรายนี้ยังไม่ถูกเปิด",
-  queue_not_found: "ไม่พบคิวนี้ (QR ไม่ถูกต้อง)", queue_no_taken: "ลำดับนี้มีผู้ใช้แล้วในรอบนี้", bad_queue_no: "ลำดับต้องเป็นเลขจำนวนเต็มตั้งแต่ 1",
+  kit_no_taken: "เลขชุดนี้ถูกใช้แล้วในรอบนี้", bad_kit_no: "เลขชุดใช้ได้เฉพาะตัวอักษรอังกฤษ ตัวเลข . _ - ไม่เกิน 30 ตัว", not_checked_in: "ยังไม่ได้เช็กอิน กรุณาเช็กอินก่อนผ่านสถานี", station_not_needed: "สถานีนี้ไม่อยู่ในรายการตรวจของคนนี้",
+  not_all_recorded: "ยังลงผลไม่ครบทุกรายการ จึงส่งให้แพทย์ไม่ได้", queue_not_found: "ไม่พบคิวนี้ (QR ไม่ถูกต้อง)", queue_no_taken: "ลำดับนี้มีผู้ใช้แล้วในรอบนี้", bad_queue_no: "ลำดับต้องเป็นเลขจำนวนเต็มตั้งแต่ 1",
   order_not_found: "ไม่พบรายการตรวจ", result_not_found: "ไม่พบผล", subject_not_found: "ไม่พบผู้เข้าตรวจ", test_not_found: "ไม่พบรายการตรวจนี้", round_not_found: "ไม่พบรอบ"
 };
 
@@ -39,7 +40,7 @@ export async function handle(fn: (user: SessionUser) => Promise<NextResponse> | 
   try { return await fn(user); }
   catch (e) {
     if (isAnnualCheckupForbidden(e)) return NextResponse.json({ ok: false, error: e.code, message: ERROR_TEXT[e.code] ?? ERROR_TEXT.not_allowed }, { status: e.code === "unauthenticated" ? 401 : 403 });
-    if (isAnnualCheckupInvalid(e)) return NextResponse.json({ ok: false, error: e.code, message: ERROR_TEXT[e.code] ?? e.code }, { status: 422 });
+    if (isAnnualCheckupInvalid(e)) return NextResponse.json({ ok: false, error: e.code, message: e.message !== e.code ? e.message : (ERROR_TEXT[e.code] ?? e.code) }, { status: 422 });
     throw e;
   }
 }

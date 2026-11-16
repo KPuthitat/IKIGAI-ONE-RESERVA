@@ -66,6 +66,15 @@ const TESTS: Array<[code: string, th: string, en: string, kind: "number" | "text
   ["STOOL", "อุจจาระเพาะเชื้อ", "Stool culture", "text"]
 ];
 
+// First guess of the stations (owner confirms / edits in the stations screen): code, Thai name, the tests (by code) done there.
+const STATIONS: Array<[code: string, th: string, tests: string[]]> = [
+  ["PHYSICAL", "ตรวจร่างกายโดยแพทย์", ["PHYSICAL"]],
+  ["BLOOD", "เจาะเลือด", ["CBC", "BUN", "CREAT", "SGOT", "SGPT", "CHOL", "TG", "HDL", "LDL", "GLUCOSE", "URIC", "HAV", "HBSAG"]],
+  ["SPECIMEN", "ปัสสาวะและอุจจาระ", ["URINE", "STOOL"]],
+  ["XRAY", "เอกซเรย์ทรวงอก", ["CXR"]],
+  ["FUNCTION", "สมรรถภาพปอด การได้ยิน และสายตา", ["SPIRO", "AUDIO", "EYE"]]
+];
+
 export function ensureAnnualCheckupSchema(db: Database.Database): void {
   const hasCol = (table: string, col: string) =>
     (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((c) => c.name === col);
@@ -296,6 +305,45 @@ export function ensureAnnualCheckupSchema(db: Database.Database): void {
   // Default appointment time of the day (HH:MM); a person's own appt_time overrides it. The date is the round's start_date.
   if (!hasCol("annual_checkup_rounds", "appt_time")) db.exec("ALTER TABLE annual_checkup_rounds ADD COLUMN appt_time TEXT");
 
+  // ── Stations, sample-kit numbers, and "sent to the doctor" (phase 7) ──
+  db.exec(`
+    -- A station is a place on the day (blood draw, X-ray, ...). Each test belongs to one station; a person's route is the stations of the
+    -- tests they are ordered (waived tests never count). The catalogue is editable by the owner / a recorder.
+    CREATE TABLE IF NOT EXISTS annual_checkup_stations (
+      id      INTEGER PRIMARY KEY AUTOINCREMENT,
+      code    TEXT NOT NULL UNIQUE,
+      name_th TEXT NOT NULL,
+      sort_no INTEGER NOT NULL DEFAULT 0,
+      active  INTEGER NOT NULL DEFAULT 1
+    );
+    -- "Passed this station": staff at the station scan the person's QR. Append-only; only for someone already checked in.
+    CREATE TABLE IF NOT EXISTS annual_checkup_station_passes (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      queue_id   INTEGER NOT NULL REFERENCES annual_checkup_queue(id),
+      station_id INTEGER NOT NULL REFERENCES annual_checkup_stations(id),
+      passed_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      passed_by  INTEGER NOT NULL REFERENCES users(id),
+      UNIQUE (queue_id, station_id)
+    );
+    -- The recorder hands a person's finished drafts to the doctor. No health data here: only that, and when.
+    CREATE TABLE IF NOT EXISTS annual_checkup_submissions (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      round_id     INTEGER NOT NULL REFERENCES annual_checkup_rounds(id),
+      user_id      INTEGER REFERENCES users(id),
+      external_id  INTEGER REFERENCES annual_checkup_externals(id),
+      submitted_by INTEGER NOT NULL REFERENCES users(id),
+      submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CHECK ((user_id IS NOT NULL AND external_id IS NULL) OR (user_id IS NULL AND external_id IS NOT NULL))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_sub_user ON annual_checkup_submissions(round_id, user_id) WHERE user_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_sub_ext  ON annual_checkup_submissions(round_id, external_id) WHERE external_id IS NOT NULL;
+  `);
+  if (!hasCol("annual_checkup_tests", "station_id")) db.exec("ALTER TABLE annual_checkup_tests ADD COLUMN station_id INTEGER REFERENCES annual_checkup_stations(id)");
+  if (!hasCol("annual_checkup_queue", "kit_no")) db.exec("ALTER TABLE annual_checkup_queue ADD COLUMN kit_no TEXT");
+  if (!hasCol("annual_checkup_queue", "kit_set_by")) db.exec("ALTER TABLE annual_checkup_queue ADD COLUMN kit_set_by INTEGER REFERENCES users(id)");
+  if (!hasCol("annual_checkup_queue", "kit_set_at")) db.exec("ALTER TABLE annual_checkup_queue ADD COLUMN kit_set_at TEXT");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_queue_kit ON annual_checkup_queue(round_id, kit_no) WHERE kit_no IS NOT NULL");
+
   // ── Triggers: what the database itself refuses. Recreated each boot so the definitions always match this file. ──
   const triggers: Array<[name: string, sql: string]> = [
     ["annual_checkup_results_ins", `
@@ -386,7 +434,30 @@ export function ensureAnnualCheckupSchema(db: Database.Database): void {
         -- checking in is the one write clinic staff make; it needs a live eligible recorder and can never be undone or re-stamped
         ${abort(`NEW.checked_in_by IS NOT NULL AND OLD.checked_in_by IS NULL AND NOT ${recorderOk("NEW.checked_in_by")}`, "annual_checkup: only clinic staff with the recorder flag may check people in")}
         ${abort("OLD.checked_in_at IS NOT NULL AND (NEW.checked_in_at IS NOT OLD.checked_in_at OR NEW.checked_in_by IS NOT OLD.checked_in_by)", "annual_checkup: a check-in cannot be changed or undone")}
+        -- the sample-kit number is linked by clinic staff only (a live eligible recorder), whoever and whenever
+        ${abort(`NEW.kit_no IS NOT OLD.kit_no AND (NEW.kit_set_by IS NULL OR NOT ${recorderOk("NEW.kit_set_by")})`, "annual_checkup: only clinic staff with the recorder flag may link a kit number")}
       END;`],
+    ["annual_checkup_station_passes_ins", `
+      CREATE TRIGGER annual_checkup_station_passes_ins BEFORE INSERT ON annual_checkup_station_passes
+      BEGIN
+        ${abort(`NOT ${recorderOk("NEW.passed_by")}`, "annual_checkup: only clinic staff with the recorder flag may mark a station passed")}
+        ${abort("(SELECT checked_in_at FROM annual_checkup_queue WHERE id = NEW.queue_id) IS NULL", "annual_checkup: a person who has not checked in cannot pass a station")}
+      END;`],
+    ["annual_checkup_station_passes_upd", `
+      CREATE TRIGGER annual_checkup_station_passes_upd BEFORE UPDATE ON annual_checkup_station_passes
+      BEGIN ${abort("1", "annual_checkup: station passes are append-only")} END;`],
+    ["annual_checkup_station_passes_del", `
+      CREATE TRIGGER annual_checkup_station_passes_del BEFORE DELETE ON annual_checkup_station_passes
+      BEGIN ${abort("1", "annual_checkup: station passes are append-only")} END;`],
+    ["annual_checkup_submissions_ins", `
+      CREATE TRIGGER annual_checkup_submissions_ins BEFORE INSERT ON annual_checkup_submissions
+      BEGIN ${abort(`NOT ${recorderOk("NEW.submitted_by")}`, "annual_checkup: only clinic staff with the recorder flag may send results to the doctor")} END;`],
+    ["annual_checkup_submissions_upd", `
+      CREATE TRIGGER annual_checkup_submissions_upd BEFORE UPDATE ON annual_checkup_submissions
+      BEGIN ${abort(`NEW.submitted_by IS NOT OLD.submitted_by AND NOT ${recorderOk("NEW.submitted_by")}`, "annual_checkup: only clinic staff with the recorder flag may send results to the doctor")} END;`],
+    ["annual_checkup_submissions_del", `
+      CREATE TRIGGER annual_checkup_submissions_del BEFORE DELETE ON annual_checkup_submissions
+      BEGIN ${abort("1", "annual_checkup: submissions are never deleted")} END;`],
     ["annual_checkup_queue_del", `
       CREATE TRIGGER annual_checkup_queue_del BEFORE DELETE ON annual_checkup_queue
       BEGIN ${abort("OLD.checked_in_at IS NOT NULL", "annual_checkup: a checked-in queue row cannot be removed")} END;`],
@@ -405,4 +476,10 @@ export function ensureAnnualCheckupSchema(db: Database.Database): void {
   // Seed the catalogue (idempotent by code; never overwrites units / ranges someone has since filled in).
   const ins = db.prepare("INSERT OR IGNORE INTO annual_checkup_tests (code, name_th, name_en, value_kind, sort_no) VALUES (?,?,?,?,?)");
   TESTS.forEach(([code, th, en, kind], i) => ins.run(code, th, en, kind, i + 1));
+
+  // Seed the stations and a first guess of which test sits at which station (owner edits it afterwards; a mapping someone set is never overwritten).
+  const insSt = db.prepare("INSERT OR IGNORE INTO annual_checkup_stations (code, name_th, sort_no) VALUES (?,?,?)");
+  STATIONS.forEach(([code, th], i) => insSt.run(code, th, i + 1));
+  const mapSt = db.prepare("UPDATE annual_checkup_tests SET station_id = (SELECT id FROM annual_checkup_stations WHERE code = ?) WHERE code = ? AND station_id IS NULL");
+  for (const [stCode, , tests] of STATIONS) for (const t of tests) mapSt.run(stCode, t);
 }

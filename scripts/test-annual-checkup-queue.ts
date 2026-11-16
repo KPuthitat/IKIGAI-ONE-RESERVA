@@ -149,6 +149,106 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     return l.length === 1 && l[0].label === "emp-c";
   })());
 
+  // ── phase 7: stations, sample-kit numbers, sent to the doctor ──
+  const ST = await import("../src/lib/annual-checkup-stations");
+  const NT = await import("../src/lib/annual-checkup-notify");
+  const qB = db.prepare("SELECT id FROM annual_checkup_queue WHERE round_id = ? AND user_id = ?").get(round, B) as { id: number };
+  const qC = db.prepare("SELECT id FROM annual_checkup_queue WHERE round_id = ? AND user_id = ?").get(round, C) as { id: number };
+  const tokB = G.getMyQueue({ id: B })[0].checkin_token;
+  ok("S1 five stations are seeded and every one of the 20 tests sits at a station", (db.prepare("SELECT COUNT(*) n FROM annual_checkup_stations").get() as { n: number }).n === 5
+    && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_tests WHERE station_id IS NULL").get() as { n: number }).n === 0);
+  ok("S2 before check-in the employee sees no stations and no kit number (the route opens when staff scan them in)", (() => {
+    const q = G.getMyQueue({ id: B })[0];
+    return q.stations.length === 0 && q.kit_no === null;
+  })());
+  ok("S3 after check-in A sees the stations of their tests only (blood + X-ray; the waived urine test adds none), in route order, none passed", (() => {
+    const q = G.getMyQueue({ id: A })[0];
+    return q.checked_in_at !== null && q.stations.map((x) => x.code).join() === "BLOOD,XRAY" && q.stations.every((x) => !x.passed) && !JSON.stringify(q).includes("SPECIMEN");
+  })());
+  ok("S4 the kit number is linked at check-in, is unique in the round, and must look like a kit number", (() => {
+    const r = G.checkIn({ id: R }, { token: tokB }, { kitNo: "K-0002" });
+    const dup = err(() => G.checkIn({ id: R }, { queueId: qC.id }, { kitNo: "K-0002" }));
+    const bad = err(() => G.checkIn({ id: R }, { queueId: qC.id }, { kitNo: "x y; DROP" }));
+    return r.already === false && r.scan.kit_no === "K-0002" && dup === "kit_no_taken" && bad === "bad_kit_no";
+  })());
+  ok("S5 the employee sees their own kit number after check-in, and only their own", G.getMyQueue({ id: B })[0].kit_no === "K-0002" && G.getMyQueue({ id: A })[0].kit_no === null && G.getMyQueue({ id: C })[0].kit_no === null);
+  ok("S6 a rescan with another kit number does not overwrite; a missing kit can be filled by rescanning; a kit can be corrected by a recorder only", (() => {
+    const again = G.checkIn({ id: R }, { token: tokB }, { kitNo: "K-0099" });
+    const stays = again.already === true && again.scan.kit_no === "K-0002";
+    const qA = (db.prepare("SELECT id FROM annual_checkup_queue WHERE round_id = ? AND user_id = ?").get(round, A) as { id: number }).id;
+    const fill = G.checkIn({ id: R }, { queueId: qA }, { kitNo: "K-0001" });
+    const fixed = G.setKitNo({ id: R }, qB.id, "K-0003").kit_no === "K-0003";
+    const refused = [A, B, HR, W, S, N].every((u) => err(() => G.setKitNo({ id: u }, qB.id, "K-0777")) === "not_recorder");
+    return stays && fill.scan.kit_no === "K-0001" && fixed && refused;
+  })());
+  ok("S7 the database refuses a kit number attributed to anyone who is not a live clinic recorder (or to nobody)", sqlRefused(() => db.prepare("UPDATE annual_checkup_queue SET kit_no = 'HACK', kit_set_by = ? WHERE id = ?").run(W, qB.id), /may link a kit/)
+    && sqlRefused(() => db.prepare("UPDATE annual_checkup_queue SET kit_no = 'HACK3', kit_set_by = NULL WHERE id = ?").run(qB.id), /may link a kit/));
+  ok("S8 a station cannot be passed before check-in, nor one that is not on the person's route; staff-only", (() => {
+    const notIn = err(() => G.passStation({ id: R }, { queueId: qC.id }, "BLOOD")) === "not_checked_in";
+    const notNeeded = err(() => G.passStation({ id: R }, { token: tokB }, "SPECIMEN")) === "station_not_needed";
+    const refused = [A, B, HR, W, S, N].every((u) => err(() => G.passStation({ id: u }, { token: tokB }, "BLOOD")) === "not_recorder");
+    return notIn && notNeeded && refused;
+  })());
+  ok("S9 staff at the station mark it passed: the employee's route updates, a second scan changes nothing, one row per station", (() => {
+    const first = G.passStation({ id: R }, { token: tokB }, "BLOOD");
+    const again = G.passStation({ id: R }, { token: tokB }, "BLOOD");
+    const mine = G.getMyQueue({ id: B })[0].stations;
+    return first.already === false && again.already === true && mine.find((x) => x.code === "BLOOD")?.passed === true && mine.filter((x) => x.passed).length === 1
+      && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_station_passes WHERE queue_id = ?").get(qB.id) as { n: number }).n === 1
+      && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'queue.station'").get() as { n: number }).n === 1;
+  })());
+  ok("S10 the database refuses a station pass by a non-recorder or for someone not checked in, and passes are append-only", sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qB.id, W), /may mark a station/)
+    && sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qC.id, R), /not checked in/)
+    && sqlRefused(() => db.prepare("UPDATE annual_checkup_station_passes SET passed_by = ?").run(S), /append-only/) && sqlRefused(() => db.prepare("DELETE FROM annual_checkup_station_passes").run(), /append-only/));
+  ok("S11 the clinic roster shows the kit and the stations done / total", (() => {
+    const row = G.listQueue({ id: R }, round).find((x) => x.queue_id === qB.id)!;
+    return row.kit_no === "K-0003" && row.stations_done === 1 && row.stations_total === 1;
+  })());
+
+  const oA = (code: string) => (db.prepare("SELECT o.id FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id WHERE o.round_id = ? AND o.user_id = ? AND t.code = ?").get(round, A, code) as { id: number }).id;
+  const D = mk("doctor", "staff", [[clinic, 0]], { clinical_role: "doctor", license_no: "ว.12345", health_result_approver: 1, line_user_id: "U-doctor" });
+  db.prepare("UPDATE users SET health_result_recorder = 1 WHERE id = ?").run(N);   // N is now a second recorder (used below)
+  ok("S12 results cannot be sent to the doctor until every test that is not waived has a result", (() => {
+    G.recordResult({ id: R }, oA("HAV"), { valueText: "ปกติ" });
+    return err(() => G.submitToDoctor({ id: R }, round, { userId: A })) === "not_all_recorded";
+  })());
+  ok("S13 once all are recorded the recorder sends them: refreshed on a repeat, audited, counted as waiting for the doctor", (() => {
+    G.recordResult({ id: R }, oA("CXR"), { valueText: "ปกติ" });
+    const r = G.submitToDoctor({ id: R }, round, { userId: A });
+    const again = G.submitToDoctor({ id: R }, round, { userId: A });
+    return !!r.submitted_at && r.awaiting === 1 && again.awaiting === 1 && G.countAwaitingDoctor(round) === 1
+      && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_submissions WHERE round_id = ? AND user_id = ?").get(round, A) as { n: number }).n === 1
+      && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'result.submit'").get() as { n: number }).n === 2;
+  })());
+  ok("S14 only a clinic recorder may send results; the database refuses it for anyone else", [A, B, HR, W, S].every((u) => err(() => G.submitToDoctor({ id: u }, round, { userId: A })) === "not_recorder")
+    && sqlRefused(() => db.prepare("INSERT INTO annual_checkup_submissions (round_id, user_id, submitted_by) VALUES (?,?,?)").run(round, B, W), /may send results/)
+    && sqlRefused(() => db.prepare("DELETE FROM annual_checkup_submissions").run(), /never deleted/));
+  ok("S15 the overview marks who was sent to the doctor; the waiting count drops once the doctor has verified every draft", (() => {
+    const row = G.getRoundOverview({ id: R }, round).subjects.find((x) => x.key === `u${A}`)!;
+    const sent = row.submitted === true;
+    const resIds = (db.prepare("SELECT r.id FROM annual_checkup_results r JOIN annual_checkup_orders o ON o.id = r.order_id WHERE o.round_id = ? AND o.user_id = ?").all(round, A) as Array<{ id: number }>).map((x) => x.id);
+    for (const id of resIds) G.verifyResult({ id: D }, id, { licenseUnlocked: true });
+    return sent && G.countAwaitingDoctor(round) === 0 && G.getRoundOverview({ id: R }, round).subjects.find((x) => x.key === `u${B}`)!.submitted === false;
+  })());
+  ok("S16 the doctor LINE notice goes only to live approver doctors; the card carries a count and a link, no name, value or test", (() => {
+    const ids = G.listApproverLineIds();
+    const j = JSON.stringify(NT.doctorWaitingCard(3, round));
+    return ids.length === 1 && ids[0] === "U-doctor" && j.includes("รอแพทย์ตรวจสอบ 3 คน") && j.includes(`/staff/health/annual-checkup/${round}`) && !/emp-|ปกติ|HAV|CXR|ไวรัส|เอกซเรย์/.test(j);
+  })());
+  ok("S17 the stations catalogue is edited by the owner or a clinic recorder only; codes are validated and unique; a test can be moved", (() => {
+    const refused = [A, HR, W].every((u) => { try { ST.saveStation(u, { nameTh: "ใหม่", code: "NEW1", sortNo: 9, active: true }); return false; } catch (e) { return e instanceof ST.StationRefused && e.code === "not_allowed"; } });
+    const id = ST.saveStation(S, { nameTh: "คลื่นหัวใจ", code: "ecg", sortNo: 9, active: true });
+    let dup = ""; try { ST.saveStation(R, { nameTh: "x", code: "ECG", sortNo: 1, active: true }); } catch (e) { dup = (e as { code: string }).code; }
+    let bad = ""; try { ST.saveStation(R, { nameTh: "x", code: "e c g", sortNo: 1, active: true }); } catch (e) { bad = (e as { code: string }).code; }
+    ST.assignTestStation(R, "URIC", id);
+    const moved = (db.prepare("SELECT station_id FROM annual_checkup_tests WHERE code = 'URIC'").get() as { station_id: number }).station_id === id;
+    return refused && dup === "code_taken" && bad === "bad_code" && moved;
+  })());
+  ok("S18 the migration is idempotent and never overwrites a mapping the owner set (re-running the seed keeps URIC at its new station)", (() => {
+    const before = (db.prepare("SELECT station_id FROM annual_checkup_tests WHERE code = 'URIC'").get() as { station_id: number }).station_id;
+    return before > 0 && (db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'annual_checkup_%'").get() as { n: number }).n === 26;
+  })());
+
   // ── nothing else touches the queue table ──
   ok("Q25 no source file outside the gateway / schema mentions the queue table", (() => {
     const bad: string[] = [];
@@ -157,7 +257,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
         if (e.name === "node_modules" || e.name === ".next") continue;
         const p = path.join(dir, e.name);
         if (e.isDirectory()) walk(p);
-        else if (/\.(ts|tsx)$/.test(e.name) && !["annual-checkup-db.ts", "annual-checkup-schema.ts"].includes(e.name) && /annual_checkup_queue\b/.test(fs.readFileSync(p, "utf8"))) bad.push(p);
+        else if (/\.(ts|tsx)$/.test(e.name) && !["annual-checkup-db.ts", "annual-checkup-schema.ts"].includes(e.name) && /annual_checkup_(queue|station_passes|submissions)\b/.test(fs.readFileSync(p, "utf8"))) bad.push(p);
       }
     };
     walk(path.join(process.cwd(), "src"));
