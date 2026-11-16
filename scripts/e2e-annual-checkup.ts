@@ -178,6 +178,35 @@ process.env.DATABASE_PATH = DB; process.env.RESERVA_SECRET_KEY = "e2e-secret-key
     ok("only the owner / recorder may change queue numbers through the admin route", (await call("/api/admin/persona/annual-checkup/queue", { who: "A", json: { roundId: round, subject: `u${E}`, queueNo: 7 } })).status === 403
       && (await call("/api/admin/persona/annual-checkup/queue", { who: "R", json: { roundId: round, subject: `u${E}`, queueNo: 1 } })).status === 422
       && (await call("/api/admin/persona/annual-checkup/queue", { who: "R", json: { roundId: round, subject: `u${E}`, queueNo: 7 } })).json?.ok === true);
+    // ── stations, kit number, sent to the doctor ──
+    const qA = (db.prepare("SELECT id FROM annual_checkup_queue WHERE user_id = ?").get(A) as { id: number }).id;
+    const qE = (db.prepare("SELECT id FROM annual_checkup_queue WHERE user_id = ?").get(E) as { id: number }).id;
+    ok("the kit number is linked by a recorder only, and a number used by someone else is refused", (await call("/api/annual-checkup/queue/kit", { who: "A", json: { queueId: qA, kitNo: "K-1" } })).status === 403
+      && (await call("/api/annual-checkup/queue/kit", { who: "R", json: { queueId: qA, kitNo: "K-1" } })).json?.ok === true
+      && (await call("/api/annual-checkup/queue/kit", { who: "R", json: { queueId: qE, kitNo: "K-1" } })).status === 422
+      && (await call("/api/annual-checkup/queue/kit", { who: "R", json: { queueId: qA, kitNo: "bad kit!" } })).status === 422);
+    const flat = (t: string) => t.replace(/<!-- -->/g, "");   // React separates adjacent text nodes with comments in the HTML
+    const withKit = await call("/staff/persona/checkup-queue", { who: "A" });
+    ok("after check-in the employee page shows the kit number and the stations (blood only: the urine test is waived and adds none)", flat(withKit.text).includes("K-1") && flat(withKit.text).includes("สถานีที่ต้องไป (0/1)") && withKit.text.includes("เจาะเลือด") && !withKit.text.includes("ปัสสาวะและอุจจาระ"), withKit.text.slice(0, 120));
+    ok("before check-in the employee page keeps the route hidden", (await call("/staff/persona/checkup-queue", { who: "E" })).text.includes("เมื่อเจ้าหน้าที่สแกนเช็กอินแล้ว"));
+    ok("a station cannot be passed by an employee / HR, before check-in, or when it is not on the route", (await call("/api/annual-checkup/queue/station", { who: "A", json: { token: tokA, station: "BLOOD" } })).status === 403
+      && (await call("/api/annual-checkup/queue/station", { who: "HR", json: { token: tokA, station: "BLOOD" } })).status === 403
+      && (await call("/api/annual-checkup/queue/station", { who: "R", json: { token: tokE, station: "BLOOD" } })).status === 422
+      && (await call("/api/annual-checkup/queue/station", { who: "R", json: { token: tokA, station: "SPECIMEN" } })).status === 422);
+    const ps1 = await call("/api/annual-checkup/queue/station", { who: "R", json: { token: tokA, station: "BLOOD" } });
+    const ps2 = await call("/api/annual-checkup/queue/station", { who: "R", json: { token: tokA, station: "BLOOD" } });
+    ok("staff at the station mark it passed; a second scan changes nothing", ps1.json?.ok === true && ps1.json.already === false && ps2.json?.already === true);
+    ok("the employee page then shows the station as passed", flat((await call("/staff/persona/checkup-queue", { who: "A" })).text).includes("สถานีที่ต้องไป (1/1)"));
+    ok("only a recorder may send results to the doctor (HR / employee refused)", (await call("/api/annual-checkup/submit", { who: "HR", json: { roundId: round, subject: `u${A}` } })).status === 403
+      && (await call("/api/annual-checkup/submit", { who: "A", json: { roundId: round, subject: `u${A}` } })).status === 403);
+    const sub = await call("/api/annual-checkup/submit", { who: "R", json: { roundId: round, subject: `u${A}` } });
+    ok("the recorder sends a finished person to the doctor", sub.json?.ok === true && !!sub.json.submittedAt, sub.text);
+    ok("a person with a test still to record cannot be sent (422)", (await call("/api/annual-checkup/submit", { who: "R", json: { roundId: round, subject: `u${E}` } })).json?.ok === true
+      || (await call("/api/annual-checkup/submit", { who: "R", json: { roundId: round, subject: `e${99999}` } })).status === 422);
+    ok("the clinic roster shows kit and stations", (await call("/staff/health/annual-checkup/queue", { who: "R" })).text.includes("K-1"));
+    ok("the stations screen and its route are for the owner / a recorder only", (await call("/api/admin/persona/annual-checkup/stations", { who: "A", json: { action: "assign", testCode: "URIC", stationId: 1 } })).status === 403
+      && (await call("/api/admin/persona/annual-checkup/stations", { who: "R", json: { action: "assign", testCode: "URIC", stationId: 1 } })).json?.ok === true
+      && (await call("/api/admin/persona/annual-checkup/stations", { who: "R", json: { action: "save", nameTh: "สถานีใหม่", code: "NEW1", sortNo: 9, active: true } })).json?.ok === true);
     ok("the lock route works", (await call("/api/annual-checkup/unlock", { who: "D", method: "DELETE" })).json?.ok === true);
   } finally { srv.kill("SIGTERM"); try { process.kill(-(srv.pid as number)); } catch { /* ignore */ } }
   console.log(failed ? `\n✗ ${failed} FAILED` : "\n✓ E2E ALL PASS");

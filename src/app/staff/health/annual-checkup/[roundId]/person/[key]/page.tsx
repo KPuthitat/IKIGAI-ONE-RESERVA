@@ -7,6 +7,7 @@ import { isUnlocked, requireClinicalUser, unlockExpiry } from "@/lib/annual-chec
 import { fileLink } from "@/lib/annual-checkup-session";
 import PersonClient, { type PersonRow } from "../../../PersonClient";
 import UnlockPanel from "../../../UnlockPanel";
+import SubmitPanel from "../../../SubmitPanel";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ลงผลตรวจสุขภาพ · NOKHOOK OS PORTAL" };
@@ -47,6 +48,8 @@ export default function PersonPage({ params }: { params: { roundId: string; key:
       {header.kind === "external" && conclusion?.released_at && (
         <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/report`} className="btn-secondary text-sm inline-block">พิมพ์รายงานผลตรวจ (A4) ส่งบริษัทผู้จ่าย</Link>
       )}
+      <SubmitPanel roundId={roundId} subject={params.key} submission={clinical.submission} released={!!conclusion?.released_at}
+        allRecorded={rows.filter((x) => x.order_status !== "waived").every((x) => x.result_id != null)} />
       {approver && <UnlockPanel unlockedUntil={unlockExpiry(user)} />}
       <PersonClient rows={rows} conclusion={conclusion} roundId={roundId} subject={params.key} externalId={subject.externalId ?? null}
         needsName={header.kind === "external" && /^รอเพิ่มรายชื่อ/.test(header.label)} isApprover={approver} unlocked={isUnlocked(user)} />

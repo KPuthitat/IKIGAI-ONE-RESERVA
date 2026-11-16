@@ -29,7 +29,7 @@ export default function AnnualCheckupPage() {
         <h1 className="text-2xl font-bold text-slate-800">ตรวจสุขภาพประจำปี</h1>
         <p className="text-sm text-slate-500">นำเข้ารายชื่อและรายการตรวจของรอบจากไฟล์ Excel — ดูตัวอย่างก่อนเสมอ ระบบไม่เดาแถวที่จับคู่ไม่ได้ และนำเข้าซ้ำได้โดยไม่เกิดข้อมูลซ้ำ</p>
       </div>
-      <div className="flex gap-2"><Link href="/admin/persona/annual-checkup/queue" className="btn-secondary text-sm">แก้ลำดับคิว / เวลานัด</Link></div>
+      <div className="flex gap-2"><Link href="/admin/persona/annual-checkup/queue" className="btn-secondary text-sm">แก้ลำดับคิว / เวลานัด</Link><Link href="/admin/persona/annual-checkup/stations" className="btn-secondary text-sm">สถานีตรวจ</Link></div>
       <ImportClient rounds={rounds} />
       {user.role === "super_admin" && <ConsentEditor version={consent.version} body={consent.body} />}
     </div>
