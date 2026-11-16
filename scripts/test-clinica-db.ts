@@ -77,6 +77,18 @@ process.env.DATABASE_PATH = TMP;
   const range = cdb.clinicaImportedRange(branch);
   ok("clinicaImportedRange spans Aug–Sep bills", range.billsFrom === "2026-08-01" && range.billsTo === "2026-09-01");
 
+  // "(No detail)" invoice file: bill totals only. It must UPDATE bills we hold (keeping their line items), add new ones header-only,
+  // and still drop bills of the range that are no longer in the file.
+  const noDetail = (bills: ClinicaInvoiceParse["bills"]): ClinicaInvoiceParse => ({ ...invParse(bills.map((b) => ({ ...b, items: [] }))), hasItems: false });
+  const itemsOf = (billNo: string) => q1("SELECT COUNT(*) n FROM clinica_bill_items i JOIN clinica_bills b ON b.id = i.bill_id WHERE b.branch_id = ? AND b.bill_no = ?", branch, billNo);
+  cdb.importInvoice(branch, invParse([bill("D1", "2026-10-01", 300, 0, ["บริการ", "ยา"]), bill("D2", "2026-10-02", 200, 0, ["แล็บ"]), bill("D3", "2026-10-03", 100, 0, ["x"])]));
+  cdb.importInvoice(branch, noDetail([bill("D1", "2026-10-01", 350, 0, []), bill("D2", "2026-10-02", 200, 0, []), bill("D4", "2026-10-03", 80, 0, [])]));
+  ok("no-detail import keeps the line items of bills already held (D1 ×2, D2 ×1)", itemsOf("D1") === 2 && itemsOf("D2") === 1);
+  ok("…updates the totals of a held bill (D1 300 → 350)", near(q1("SELECT net n FROM clinica_bills WHERE branch_id = ? AND bill_no = 'D1'", branch), 350));
+  ok("…adds a new bill header-only (D4) and drops a bill of the range that left the file (D3, with its items)", q1("SELECT COUNT(*) n FROM clinica_bills WHERE branch_id = ? AND bill_no = 'D4'", branch) === 1 && itemsOf("D4") === 0
+    && q1("SELECT COUNT(*) n FROM clinica_bills WHERE branch_id = ? AND bill_no = 'D3'", branch) === 0);
+  ok("…and never duplicates a bill", q1("SELECT COUNT(*) n FROM clinica_bills WHERE branch_id = ? AND bill_no = 'D1'", branch) === 1);
+
   console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
   cleanup();
   process.exit(failed === 0 ? 0 : 1);
