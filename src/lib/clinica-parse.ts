@@ -78,6 +78,7 @@ export type ClinicaBill = {
 };
 export type ClinicaInvoiceParse = {
   kind: "invoice";
+  hasItems?: boolean;                     // false for the "(No detail)" export: bill totals only, no line items (absent = true)
   rangeStart: string; rangeEnd: string;
   bills: ClinicaBill[];
   billCount: number; patientCount: number;
@@ -107,9 +108,13 @@ function parseInvoiceRows(rows: Sheet): ClinicaInvoiceParse {
     throw new Error(`ไม่พบคอลัมน์ "${labels[0]}" — ไม่ใช่ไฟล์ Invoice Report`);
   };
   const cBill = need("เลขที่ใบแจ้งหนี้"), cDate = needAny("วัน", "วันที่"), cTime = need("เวลา"), cHn = need("รหัสลูกค้า"),
-    cPayer = need("กลุ่มลูกค้า"), cStaff = need("ผู้ทำรายการ"), cCode = need("รหัส"), cName = need("รายการ"),
-    cQty = need("จำนวน"), cUnit = need("หน่วย"), cLGross = need("ราคารวม"), cLDisc = need("ส่วนลด"), cLNet = need("ราคาสุทธิ"),
-    cGross = need("ยอดรวม"), cBDisc = need("ส่วนลดท้ายบิล"), cNet = need("รวมสุทธิ"), cPaid = need("ยอดชำระรวม"), cDue = need("ยอดค้างชำระ");
+    cPayer = need("กลุ่มลูกค้า"), cStaff = need("ผู้ทำรายการ"),
+    cGross = need("ยอดรวม"), cBDisc = needAny("ส่วนลดท้ายบิล", "ส่วนลดท้ายบิล (พนักงาน)"), cNet = need("รวมสุทธิ"), cPaid = need("ยอดชำระรวม"), cDue = need("ยอดค้างชำระ");
+  // The "(No detail)" export has bill totals only: no รหัส / รายการ / จำนวน … line-item columns. Those are then optional,
+  // and the import keeps the line items of bills it already holds (see importInvoice).
+  const opt = (label: string): number => h.get(label) ?? -1;
+  const cCode = opt("รหัส"), cName = opt("รายการ"), cQty = opt("จำนวน"), cUnit = opt("หน่วย"), cLGross = opt("ราคารวม"), cLDisc = opt("ส่วนลด"), cLNet = opt("ราคาสุทธิ");
+  const hasItems = [cCode, cName, cQty, cUnit, cLGross, cLDisc, cLNet].every((c) => c >= 0);
 
   // Group real bills (id starts "BL") in first-seen order — this drops the
   // trailing "ยอดรวม" grand-total row the export appends.
@@ -142,7 +147,7 @@ function parseInvoiceRows(rows: Sheet): ClinicaInvoiceParse {
       net: round2(firstNonEmpty(ls, cNet)),
       paid: round2(firstNonEmpty(ls, cPaid)),
       due: round2(firstNonEmpty(ls, cDue)),
-      items: ls.map((r) => ({
+      items: !hasItems ? [] : ls.map((r) => ({
         code: cell(r, cCode), name: cell(r, cName),
         qty: num(r[cQty]), unit: cell(r, cUnit),
         lineGross: round2(num(r[cLGross])), lineDiscount: round2(num(r[cLDisc])), lineNet: round2(num(r[cLNet]))
@@ -155,6 +160,7 @@ function parseInvoiceRows(rows: Sheet): ClinicaInvoiceParse {
   const hns = new Set(bills.map((b) => b.hn).filter(Boolean));
   return {
     kind: "invoice",
+    hasItems,
     rangeStart: dates[0] ?? "", rangeEnd: dates[dates.length - 1] ?? "",
     bills,
     billCount: bills.length,
@@ -372,7 +378,9 @@ function parseReceiptRows(rows: Sheet): ClinicaReceiptParse {
   };
   const cRec = need("เลขที่ใบเสร็จ"), cRef = need("เอกสารอ้างอิง"), cDate = need("วัน", "วันที่"), cTime = need("เวลา"),
     cHn = need("รหัสลูกค้า"), cPayer = need("กลุ่มลูกค้า"), cChan = need("ช่องทางชำระ"), cInst = need("งวดที่"),
-    cPaid = need("ยอดชำระ"), cFee = need("ค่าธรรมเนียมบัตร"), cOut = need("ยอดค้างชำระ");
+    cPaid = need("ยอดชำระ"), cFee = need("ค่าธรรมเนียมบัตร"),
+    // newer exports call the balance on each instalment row "คงเหลือหลังงวดนี้" (same meaning: what is still owed after this payment)
+    cOut = need("ยอดค้างชำระ", "คงเหลือหลังงวดนี้");
 
   const order: string[] = [];
   const byRec = new Map<string, ClinicaReceipt>();

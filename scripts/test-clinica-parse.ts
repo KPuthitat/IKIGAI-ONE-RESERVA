@@ -87,5 +87,22 @@ ok("ar: totals 1550 due", ar.kind === "outstanding" && near(ar.totalDue, 1550) &
 ok("ar: bill totals taken from the instalment row that carries them", ar.kind === "outstanding" && near(ar.bills[1].due, 800) && near(ar.bills[1].net, 800));
 ok("ar: Buddhist dates + range", ar.kind === "outstanding" && ar.rangeStart === "2024-07-01" && ar.rangeEnd === "2026-11-05");
 
+// ── "(No detail)" exports (2026-11): bill totals only / one row per receipt instalment ──
+const ndInvHeader = ["เลขที่ใบแจ้งหนี้", "วัน", "เวลา", "รหัสลูกค้า", "คำนำหน้า", "ชื่อ", "นามสกุล", "โทร", "กลุ่มลูกค้า", "ผู้ทำรายการ", "ยอดรวม", "ส่วนลดท้ายบิล", "รวมสุทธิ", "ยอดชำระรวม", "ยอดค้างชำระ", "หมายเหตุ", "แท็ก", "แท็กลูกค้า", "แผนก"];
+const ndInv = C.parseClinicaFile(buf(ndInvHeader, [
+  ["BL1", "05/01/2569", "09:45:16", "HN1", "นาย", "ก", "ข", "", "ผู้ป่วยทั่วไป", "แอดมิน", "450.00", "0.00", "450.00", "450.00", "0.00", "", "", "-", "ห้องใช้บริการ"],
+  ["BL2", "05/01/2569", "10:29:41", "HN2", "นาย", "ค", "ง", "", "ประกันกลุ่ม เอ", "แอดมิน", "561.00", "11.00", "550.00", "0.00", "550.00", "", "", "-", "ห้องใช้บริการ"]
+], "Summary Report"));
+ok("no-detail invoice: parses with bill totals, no line items, hasItems=false", ndInv.kind === "invoice" && ndInv.hasItems === false && ndInv.bills.length === 2 && ndInv.bills.every((b) => b.items.length === 0) && near(ndInv.totalNet, 1000));
+ok("no-detail invoice: a normal invoice still reports line items", inv.hasItems === true && inv.bills[0].items.length === 2);
+const ndRecHeader = ["เลขที่ใบเสร็จ", "เอกสารอ้างอิง", "วัน", "เวลา", "รหัสลูกค้า", "คำนำหน้า", "ชื่อ", "นามสกุล", "โทร", "กลุ่มลูกค้า", "ผู้ทำรายการ", "ยอดรวม", "ส่วนลดท้ายบิล (พนักงาน)", "รวมสุทธิ", "ช่องทางชำระ", "งวดที่", "ยอดชำระ", "อัตรา (%)", "ค่าธรรมเนียมบัตร", "คงเหลือหลังงวดนี้"];
+const ndRec = C.parseClinicaFile(buf(ndRecHeader, [
+  ["RE1", "BL2", "05/01/2569", "07:00:01", "HN2", "นาย", "ค", "ง", "", "ประกันกลุ่ม เอ", "แอดมิน", "0.00", "0.00", "0.00", "อื่นๆ (ประกันกลุ่ม เอ)", "2.00", "550.00", "0.00", "0.00", "0.00"],
+  ["RE1", "BL2", "05/01/2569", "10:30:16", "HN2", "นาย", "ค", "ง", "", "ประกันกลุ่ม เอ", "แอดมิน", "561.00", "11.00", "550.00", "อื่นๆ (ประกันกลุ่ม เอ)", "1.00", "0.00", "0.00", "0.00", "550.00"],
+  ["RE2", "BL1", "05/01/2569", "09:45:22", "HN1", "นาย", "ก", "ข", "", "ผู้ป่วยทั่วไป", "แอดมิน", "450.00", "0.00", "450.00", "ธนาคาร", "1.00", "450.00", "0.00", "0.00", "0.00"]
+], "Summary Report"));
+ok("receipt with the new 'คงเหลือหลังงวดนี้' balance column: parsed (was: ไม่พบคอลัมน์ ยอดค้างชำระ)", ndRec.kind === "receipt" && ndRec.receiptCount === 2 && near(ndRec.totalPaid, 1000));
+ok("receipt: instalments of one receipt kept apart, balance after each read", ndRec.kind === "receipt" && (() => { const r = ndRec.receipts.find((x) => x.receiptNo === "RE1")!; return r.payments.length === 2 && near(r.payments.find((p) => p.installment === 1)!.outstanding, 550) && near(r.payments.find((p) => p.installment === 2)!.outstanding, 0); })());
+
 console.log(`\n${failed === 0 ? "✓ ALL PASS" : "✗ FAILURES"} — ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

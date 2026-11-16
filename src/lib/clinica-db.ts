@@ -43,9 +43,31 @@ export function importInvoice(branchId: number, p: ClinicaInvoiceParse, opts: { 
     `INSERT INTO clinica_bill_items (bill_id, code, name, qty, unit, line_gross, line_discount, line_net)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
+  const have = db.prepare("SELECT id FROM clinica_bills WHERE branch_id = ? AND bill_no = ?");
+  const updBill = db.prepare(
+    `UPDATE clinica_bills SET bill_date = ?, bill_time = ?, hn = ?, payer_group = ?, staff = ?, gross = ?, bill_discount = ?, net = ?, paid = ?, due = ?
+      WHERE id = ?`
+  );
   let items = 0;
   let settlements = 0;
   db.transaction(() => {
+    if (p.hasItems === false) {
+      // "(No detail)" file: bill totals only. Keep the line items of bills we already hold (they feed the product analytics and the
+      // INVENTA forecast); only bills that fall in the range but are no longer in the file are removed, with their items.
+      if (p.rangeStart && p.rangeEnd) {
+        const inFile = new Set(p.bills.map((b) => b.billNo));
+        const inRange = db.prepare("SELECT id, bill_no FROM clinica_bills WHERE branch_id = ? AND bill_date BETWEEN ? AND ?").all(branchId, p.rangeStart, p.rangeEnd) as Array<{ id: number; bill_no: string }>;
+        const del = db.prepare("DELETE FROM clinica_bills WHERE id = ?");
+        for (const r of inRange) if (!inFile.has(r.bill_no)) del.run(r.id);
+      }
+      for (const b of p.bills) {
+        const row = have.get(branchId, b.billNo) as { id: number } | undefined;
+        if (row) updBill.run(b.date, b.time, b.hn, b.payerGroup, b.staff, b.gross, b.billDiscount, b.net, b.paid, b.due, row.id);
+        else insBill.run(branchId, b.billNo, b.date, b.time, b.hn, b.payerGroup, b.staff, b.gross, b.billDiscount, b.net, b.paid, b.due);
+      }
+      settlements = detectSettlements(branchId, before, "invoice", today, !!opts.autoConfirm);
+      return;
+    }
     if (p.rangeStart && p.rangeEnd) delRange.run(branchId, p.rangeStart, p.rangeEnd);
     for (const b of p.bills) {
       delOne.run(branchId, b.billNo);   // clears a prior copy (cascades its items)
