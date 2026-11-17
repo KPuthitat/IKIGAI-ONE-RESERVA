@@ -3,14 +3,14 @@ import Link from "next/link";
 import { canModule, requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch } from "@/lib/salesa-db";
-import { defaultRange, purchaseTrend, vendorShifts, type Bucket } from "@/lib/purchase-trend";
+import { defaultRange, purchaseTrend, vendorShifts, WINDOW, type Bucket } from "@/lib/purchase-trend";
+import { getLineGroupId } from "@/lib/salesa-db";
 import PurchaseTrendClient from "./PurchaseTrendClient";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ซื้อเทียบยอดขาย · ANALYTICA" };
 
 const todayBkk = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-const WINDOW: Record<Bucket, number> = { day: 7, week: 4, month: 3 };   // how many buckets make "recent" (vs the same number before)
 
 export default function PurchaseTrendPage({ searchParams }: { searchParams: { b?: string } }) {
   const user = requirePermission("reporta.manage");
@@ -35,7 +35,7 @@ export default function PurchaseTrendPage({ searchParams }: { searchParams: { b?
         <h1 className="text-2xl font-bold text-slate-800">ซื้อเทียบยอดขาย · {branch?.name ?? `#${branchId}`}</h1>
         <p className="text-sm text-slate-500 mt-1">ซื้อของจากแต่ละผู้ขายเมื่อเทียบกับยอดขาย — ดูว่าสัดส่วนซื้อ ÷ ขายเปลี่ยนไปอย่างไร เพื่อใช้วิเคราะห์การจัดซื้อ</p>
       </div>
-      <PurchaseTrendClient trend={trend} shifts={shifts} windowSize={WINDOW[bucket]} />
+      <PurchaseTrendClient trend={trend} shifts={shifts} windowSize={WINDOW[bucket]} groupReady={!!getLineGroupId(branchId)} />
     </div>
   );
 }
