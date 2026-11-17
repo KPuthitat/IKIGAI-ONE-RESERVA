@@ -1,9 +1,9 @@
 // LINE card for the HOD group: only the suppliers bought from MORE relative to sales (owner 2026-11-17). Built from the same
 // vendorShifts the ANALYTICA page shows, so the card never disagrees with the screen.
-import type { Bucket, VendorShift } from "./purchase-trend";
+import { categoryLabel, type Bucket, type VendorShift } from "./purchase-trend";
 
 type FlexMsg = { type: "flex"; altText: string; contents: unknown };
-export type PurchaseCardMeta = { branchName: string; bucket: Bucket; windowSize: number; operator: string; color: string; link: string };
+export type PurchaseCardMeta = { branchName: string; bucket: Bucket; windowSize: number; operator: string; color: string; link: string; category?: string | null };
 
 const UNIT: Record<Bucket, string> = { day: "วัน", week: "สัปดาห์", month: "เดือน" };
 const MAX_ROWS = 10;
@@ -50,7 +50,7 @@ export function purchaseBuyingMoreFlex(items: VendorShift[], meta: PurchaseCardM
         contents: [
           { type: "text", text: "NOKHOOK OS · ซื้อเทียบยอดขาย", size: "xxs", color: "#ffffff99" },
           { type: "text", text: "ผู้ขายที่ซื้อมากขึ้น", size: "lg", weight: "bold", color: "#ffffff" },
-          { type: "text", text: `${meta.branchName} · ${meta.windowSize} ${unit}ล่าสุด เทียบ ${meta.windowSize} ${unit}ก่อนหน้า`, size: "xs", color: "#ffffffcc", wrap: true }
+          { type: "text", text: `${meta.branchName}${meta.category != null ? ` · หมวด ${categoryLabel(meta.category)}` : ""} · ${meta.windowSize} ${unit}ล่าสุด เทียบ ${meta.windowSize} ${unit}ก่อนหน้า`, size: "xs", color: "#ffffffcc", wrap: true }
         ]
       },
       body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", contents: body },

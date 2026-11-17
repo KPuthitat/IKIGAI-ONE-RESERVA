@@ -72,7 +72,18 @@ export function defaultRange(bucket: Bucket, today: string): { from: string; to:
   return { from: iso(ms(today) - back * DAY), to: today };
 }
 
-export function purchaseTrend(db: Database.Database, branchId: number, from: string, to: string, bucket: Bucket): PurchaseTrend {
+/** The category filter in the URL: blank category (bills with no category) is written "~none". */
+export const NO_CATEGORY = "~none";
+export const NO_CATEGORY_LABEL = "ไม่ระบุหมวด";
+export const categoryLabel = (c: string): string => (c === "" || c === NO_CATEGORY ? NO_CATEGORY_LABEL : c);
+/** URL value → the stored category ("" = none), or undefined for "all categories". */
+export const parseCategoryParam = (v: string | undefined): string | undefined => (v == null || v === "" ? undefined : v === NO_CATEGORY ? "" : v);
+
+/**
+ * `category` undefined = every category; a string = only bills of that category ("" = bills with no category). Salaries, utilities, bank
+ * fees and raw materials sit in different categories, so a ratio only means something within one of them.
+ */
+export function purchaseTrend(db: Database.Database, branchId: number, from: string, to: string, bucket: Bucket, category?: string): PurchaseTrend {
   const keys = allKeys(from, to, bucket);
   const idx = new Map(keys.map((k, i) => [k, i]));
   const n = keys.length;
@@ -91,8 +102,9 @@ export function purchaseTrend(db: Database.Database, branchId: number, from: str
   for (const r of db.prepare(`
     SELECT e.bill_date d, COALESCE(NULLIF(TRIM(v.name), ''), NULLIF(TRIM(e.vendor_name), '')) AS vname, e.category, e.amount_total AS amt
       FROM accounta_expenses e LEFT JOIN accounta_vendors v ON v.id = e.vendor_id
-     WHERE e.branch_id = ? AND e.review_status = 'confirmed' AND e.bill_date >= ? AND e.bill_date <= ?`
-  ).all(branchId, from, to) as Array<{ d: string; vname: string | null; category: string | null; amt: number }>) {
+     WHERE e.branch_id = ? AND e.review_status = 'confirmed' AND e.bill_date >= ? AND e.bill_date <= ?
+       AND (? IS NULL OR COALESCE(e.category, '') = ?)`
+  ).all(branchId, from, to, category ?? null, category ?? null) as Array<{ d: string; vname: string | null; category: string | null; amt: number }>) {
     if (!r.vname) continue;
     const i = idx.get(bucketKey(r.d, bucket));
     if (i == null) continue;
@@ -152,4 +164,15 @@ export function buyingMoreShifts(shifts: VendorShift[]): VendorShift[] {
   return shifts
     .filter((s) => s.name !== "รวมทุกผู้ขาย" && (s.flag === "up_while_sales_down" || s.flag === "ratio_up"))
     .sort((a, b) => (a.flag === b.flag ? 0 : a.flag === "up_while_sales_down" ? -1 : 1) || (b.ratioDeltaPct ?? -Infinity) - (a.ratioDeltaPct ?? -Infinity));
+}
+
+/** The categories that have confirmed bills with a supplier in the range, biggest spend first ("" = no category). */
+export function listPurchaseCategories(db: Database.Database, branchId: number, from: string, to: string): Array<{ name: string; spend: number }> {
+  return (db.prepare(`
+    SELECT COALESCE(e.category, '') AS name, SUM(e.amount_total) AS spend
+      FROM accounta_expenses e LEFT JOIN accounta_vendors v ON v.id = e.vendor_id
+     WHERE e.branch_id = ? AND e.review_status = 'confirmed' AND e.bill_date >= ? AND e.bill_date <= ?
+       AND COALESCE(NULLIF(TRIM(v.name), ''), NULLIF(TRIM(e.vendor_name), '')) IS NOT NULL
+     GROUP BY COALESCE(e.category, '') ORDER BY spend DESC
+  `).all(branchId, from, to) as Array<{ name: string; spend: number }>).map((r) => ({ name: r.name, spend: round2(r.spend) }));
 }

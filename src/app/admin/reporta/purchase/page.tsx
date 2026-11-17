@@ -3,7 +3,7 @@ import Link from "next/link";
 import { canModule, requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch } from "@/lib/salesa-db";
-import { defaultRange, purchaseTrend, vendorShifts, WINDOW, type Bucket } from "@/lib/purchase-trend";
+import { defaultRange, listPurchaseCategories, parseCategoryParam, purchaseTrend, vendorShifts, WINDOW, type Bucket } from "@/lib/purchase-trend";
 import { getLineGroupId } from "@/lib/salesa-db";
 import PurchaseTrendClient from "./PurchaseTrendClient";
 
@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "ซื้อเทียบยอด
 
 const todayBkk = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 
-export default function PurchaseTrendPage({ searchParams }: { searchParams: { b?: string } }) {
+export default function PurchaseTrendPage({ searchParams }: { searchParams: { b?: string; c?: string } }) {
   const user = requirePermission("reporta.manage");
   const bucket: Bucket = searchParams.b === "day" || searchParams.b === "month" ? searchParams.b : "week";
   const back = <Link href="/admin/reporta" className="text-sm text-slate-500 hover:text-brand">← กลับ ANALYTICA</Link>;
@@ -26,7 +26,9 @@ export default function PurchaseTrendPage({ searchParams }: { searchParams: { b?
   const db = getDb();
   const branch = db.prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
   const { from, to } = defaultRange(bucket, todayBkk());
-  const trend = purchaseTrend(db, branchId, from, to, bucket);
+  const category = parseCategoryParam(searchParams.c);
+  const categories = listPurchaseCategories(db, branchId, from, to);
+  const trend = purchaseTrend(db, branchId, from, to, bucket, category);
   const shifts = vendorShifts(trend, WINDOW[bucket]);
   return (
     <div className="space-y-4">
@@ -35,7 +37,7 @@ export default function PurchaseTrendPage({ searchParams }: { searchParams: { b?
         <h1 className="text-2xl font-bold text-slate-800">ซื้อเทียบยอดขาย · {branch?.name ?? `#${branchId}`}</h1>
         <p className="text-sm text-slate-500 mt-1">ซื้อของจากแต่ละผู้ขายเมื่อเทียบกับยอดขาย — ดูว่าสัดส่วนซื้อ ÷ ขายเปลี่ยนไปอย่างไร เพื่อใช้วิเคราะห์การจัดซื้อ</p>
       </div>
-      <PurchaseTrendClient trend={trend} shifts={shifts} windowSize={WINDOW[bucket]} groupReady={!!getLineGroupId(branchId)} />
+      <PurchaseTrendClient trend={trend} shifts={shifts} windowSize={WINDOW[bucket]} groupReady={!!getLineGroupId(branchId)} categories={categories} category={category ?? null} />
     </div>
   );
 }
