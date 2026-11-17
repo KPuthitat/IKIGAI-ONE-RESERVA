@@ -4,7 +4,7 @@ import { canModule, requirePermission } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
 import { getCardColor, getLineGroupId, isSalesaBranch, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
-import { buyingMoreShifts, defaultRange, purchaseTrend, vendorShifts, WINDOW } from "@/lib/purchase-trend";
+import { buyingMoreShifts, defaultRange, NO_CATEGORY, purchaseTrend, vendorShifts, WINDOW } from "@/lib/purchase-trend";
 import { purchaseBuyingMoreFlex } from "@/lib/purchase-trend-card";
 import { notifySalesaHod } from "@/lib/salesa-line";
 
@@ -13,7 +13,7 @@ import { notifySalesaHod } from "@/lib/salesa-line";
 
 export const dynamic = "force-dynamic";
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
-const Body = z.object({ bucket: z.enum(["day", "week", "month"]), pin: z.string() });
+const Body = z.object({ bucket: z.enum(["day", "week", "month"]), pin: z.string(), category: z.string().max(200).optional() });
 
 export async function POST(req: Request) {
   const user = requirePermission("reporta.manage");
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
-  const { bucket, pin } = parsed.data;
+  const { bucket, pin, category } = parsed.data;   // category: undefined = all categories, "" = bills with no category
 
   const gate = verifyAdminPin(user.id, pin);
   if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: gate.reason === "no_pin" ? 400 : 403 });
@@ -34,13 +34,14 @@ export async function POST(req: Request) {
   const db = getDb();
   const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
   const { from, to } = defaultRange(bucket, today);
-  const items = buyingMoreShifts(vendorShifts(purchaseTrend(db, branchId, from, to, bucket), WINDOW[bucket]));
+  const items = buyingMoreShifts(vendorShifts(purchaseTrend(db, branchId, from, to, bucket, category), WINDOW[bucket]));
   if (items.length === 0) return NextResponse.json({ error: "no_items", message: "ช่วงนี้ไม่มีผู้ขายที่ซื้อมากขึ้นเมื่อเทียบกับยอดขาย จึงไม่ส่งการ์ด" }, { status: 400 });
 
   const branch = db.prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
   const flex = purchaseBuyingMoreFlex(items, {
     branchName: branch?.name ?? `สาขา ${branchId}`, bucket, windowSize: WINDOW[bucket], operator: user.display_name,
-    color: getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR, link: `${PUBLIC_BASE}/admin/reporta/purchase?b=${bucket}`
+    color: getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR, category: category ?? null,
+    link: `${PUBLIC_BASE}/admin/reporta/purchase?b=${bucket}${category == null ? "" : `&c=${encodeURIComponent(category === "" ? NO_CATEGORY : category)}`}`
   });
   const res = await notifySalesaHod(groupId, flex);
   if (!res.ok) {

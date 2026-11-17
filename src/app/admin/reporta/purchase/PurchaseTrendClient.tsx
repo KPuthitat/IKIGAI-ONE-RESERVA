@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/format";
 import { apiUrl } from "@/lib/url";
-import { buyingMoreShifts, ratioPct, type PurchaseTrend, type VendorShift } from "@/lib/purchase-trend";
+import { buyingMoreShifts, categoryLabel, NO_CATEGORY, ratioPct, type PurchaseTrend, type VendorShift } from "@/lib/purchase-trend";
 
 // Purchase ÷ sales per supplier (owner 2026-11-15). Inline SVG, no chart library: the top chart is the ratio over time for the
 // chosen supplier (with its own average dashed), the bars underneath are sales and what was bought, so a rising ratio can be
@@ -95,7 +95,7 @@ function Bars({ labels, series, colors, names }: { labels: string[]; series: num
 }
 
 /** Send the suppliers bought from MORE (relative to sales) to the HOD LINE group as a card. PIN-gated, with a preview of who is on it. */
-function SendBuyingMore({ items, bucket, groupReady }: { items: VendorShift[]; bucket: string; groupReady: boolean }) {
+function SendBuyingMore({ items, bucket, groupReady, category }: { items: VendorShift[]; bucket: string; groupReady: boolean; category: string | null }) {
   const [open, setOpen] = useState(false);
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
@@ -108,7 +108,7 @@ function SendBuyingMore({ items, bucket, groupReady }: { items: VendorShift[]; b
     if (!/^\d{4}$/.test(pin)) { setErr("PIN ต้องเป็นตัวเลข 4 หลัก"); return; }
     setBusy(true); setErr(null);
     try {
-      const res = await fetch(apiUrl("/api/admin/reporta/purchase/notify"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bucket, pin }) });
+      const res = await fetch(apiUrl("/api/admin/reporta/purchase/notify"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bucket, pin, ...(category != null ? { category } : {}) }) });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j?.ok) { setDone(true); setTimeout(close, 1500); return; }
       const e = j?.error as string | undefined;
@@ -126,7 +126,7 @@ function SendBuyingMore({ items, bucket, groupReady }: { items: VendorShift[]; b
       {open && mounted && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={close}>
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="font-bold text-slate-800">ส่งการ์ด: ผู้ขายที่ซื้อมากขึ้น</div>
+            <div className="font-bold text-slate-800">ส่งการ์ด: ผู้ขายที่ซื้อมากขึ้น{category != null ? ` · หมวด ${categoryLabel(category)}` : ""}</div>
             {done ? <p className="text-emerald-600 text-sm font-medium py-4 text-center">✓ ส่งเข้ากลุ่ม LINE แล้ว</p> : (
               <>
                 <div className="rounded-xl border border-slate-100 divide-y divide-slate-100 text-sm">
@@ -159,7 +159,7 @@ function SendBuyingMore({ items, bucket, groupReady }: { items: VendorShift[]; b
   );
 }
 
-export default function PurchaseTrendClient({ trend, shifts, windowSize, groupReady }: { trend: PurchaseTrend; shifts: VendorShift[]; windowSize: number; groupReady: boolean }) {
+export default function PurchaseTrendClient({ trend, shifts, windowSize, groupReady, categories, category }: { trend: PurchaseTrend; shifts: VendorShift[]; windowSize: number; groupReady: boolean; categories: Array<{ name: string; spend: number }>; category: string | null }) {
   const [sel, setSel] = useState<string>(trend.vendors[0]?.name ?? "รวมทุกผู้ขาย");
   const unit = UNIT[trend.bucket];
   const amounts = sel === "รวมทุกผู้ขาย" ? trend.total : trend.vendors.find((v) => v.name === sel)?.amounts ?? trend.total;
@@ -168,6 +168,7 @@ export default function PurchaseTrendClient({ trend, shifts, windowSize, groupRe
     <Link key={label} href={href} className={`chip ${active ? "chip-active" : ""}`}>{label}</Link>
   );
   const row = shifts.find((s) => s.name === sel);
+  const cq = category == null ? "" : `&c=${encodeURIComponent(category === "" ? NO_CATEGORY : category)}`;
 
   if (trend.vendors.length === 0) {
     return <div className="card text-sm text-slate-500">ยังไม่มีบิลซื้อที่ระบุผู้ขายในช่วงนี้ — บันทึกรายจ่ายใน ACCOUNTA พร้อมชื่อผู้ขายก่อน แล้วเปิดหน้านี้อีกครั้ง</div>;
@@ -176,12 +177,22 @@ export default function PurchaseTrendClient({ trend, shifts, windowSize, groupRe
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs text-slate-500">ดูเป็น</span>
-        {chip("?b=day", "รายวัน (30 วัน)", trend.bucket === "day")}
-        {chip("?b=week", "รายสัปดาห์ (16 สัปดาห์)", trend.bucket === "week")}
-        {chip("?b=month", "รายเดือน (12 เดือน)", trend.bucket === "month")}
+        {chip(`?b=day${cq}`, "รายวัน (30 วัน)", trend.bucket === "day")}
+        {chip(`?b=week${cq}`, "รายสัปดาห์ (16 สัปดาห์)", trend.bucket === "week")}
+        {chip(`?b=month${cq}`, "รายเดือน (12 เดือน)", trend.bucket === "month")}
       </div>
+      {categories.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-slate-500">หมวด</span>
+            {chip(`?b=${trend.bucket}`, "ทุกหมวด", category == null)}
+            {categories.map((c) => chip(`?b=${trend.bucket}&c=${encodeURIComponent(c.name === "" ? NO_CATEGORY : c.name)}`, `${categoryLabel(c.name)} · ${short(c.spend)}`, category === c.name))}
+          </div>
+          <p className="text-xs text-slate-500">เงินเดือน ค่าไฟ ค่าธนาคาร และค่าวัตถุดิบอยู่คนละหมวด การเทียบสัดส่วนซื้อ ÷ ขายมีความหมายเมื่อดูทีละหมวด ตัวเลขในวงเล็บคือยอดรวมของหมวดในช่วงที่แสดง</p>
+        </div>
+      )}
 
-      <SendBuyingMore items={buyingMoreShifts(shifts)} bucket={trend.bucket} groupReady={groupReady} />
+      <SendBuyingMore items={buyingMoreShifts(shifts)} bucket={trend.bucket} groupReady={groupReady} category={category} />
 
       <div className="card overflow-x-auto">
         <div className="text-sm font-semibold text-slate-800">สัดส่วนที่เปลี่ยนไป · {windowSize} {unit}ล่าสุด เทียบ {windowSize} {unit}ก่อนหน้า</div>

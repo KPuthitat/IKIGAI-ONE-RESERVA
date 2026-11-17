@@ -90,5 +90,28 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     return list.length >= 1 && list[0].name === "โพลาร์ แบร์ มิชชั่น" && list[0].flag === "up_while_sales_down";
   })());
 
+  // ── categories: a ratio only means something within one (raw materials vs salary vs utilities) ──
+  const b3 = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('c','C')").run().lastInsertRowid);
+  for (const [d, v] of [["2026-11-02", 10000], ["2026-11-09", 10000], ["2026-11-16", 10000], ["2026-11-23", 10000]] as const) sale(b3, d, v);
+  const catBill = (d: string, name: string, cat: string | null, amt: number) =>
+    db.prepare("INSERT INTO accounta_expenses (branch_id, bill_date, vendor_name, category, amount_total, review_status) VALUES (?,?,?,?,?,'confirmed')").run(b3, d, name, cat, amt);
+  catBill("2026-11-03", "ร้านวัตถุดิบ", "วัตถุดิบ", 1000); catBill("2026-11-24", "ร้านวัตถุดิบ", "วัตถุดิบ", 3000);
+  catBill("2026-11-04", "พนักงานประจำ ก", "เงินเดือน", 20000); catBill("2026-11-25", "พนักงานประจำ ก", "เงินเดือน", 20000);
+  catBill("2026-11-10", "การไฟฟ้า", "ค่าสาธารณูปโภค", 2000); catBill("2026-11-17", "ร้านไม่มีหมวด", null, 400);
+  const cats = T.listPurchaseCategories(db, b3, "2026-11-01", "2026-11-29");
+  ok("the categories with bills are listed, biggest spend first, uncategorised as an empty name", cats.map((c) => c.name).join("|") === "เงินเดือน|วัตถุดิบ|ค่าสาธารณูปโภค|" && cats[0].spend === 40000);
+  const allC = T.purchaseTrend(db, b3, "2026-11-02", "2026-11-29", "week");
+  const rawC = T.purchaseTrend(db, b3, "2026-11-02", "2026-11-29", "week", "วัตถุดิบ");
+  const noC = T.purchaseTrend(db, b3, "2026-11-02", "2026-11-29", "week", "");
+  ok("no category filter = every bill; a category = only its bills; \"\" = the bills with no category", allC.total.reduce((a, b) => a + b, 0) === 46400 && rawC.total.reduce((a, b) => a + b, 0) === 4000 && noC.total.reduce((a, b) => a + b, 0) === 400
+    && rawC.vendors.length === 1 && rawC.vendors[0].name === "ร้านวัตถุดิบ" && noC.vendors[0].name === "ร้านไม่มีหมวด");
+  ok("within raw materials the total row is a sensible ratio (1,000 → 3,000 on 20,000 sales = 5% → 15%), not swamped by salaries", (() => {
+    const total = T.vendorShifts(rawC, 2)[0];
+    return total.previous.ratio === 5 && total.recent.ratio === 15 && total.flag === "ratio_up";
+  })());
+  ok("category URL values: the none marker maps to an empty category, blank / missing mean all", T.parseCategoryParam("~none") === "" && T.parseCategoryParam(undefined) === undefined && T.parseCategoryParam("") === undefined && T.parseCategoryParam("เงินเดือน") === "เงินเดือน" && T.categoryLabel("") === "ไม่ระบุหมวด");
+  ok("the card names the category when one is chosen", JSON.stringify(C.purchaseBuyingMoreFlex(T.buyingMoreShifts(T.vendorShifts(rawC, 2)), { ...meta, category: "วัตถุดิบ" })).includes("หมวด วัตถุดิบ")
+    && !JSON.stringify(C.purchaseBuyingMoreFlex(T.buyingMoreShifts(T.vendorShifts(rawC, 2)), meta)).includes("หมวด"));
+
   cleanup(); process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); cleanup(); process.exit(1); });
