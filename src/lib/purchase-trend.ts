@@ -28,6 +28,9 @@ export type VendorShift = {
   flag: "up_while_sales_down" | "ratio_up" | "ratio_down" | "steady" | "no_data";
 };
 
+/** How many buckets make "recent" (and the same number before it) for each view. Shared by the page and the LINE card. */
+export const WINDOW: Record<Bucket, number> = { day: 7, week: 4, month: 3 };
+
 const DAY = 86_400_000;
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const ms = (d: string) => Date.parse(`${d}T00:00:00Z`);
@@ -138,4 +141,15 @@ export function vendorShifts(t: PurchaseTrend, n: number): VendorShift[] {
     return { name, recent: { sales: round2(rs), purchase: round2(rp), ratio: rr }, previous: { sales: round2(ps), purchase: round2(pp), ratio: pr }, ratioDeltaPct: delta, ratioChangePct: rel, purchaseChangePct: purCh, salesChangePct: salesCh, flag };
   };
   return [one("รวมทุกผู้ขาย", t.total), ...t.vendors.map((v) => one(v.name, v.amounts))];
+}
+
+/**
+ * The suppliers worth a LINE card: bought from MORE relative to sales — the purchase ratio rose (including "buying more while sales fell" and a
+ * supplier newly bought from). The all-suppliers row is context, not a supplier, so it is left out. Worst first: buying more while sales fell,
+ * then the biggest rise in the ratio.
+ */
+export function buyingMoreShifts(shifts: VendorShift[]): VendorShift[] {
+  return shifts
+    .filter((s) => s.name !== "รวมทุกผู้ขาย" && (s.flag === "up_while_sales_down" || s.flag === "ratio_up"))
+    .sort((a, b) => (a.flag === b.flag ? 0 : a.flag === "up_while_sales_down" ? -1 : 1) || (b.ratioDeltaPct ?? -Infinity) - (a.ratioDeltaPct ?? -Infinity));
 }

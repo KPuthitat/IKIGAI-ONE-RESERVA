@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/format";
-import { ratioPct, type PurchaseTrend, type VendorShift } from "@/lib/purchase-trend";
+import { apiUrl } from "@/lib/url";
+import { buyingMoreShifts, ratioPct, type PurchaseTrend, type VendorShift } from "@/lib/purchase-trend";
 
 // Purchase ÷ sales per supplier (owner 2026-11-15). Inline SVG, no chart library: the top chart is the ratio over time for the
 // chosen supplier (with its own average dashed), the bars underneath are sales and what was bought, so a rising ratio can be
@@ -92,7 +94,72 @@ function Bars({ labels, series, colors, names }: { labels: string[]; series: num
   );
 }
 
-export default function PurchaseTrendClient({ trend, shifts, windowSize }: { trend: PurchaseTrend; shifts: VendorShift[]; windowSize: number }) {
+/** Send the suppliers bought from MORE (relative to sales) to the HOD LINE group as a card. PIN-gated, with a preview of who is on it. */
+function SendBuyingMore({ items, bucket, groupReady }: { items: VendorShift[]; bucket: string; groupReady: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  const close = () => { setOpen(false); setPin(""); setErr(null); setDone(false); };
+  async function submit() {
+    if (!/^\d{4}$/.test(pin)) { setErr("PIN ต้องเป็นตัวเลข 4 หลัก"); return; }
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(apiUrl("/api/admin/reporta/purchase/notify"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bucket, pin }) });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j?.ok) { setDone(true); setTimeout(close, 1500); return; }
+      const e = j?.error as string | undefined;
+      setErr(j?.message ?? (e === "wrong_pin" ? "PIN ไม่ถูกต้อง" : e === "no_pin" ? "ยังไม่ได้ตั้ง PIN (ตั้งที่หน้าโปรไฟล์)" : "ส่งไม่สำเร็จ"));
+    } catch { setErr("เชื่อมต่อไม่ได้"); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <button type="button" className="btn-primary text-sm" disabled={items.length === 0 || !groupReady} onClick={() => setOpen(true)}>ส่งการ์ดเข้ากลุ่ม LINE ({items.length} ผู้ขาย)</button>
+      <span className="text-xs text-slate-500">
+        {!groupReady ? <>ยังไม่ได้ตั้งกลุ่ม LINE หัวหน้างาน · <Link href="/admin/reporta/settings" className="text-brand hover:underline">ตั้งค่าที่นี่</Link></>
+          : items.length === 0 ? "ช่วงนี้ไม่มีผู้ขายที่ซื้อมากขึ้นเมื่อเทียบกับยอดขาย" : "ส่งเฉพาะผู้ขายที่สัดส่วนซื้อสูงขึ้น"}
+      </span>
+      {open && mounted && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={close}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="font-bold text-slate-800">ส่งการ์ด: ผู้ขายที่ซื้อมากขึ้น</div>
+            {done ? <p className="text-emerald-600 text-sm font-medium py-4 text-center">✓ ส่งเข้ากลุ่ม LINE แล้ว</p> : (
+              <>
+                <div className="rounded-xl border border-slate-100 divide-y divide-slate-100 text-sm">
+                  {items.slice(0, 10).map((s) => (
+                    <div key={s.name} className="px-3 py-2">
+                      <div className="font-medium text-slate-800">{s.name}</div>
+                      <div className={`text-[11px] font-semibold ${s.flag === "up_while_sales_down" ? "text-rose-600" : "text-amber-700"}`}>{FLAG[s.flag].text}</div>
+                      <div className="text-xs text-slate-600">สัดส่วน {pct(s.previous.ratio)} → {pct(s.recent.ratio)}</div>
+                    </div>
+                  ))}
+                  {items.length > 10 && <div className="px-3 py-2 text-xs text-slate-500">และอีก {items.length - 10} ผู้ขาย (การ์ดแสดง 10 รายแรก)</div>}
+                </div>
+                <p className="text-sm text-slate-500">ยืนยันด้วย PIN เพื่อส่งการ์ดนี้เข้ากลุ่ม LINE หัวหน้างาน</p>
+                <div>
+                  <label className="label text-center">PIN (4 หลัก)</label>
+                  <input type="password" inputMode="numeric" autoComplete="off" autoFocus maxLength={4} value={pin}
+                    onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 4)); setErr(null); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") submit(); }} className="input text-center tracking-[0.5em] text-lg" />
+                </div>
+                {err && <p className="text-rose-600 text-xs font-medium">✗ {err}</p>}
+                <div className="flex gap-2 pt-1">
+                  <button type="button" onClick={close} className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-600 text-sm">ยกเลิก</button>
+                  <button type="button" onClick={submit} disabled={busy || pin.length < 4} className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">{busy ? "กำลังส่ง…" : "ยืนยันส่ง"}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>, document.body)}
+    </div>
+  );
+}
+
+export default function PurchaseTrendClient({ trend, shifts, windowSize, groupReady }: { trend: PurchaseTrend; shifts: VendorShift[]; windowSize: number; groupReady: boolean }) {
   const [sel, setSel] = useState<string>(trend.vendors[0]?.name ?? "รวมทุกผู้ขาย");
   const unit = UNIT[trend.bucket];
   const amounts = sel === "รวมทุกผู้ขาย" ? trend.total : trend.vendors.find((v) => v.name === sel)?.amounts ?? trend.total;
@@ -113,6 +180,8 @@ export default function PurchaseTrendClient({ trend, shifts, windowSize }: { tre
         {chip("?b=week", "รายสัปดาห์ (16 สัปดาห์)", trend.bucket === "week")}
         {chip("?b=month", "รายเดือน (12 เดือน)", trend.bucket === "month")}
       </div>
+
+      <SendBuyingMore items={buyingMoreShifts(shifts)} bucket={trend.bucket} groupReady={groupReady} />
 
       <div className="card overflow-x-auto">
         <div className="text-sm font-semibold text-slate-800">สัดส่วนที่เปลี่ยนไป · {windowSize} {unit}ล่าสุด เทียบ {windowSize} {unit}ก่อนหน้า</div>

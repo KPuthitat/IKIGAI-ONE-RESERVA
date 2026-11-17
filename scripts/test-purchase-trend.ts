@@ -60,5 +60,35 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   const r = T.defaultRange("week", "2026-11-15");
   ok("default weekly range is 16 weeks ending today", r.to === "2026-11-15" && r.from === "2026-07-27");
 
+  // ── LINE card: only the suppliers bought from more relative to sales ──
+  const C = await import("../src/lib/purchase-trend-card");
+  const mk = (name: string, flag: import("../src/lib/purchase-trend").VendorShift["flag"], pp: number, rp: number, ps: number, rs: number): import("../src/lib/purchase-trend").VendorShift => {
+    const pr = ps > 0 ? Math.round((pp / ps) * 10000) / 100 : null, rr = rs > 0 ? Math.round((rp / rs) * 10000) / 100 : null;
+    return { name, flag, previous: { sales: ps, purchase: pp, ratio: pr }, recent: { sales: rs, purchase: rp, ratio: rr }, ratioDeltaPct: pr != null && rr != null ? Math.round((rr - pr) * 100) / 100 : null, ratioChangePct: null,
+      purchaseChangePct: pp > 0 ? Math.round(((rp - pp) / pp) * 10000) / 100 : null, salesChangePct: ps > 0 ? Math.round(((rs - ps) / ps) * 10000) / 100 : null };
+  };
+  const all = [mk("รวมทุกผู้ขาย", "up_while_sales_down", 5000, 9000, 60000, 40000), mk("ก. ซื้อมากขึ้นขายลด", "up_while_sales_down", 2000, 4000, 60000, 40000), mk("ข. สัดส่วนสูงขึ้น", "ratio_up", 500, 500, 60000, 40000),
+    mk("ค. ลดลง", "ratio_down", 4000, 1000, 60000, 40000), mk("ง. ใกล้เคียง", "steady", 1000, 700, 60000, 40000), mk("จ. ไม่พอเทียบ", "no_data", 0, 0, 0, 0), mk("ฉ. เริ่มซื้อ", "ratio_up", 0, 800, 60000, 40000)];
+  const picked = T.buyingMoreShifts(all);
+  ok("the card list holds only suppliers bought from more: not the total row, not lower / steady / no-data", picked.map((x) => x.name).join("|") === "ก. ซื้อมากขึ้นขายลด|ฉ. เริ่มซื้อ|ข. สัดส่วนสูงขึ้น");
+  ok("…worst first: buying more while sales fell, then the biggest rise in the ratio", picked[0].name === "ก. ซื้อมากขึ้นขายลด" && picked[0].flag === "up_while_sales_down");
+  const meta = { branchName: "NAMA", bucket: "week" as const, windowSize: 4, operator: "ผู้ดูแล", color: "#0e2724", link: "https://example.test/admin/reporta/purchase?b=week" };
+  const card = C.purchaseBuyingMoreFlex(picked, meta);
+  const cj = JSON.stringify(card);
+  ok("the card names the picked suppliers and none of the others", cj.includes("ก. ซื้อมากขึ้นขายลด") && cj.includes("ข. สัดส่วนสูงขึ้น") && !cj.includes("ค. ลดลง") && !cj.includes("ง. ใกล้เคียง") && !cj.includes("จ. ไม่พอเทียบ") && !cj.includes("รวมทุกผู้ขาย"));
+  ok("the card shows the ratio before → after, in words not +/- signs, with the period and a link", cj.includes("→") && cj.includes("เพิ่มขึ้น") && cj.includes("ลดลง") && !/[+]\d/.test(cj) && cj.includes("4 สัปดาห์ล่าสุด เทียบ 4 สัปดาห์ก่อนหน้า") && cj.includes("https://example.test/admin/reporta/purchase?b=week"));
+  ok("a supplier newly bought from is labelled as such", cj.includes("เริ่มซื้อ") && cj.includes("ซื้อใหม่"));
+  ok("the alt text says how many", card.altText.includes("3 ผู้ขาย") && card.altText.includes("NAMA"));
+  ok("more than 10 suppliers: the card shows 10 and says how many more", (() => {
+    const many = Array.from({ length: 13 }, (_, i) => mk(`ผู้ขาย ${i + 1}`, "ratio_up", 100, 300, 60000, 40000));
+    const j = JSON.stringify(C.purchaseBuyingMoreFlex(T.buyingMoreShifts(many), meta));
+    return j.includes("พบ 13 ผู้ขาย") && j.includes("และอีก 3 ผู้ขาย") && (j.match(/สัดส่วนซื้อ ÷ ขาย  /g) ?? []).length === 10;
+  })());
+  ok("from the real figures of the fixture: the ice supplier (bought 2,000 → 4,000 while sales fell) comes first", (() => {
+    const w = T.purchaseTrend(db, b1, "2026-11-02", "2026-11-29", "week");
+    const list = T.buyingMoreShifts(T.vendorShifts(w, 2));
+    return list.length >= 1 && list[0].name === "โพลาร์ แบร์ มิชชั่น" && list[0].flag === "up_while_sales_down";
+  })());
+
   cleanup(); process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); cleanup(); process.exit(1); });
