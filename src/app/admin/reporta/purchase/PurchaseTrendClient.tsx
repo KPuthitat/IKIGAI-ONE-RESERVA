@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/format";
@@ -117,12 +118,13 @@ function SendBuyingMore({ items, bucket, groupReady, category }: { items: Vendor
     finally { setBusy(false); }
   }
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <button type="button" className="btn-primary text-sm" disabled={items.length === 0 || !groupReady} onClick={() => setOpen(true)}>ส่งการ์ดเข้ากลุ่ม LINE ({items.length} ผู้ขาย)</button>
-      <span className="text-xs text-slate-500">
-        {!groupReady ? <>ยังไม่ได้ตั้งกลุ่ม LINE หัวหน้างาน · <Link href="/admin/reporta/settings" className="text-brand hover:underline">ตั้งค่าที่นี่</Link></>
-          : items.length === 0 ? "ช่วงนี้ไม่มีผู้ขายที่ซื้อมากขึ้นเมื่อเทียบกับยอดขาย" : "ส่งเฉพาะผู้ขายที่สัดส่วนซื้อสูงขึ้น"}
-      </span>
+    <div className="flex flex-wrap items-center gap-2">
+      <button type="button" className="btn-primary text-sm" disabled={items.length === 0 || !groupReady} onClick={() => setOpen(true)}
+        title={items.length === 0 ? "ช่วงนี้ไม่มีผู้ขายที่ซื้อมากขึ้นเมื่อเทียบกับยอดขาย" : "ส่งเฉพาะผู้ขายที่สัดส่วนซื้อสูงขึ้นเข้ากลุ่ม LINE"}>
+        ส่งการ์ดเข้ากลุ่ม LINE{items.length > 0 ? ` (${items.length})` : ""}
+      </button>
+      {!groupReady && <span className="text-xs text-slate-500">ยังไม่ได้ตั้งกลุ่ม LINE · <Link href="/admin/reporta/settings" className="text-brand hover:underline">ตั้งค่า</Link></span>}
+      {groupReady && items.length === 0 && <span className="text-xs text-slate-400">ไม่มีผู้ขายที่ซื้อมากขึ้น</span>}
       {open && mounted && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={close}>
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -160,6 +162,7 @@ function SendBuyingMore({ items, bucket, groupReady, category }: { items: Vendor
 }
 
 export default function PurchaseTrendClient({ trend, shifts, windowSize, groupReady, categories, category }: { trend: PurchaseTrend; shifts: VendorShift[]; windowSize: number; groupReady: boolean; categories: Array<{ name: string; spend: number }>; category: string | null }) {
+  const router = useRouter();
   const [sel, setSel] = useState<string>(trend.vendors[0]?.name ?? "รวมทุกผู้ขาย");
   const unit = UNIT[trend.bucket];
   const amounts = sel === "รวมทุกผู้ขาย" ? trend.total : trend.vendors.find((v) => v.name === sel)?.amounts ?? trend.total;
@@ -170,29 +173,41 @@ export default function PurchaseTrendClient({ trend, shifts, windowSize, groupRe
   const row = shifts.find((s) => s.name === sel);
   const cq = category == null ? "" : `&c=${encodeURIComponent(category === "" ? NO_CATEGORY : category)}`;
 
+  // One compact bar: period chips, a category dropdown (12 chips wrapped over three rows and pushed the table off the screen), and the send button.
+  const catValue = category == null ? "" : category === "" ? NO_CATEGORY : category;
+  const controls = (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-slate-500">ดูเป็น</span>
+          {chip(`?b=day${cq}`, "รายวัน", trend.bucket === "day")}
+          {chip(`?b=week${cq}`, "รายสัปดาห์", trend.bucket === "week")}
+          {chip(`?b=month${cq}`, "รายเดือน", trend.bucket === "month")}
+        </div>
+        {categories.length > 0 && (
+          <label className="flex items-center gap-2 text-xs text-slate-500 min-w-0">
+            หมวด
+            <select className="input !w-auto !py-1.5 text-sm max-w-[18rem]" value={catValue} aria-label="หมวดรายจ่าย"
+              onChange={(e) => router.push(`?b=${trend.bucket}${e.target.value ? `&c=${encodeURIComponent(e.target.value)}` : ""}`)}>
+              <option value="">ทุกหมวด</option>
+              {categories.map((c) => <option key={c.name || NO_CATEGORY} value={c.name === "" ? NO_CATEGORY : c.name}>{categoryLabel(c.name)} · {short(c.spend)}</option>)}
+            </select>
+          </label>
+        )}
+        <div className="sm:ml-auto"><SendBuyingMore items={buyingMoreShifts(shifts)} bucket={trend.bucket} groupReady={groupReady} category={category} /></div>
+      </div>
+      {category == null && categories.length > 1 && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">ตัวเลขรวมตอนนี้ปนเงินเดือน ค่าไฟ ค่าธนาคาร และค่าวัตถุดิบเข้าด้วยกัน เลือก “หมวด” ด้านบนเพื่อเทียบสัดส่วนซื้อ ÷ ขายให้มีความหมาย</p>
+      )}
+    </div>
+  );
+
   if (trend.vendors.length === 0) {
-    return <div className="card text-sm text-slate-500">ยังไม่มีบิลซื้อที่ระบุผู้ขายในช่วงนี้ — บันทึกรายจ่ายใน ACCOUNTA พร้อมชื่อผู้ขายก่อน แล้วเปิดหน้านี้อีกครั้ง</div>;
+    return <div className="space-y-4">{controls}<div className="card text-sm text-slate-500">ไม่มีบิลซื้อที่ระบุผู้ขายในช่วงและหมวดนี้ — บันทึกรายจ่ายใน ACCOUNTA พร้อมชื่อผู้ขาย หรือเลือกหมวดอื่น</div></div>;
   }
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-slate-500">ดูเป็น</span>
-        {chip(`?b=day${cq}`, "รายวัน (30 วัน)", trend.bucket === "day")}
-        {chip(`?b=week${cq}`, "รายสัปดาห์ (16 สัปดาห์)", trend.bucket === "week")}
-        {chip(`?b=month${cq}`, "รายเดือน (12 เดือน)", trend.bucket === "month")}
-      </div>
-      {categories.length > 0 && (
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-slate-500">หมวด</span>
-            {chip(`?b=${trend.bucket}`, "ทุกหมวด", category == null)}
-            {categories.map((c) => chip(`?b=${trend.bucket}&c=${encodeURIComponent(c.name === "" ? NO_CATEGORY : c.name)}`, `${categoryLabel(c.name)} · ${short(c.spend)}`, category === c.name))}
-          </div>
-          <p className="text-xs text-slate-500">เงินเดือน ค่าไฟ ค่าธนาคาร และค่าวัตถุดิบอยู่คนละหมวด การเทียบสัดส่วนซื้อ ÷ ขายมีความหมายเมื่อดูทีละหมวด ตัวเลขในวงเล็บคือยอดรวมของหมวดในช่วงที่แสดง</p>
-        </div>
-      )}
-
-      <SendBuyingMore items={buyingMoreShifts(shifts)} bucket={trend.bucket} groupReady={groupReady} category={category} />
+      {controls}
 
       <div className="card overflow-x-auto">
         <div className="text-sm font-semibold text-slate-800">สัดส่วนที่เปลี่ยนไป · {windowSize} {unit}ล่าสุด เทียบ {windowSize} {unit}ก่อนหน้า</div>
