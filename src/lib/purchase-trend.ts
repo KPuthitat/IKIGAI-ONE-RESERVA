@@ -132,8 +132,12 @@ const pctChange = (now: number, before: number): number | null => (before > 0 ? 
 export function vendorShifts(t: PurchaseTrend, n: number): VendorShift[] {
   const len = t.keys.length;
   const w = Math.max(1, Math.min(n, Math.floor(len / 2)));
-  const rec = { lo: len - w, hi: len }, prev = { lo: len - 2 * w, hi: len - w };
-  const sum = (a: number[], r: { lo: number; hi: number }) => a.slice(Math.max(0, r.lo), r.hi).reduce((s, v) => s + v, 0);
+  return shiftsOver(t, { lo: len - w, hi: len }, { lo: len - 2 * w, hi: len - w });
+}
+
+type Span = { lo: number; hi: number };
+function shiftsOver(t: PurchaseTrend, rec: Span, prev: Span): VendorShift[] {
+  const sum = (a: number[], r: Span) => a.slice(Math.max(0, r.lo), r.hi).reduce((s, v) => s + v, 0);
   const one = (name: string, amounts: number[]): VendorShift => {
     const rs = sum(t.sales, rec), ps = sum(t.sales, prev), rp = sum(amounts, rec), pp = sum(amounts, prev);
     const rr = ratioPct(rp, rs), pr = ratioPct(pp, ps);
@@ -153,6 +157,38 @@ export function vendorShifts(t: PurchaseTrend, n: number): VendorShift[] {
     return { name, recent: { sales: round2(rs), purchase: round2(rp), ratio: rr }, previous: { sales: round2(ps), purchase: round2(pp), ratio: pr }, ratioDeltaPct: delta, ratioChangePct: rel, purchaseChangePct: purCh, salesChangePct: salesCh, flag };
   };
   return [one("รวมทุกผู้ขาย", t.total), ...t.vendors.map((v) => one(v.name, v.amounts))];
+}
+
+// ── Month-to-date (owner 2026-11-18): bills come in lumps (rent, electricity, a monthly invoice), so a 7-day window against the 7 days
+// before swings wildly. MTD compares this month so far with the SAME days of last month: 1–18 Nov against 1–18 Oct.
+
+export type View = Bucket | "mtd";
+export type MtdRanges = { from: string; to: string; recent: { from: string; to: string; label: string }; previous: { from: string; to: string; label: string } };
+
+const daysInMonth = (y: number, m: number): number => new Date(Date.UTC(y, m, 0)).getUTCDate();   // m = 1..12
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+
+/** This month from day 1 to `today`, and last month from day 1 to the same day-of-month (capped at that month's length). */
+export function mtdRanges(today: string): MtdRanges {
+  const y = Number(today.slice(0, 4)), m = Number(today.slice(5, 7)), d = Number(today.slice(8, 10));
+  const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+  const pd = Math.min(d, daysInMonth(py, pm));
+  const rFrom = `${y}-${pad2(m)}-01`, pFrom = `${py}-${pad2(pm)}-01`, pTo = `${py}-${pad2(pm)}-${pad2(pd)}`;
+  return {
+    from: pFrom, to: today,
+    recent: { from: rFrom, to: today, label: `1–${d} ${TH_MON[m - 1]}` },
+    previous: { from: pFrom, to: pTo, label: `1–${pd} ${TH_MON[pm - 1]}` }
+  };
+}
+
+/** `t` must be a day-bucket trend covering r.from..r.to. */
+export function vendorShiftsMtd(t: PurchaseTrend, r: MtdRanges): VendorShift[] {
+  const span = (from: string, to: string): Span => {
+    const lo = t.keys.findIndex((k) => k >= from);
+    let hi = 0; t.keys.forEach((k, i) => { if (k <= to) hi = i + 1; });
+    return { lo: lo < 0 ? t.keys.length : lo, hi };
+  };
+  return shiftsOver(t, span(r.recent.from, r.recent.to), span(r.previous.from, r.previous.to));
 }
 
 /**

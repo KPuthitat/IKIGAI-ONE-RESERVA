@@ -4,7 +4,7 @@ import { canModule, requirePermission } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { getDb } from "@/lib/db";
 import { getCardColor, getLineGroupId, isSalesaBranch, SALESA_DEFAULT_CARD_COLOR } from "@/lib/salesa-db";
-import { buyingMoreShifts, defaultRange, NO_CATEGORY, purchaseTrend, vendorShifts, WINDOW } from "@/lib/purchase-trend";
+import { buyingMoreShifts, defaultRange, mtdRanges, NO_CATEGORY, purchaseTrend, vendorShifts, vendorShiftsMtd, WINDOW, type Bucket } from "@/lib/purchase-trend";
 import { purchaseBuyingMoreFlex } from "@/lib/purchase-trend-card";
 import { notifySalesaHod } from "@/lib/salesa-line";
 
@@ -13,7 +13,7 @@ import { notifySalesaHod } from "@/lib/salesa-line";
 
 export const dynamic = "force-dynamic";
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
-const Body = z.object({ bucket: z.enum(["day", "week", "month"]), pin: z.string(), category: z.string().max(200).optional() });
+const Body = z.object({ bucket: z.enum(["mtd", "day", "week", "month"]), pin: z.string(), category: z.string().max(200).optional() });
 
 export async function POST(req: Request) {
   const user = requirePermission("reporta.manage");
@@ -33,13 +33,17 @@ export async function POST(req: Request) {
 
   const db = getDb();
   const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-  const { from, to } = defaultRange(bucket, today);
-  const items = buyingMoreShifts(vendorShifts(purchaseTrend(db, branchId, from, to, bucket, category), WINDOW[bucket]));
+  // "mtd" = this month so far against the same days of last month (the page's default view)
+  const mtd = bucket === "mtd" ? mtdRanges(today) : null;
+  const unitBucket: Bucket = bucket === "mtd" ? "day" : bucket;
+  const { from, to } = mtd ? { from: mtd.from, to: mtd.to } : defaultRange(unitBucket, today);
+  const trend = purchaseTrend(db, branchId, from, to, unitBucket, category);
+  const items = buyingMoreShifts(mtd ? vendorShiftsMtd(trend, mtd) : vendorShifts(trend, WINDOW[unitBucket]));
   if (items.length === 0) return NextResponse.json({ error: "no_items", message: "ช่วงนี้ไม่มีผู้ขายที่ซื้อมากขึ้นเมื่อเทียบกับยอดขาย จึงไม่ส่งการ์ด" }, { status: 400 });
 
   const branch = db.prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
   const flex = purchaseBuyingMoreFlex(items, {
-    branchName: branch?.name ?? `สาขา ${branchId}`, bucket, windowSize: WINDOW[bucket], operator: user.display_name,
+    branchName: branch?.name ?? `สาขา ${branchId}`, bucket: unitBucket, windowSize: WINDOW[unitBucket], periodLabel: mtd ? `สะสมเดือนนี้ ${mtd.recent.label} เทียบช่วงเดียวกันของเดือนก่อน (${mtd.previous.label})` : undefined, operator: user.display_name,
     color: getCardColor(branchId) ?? SALESA_DEFAULT_CARD_COLOR, category: category ?? null,
     link: `${PUBLIC_BASE}/admin/reporta/purchase?b=${bucket}${category == null ? "" : `&c=${encodeURIComponent(category === "" ? NO_CATEGORY : category)}`}`
   });

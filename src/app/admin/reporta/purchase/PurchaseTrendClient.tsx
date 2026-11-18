@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { fmtMoney } from "@/lib/format";
 import { apiUrl } from "@/lib/url";
-import { buyingMoreShifts, categoryLabel, NO_CATEGORY, ratioPct, type PurchaseTrend, type VendorShift } from "@/lib/purchase-trend";
+import { buyingMoreShifts, categoryLabel, NO_CATEGORY, ratioPct, type PurchaseTrend, type VendorShift, type View } from "@/lib/purchase-trend";
 
 // Purchase ÷ sales per supplier (owner 2026-11-15). Inline SVG, no chart library: the top chart is the ratio over time for the
 // chosen supplier (with its own average dashed), the bars underneath are sales and what was bought, so a rising ratio can be
@@ -161,12 +161,19 @@ function SendBuyingMore({ items, bucket, groupReady, category }: { items: Vendor
   );
 }
 
-export default function PurchaseTrendClient({ trend, shifts, windowSize, groupReady, categories, category }: { trend: PurchaseTrend; shifts: VendorShift[]; windowSize: number; groupReady: boolean; categories: Array<{ name: string; spend: number }>; category: string | null }) {
+export default function PurchaseTrendClient({ trend, shifts, windowSize, view, mtd, groupReady, categories, category }: { trend: PurchaseTrend; shifts: VendorShift[]; windowSize: number; view: View; mtd: { recentLabel: string; previousLabel: string; recentFrom: string } | null; groupReady: boolean; categories: Array<{ name: string; spend: number }>; category: string | null }) {
   const router = useRouter();
   const [sel, setSel] = useState<string>(trend.vendors[0]?.name ?? "รวมทุกผู้ขาย");
   const unit = UNIT[trend.bucket];
+  // MTD: the charts show this month only, as the running ratio (purchases so far ÷ sales so far) — a single day's ratio is just noise
+  const ix = trend.keys.map((_, i) => i).filter((i) => !mtd || trend.keys[i] >= mtd.recentFrom);
   const amounts = sel === "รวมทุกผู้ขาย" ? trend.total : trend.vendors.find((v) => v.name === sel)?.amounts ?? trend.total;
-  const ratios = trend.keys.map((_, i) => (trend.sales[i] > 0 && amounts[i] > 0 ? ratioPct(amounts[i], trend.sales[i]) : trend.sales[i] > 0 ? 0 : null));
+  let cumP = 0, cumS = 0;
+  const ratios = ix.map((i) => {
+    if (mtd) { cumP += amounts[i]; cumS += trend.sales[i]; return cumS > 0 ? ratioPct(cumP, cumS) : null; }
+    return trend.sales[i] > 0 && amounts[i] > 0 ? ratioPct(amounts[i], trend.sales[i]) : trend.sales[i] > 0 ? 0 : null;
+  });
+  const labels = ix.map((i) => trend.labels[i]), salesS = ix.map((i) => trend.sales[i]), amountsS = ix.map((i) => amounts[i]);
   const chip = (href: string, label: string, active: boolean) => (
     <Link key={label} href={href} className={`chip ${active ? "chip-active" : ""}`}>{label}</Link>
   );
@@ -180,21 +187,22 @@ export default function PurchaseTrendClient({ trend, shifts, windowSize, groupRe
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-slate-500">ดูเป็น</span>
-          {chip(`?b=day${cq}`, "รายวัน", trend.bucket === "day")}
-          {chip(`?b=week${cq}`, "รายสัปดาห์", trend.bucket === "week")}
-          {chip(`?b=month${cq}`, "รายเดือน", trend.bucket === "month")}
+          {chip(`?b=mtd${cq}`, "สะสมเดือนนี้ (MTD)", view === "mtd")}
+          {chip(`?b=day${cq}`, "รายวัน", view === "day")}
+          {chip(`?b=week${cq}`, "รายสัปดาห์", view === "week")}
+          {chip(`?b=month${cq}`, "รายเดือน", view === "month")}
         </div>
         {categories.length > 0 && (
           <label className="flex items-center gap-2 text-xs text-slate-500 min-w-0">
             หมวด
             <select className="input !w-auto !py-1.5 text-sm max-w-[18rem]" value={catValue} aria-label="หมวดรายจ่าย"
-              onChange={(e) => router.push(`?b=${trend.bucket}${e.target.value ? `&c=${encodeURIComponent(e.target.value)}` : ""}`)}>
+              onChange={(e) => router.push(`?b=${view}${e.target.value ? `&c=${encodeURIComponent(e.target.value)}` : ""}`)}>
               <option value="">ทุกหมวด</option>
               {categories.map((c) => <option key={c.name || NO_CATEGORY} value={c.name === "" ? NO_CATEGORY : c.name}>{categoryLabel(c.name)} · {short(c.spend)}</option>)}
             </select>
           </label>
         )}
-        <div className="sm:ml-auto"><SendBuyingMore items={buyingMoreShifts(shifts)} bucket={trend.bucket} groupReady={groupReady} category={category} /></div>
+        <div className="sm:ml-auto"><SendBuyingMore items={buyingMoreShifts(shifts)} bucket={view} groupReady={groupReady} category={category} /></div>
       </div>
       {category == null && categories.length > 1 && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">ตัวเลขรวมตอนนี้ปนเงินเดือน ค่าไฟ ค่าธนาคาร และค่าวัตถุดิบเข้าด้วยกัน เลือก “หมวด” ด้านบนเพื่อเทียบสัดส่วนซื้อ ÷ ขายให้มีความหมาย</p>
@@ -210,15 +218,15 @@ export default function PurchaseTrendClient({ trend, shifts, windowSize, groupRe
       {controls}
 
       <div className="card overflow-x-auto">
-        <div className="text-sm font-semibold text-slate-800">สัดส่วนที่เปลี่ยนไป · {windowSize} {unit}ล่าสุด เทียบ {windowSize} {unit}ก่อนหน้า</div>
+        <div className="text-sm font-semibold text-slate-800">{mtd ? `สัดส่วนสะสมเดือนนี้ (${mtd.recentLabel}) เทียบช่วงเดียวกันของเดือนก่อน (${mtd.previousLabel})` : `สัดส่วนที่เปลี่ยนไป · ${windowSize} ${unit}ล่าสุด เทียบ ${windowSize} ${unit}ก่อนหน้า`}</div>
         <p className="text-xs text-slate-500 mt-0.5">สัดส่วน = ยอดซื้อ ÷ ยอดขายในช่วงเดียวกัน · ตัวอย่าง: ขาย 30,000 ซื้อ 2,000 = 6.7% → ขาย 20,000 ซื้อ 4,000 = 20%</p>
         <table className="w-full text-sm mt-3 min-w-[720px]">
           <thead>
             <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
               <th className="py-2 pr-3">ผู้ขาย</th>
-              <th className="py-2 pr-3 text-right">ก่อนหน้า<br />ขาย / ซื้อ</th>
+              <th className="py-2 pr-3 text-right">{mtd ? `เดือนก่อน ${mtd.previousLabel}` : "ก่อนหน้า"}<br />ขาย / ซื้อ</th>
               <th className="py-2 pr-3 text-right">สัดส่วน</th>
-              <th className="py-2 pr-3 text-right">ล่าสุด<br />ขาย / ซื้อ</th>
+              <th className="py-2 pr-3 text-right">{mtd ? `เดือนนี้ ${mtd.recentLabel}` : "ล่าสุด"}<br />ขาย / ซื้อ</th>
               <th className="py-2 pr-3 text-right">สัดส่วน</th>
               <th className="py-2 pr-3 text-right">เปลี่ยน</th>
               <th className="py-2">สรุป</th>
@@ -250,21 +258,21 @@ export default function PurchaseTrendClient({ trend, shifts, windowSize, groupRe
           {row && row.recent.ratio != null && <div className="text-xs text-slate-500">ล่าสุด {pct(row.recent.ratio)} ของยอดขาย{row.previous.ratio != null ? ` (ก่อนหน้า ${pct(row.previous.ratio)})` : ""}</div>}
         </div>
         <div>
-          <div className="text-xs font-semibold text-slate-700 mb-1">สัดส่วนซื้อ ÷ ยอดขาย ราย{unit}</div>
-          <RatioChart labels={trend.labels} ratios={ratios} />
+          <div className="text-xs font-semibold text-slate-700 mb-1">{mtd ? "สัดส่วนซื้อ ÷ ยอดขาย สะสมตั้งแต่ต้นเดือน (MTD)" : `สัดส่วนซื้อ ÷ ยอดขาย ราย${unit}`}</div>
+          <RatioChart labels={labels} ratios={ratios} />
         </div>
-        <Bars labels={trend.labels} series={[trend.sales, amounts]} colors={["#cbd5e1", "#a06820"]} names={["ยอดขาย", `ซื้อจาก ${sel}`]} />
+        <Bars labels={labels} series={[salesS, amountsS]} colors={["#cbd5e1", "#a06820"]} names={["ยอดขาย", `ซื้อจาก ${sel}`]} />
         <details className="text-xs text-slate-600">
           <summary className="cursor-pointer text-slate-500">ดูเป็นตัวเลข</summary>
           <table className="w-full mt-2">
             <thead><tr className="text-left text-slate-500 border-b border-slate-200"><th className="py-1">{unit}</th><th className="py-1 text-right">ยอดขาย</th><th className="py-1 text-right">ซื้อ</th><th className="py-1 text-right">สัดส่วน</th></tr></thead>
             <tbody>
-              {[...trend.keys.keys()].reverse().map((i) => (
-                <tr key={trend.keys[i]} className="border-b border-slate-100">
-                  <td className="py-1">{trend.labels[i]}</td>
-                  <td className="py-1 text-right tabular-nums">{fmtMoney(trend.sales[i])}</td>
-                  <td className="py-1 text-right tabular-nums">{fmtMoney(amounts[i])}</td>
-                  <td className="py-1 text-right tabular-nums">{ratios[i] == null ? "—" : `${ratios[i]!.toFixed(1)}%`}</td>
+              {[...ix.keys()].reverse().map((k) => (
+                <tr key={trend.keys[ix[k]]} className="border-b border-slate-100">
+                  <td className="py-1">{labels[k]}</td>
+                  <td className="py-1 text-right tabular-nums">{fmtMoney(salesS[k])}</td>
+                  <td className="py-1 text-right tabular-nums">{fmtMoney(amountsS[k])}</td>
+                  <td className="py-1 text-right tabular-nums">{ratios[k] == null ? "—" : `${ratios[k]!.toFixed(1)}%`}</td>
                 </tr>
               ))}
             </tbody>
