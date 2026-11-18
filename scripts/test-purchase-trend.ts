@@ -113,5 +113,17 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("the card names the category when one is chosen", JSON.stringify(C.purchaseBuyingMoreFlex(T.buyingMoreShifts(T.vendorShifts(rawC, 2)), { ...meta, category: "วัตถุดิบ" })).includes("หมวด วัตถุดิบ")
     && !JSON.stringify(C.purchaseBuyingMoreFlex(T.buyingMoreShifts(T.vendorShifts(rawC, 2)), meta)).includes("หมวด"));
 
+  const R = T.mtdRanges("2026-11-18");
+  ok("MTD: this month 1..today against the same days of last month", R.recent.from === "2026-11-01" && R.recent.to === "2026-11-18" && R.previous.from === "2026-10-01" && R.previous.to === "2026-10-18" && R.from === "2026-10-01" && R.to === "2026-11-18");
+  ok("MTD labels are in Thai", R.recent.label.startsWith("1–18 ") && R.previous.label.startsWith("1–18 ") && R.recent.label !== R.previous.label);
+  ok("MTD: January compares with December of the previous year", (() => { const j = T.mtdRanges("2027-01-10"); return j.previous.from === "2026-12-01" && j.previous.to === "2026-12-10"; })());
+  ok("MTD: day 31 is capped to the shorter previous month", T.mtdRanges("2026-07-31").previous.to === "2026-06-30" && T.mtdRanges("2026-03-30").previous.to === "2026-02-28" && T.mtdRanges("2028-03-30").previous.to === "2028-02-29");
+  ok("MTD: on the 1st it compares day 1 with day 1", (() => { const f = T.mtdRanges("2026-11-01"); return f.recent.from === f.recent.to && f.previous.from === f.previous.to; })());
+  const R17 = T.mtdRanges("2026-11-17");
+  const dayT = T.purchaseTrend(db, b1, R17.from, R17.to, "day");
+  const mt = T.vendorShiftsMtd(dayT, R17);
+  ok("MTD shifts sum the whole month so far (ice: 1,000 + 1,000 + 2,000 = 4,000) and nothing from before it", mt.find((x) => x.name.startsWith("โพลาร์"))!.recent.purchase === 4000 && mt[0].previous.purchase === 0);
+  ok("the card can show an MTD period label instead of the window", JSON.stringify(C.purchaseBuyingMoreFlex(T.buyingMoreShifts(mt), { ...meta, periodLabel: "สะสมเดือนนี้ 1–17 พ.ย." })).includes("สะสมเดือนนี้ 1–17 พ.ย."));
+
   cleanup(); process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e); cleanup(); process.exit(1); });

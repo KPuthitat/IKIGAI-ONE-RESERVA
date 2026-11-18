@@ -3,7 +3,7 @@ import Link from "next/link";
 import { canModule, requirePermission } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { isSalesaBranch } from "@/lib/salesa-db";
-import { defaultRange, listPurchaseCategories, parseCategoryParam, purchaseTrend, vendorShifts, WINDOW, type Bucket } from "@/lib/purchase-trend";
+import { defaultRange, listPurchaseCategories, mtdRanges, parseCategoryParam, purchaseTrend, vendorShifts, vendorShiftsMtd, WINDOW, type Bucket, type View } from "@/lib/purchase-trend";
 import { getLineGroupId } from "@/lib/salesa-db";
 import PurchaseTrendClient from "./PurchaseTrendClient";
 
@@ -14,7 +14,9 @@ const todayBkk = () => new Date(Date.now() + 7 * 3600_000).toISOString().slice(0
 
 export default function PurchaseTrendPage({ searchParams }: { searchParams: { b?: string; c?: string } }) {
   const user = requirePermission("reporta.manage");
-  const bucket: Bucket = searchParams.b === "day" || searchParams.b === "month" ? searchParams.b : "week";
+  // Default = month-to-date against the same days of last month (bills are lumpy, so short windows swing wildly).
+  const view: View = searchParams.b === "day" || searchParams.b === "week" || searchParams.b === "month" ? searchParams.b : "mtd";
+  const bucket: Bucket = view === "mtd" ? "day" : view;
   const back = <Link href="/admin/reporta" className="text-sm text-slate-500 hover:text-brand">← กลับ ANALYTICA</Link>;
   const branchId = user.activeBranchId ?? null;
   if (branchId == null || !isSalesaBranch(branchId)) {
@@ -25,11 +27,12 @@ export default function PurchaseTrendPage({ searchParams }: { searchParams: { b?
   }
   const db = getDb();
   const branch = db.prepare("SELECT name FROM branches WHERE id = ?").get(branchId) as { name: string } | undefined;
-  const { from, to } = defaultRange(bucket, todayBkk());
+  const mtd = view === "mtd" ? mtdRanges(todayBkk()) : null;
+  const { from, to } = mtd ? { from: mtd.from, to: mtd.to } : defaultRange(bucket, todayBkk());
   const category = parseCategoryParam(searchParams.c);
   const categories = listPurchaseCategories(db, branchId, from, to);
   const trend = purchaseTrend(db, branchId, from, to, bucket, category);
-  const shifts = vendorShifts(trend, WINDOW[bucket]);
+  const shifts = mtd ? vendorShiftsMtd(trend, mtd) : vendorShifts(trend, WINDOW[bucket]);
   return (
     <div className="space-y-4">
       {back}
@@ -37,7 +40,7 @@ export default function PurchaseTrendPage({ searchParams }: { searchParams: { b?
         <h1 className="text-2xl font-bold text-slate-800">ซื้อเทียบยอดขาย · {branch?.name ?? `#${branchId}`}</h1>
         <p className="text-sm text-slate-500 mt-1">ซื้อของจากแต่ละผู้ขายเมื่อเทียบกับยอดขาย — ดูว่าสัดส่วนซื้อ ÷ ขายเปลี่ยนไปอย่างไร เพื่อใช้วิเคราะห์การจัดซื้อ</p>
       </div>
-      <PurchaseTrendClient trend={trend} shifts={shifts} windowSize={WINDOW[bucket]} groupReady={!!getLineGroupId(branchId)} categories={categories} category={category ?? null} />
+      <PurchaseTrendClient trend={trend} shifts={shifts} windowSize={WINDOW[bucket]} view={view} mtd={mtd ? { recentLabel: mtd.recent.label, previousLabel: mtd.previous.label, recentFrom: mtd.recent.from } : null} groupReady={!!getLineGroupId(branchId)} categories={categories} category={category ?? null} />
     </div>
   );
 }
