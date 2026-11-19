@@ -2468,6 +2468,25 @@ export function computeBranchSvcPayout(branchId: number, yearMonth: string): Bra
     }
   }
 
+  // Withholding tax on everything paid on the same day (owner 2026-11-19: "รวมแล้วหักก่อนโอน"): for a
+  // withholding-tax person the service charge, meeting fee and duty pay are summed FIRST and 3% is taken
+  // once on the total, so the transfer equals 3% of the combined income instead of three separately rounded
+  // pieces. The base per piece is unchanged (SVC after group insurance, the others in full); only the
+  // rounding is pooled. Any satang difference goes to the last extra (duty, else meeting) so every
+  // downstream read — the SVC page, the monthly summary, the payslip and the ACCOUNTA posting — still adds up.
+  const pooledRate = (db.prepare("SELECT wht_rate FROM payroll_settings LIMIT 1")
+    .get() as { wht_rate: number } | undefined)?.wht_rate ?? 0.03;
+  for (const row of rowsByUser.values()) {
+    if (row.taxMode !== "wht" || !(row.meetingFeeGross || row.dutyFeeGross)) continue;
+    const svcBase = round2((row.net - row.meetingFeeNet - row.dutyFeeNet) + (row.wht - row.meetingFeeWht - row.dutyFeeWht));
+    const diff = round2(round2((svcBase + row.meetingFeeGross + row.dutyFeeGross) * pooledRate) - row.wht);
+    if (diff === 0) continue;
+    if (row.dutyFeeGross) { row.dutyFeeWht = round2(row.dutyFeeWht + diff); row.dutyFeeNet = round2(row.dutyFeeNet - diff); }
+    else { row.meetingFeeWht = round2(row.meetingFeeWht + diff); row.meetingFeeNet = round2(row.meetingFeeNet - diff); }
+    row.wht = round2(row.wht + diff);
+    row.net = round2(row.net - diff);
+  }
+
   return [...rowsByUser.values()];
 }
 

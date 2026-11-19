@@ -58,6 +58,13 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   const rows = SC.computeBranchSvcPayout(nama, YM);
   const rWht = rows.find((r) => r.userId === whtP)!, rSso = rows.find((r) => r.userId === ssoP)!;
   ok("withholding-tax staff: 3% withheld (1,000 → WHT 30, net 970)", near(rWht.dutyFeeGross, 1000) && near(rWht.dutyFeeWht, 30) && near(rWht.dutyFeeNet, 970));
+  // owner 2026-11-19 "รวมแล้วหักก่อนโอน": the extras are summed and 3% taken once on the total (a manual meeting fee on top of the duty pay)
+  SC.setManualMeetingFee({ userId: whtP, yearMonth: YM, amount: 17.35, byUserId: owner });
+  const rPool = SC.computeBranchSvcPayout(nama, YM).find((r) => r.userId === whtP)!;
+  const pooledGross = rPool.meetingFeeGross + rPool.dutyFeeGross;
+  ok("pooled WHT: one 3% on the combined extras (1,017.35 → 30.52), net = gross − that", near(pooledGross, 1017.35) && near(rPool.wht, 30.52) && near(rPool.net, 1017.35 - 30.52));
+  ok("…and the parts still add up to the whole (meeting + duty WHT = row WHT; nets likewise)", near(rPool.meetingFeeWht + rPool.dutyFeeWht, rPool.wht) && near(rPool.meetingFeeNet + rPool.dutyFeeNet, rPool.net));
+  SC.setManualMeetingFee({ userId: whtP, yearMonth: YM, amount: 0, byUserId: owner });
   ok("…and the row's cash net / WHT include it", near(rWht.net, 970) && near(rWht.wht, 30));
   ok("social-security staff: nothing withheld (150 → net 150)", near(rSso.dutyFeeGross, 150) && near(rSso.dutyFeeWht, 0) && near(rSso.dutyFeeNet, 150) && near(rSso.net, 150));
   ok("a person with no approved day gets no duty fee", (rows.find((r) => r.userId === pend)?.dutyFeeGross ?? 0) === 0);
