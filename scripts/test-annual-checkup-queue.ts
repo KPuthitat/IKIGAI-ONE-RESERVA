@@ -217,6 +217,18 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     G.setMyStationMark({ id: A }, rnd, "BLOOD", false);
     return notIn && notOnRoute && noQueue && other;
   })());
+  ok("S9d a round is opened / closed by the owner or a clinic recorder only, audited, and cannot go back to draft once people have checked in", (() => {
+    const rid = Number(db.prepare("INSERT INTO annual_checkup_rounds (name, year_be, status) VALUES ('draft-round', 2570, 'draft')").run().lastInsertRowid);
+    const refused = [A, B, HR, W].every((u) => err(() => G.setRoundStatus({ id: u }, rid, "open")) === "not_allowed");
+    const bad = err(() => G.setRoundStatus({ id: R }, 999999, "open")) === "round_not_found";
+    const opened = G.setRoundStatus({ id: R }, rid, "open").changed === true && G.setRoundStatus({ id: R }, rid, "open").changed === false;
+    const stOpen = (db.prepare("SELECT status FROM annual_checkup_rounds WHERE id = ?").get(rid) as { status: string }).status === "open";
+    const closed = G.setRoundStatus({ id: R }, rid, "closed").changed === true;
+    const q0 = G.getMyQueue({ id: A })[0].round_id; // the real (checked-in) round
+    const noDraft = err(() => G.setRoundStatus({ id: R }, q0, "draft")) === "round_has_checkins";
+    const audited = (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'round.status'").get() as { n: number }).n === 2;
+    return refused && bad && opened && stOpen && closed && noDraft && audited;
+  })());
   ok("S10 the database refuses a station pass by a non-recorder or for someone not checked in, and passes are append-only", sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qB.id, W), /may mark a station/)
     && sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qC.id, R), /not checked in/)
     && sqlRefused(() => db.prepare("UPDATE annual_checkup_station_passes SET passed_by = ?").run(S), /append-only/) && sqlRefused(() => db.prepare("DELETE FROM annual_checkup_station_passes").run(), /append-only/));

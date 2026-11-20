@@ -70,6 +70,9 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   // Annual check-up (employee): the entry shows only once something has been released to this person.
   let myQueue = false;
   try { myQueue = getMyQueue(user).length > 0; } catch { myQueue = false; }
+  // …and the queue entry itself shows for everyone while a round is open, so nobody has to hunt for it (the page explains if they are not on the list).
+  let openCheckupRound = false;
+  try { openCheckupRound = !!getDb().prepare("SELECT 1 FROM annual_checkup_rounds WHERE status = 'open' LIMIT 1").get(); } catch { openCheckupRound = false; }
   let myCheckup = false;
   try { myCheckup = getMyRounds(user).length > 0; } catch { myCheckup = false; }
 
@@ -134,7 +137,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/persona/orgchart", label: "ผังองค์กร" },
         { href: "/staff/persona/policy-notices", label: "ประกาศนโยบาย" },
         { href: "/staff/persona/payslip", label: "สลิปเงินเดือน" },
-        ...(myQueue ? [{ href: "/staff/persona/checkup-queue", label: "ลำดับตรวจสุขภาพประจำปี" }] : []),
+        ...(myQueue || openCheckupRound ? [{ href: "/staff/persona/checkup-queue", label: "ลำดับตรวจสุขภาพประจำปี" }] : []),
         // clinic staff / doctor: the scan + result screens, also under PERSONA so they are found where the check-up is looked for
         ...(clinicalCheckup ? [
           { href: "/staff/health/annual-checkup/queue", label: "สแกน QR ตรวจสุขภาพประจำปี" },

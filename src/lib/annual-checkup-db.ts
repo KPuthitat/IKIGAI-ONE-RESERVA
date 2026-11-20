@@ -907,6 +907,24 @@ export function listQueueForManager(actor: AcActor, roundId: number): Array<{ la
   return rows.map((r) => ({ label: nameWithPrefix(r.title_prefix, r.display_name), queue_no: r.queue_no, arrived: !!r.checked_in_at }));
 }
 
+/**
+ * Open or close a round (owner / clinic recorder). Employees see their queue number and QR only while the round is "open"; an imported round
+ * starts as "draft". Never moves a round back to draft once people have checked in (that would hide a live day).
+ */
+export function setRoundStatus(actor: AcActor, roundId: number, status: "open" | "closed" | "draft"): { changed: boolean } {
+  const a = loadActor(actor);
+  if (!(a.role === "super_admin" || isRecorderEligible(a.id))) throw new AnnualCheckupForbidden("not_allowed");
+  const db = getDb();
+  const r = db.prepare("SELECT status FROM annual_checkup_rounds WHERE id = ?").get(roundId) as { status: string } | undefined;
+  if (!r) throw new AnnualCheckupInvalid("round_not_found");
+  if (r.status === status) return { changed: false };
+  if (status === "draft" && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_queue WHERE round_id = ? AND checked_in_at IS NOT NULL").get(roundId) as { n: number }).n > 0)
+    throw new AnnualCheckupInvalid("round_has_checkins", "มีคนเช็กอินในรอบนี้แล้ว จึงเปลี่ยนกลับเป็นร่างไม่ได้");
+  db.prepare("UPDATE annual_checkup_rounds SET status = ? WHERE id = ?").run(status, roundId);
+  audit(a.id, "round.status", { user_id: null, external_id: null }, roundId, null, status);
+  return { changed: true };
+}
+
 /** Importer / admin: place a person in the line (add, or change their number / appointment time). The owner or a clinic recorder only. */
 export function upsertQueueRow(actor: AcActor, roundId: number, subject: AcSubject, queueNo: number, apptTime?: string | null): { id: number; action: "added" | "changed" | "same" } {
   const a = loadActor(actor);
