@@ -423,8 +423,8 @@ seed DB ชั่วคราว: พนักงาน A, B; ผู้ลงผ
 
 ## 20. พนักงานติ๊กสถานีที่ผ่านแล้วเอง (as-built)
 
-- หน้า `/staff/persona/checkup-queue` หลังเช็กอิน แต่ละสถานีมีปุ่ม "ฉันตรวจแล้ว" ให้พนักงานจดว่าผ่านจุดไหนแล้ว (สีฟ้า) และกด "ยกเลิกที่ติ๊ก" ได้
-- สีเขียว "ผ่านแล้ว" ยังเป็นของเจ้าหน้าที่คลินิกสแกนยืนยันเท่านั้น (append-only เหมือนเดิม) — การติ๊กเองไม่สร้างแถวใน `annual_checkup_station_passes`
+- หน้า `/staff/persona/checkup-queue` หลังเช็กอิน แต่ละสถานีมีปุ่ม "ผ่านการตรวจแล้ว" ให้พนักงานบันทึกว่าผ่านสถานีไหนแล้ว (สีฟ้า) และกด "ยกเลิก" ได้
+- สีเขียว "ยืนยันโดยเจ้าหน้าที่" ยังเป็นของเจ้าหน้าที่คลินิกสแกนยืนยันเท่านั้น (append-only เหมือนเดิม) — การติ๊กเองไม่สร้างแถวใน `annual_checkup_station_passes`
 - ตารางใหม่ `annual_checkup_station_selfmarks (queue_id, station_id, marked_at)` ไม่มีข้อมูลสุขภาพ จึงไม่มี trigger; ผ่าน gateway อย่างเดียว (`setMyStationMark`: ต้องเช็กอินแล้ว, สถานีต้องอยู่ในเส้นทางของตัวเอง, รอบต้องเปิดอยู่) และอยู่ในรายการ gateway-only ของ `scan-build-risks`
 - API: `POST /api/annual-checkup/me/station` `{roundId, code, marked}`; ทดสอบ S9b/S9c ใน `test-annual-checkup-queue.ts`
 - Rollback: `DROP TABLE annual_checkup_station_selfmarks;` (ไม่มีข้อมูลอื่นพึ่งพา)
