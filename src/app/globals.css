@@ -157,6 +157,25 @@ input[type="week"]::-webkit-date-and-time-value {
   text-align: left;
   margin: 0;
 }
+/* A native <select> ignores the padding on desktop Safari / Chrome and renders shorter than the text and date boxes beside it, so a row of
+   mixed fields looks crooked (owner 2026-11-21 "กล่องข้อความบิดๆ เบี้ยวๆ"). Draw it like the other fields: same box, our own chevron
+   (the same one the label-inside <Field> kit uses), room on the right so the text never runs under it. */
+select.input:not([multiple]) {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 2.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238A7A63' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.875rem center;
+  background-size: 1rem;
+  text-overflow: ellipsis;
+}
+/* The file picker's own button is a default grey slab that sets the row's height apart from the other fields — make it a small pill. */
+.input[type="file"] { padding-top: 0.625rem; padding-bottom: 0.625rem; line-height: 1.75rem; color: #475569; }
+.input[type="file"]::file-selector-button {
+  margin-right: 0.75rem; border: 0; border-radius: 8px; padding: 0.25rem 0.875rem;
+  background: #e2e8f0; color: #1e293b; font-weight: 600; font-size: 14px; cursor: pointer;
+}
 .label { @apply block text-[13px] font-semibold text-slate-500 mb-1.5; }
 
 /* ── Label-inside field (PGH-style mobile forms, owner 2026-08). The small
