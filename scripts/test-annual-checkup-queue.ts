@@ -229,6 +229,43 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     const audited = (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'round.status'").get() as { n: number }).n === 2;
     return refused && bad && opened && stOpen && closed && noDraft && audited;
   })());
+  ok("S9e a round's info can be edited (validated), and a mistaken round can be deleted only when it is closed, empty of health data and nobody has checked in", (() => {
+    const rid = Number(db.prepare("INSERT INTO annual_checkup_rounds (name, year_be, status) VALUES ('ลบทดสอบ', 2570, 'draft')").run().lastInsertRowid);
+    const py = Number(db.prepare("INSERT INTO annual_checkup_payers (round_id, name_th) VALUES (?, 'บริษัท ลบ')").run(rid).lastInsertRowid);
+    const tid = (db.prepare("SELECT id FROM annual_checkup_tests ORDER BY id LIMIT 1").get() as { id: number }).id;
+    db.prepare("INSERT INTO annual_checkup_orders (round_id, user_id, payer_id, test_id, status) VALUES (?,?,?,?,'ordered')").run(rid, C, py, tid);
+    db.prepare("INSERT INTO annual_checkup_queue (round_id, user_id, queue_no) VALUES (?,?,1)").run(rid, C);
+    const info = { name: "ชื่อใหม่", yearBe: 2571, startDate: "2027-01-05", endDate: "2027-01-06", location: "AT HOME CLINIC" };
+    const noEdit = [A, HR].every((u) => err(() => G.updateRoundInfo({ id: u }, rid, info)) === "not_allowed");
+    const badEdit = err(() => G.updateRoundInfo({ id: R }, rid, { ...info, name: "  " })) === "bad_value" && err(() => G.updateRoundInfo({ id: R }, rid, { ...info, endDate: "2027-01-01" })) === "bad_value" && err(() => G.updateRoundInfo({ id: R }, 999999, info)) === "round_not_found";
+    G.updateRoundInfo({ id: R }, rid, info);
+    const edited = (db.prepare("SELECT name, year_be, start_date, location FROM annual_checkup_rounds WHERE id = ?").get(rid) as { name: string; year_be: number; start_date: string; location: string }).name === "ชื่อใหม่";
+    const noDel = [A, HR].every((u) => err(() => G.deleteRound({ id: u }, rid, "ชื่อใหม่")) === "not_allowed");
+    const wrongName = err(() => G.deleteRound({ id: R }, rid, "อื่น")) === "bad_value";
+    G.setRoundStatus({ id: R }, rid, "open");
+    const openRefused = err(() => G.deleteRound({ id: R }, rid, "ชื่อใหม่")) === "round_is_open";
+    G.setRoundStatus({ id: R }, rid, "closed");
+    const live = G.getMyQueue({ id: A })[0].round_id;   // a round with a check-in
+    G.setRoundStatus({ id: R }, live, "closed");
+    const checkinRefused = err(() => G.deleteRound({ id: R }, live, (db.prepare("SELECT name FROM annual_checkup_rounds WHERE id = ?").get(live) as { name: string }).name)) === "round_has_checkins";
+    G.setRoundStatus({ id: R }, live, "open");
+    const done = G.deleteRound({ id: R }, rid, "ชื่อใหม่").people === 1;
+    const gone = ["annual_checkup_rounds WHERE id", "annual_checkup_orders WHERE round_id", "annual_checkup_queue WHERE round_id", "annual_checkup_payers WHERE round_id"]
+      .every((t) => (db.prepare(`SELECT COUNT(*) n FROM ${t} = ?`).get(rid) as { n: number }).n === 0);
+    const audited = (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action IN ('round.update','round.delete') AND round_id = ?").get(rid) as { n: number }).n === 2;
+    return noEdit && badEdit && edited && noDel && wrongName && openRefused && checkinRefused && done && gone && audited;
+  })());
+  ok("S9f a round that already holds a result cannot be deleted (even when closed and nobody has checked in)", (() => {
+    const rid = Number(db.prepare("INSERT INTO annual_checkup_rounds (name, year_be, status) VALUES ('มีผลแล้ว', 2571, 'closed')").run().lastInsertRowid);
+    const py = Number(db.prepare("INSERT INTO annual_checkup_payers (round_id, name_th) VALUES (?, 'บริษัท ผล')").run(rid).lastInsertRowid);
+    const tid = (db.prepare("SELECT id FROM annual_checkup_tests WHERE code = 'HAV'").get() as { id: number }).id;
+    const oid = Number(db.prepare("INSERT INTO annual_checkup_orders (round_id, user_id, payer_id, test_id, status) VALUES (?,?,?,?,'ordered')").run(rid, C, py, tid).lastInsertRowid);
+    G.recordResult({ id: R }, oid, { valueText: "ทดสอบ" });
+    const refused = err(() => G.deleteRound({ id: R }, rid, "มีผลแล้ว")) === "round_has_data";
+    const intact = (db.prepare("SELECT COUNT(*) n FROM annual_checkup_results res JOIN annual_checkup_orders o ON o.id = res.order_id WHERE o.round_id = ?").get(rid) as { n: number }).n === 1
+      && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_rounds WHERE id = ?").get(rid) as { n: number }).n === 1;
+    return refused && intact;
+  })());
   ok("S10 the database refuses a station pass by a non-recorder or for someone not checked in, and passes are append-only", sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qB.id, W), /may mark a station/)
     && sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qC.id, R), /not checked in/)
     && sqlRefused(() => db.prepare("UPDATE annual_checkup_station_passes SET passed_by = ?").run(S), /append-only/) && sqlRefused(() => db.prepare("DELETE FROM annual_checkup_station_passes").run(), /append-only/));

@@ -925,6 +925,59 @@ export function setRoundStatus(actor: AcActor, roundId: number, status: "open" |
   return { changed: true };
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+export type RoundInfo = { name: string; yearBe: number | null; startDate: string | null; endDate: string | null; location: string | null };
+
+/** Edit a round's name, year, dates and place (owner / clinic recorder). Never touches people, orders or results. */
+export function updateRoundInfo(actor: AcActor, roundId: number, info: RoundInfo): void {
+  const a = loadActor(actor);
+  if (!(a.role === "super_admin" || isRecorderEligible(a.id))) throw new AnnualCheckupForbidden("not_allowed");
+  const name = clean(info.name, 120);
+  if (!name) throw new AnnualCheckupInvalid("bad_value", "กรุณาตั้งชื่อรอบ");
+  if (info.yearBe != null && (!Number.isInteger(info.yearBe) || info.yearBe < 2500 || info.yearBe > 2700)) throw new AnnualCheckupInvalid("bad_value", "ปี พ.ศ. ไม่ถูกต้อง");
+  for (const d of [info.startDate, info.endDate]) if (d && !ISO_DATE.test(d)) throw new AnnualCheckupInvalid("bad_value", "วันที่ไม่ถูกต้อง");
+  if (info.startDate && info.endDate && info.endDate < info.startDate) throw new AnnualCheckupInvalid("bad_value", "วันสิ้นสุดต้องไม่ก่อนวันเริ่ม");
+  const r = getDb().prepare("UPDATE annual_checkup_rounds SET name = ?, year_be = ?, start_date = ?, end_date = ?, location = ? WHERE id = ?")
+    .run(name, info.yearBe, info.startDate || null, info.endDate || null, clean(info.location, 200), roundId);
+  if (r.changes === 0) throw new AnnualCheckupInvalid("round_not_found");
+  audit(a.id, "round.update", null, roundId, null, name);
+}
+
+/**
+ * Delete a round that was imported by mistake (owner / clinic recorder). Only a round that holds no health data and has nobody checked in:
+ * no results, clinical notes, conclusions or sent-to-doctor records, and no queue row with a check-in (those are protected by the database).
+ * It must not be open. Removes the people, orders, queue numbers, payers and programmes of that round. The audit trail is kept.
+ */
+export function deleteRound(actor: AcActor, roundId: number, confirmName: string): { people: number } {
+  const a = loadActor(actor);
+  if (!(a.role === "super_admin" || isRecorderEligible(a.id))) throw new AnnualCheckupForbidden("not_allowed");
+  const db = getDb();
+  const r = db.prepare("SELECT name, status FROM annual_checkup_rounds WHERE id = ?").get(roundId) as { name: string; status: string } | undefined;
+  if (!r) throw new AnnualCheckupInvalid("round_not_found");
+  if (typeof confirmName !== "string" || confirmName.trim() !== r.name.trim()) throw new AnnualCheckupInvalid("bad_value", "ชื่อรอบที่พิมพ์ยืนยันไม่ตรง");
+  if (r.status === "open") throw new AnnualCheckupInvalid("round_is_open", "ต้องปิดรอบก่อนจึงลบได้");
+  const n = (sql: string) => (db.prepare(sql).get(roundId) as { n: number }).n;
+  if (n("SELECT COUNT(*) n FROM annual_checkup_queue WHERE round_id = ? AND checked_in_at IS NOT NULL") > 0) throw new AnnualCheckupInvalid("round_has_checkins", "มีคนเช็กอินในรอบนี้แล้ว จึงลบไม่ได้ (ใช้ปิดรอบแทน)");
+  if (n("SELECT COUNT(*) n FROM annual_checkup_results res JOIN annual_checkup_orders o ON o.id = res.order_id WHERE o.round_id = ?") > 0
+    || n("SELECT COUNT(*) n FROM annual_checkup_order_clinical c JOIN annual_checkup_orders o ON o.id = c.order_id WHERE o.round_id = ?") > 0
+    || n("SELECT COUNT(*) n FROM annual_checkup_conclusions WHERE round_id = ?") > 0
+    || n("SELECT COUNT(*) n FROM annual_checkup_submissions WHERE round_id = ?") > 0)
+    throw new AnnualCheckupInvalid("round_has_data", "รอบนี้มีผลตรวจหรือข้อมูลคลินิกแล้ว จึงลบไม่ได้ (ใช้ปิดรอบแทน)");
+  const people = n("SELECT COUNT(DISTINCT COALESCE(user_id, -external_id)) n FROM annual_checkup_orders WHERE round_id = ?");
+  guard(() => db.transaction(() => {
+    db.prepare("DELETE FROM annual_checkup_station_selfmarks WHERE queue_id IN (SELECT id FROM annual_checkup_queue WHERE round_id = ?)").run(roundId);
+    db.prepare("DELETE FROM annual_checkup_queue WHERE round_id = ?").run(roundId);
+    db.prepare("DELETE FROM annual_checkup_orders WHERE round_id = ?").run(roundId);
+    db.prepare("DELETE FROM annual_checkup_program_tests WHERE program_id IN (SELECT id FROM annual_checkup_programs WHERE round_id = ?)").run(roundId);
+    db.prepare("DELETE FROM annual_checkup_programs WHERE round_id = ?").run(roundId);
+    db.prepare("DELETE FROM annual_checkup_externals WHERE round_id = ?").run(roundId);
+    db.prepare("DELETE FROM annual_checkup_payers WHERE round_id = ?").run(roundId);
+    db.prepare("DELETE FROM annual_checkup_rounds WHERE id = ?").run(roundId);
+    audit(a.id, "round.delete", null, roundId, null, r.name);
+  })());
+  return { people };
+}
+
 /** Importer / admin: place a person in the line (add, or change their number / appointment time). The owner or a clinic recorder only. */
 export function upsertQueueRow(actor: AcActor, roundId: number, subject: AcSubject, queueNo: number, apptTime?: string | null): { id: number; action: "added" | "changed" | "same" } {
   const a = loadActor(actor);
