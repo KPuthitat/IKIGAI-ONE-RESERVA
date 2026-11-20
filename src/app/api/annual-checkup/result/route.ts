@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { recordResult } from "@/lib/annual-checkup-db";
-import { handle } from "@/lib/annual-checkup-api";
+import { handleClinical } from "@/lib/annual-checkup-api";
 
 // POST {orderId, valueNum?, valueText?, unit?, refText?, interpretation?} — record / overwrite a DRAFT result of one ordered test.
 // (An attached lab file is kept unless the body sends filePath explicitly; files themselves go through /file/upload.)
@@ -13,7 +13,7 @@ const ResultFields = z.object({
 });
 
 export async function POST(req: Request) {
-  return handle(async (user) => {
+  return handleClinical(async (user) => {
     const p = ResultFields.safeParse(await req.json().catch(() => ({})));
     if (!p.success) return NextResponse.json({ ok: false, error: "invalid_body", message: "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
     const { orderId, ...data } = p.data;

@@ -10,15 +10,15 @@ import { makeStationToken, REGISTER_CODE } from "@/lib/annual-checkup-session";
 import PrintButton from "./PrintButton";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "โปสเตอร์ QR ประจำสถานี · ตรวจสุขภาพประจำปี", robots: { index: false } };
+export const metadata: Metadata = { title: "ป้าย QR ประจำสถานี · ตรวจสุขภาพประจำปี", robots: { index: false } };
 
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL ?? "https://ikigaimedihealth.com").replace(/\/$/, "");
 const PATH = "/print/annual-checkup-stations";
 const dayTh = (iso: string) => new Date(`${iso}T00:00:00+07:00`).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" });
 
 type Step = [string, string];
-const STATION_STEPS: Step[] = [["1", "เช็กอินกับเจ้าหน้าที่\nแล้วรับหมายเลขคิว"], ["2", "ตรวจเสร็จที่สถานีนี้\nสแกน QR ด้วยมือถือ"], ["3", "กดปุ่ม “ยืนยันผ่านการตรวจ”\nที่สถานีนี้"]];
-const REGISTER_STEPS: Step[] = [["1", "สแกน QR นี้\nด้วยกล้องมือถือ"], ["2", "ดูหมายเลขคิว\nและ QR ประจำตัวของท่าน"], ["3", "แสดง QR ประจำตัว\nให้เจ้าหน้าที่สแกนเช็กอิน"]];
+const STATION_STEPS: Step[] = [["1", "ลงทะเบียนกับเจ้าหน้าที่\nและรับหมายเลขคิว"], ["2", "เมื่อตรวจเสร็จที่สถานีนี้\nกรุณาสแกน QR ที่ป้ายนี้"], ["3", "กดปุ่ม\n“ยืนยันผ่านการตรวจ”"]];
+const REGISTER_STEPS: Step[] = [["1", "กรุณาสแกน QR นี้\nด้วยโทรศัพท์มือถือ"], ["2", "ดูหมายเลขคิว\nและ QR ประจำตัวของท่าน"], ["3", "แสดง QR ประจำตัว\nต่อเจ้าหน้าที่\nเพื่อเช็กอิน"]];
 
 // A4 posters for the check-up day, one per station plus the registration poster. Lives OUTSIDE /admin so the page has no menu or header to print.
 // Owner or a clinic recorder only (the same people who may import the round and set the stations).
@@ -33,7 +33,7 @@ export default async function PrintStationPostersPage({ searchParams }: { search
   const only = searchParams.only;
   type P = { key: string; kind: "register" | "station"; title: string; tag: string; url: string; steps: Step[] };
   const all: P[] = [
-    { key: REGISTER_CODE, kind: "register", title: "ลงทะเบียน", tag: "เริ่มที่นี่", url: `${PUBLIC_BASE}/staff/persona/checkup-queue/station/${encodeURIComponent(makeStationToken(REGISTER_CODE))}`, steps: REGISTER_STEPS },
+    { key: REGISTER_CODE, kind: "register", title: "ลงทะเบียน", tag: "จุดลงทะเบียน", url: `${PUBLIC_BASE}/staff/persona/checkup-queue/station/${encodeURIComponent(makeStationToken(REGISTER_CODE))}`, steps: REGISTER_STEPS },
     ...stations.map((s, i): P => ({ key: s.code, kind: "station", title: s.name_th, tag: `สถานีที่ ${i + 1}`, url: `${PUBLIC_BASE}/staff/persona/checkup-queue/station/${encodeURIComponent(makeStationToken(s.code))}`, steps: STATION_STEPS }))
   ];
   const posters = only ? all.filter((p) => p.key === only) : all;
@@ -45,13 +45,13 @@ export default async function PrintStationPostersPage({ searchParams }: { search
     <div className="qr-root">
       <style>{CSS}</style>
       <div className="toolbar">
-        <div className="toolbar-title">โปสเตอร์ QR ประจำสถานี · พิมพ์กระดาษ A4 แนวตั้ง หนึ่งสถานีต่อหนึ่งแผ่น</div>
+        <div className="toolbar-title">ป้าย QR ประจำสถานี · พิมพ์บนกระดาษ A4 แนวตั้ง สถานีละหนึ่งแผ่น</div>
         <div className="toolbar-row">
-          <PrintButton label={only ? "สั่งพิมพ์ใบนี้" : `สั่งพิมพ์ทั้งหมด (${withQr.length} แผ่น)`} />
+          <PrintButton label={only ? "สั่งพิมพ์ป้ายนี้" : `สั่งพิมพ์ทั้งหมด (${withQr.length} แผ่น)`} />
           <Link href="/admin/persona/annual-checkup/stations" className="toolbar-link">← กลับไปหน้าสถานี</Link>
           {only && <Link href={PATH} className="toolbar-link">ดูทั้งหมด</Link>}
         </div>
-        <div className="toolbar-hint">ในหน้าต่างพิมพ์: เลือกกระดาษ A4, ขอบ “ไม่มี/ต่ำสุด” และติ๊ก “พิมพ์พื้นหลัง (Background graphics)” เพื่อให้สีออกครบ</div>
+        <div className="toolbar-hint">ในหน้าต่างพิมพ์: เลือกกระดาษ A4, ขนาด 100%, เปิด “Print in Color” และติ๊ก “Print backgrounds” เพื่อให้สีออกครบ (ขอบกระดาษตั้งไว้ให้แล้ว ไม่ต้องปรับ)</div>
         {!only && <div className="toolbar-chips">{all.map((p) => <Link key={p.key} href={`${PATH}?only=${encodeURIComponent(p.key)}`} className="chip-link">{p.title}</Link>)}</div>}
       </div>
       <div className="sheets">
@@ -71,14 +71,14 @@ export default async function PrintStationPostersPage({ searchParams }: { search
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={p.qr} alt={`QR ${p.title}`} />
             </div></div>
-            <div className="lead">{p.kind === "register" ? "สแกนเพื่อดูหมายเลขคิวของท่าน" : "ตรวจเสร็จแล้ว สแกนที่นี่"}</div>
+            <div className="lead">{p.kind === "register" ? "กรุณาสแกนเพื่อดูหมายเลขคิวของท่าน" : "เมื่อตรวจเสร็จ กรุณาสแกน QR ที่นี่"}</div>
             <ol className="steps">
               {p.steps.map(([n, t]) => <li key={n}><span className="n">{n}</span><span className="t">{t}</span></li>)}
             </ol>
             <footer className="foot"><span>AT HOME CLINIC · IKIGAI MEDIHEALTH</span><span>{PUBLIC_BASE.replace(/^https?:\/\//, "")}</span></footer>
           </section>
         ))}
-        {withQr.length === 0 && <div className="empty">ไม่พบสถานีนี้</div>}
+        {withQr.length === 0 && <div className="empty">ไม่พบสถานีที่ระบุ</div>}
       </div>
     </div>
   );
@@ -114,9 +114,12 @@ const CSS = `
 .steps{position:relative;list-style:none;display:flex;gap:5mm;margin:7mm 12mm 0;padding:0;align-self:stretch;justify-content:center}
 .steps li{flex:1;background:#fff;border-radius:6mm;padding:4mm 4mm 4mm;display:flex;flex-direction:column;align-items:center;gap:2.5mm;text-align:center;box-shadow:0 1.5mm 4mm rgba(31,37,71,.12);max-width:60mm}
 .steps .n{width:10mm;height:10mm;border-radius:50%;background:linear-gradient(135deg,#7A5AE6,#33C6B5);color:#fff;font-weight:800;font-size:15pt;display:flex;align-items:center;justify-content:center}
-.steps .t{font-size:11.5pt;line-height:1.35;white-space:pre-line;color:#1F2547}
+.steps .t{font-size:11pt;line-height:1.4;white-space:pre-line;color:#1F2547}
+.steps .t,.steps li{overflow-wrap:normal;word-break:keep-all}
 .foot{position:absolute;left:0;right:0;bottom:0;height:15mm;background:#1F2547;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 14mm;font-size:10.5pt;font-weight:600;letter-spacing:.04em}
-@page{size:A4 portrait;margin:0}
+/* Office printers cannot print to the paper edge, and Safari then shrinks the page box below 297mm so a full-size poster spills onto a second
+   (blank) page. So the page keeps a 6mm margin and the poster is drawn slightly smaller (94%) inside it: it fits any printer's printable area. */
+@page{size:A4 portrait;margin:6mm}
 @media print{
   /* the app-wide print rule hides everything except .payslip / .printable; this page prints all of its own sheets */
   body .qr-root, body .qr-root *{visibility:visible!important}
@@ -124,7 +127,7 @@ const CSS = `
   .qr-root{background:#fff;padding:0;min-height:0}
   .toolbar{display:none!important}
   .sheets{display:block}
-  .poster{zoom:1;box-shadow:none;margin:0;break-after:page;page-break-after:always}
+  .poster{zoom:.94;box-shadow:none;margin:0 auto;border-radius:6mm;break-after:page;page-break-after:always;break-inside:avoid;page-break-inside:avoid}
   .poster:last-child{break-after:auto;page-break-after:auto}
 }
 `;

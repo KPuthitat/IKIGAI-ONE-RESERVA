@@ -1,3 +1,4 @@
+import ClinicLock from "./ClinicLock";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { isApproverUser, listRoundsClinical } from "@/lib/annual-checkup-db";
@@ -22,6 +23,7 @@ export default function AnnualCheckupRoundsPage() {
         </div>
         <Link href="/staff/health/annual-checkup/queue" className="btn-primary text-sm">เช็กอิน / คิวตรวจ</Link>
         {canImportCheckup(user) && <Link href="/admin/persona/annual-checkup" className="btn-secondary text-sm">นำเข้ารายชื่อจาก Excel</Link>}
+        <ClinicLock />
       </div>
       {approver && <UnlockPanel unlockedUntil={unlockExpiry(user)} />}
       <div className="card overflow-x-auto">

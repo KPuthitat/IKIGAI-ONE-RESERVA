@@ -55,3 +55,18 @@ export const makeStationToken = (stationCode: string): string => signValue(stati
 export const readStationToken = (token: string | null | undefined): string | null => verifySignedValue(token, "ac-station");
 /** The registration poster's code: scanning it simply opens the employee's own queue page (their number and personal QR). Never a real station. */
 export const REGISTER_CODE = "REGISTER";
+
+// ── the clinic window (owner 2026-11-21: "เมื่อจะลงผล ต้องกด PIN เข้าไปดู") ──
+// Every clinical screen (check-in list, result entry, verification) opens only after the clinician types their own PIN; a signed cookie then
+// keeps it open for 20 minutes. Nothing about other people is shown before that, so employee mode never exposes anyone else's data.
+export const CLINIC_COOKIE = "ac_clinic";
+export const CLINIC_MINUTES = 20;
+export function makeClinicToken(userId: number, now = Date.now()): string {
+  return signValue(`${userId}|${now + minutes(CLINIC_MINUTES)}`, "ac-clinic");
+}
+export function readClinicToken(token: string | null | undefined, userId: number, now = Date.now()): number | null {
+  const v = verifySignedValue(token, "ac-clinic");
+  if (!v) return null;
+  const [uid, exp] = v.split("|").map(Number);
+  return uid === userId && Number.isFinite(exp) && exp > now ? exp : null;
+}

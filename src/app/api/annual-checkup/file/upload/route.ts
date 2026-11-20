@@ -3,7 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { randomBytes } from "crypto";
 import { attachResultFile, isRecorderEligible } from "@/lib/annual-checkup-db";
-import { handle } from "@/lib/annual-checkup-api";
+import { handleClinical } from "@/lib/annual-checkup-api";
 
 // POST multipart {orderId, file} — attach a lab result file (PDF / image, ≤ 12 MB) to a DRAFT result. Stored outside the web root;
 // opened only through /api/annual-checkup/file/[resultId] with a 5-minute signed link. Old files are kept (revisions may point at them).
@@ -12,7 +12,7 @@ const TYPES: Record<string, string> = { "application/pdf": ".pdf", "image/jpeg":
 const DATA_ROOT = process.env.HEALTH_DATA_ROOT ?? path.join(process.cwd(), "data", "health");
 
 export async function POST(req: Request) {
-  return handle(async (user) => {
+  return handleClinical(async (user) => {
     let form: FormData;
     try { form = await req.formData(); } catch { return NextResponse.json({ ok: false, error: "bad_form", message: "ข้อมูลไม่ถูกต้อง" }, { status: 400 }); }
     const orderId = Number(form.get("orderId"));

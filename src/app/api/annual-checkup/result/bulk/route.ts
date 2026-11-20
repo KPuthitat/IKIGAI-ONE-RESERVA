@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isAnnualCheckupForbidden, isAnnualCheckupInvalid, recordResult } from "@/lib/annual-checkup-db";
-import { ERROR_TEXT, handle } from "@/lib/annual-checkup-api";
+import { ERROR_TEXT, handleClinical } from "@/lib/annual-checkup-api";
 
 // POST {items: [{orderId, valueNum?, valueText?, unit?, refText?, interpretation?}, ...]} — the by-test sheet saves many people at
 // once. Each row is its own transaction: one bad row never blocks the others, and every row says how it went.
@@ -14,7 +14,7 @@ const Item = z.object({
 const Body = z.object({ items: z.array(Item).min(1).max(200) });
 
 export async function POST(req: Request) {
-  return handle(async (user) => {
+  return handleClinical(async (user) => {
     const p = Body.safeParse(await req.json().catch(() => ({})));
     if (!p.success) return NextResponse.json({ ok: false, error: "invalid_body", message: "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
     const results = p.data.items.map(({ orderId, ...data }) => {

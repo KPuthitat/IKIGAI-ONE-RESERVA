@@ -2,15 +2,15 @@
 // Every handler goes through handle(): session → gateway call → Thai error text. Authorisation itself lives in the gateway
 // (annual-checkup-db.ts) and the triggers; this file only turns refusals into answers and carries the licence-unlock cookie.
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSessionUser, requireUser, type SessionUser } from "./auth";
 import { isAnnualCheckupForbidden, isAnnualCheckupInvalid, isRecorderEligible } from "./annual-checkup-db";
 import { promises as fs } from "fs";
 import path from "path";
-import { UNLOCK_COOKIE, UNLOCK_MINUTES, makeUnlockToken, readUnlockToken, VIEW_COOKIE, VIEW_MINUTES, makeViewToken, readViewToken } from "./annual-checkup-session";
+import { UNLOCK_COOKIE, UNLOCK_MINUTES, makeUnlockToken, readUnlockToken, VIEW_COOKIE, VIEW_MINUTES, makeViewToken, readViewToken, CLINIC_COOKIE, CLINIC_MINUTES, makeClinicToken, readClinicToken } from "./annual-checkup-session";
 
-export const ERROR_TEXT: Record<string, string> = {
+export const ERROR_TEXT: Record<string, string> = { pin_required: "กรุณายืนยันด้วยรหัส PIN ก่อนเข้าส่วนคลินิก (ครบเวลาแล้วต้องกรอกใหม่)",
   unauthenticated: "กรุณาเข้าสู่ระบบใหม่",
   not_recorder: "ท่านไม่มีสิทธิ์ลงผลตรวจสุขภาพ",
   not_approver: "ต้องเป็นแพทย์ผู้อนุมัติผลเท่านั้น",
@@ -45,11 +45,43 @@ export async function handle(fn: (user: SessionUser) => Promise<NextResponse> | 
   }
 }
 
-/** A page for clinical staff: the signed-in user must be eligible right now, otherwise they are sent back. */
-export function requireClinicalUser(): SessionUser {
+/** The PIN page itself: eligibility only (no PIN window yet). */
+export function requireClinicalEligible(): SessionUser {
   const u = requireUser();
   if (!isRecorderEligible(u.id)) redirect("/staff?error=forbidden");
   return u;
+}
+
+/**
+ * A page for clinical staff: the signed-in user must be eligible right now AND have typed their PIN within the last 20 minutes; otherwise they
+ * are sent to the PIN page (and nothing about other people is rendered). Owner 2026-11-21.
+ */
+export function requireClinicalUser(): SessionUser {
+  const u = requireClinicalEligible();
+  if (!isClinicOpen(u)) {
+    const path = headers().get("x-pathname") ?? "";
+    redirect(`/staff/health/annual-checkup/pin${path.startsWith("/staff/health/annual-checkup") ? `?next=${encodeURIComponent(path)}` : ""}`);
+  }
+  return u;
+}
+
+// ── the clinic window (PIN → signed cookie, 20 minutes) ──
+export function clinicExpiry(user: SessionUser): number | null { return readClinicToken(cookies().get(CLINIC_COOKIE)?.value, user.id); }
+export const isClinicOpen = (user: SessionUser): boolean => clinicExpiry(user) !== null;
+export function setClinicCookie(user: SessionUser): number {
+  cookies().set(CLINIC_COOKIE, makeClinicToken(user.id), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: CLINIC_MINUTES * 60 });
+  return Date.now() + CLINIC_MINUTES * 60_000;
+}
+export function clearClinicCookie(): void {
+  cookies().set(CLINIC_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
+}
+
+/** Like handle(), for the clinical API routes: refused with 403 "pin_required" until the clinician has typed their PIN (the window above). */
+export async function handleClinical(fn: (user: SessionUser) => Promise<NextResponse> | NextResponse): Promise<NextResponse> {
+  return handle((user) => {
+    if (!isClinicOpen(user)) return NextResponse.json({ ok: false, error: "pin_required", message: ERROR_TEXT.pin_required }, { status: 403 });
+    return fn(user);
+  });
 }
 
 // ── licence unlock (signed cookie, 30 minutes) ──
