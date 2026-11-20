@@ -682,7 +682,7 @@ export const isApproverUser = (userId: number): boolean => isApproverEligible(us
 // Waived tests are never shown to the employee (a waiver can hint at a medical reason).
 
 export type QueueTest = { code: string; name_th: string };
-export type StationState = { code: string; name_th: string; passed: boolean; passed_at: string | null };
+export type StationState = { code: string; name_th: string; passed: boolean; passed_at: string | null; /** the employee's own tick (not official) */ self_marked: boolean };
 export type MyQueue = { round_id: number; round_name: string; location: string | null; date: string | null; appt_time: string | null;
   queue_no: number; tests: QueueTest[]; checkin_token: string; checked_in_at: string | null;
   /** After check-in only: the sample-kit number and the stations to visit (with which are done). Empty / null before. */
@@ -700,14 +700,16 @@ const orderedTests = (roundId: number, col: "user_id" | "external_id", id: numbe
  */
 function stationsFor(queueId: number, roundId: number, col: "user_id" | "external_id", id: number): StationState[] {
   return getDb().prepare(`
-    SELECT s.code, s.name_th, CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END AS passed, p.passed_at
+    SELECT s.code, s.name_th, CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END AS passed, p.passed_at,
+           CASE WHEN m.station_id IS NOT NULL THEN 1 ELSE 0 END AS self_marked
       FROM annual_checkup_stations s
       LEFT JOIN annual_checkup_station_passes p ON p.station_id = s.id AND p.queue_id = ?
+      LEFT JOIN annual_checkup_station_selfmarks m ON m.station_id = s.id AND m.queue_id = ?
      WHERE s.active = 1 AND EXISTS (
        SELECT 1 FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id
         WHERE o.round_id = ? AND o.${col} = ? AND o.status <> 'waived' AND t.station_id = s.id)
      ORDER BY s.sort_no, s.id
-  `).all(queueId, roundId, id).map((r) => { const x = r as { code: string; name_th: string; passed: number; passed_at: string | null }; return { code: x.code, name_th: x.name_th, passed: x.passed === 1, passed_at: x.passed_at }; });
+  `).all(queueId, queueId, roundId, id).map((r) => { const x = r as { code: string; name_th: string; passed: number; passed_at: string | null; self_marked: number }; return { code: x.code, name_th: x.name_th, passed: x.passed === 1, passed_at: x.passed_at, self_marked: x.self_marked === 1 }; });
 }
 
 /** The signed-in employee's own place in line for each open round. The token returned is theirs alone. */
@@ -725,6 +727,25 @@ export function getMyQueue(actor: AcActor): MyQueue[] {
     kit_no: r.checked_in_at ? r.kit_no : null,
     stations: r.checked_in_at ? stationsFor(queue_id, r.round_id, "user_id", a.id) : []
   }));
+}
+
+/**
+ * The employee ticks / unticks "I have been through this station" on their OWN queue entry. Only for someone already checked in, only for a
+ * station on their own route, and only while the round is open. Never touches the clinic's official passes. Idempotent.
+ */
+export function setMyStationMark(actor: AcActor, roundId: number, stationCode: string, marked: boolean): void {
+  const a = loadActor(actor);
+  const q = getDb().prepare(`
+    SELECT q.id, q.checked_in_at FROM annual_checkup_queue q JOIN annual_checkup_rounds r ON r.id = q.round_id
+     WHERE q.user_id = ? AND q.round_id = ? AND r.status = 'open'
+  `).get(a.id, roundId) as { id: number; checked_in_at: string | null } | undefined;
+  if (!q) throw new AnnualCheckupInvalid("queue_not_found");
+  if (!q.checked_in_at) throw new AnnualCheckupInvalid("not_checked_in");
+  const st = stationsFor(q.id, roundId, "user_id", a.id).find((x) => x.code === stationCode);
+  if (!st) throw new AnnualCheckupInvalid("station_not_needed");
+  const stationId = (getDb().prepare("SELECT id FROM annual_checkup_stations WHERE code = ?").get(stationCode) as { id: number }).id;
+  if (marked) getDb().prepare("INSERT OR IGNORE INTO annual_checkup_station_selfmarks (queue_id, station_id) VALUES (?, ?)").run(q.id, stationId);
+  else getDb().prepare("DELETE FROM annual_checkup_station_selfmarks WHERE queue_id = ? AND station_id = ?").run(q.id, stationId);
 }
 
 export type QueueScan = { queue_id: number; round_id: number; round_name: string; kind: "employee" | "external"; label: string; code: string | null;
