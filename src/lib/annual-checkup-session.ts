@@ -47,3 +47,9 @@ export function readViewToken(token: string | null | undefined, userId: number, 
   const [uid, exp] = v.split("|").map(Number);
   return uid === userId && Number.isFinite(exp) && exp > now ? exp : null;
 }
+
+// ── the QR posted at each station (owner 2026-11-20 "ต้องมีคิวอาร์ประจำจุด") ──
+// A station's QR is a link carrying the station code signed with the server key, so it cannot be forged or guessed from the code alone and
+// never expires (the poster is printed once). Opening it as an employee who has checked in records their own "ผ่านแล้ว" for that station.
+export const makeStationToken = (stationCode: string): string => signValue(stationCode, "ac-station");
+export const readStationToken = (token: string | null | undefined): string | null => verifySignedValue(token, "ac-station");

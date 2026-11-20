@@ -267,6 +267,12 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     return SES.readFileToken(t, 77, R, NOW + 60_000) && !SES.readFileToken(t, 78, R, NOW + 60_000) && !SES.readFileToken(t, 77, D, NOW + 60_000) && !SES.readFileToken(t, 77, R, NOW + 6 * 60_000);
   })());
 
+  ok("S4 a station QR token carries the station code, never expires, and a forged / edited / other-purpose token is refused", (() => {
+    const t = SES.makeStationToken("BLOOD");
+    return SES.readStationToken(t) === "BLOOD" && SES.readStationToken(t.replace("BLOOD", "XRAY")) === null && SES.readStationToken("BLOOD") === null && SES.readStationToken("") === null
+      && SES.readStationToken(SES.makeUnlockToken(D, NOW)) === null && SES.readUnlockToken(t, D, NOW) === null && SES.makeStationToken("BLOOD") === t && SES.makeStationToken("XRAY") !== t;
+  })());
+
   ok("L1 only clinical staff list the rounds; HR / admin / super_admin / the employee are refused", G.listRoundsClinical({ id: R }).length === 1 && [HR, M, W, S, A].every((u) => err(() => G.listRoundsClinical({ id: u })) === "not_recorder"));
   const ov = G.getRoundOverview({ id: R }, round);
   ok("L2 the round overview lists every person with their progress and the tests with counts", ov.subjects.length >= 4 && ov.tests.length > 0 && ov.subjects.every((x) => x.required >= 0) && !!ov.subjects.find((x) => x.label.includes("emp-a")));

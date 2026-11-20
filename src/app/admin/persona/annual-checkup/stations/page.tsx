@@ -19,7 +19,7 @@ export default function StationsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">สถานีตรวจสุขภาพประจำปี</h1>
-        <p className="text-sm text-slate-500">กำหนดว่ามีสถานีอะไรบ้างและรายการตรวจแต่ละอย่างอยู่สถานีไหน พนักงานจะเห็นสถานีที่ต้องไปหลังเจ้าหน้าที่สแกนเช็กอิน · <Link className="text-brand hover:underline" href="/admin/persona/annual-checkup">กลับไปหน้านำเข้า</Link></p>
+        <p className="text-sm text-slate-500">กำหนดว่ามีสถานีอะไรบ้างและรายการตรวจแต่ละอย่างอยู่สถานีไหน พนักงานจะเห็นสถานีที่ต้องไปหลังเจ้าหน้าที่สแกนเช็กอิน · <Link className="text-brand hover:underline" href="/admin/persona/annual-checkup">กลับไปหน้านำเข้า</Link> · <Link className="text-brand hover:underline" href="/admin/persona/annual-checkup/stations/qr">พิมพ์ QR ประจำสถานี</Link></p>
       </div>
       <StationsEditor stations={cat.stations} tests={cat.tests} />
     </div>

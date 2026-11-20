@@ -428,3 +428,10 @@ seed DB ชั่วคราว: พนักงาน A, B; ผู้ลงผ
 - ตารางใหม่ `annual_checkup_station_selfmarks (queue_id, station_id, marked_at)` ไม่มีข้อมูลสุขภาพ จึงไม่มี trigger; ผ่าน gateway อย่างเดียว (`setMyStationMark`: ต้องเช็กอินแล้ว, สถานีต้องอยู่ในเส้นทางของตัวเอง, รอบต้องเปิดอยู่) และอยู่ในรายการ gateway-only ของ `scan-build-risks`
 - API: `POST /api/annual-checkup/me/station` `{roundId, code, marked}`; ทดสอบ S9b/S9c ใน `test-annual-checkup-queue.ts`
 - Rollback: `DROP TABLE annual_checkup_station_selfmarks;` (ไม่มีข้อมูลอื่นพึ่งพา)
+
+## 21. QR ประจำสถานี (as-built)
+
+- ทุกสถานีมี QR ของตัวเอง (ลิงก์ `/staff/persona/checkup-queue/station/<token>`; token = รหัสสถานีที่เซ็นด้วยกุญแจเซิร์ฟเวอร์ ปลอม/เดาไม่ได้ ไม่หมดอายุ ไม่มีข้อมูลส่วนตัว) พิมพ์ได้ที่ `/admin/persona/annual-checkup/stations/qr` (ลิงก์ "พิมพ์ QR ประจำสถานี" ในหน้าสถานี)
+- พนักงานที่เช็กอินแล้วสแกนด้วยมือถือ → (ถ้ายังไม่ล็อกอินจะถูกพาไปล็อกอินแล้วกลับมา) → กด "ยืนยันผ่านการตรวจที่สถานีนี้" → บันทึก "ผ่านการตรวจแล้ว" ของตัวเอง (สีฟ้า) ผ่าน `POST /api/annual-checkup/me/station` เดียวกับปุ่มในหน้าลำดับตรวจ
+- การสแกนของเจ้าหน้าที่คลินิกยังเป็นการยืนยันจริง (สีเขียว "ยืนยันโดยเจ้าหน้าที่") ไม่เปลี่ยน
+- ไม่มี migration (ใช้ตาราง selfmarks จาก §20); ทดสอบ S4 ใน `test-annual-checkup.ts`
