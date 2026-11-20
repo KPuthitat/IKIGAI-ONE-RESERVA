@@ -20,7 +20,7 @@ export default function AnnualCheckupPage() {
   if (!canImportCheckup(user)) redirect("/admin?error=forbidden");
   const consent = getActiveConsent();
   const rounds = getDb().prepare(`
-    SELECT r.id, r.name, r.status,
+    SELECT r.id, r.name, r.status, r.year_be AS yearBe, r.start_date AS startDate, r.end_date AS endDate, r.location,
            (SELECT COUNT(*) FROM annual_checkup_orders o WHERE o.round_id = r.id) AS orders,
            (SELECT COUNT(DISTINCT COALESCE(o.user_id, -o.external_id)) FROM annual_checkup_orders o WHERE o.round_id = r.id) AS people
       FROM annual_checkup_rounds r ORDER BY r.id DESC
@@ -49,7 +49,7 @@ export default function AnnualCheckupPage() {
       ) : (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">ปุ่มสแกน QR และลงผลตรวจ แสดงเฉพาะเจ้าหน้าที่คลินิกที่ได้รับสิทธิ์ผู้ลงผล (บัญชีนี้ยังไม่มีสิทธิ์)</div>
       )}
-      <RoundStatus rounds={rounds.map((r) => ({ id: r.id, name: r.name, status: r.status, people: r.people }))} />
+      <RoundStatus rounds={rounds.map((r) => ({ id: r.id, name: r.name, status: r.status, people: r.people, yearBe: r.yearBe, startDate: r.startDate, endDate: r.endDate, location: r.location }))} />
       <ImportClient rounds={rounds} />
       {user.role === "super_admin" && <ConsentEditor version={consent.version} body={consent.body} />}
     </div>

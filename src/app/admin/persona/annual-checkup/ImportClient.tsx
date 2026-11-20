@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { apiUrl } from "@/lib/url";
 import type { ImportPlan, CommitResult } from "@/lib/annual-checkup-import";
 
-export type RoundOption = { id: number; name: string; status: string; orders: number; people: number };
+export type RoundOption = { id: number; name: string; status: string; orders: number; people: number; yearBe: number | null; startDate: string | null; endDate: string | null; location: string | null };
 
 const FIX_REASON: Record<string, string> = {
   not_found: "ไม่พบในระบบ", name_mismatch: "ชื่อไม่ตรงกับรหัส", ambiguous: "ตรงกับมากกว่าหนึ่งคน", inactive: "ไม่ใช่พนักงานที่ทำงานอยู่", duplicate_row: "แถวซ้ำในไฟล์"
