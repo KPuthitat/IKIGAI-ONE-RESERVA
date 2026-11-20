@@ -18,8 +18,9 @@ process.env.DATABASE_PATH = DB; process.env.RESERVA_SECRET_KEY = "e2e-secret-key
   const clinic = (db.prepare("SELECT id FROM branches WHERE slug='at-home-clinic'").get() as { id: number }).id;
   db.prepare("INSERT INTO branches (slug,name) VALUES ('nama-e2e','NAMA')").run();
   const nama = (db.prepare("SELECT id FROM branches WHERE slug='nama-e2e'").get() as { id: number }).id;
-  const R = mk("recorder", "staff", { health_result_recorder: 1 }, clinic);
-  const D = mk("doctor", "staff", { clinical_role: "doctor", license_no: "ว.12345", health_result_approver: 1 }, clinic);
+  const bcryptEarly = (await import("bcryptjs")).default;
+  const R = mk("recorder", "staff", { health_result_recorder: 1, pin_hash: bcryptEarly.hashSync("4321", 4) }, clinic);
+  const D = mk("doctor", "staff", { clinical_role: "doctor", license_no: "ว.12345", health_result_approver: 1, pin_hash: bcryptEarly.hashSync("4321", 4) }, clinic);
   const A = mk("emp-a", "staff", {}, nama), HR = mk("hr", "staff", { is_hr_analytics: 1 }, nama);
   const round = Number(db.prepare("INSERT INTO annual_checkup_rounds (name,year_be,status) VALUES ('ตรวจสุขภาพประจำปี 2569',2569,'open')").run().lastInsertRowid);
   const payer = Number(db.prepare("INSERT INTO annual_checkup_payers (round_id,name_th) VALUES (?, 'บริษัท ทดสอบ')").run(round).lastInsertRowid);
@@ -38,10 +39,11 @@ process.env.DATABASE_PATH = DB; process.env.RESERVA_SECRET_KEY = "e2e-secret-key
   const base = `http://localhost:${port}`;
   let failed = 0;
   const ok = (n: string, c: boolean, extra = "") => { if (c) console.log(`  ✓ ${n}`); else { failed++; console.error(`  ✗ FAIL: ${n} ${extra}`); } };
-  type Opt = { who?: keyof typeof cookie; extraCookie?: string; json?: unknown; form?: FormData; method?: string };
+  type Opt = { who?: keyof typeof cookie; extraCookie?: string; json?: unknown; form?: FormData; method?: string; noClinic?: boolean };
+  const clinicCookie: Record<string, string> = {};   // the 20-minute PIN window of the clinician (R / D), added to their calls below
   const call = async (url: string, o: Opt = {}) => {
     const headers: Record<string, string> = {};
-    const ck = [o.who ? `reserva_session=${cookie[o.who]}` : "", o.extraCookie ?? ""].filter(Boolean).join("; ");
+    const ck = [o.who ? `reserva_session=${cookie[o.who]}` : "", o.who && !o.noClinic ? (clinicCookie[o.who] ?? "") : "", o.extraCookie ?? ""].filter(Boolean).join("; ");
     if (ck) headers.cookie = ck;
     if (o.json !== undefined) headers["content-type"] = "application/json";
     const r = await fetch(base + url, { method: o.method ?? (o.json !== undefined || o.form ? "POST" : "GET"), headers, body: o.json !== undefined ? JSON.stringify(o.json) : o.form, redirect: "manual" });
@@ -49,6 +51,23 @@ process.env.DATABASE_PATH = DB; process.env.RESERVA_SECRET_KEY = "e2e-secret-key
     return { status: r.status, text, json: (() => { try { return JSON.parse(text); } catch { return null; } })(), setCookie: r.headers.get("set-cookie") ?? "", loc: r.headers.get("location") ?? "" };
   };
   try {
+    // the PIN gate: nothing clinical is served, page or API, until the clinician has typed their PIN
+    const g1 = await call("/staff/health/annual-checkup/queue", { who: "R" });
+    ok("without the PIN a clinic page redirects to the PIN page and shows nobody", g1.status >= 300 && g1.status < 400 && g1.loc.includes("/staff/health/annual-checkup/pin") && !g1.text.includes("emp-a"), `status ${g1.status} ${g1.loc}`);
+    const g2 = await call("/api/annual-checkup/result", { who: "R", json: { orderId: oHav, valueText: "x" } });
+    ok("without the PIN a clinical API refuses (403 pin_required)", g2.status === 403 && g2.json?.error === "pin_required", `status ${g2.status}`);
+    ok("the PIN page itself opens for the clinician", (await call("/staff/health/annual-checkup/pin", { who: "R" })).status === 200);
+    const wrong = await call("/api/annual-checkup/clinic/pin", { who: "R", json: { pin: "0000" } });
+    ok("a wrong PIN is refused and opens nothing", wrong.status === 403 && !wrong.setCookie.includes("ac_clinic=") || wrong.status === 400, `status ${wrong.status}`);
+    ok("an ordinary employee cannot open the clinic window", (await call("/api/annual-checkup/clinic/pin", { who: "A", json: { pin: "4321" } })).status === 403);
+    for (const w of ["R", "D"] as const) {
+      const r = await call("/api/annual-checkup/clinic/pin", { who: w, json: { pin: "4321" } });
+      const m = /ac_clinic=([^;]+)/.exec(r.setCookie);
+      ok(`${w} types the right PIN and gets a 20-minute window`, r.status === 200 && !!m, `status ${r.status}`);
+      if (m) clinicCookie[w] = `ac_clinic=${m[1]}`;
+    }
+    const other = await call("/staff/health/annual-checkup/queue", { who: "A", extraCookie: clinicCookie.R });
+    ok("someone else's clinic cookie does not open the clinic for an employee (sent away, nothing shown)", other.status >= 300 && other.status < 400 && other.loc.includes("/staff") && other.loc.includes("error=forbidden"), `status ${other.status} loc ${other.loc}`);
     // pages
     const pg = await call("/staff/health/annual-checkup", { who: "R" });
     ok("recorder opens the rounds page and sees the round", pg.status === 200 && pg.text.includes("ตรวจสุขภาพประจำปี 2569"), `status ${pg.status}`);

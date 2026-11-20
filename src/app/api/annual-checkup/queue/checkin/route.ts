@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { checkIn } from "@/lib/annual-checkup-db";
-import { handle } from "@/lib/annual-checkup-api";
+import { handleClinical } from "@/lib/annual-checkup-api";
 
 // POST {token | queueId, kitNo?} — confirm a check-in (by scanned token, or by the roster row for people without an account) and link the
 // sample-kit number scanned / typed by the staff. Idempotent: a second call changes nothing (it only fills a kit number that was missing)
@@ -12,7 +12,7 @@ const Body = z.union([
 ]);
 
 export async function POST(req: Request) {
-  return handle(async (user) => {
+  return handleClinical(async (user) => {
     const p = Body.safeParse(await req.json().catch(() => ({})));
     if (!p.success) return NextResponse.json({ ok: false, error: "invalid_body", message: "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
     const r = checkIn(user, "token" in p.data ? { token: p.data.token.trim() } : { queueId: p.data.queueId }, { kitNo: p.data.kitNo });

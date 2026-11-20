@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { reviseResult } from "@/lib/annual-checkup-db";
-import { handle, isUnlocked } from "@/lib/annual-checkup-api";
+import { handleClinical, isUnlocked } from "@/lib/annual-checkup-api";
 
 // POST {resultId, reason, valueNum?, valueText?, unit?, refText?, interpretation?} — a revision of a verified / released result.
 const Body = z.object({
@@ -12,7 +12,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  return handle(async (user) => {
+  return handleClinical(async (user) => {
     const p = Body.safeParse(await req.json().catch(() => ({})));
     if (!p.success) return NextResponse.json({ ok: false, error: "invalid_body", message: "กรุณาระบุเหตุผลและค่าที่ถูกต้อง" }, { status: 400 });
     const { resultId, reason, ...data } = p.data;

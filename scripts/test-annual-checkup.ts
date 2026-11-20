@@ -278,6 +278,13 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     return SES.REGISTER_CODE === "REGISTER" && SES.readStationToken(t) === "REGISTER" && SES.readStationToken(t.replace("REGISTER", "BLOOD")) === null;
   })());
 
+  ok("S6 the clinic-window token is for one person, lasts 20 minutes, and a view / unlock / station token never opens it", (() => {
+    const t = SES.makeClinicToken(R, NOW);
+    return SES.readClinicToken(t, R, NOW + 60_000) !== null && SES.readClinicToken(t, D, NOW + 60_000) === null && SES.readClinicToken(t, R, NOW + 21 * 60_000) === null
+      && SES.readClinicToken(SES.makeViewToken(R, NOW), R, NOW + 1000) === null && SES.readClinicToken(SES.makeUnlockToken(R, NOW), R, NOW + 1000) === null
+      && SES.readViewToken(t, R, NOW + 1000) === null && SES.readClinicToken(t.replace(`${R}|`, `${D}|`), D, NOW + 1000) === null;
+  })());
+
   ok("L1 only clinical staff list the rounds; HR / admin / super_admin / the employee are refused", G.listRoundsClinical({ id: R }).length === 1 && [HR, M, W, S, A].every((u) => err(() => G.listRoundsClinical({ id: u })) === "not_recorder"));
   const ov = G.getRoundOverview({ id: R }, round);
   ok("L2 the round overview lists every person with their progress and the tests with counts", ov.subjects.length >= 4 && ov.tests.length > 0 && ov.subjects.every((x) => x.required >= 0) && !!ov.subjects.find((x) => x.label.includes("emp-a")));

@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isAnnualCheckupInvalid, verifyResult } from "@/lib/annual-checkup-db";
-import { ERROR_TEXT, handle, isUnlocked } from "@/lib/annual-checkup-api";
+import { ERROR_TEXT, handleClinical, isUnlocked } from "@/lib/annual-checkup-api";
 
 // POST {ids: [resultId, ...]} — the approver doctor (licence unlocked) verifies draft results, one by one.
 const Body = z.object({ ids: z.array(z.number().int().positive()).min(1).max(200) });
 
 export async function POST(req: Request) {
-  return handle(async (user) => {
+  return handleClinical(async (user) => {
     const p = Body.safeParse(await req.json().catch(() => ({})));
     if (!p.success) return NextResponse.json({ ok: false, error: "invalid_body", message: "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
     const unlocked = isUnlocked(user);
