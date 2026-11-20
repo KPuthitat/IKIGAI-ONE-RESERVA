@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { getMyQueue } from "@/lib/annual-checkup-db";
 import QrCode from "@/app/components/QrCode";
+import StationChecklist from "./StationChecklist";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ลำดับตรวจสุขภาพประจำปี · NOKHOOK OS PORTAL" };
@@ -46,18 +47,7 @@ export default function CheckupQueuePage() {
                 <span className="text-sm text-slate-600">หมายเลขชุดเก็บตัวอย่างของท่าน</span>
                 <span className="text-xl font-bold tabular-nums text-slate-900">{q.kit_no ?? "รอเจ้าหน้าที่ระบุ"}</span>
               </div>
-              <div className="text-sm font-semibold text-slate-700">สถานีที่ต้องไป ({q.stations.filter((x) => x.passed).length}/{q.stations.length})</div>
-              {q.stations.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีสถานีสำหรับรายการตรวจของท่าน สอบถามเจ้าหน้าที่</p> : (
-                <ol className="space-y-1.5">
-                  {q.stations.map((st, i) => (
-                    <li key={st.code} className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${st.passed ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-white border-slate-200 text-slate-800"}`}>
-                      <span className={`flex h-6 w-6 flex-none items-center justify-center rounded-full text-xs font-bold ${st.passed ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700"}`}>{st.passed ? "✓" : i + 1}</span>
-                      <span className="grow">{st.name_th}</span>
-                      <span className="text-xs">{st.passed ? "ผ่านแล้ว" : "ยังไม่ได้ตรวจ"}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
+              {q.stations.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีสถานีสำหรับรายการตรวจของท่าน สอบถามเจ้าหน้าที่</p> : <StationChecklist roundId={q.round_id} stations={q.stations} />}
             </div>
           ) : (
             <p className="text-xs text-slate-500">เมื่อเจ้าหน้าที่สแกนเช็กอินแล้ว ระบบจะแสดงสถานีที่ท่านต้องไปและหมายเลขชุดเก็บตัวอย่างที่นี่</p>

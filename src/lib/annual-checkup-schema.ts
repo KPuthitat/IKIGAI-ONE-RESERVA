@@ -317,6 +317,14 @@ export function ensureAnnualCheckupSchema(db: Database.Database): void {
       active  INTEGER NOT NULL DEFAULT 1
     );
     -- "Passed this station": staff at the station scan the person's QR. Append-only; only for someone already checked in.
+    -- The employee's OWN tick for "I have been through this station" (a convenience for them; the clinic's scan above stays the
+    -- official record). Not append-only: they can untick. No health data here.
+    CREATE TABLE IF NOT EXISTS annual_checkup_station_selfmarks (
+      queue_id   INTEGER NOT NULL REFERENCES annual_checkup_queue(id),
+      station_id INTEGER NOT NULL REFERENCES annual_checkup_stations(id),
+      marked_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (queue_id, station_id)
+    );
     CREATE TABLE IF NOT EXISTS annual_checkup_station_passes (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       queue_id   INTEGER NOT NULL REFERENCES annual_checkup_queue(id),

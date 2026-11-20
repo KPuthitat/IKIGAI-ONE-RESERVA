@@ -197,6 +197,26 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
       && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_station_passes WHERE queue_id = ?").get(qB.id) as { n: number }).n === 1
       && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'queue.station'").get() as { n: number }).n === 1;
   })());
+  ok("S9b the employee can tick a station they have been through: it shows on their route as their own tick, is not an official pass, and can be unticked", (() => {
+    const rnd = G.getMyQueue({ id: A })[0].round_id;
+    G.setMyStationMark({ id: A }, rnd, "XRAY", true); G.setMyStationMark({ id: A }, rnd, "XRAY", true);
+    const on = G.getMyQueue({ id: A })[0].stations;
+    const mineOnly = on.find((x) => x.code === "XRAY")?.self_marked === true && on.find((x) => x.code === "XRAY")?.passed === false && on.find((x) => x.code === "BLOOD")?.self_marked === false;
+    const rows = (db.prepare("SELECT COUNT(*) n FROM annual_checkup_station_selfmarks").get() as { n: number }).n;
+    const noPass = (db.prepare("SELECT COUNT(*) n FROM annual_checkup_station_passes p JOIN annual_checkup_queue q ON q.id = p.queue_id WHERE q.user_id = ?").get(A) as { n: number }).n === 0;
+    G.setMyStationMark({ id: A }, rnd, "XRAY", false);
+    return mineOnly && rows === 1 && noPass && G.getMyQueue({ id: A })[0].stations.every((x) => !x.self_marked);
+  })());
+  ok("S9c a tick is refused before check-in, for a station not on the person's route, by someone with no queue, and never shows on anyone else's route", (() => {
+    const rnd = G.getMyQueue({ id: A })[0].round_id;
+    const notIn = err(() => G.setMyStationMark({ id: C }, rnd, "BLOOD", true)) === "not_checked_in";
+    const notOnRoute = err(() => G.setMyStationMark({ id: A }, rnd, "NOPE", true)) === "station_not_needed";
+    const noQueue = err(() => G.setMyStationMark({ id: HR }, rnd, "BLOOD", true)) === "queue_not_found";
+    G.setMyStationMark({ id: A }, rnd, "BLOOD", true);
+    const other = G.getMyQueue({ id: B })[0].stations.every((x) => !x.self_marked);
+    G.setMyStationMark({ id: A }, rnd, "BLOOD", false);
+    return notIn && notOnRoute && noQueue && other;
+  })());
   ok("S10 the database refuses a station pass by a non-recorder or for someone not checked in, and passes are append-only", sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qB.id, W), /may mark a station/)
     && sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qC.id, R), /not checked in/)
     && sqlRefused(() => db.prepare("UPDATE annual_checkup_station_passes SET passed_by = ?").run(S), /append-only/) && sqlRefused(() => db.prepare("DELETE FROM annual_checkup_station_passes").run(), /append-only/));
