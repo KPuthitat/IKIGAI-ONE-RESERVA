@@ -8,6 +8,7 @@ import { isRecorderEligible } from "@/lib/annual-checkup-db";
 import { getActiveConsent } from "@/lib/annual-checkup-employee";
 import ConsentEditor from "./ConsentEditor";
 import ImportClient, { type RoundOption } from "./ImportClient";
+import RoundStatus from "./RoundStatus";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ตรวจสุขภาพประจำปี · PERSONA" };
@@ -48,6 +49,7 @@ export default function AnnualCheckupPage() {
       ) : (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">ปุ่มสแกน QR และลงผลตรวจ แสดงเฉพาะเจ้าหน้าที่คลินิกที่ได้รับสิทธิ์ผู้ลงผล (บัญชีนี้ยังไม่มีสิทธิ์)</div>
       )}
+      <RoundStatus rounds={rounds.map((r) => ({ id: r.id, name: r.name, status: r.status, people: r.people }))} />
       <ImportClient rounds={rounds} />
       {user.role === "super_admin" && <ConsentEditor version={consent.version} body={consent.body} />}
     </div>
