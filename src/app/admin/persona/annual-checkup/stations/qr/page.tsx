@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { canImportCheckup } from "@/lib/annual-checkup-import";
 import { listStationCatalogue } from "@/lib/annual-checkup-stations";
-import { makeStationToken } from "@/lib/annual-checkup-session";
+import { makeStationToken, REGISTER_CODE } from "@/lib/annual-checkup-session";
 import QrCode from "@/app/components/QrCode";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,12 @@ export default function StationQrPage() {
         <p className="text-sm text-slate-500">พิมพ์แล้วติดที่แต่ละสถานี พนักงานที่เช็กอินแล้วสแกนด้วยมือถือเพื่อบันทึกว่าผ่านสถานีนั้น · <Link className="text-brand hover:underline" href="/admin/persona/annual-checkup/stations">กลับไปหน้าสถานี</Link></p>
         <p className="mt-1 text-xs text-slate-500">กดพิมพ์ด้วยเบราว์เซอร์ (Ctrl/Cmd + P) หนึ่งสถานีต่อหนึ่งหน้า</p>
       </div>
-      {stations.length === 0 && <div className="card p-5 text-sm text-slate-600">ยังไม่มีสถานีที่เปิดใช้งาน</div>}
+            <section className="card p-6 text-center space-y-3 break-after-page">
+        <div className="text-sm text-slate-500">ตรวจสุขภาพประจำปี</div>
+        <div className="text-3xl font-extrabold text-slate-900">ลงทะเบียน</div>
+        <div className="inline-block bg-white p-3 rounded-xl border border-slate-200"><QrCode value={`${PUBLIC_BASE}/staff/persona/checkup-queue/station/${encodeURIComponent(makeStationToken(REGISTER_CODE))}`} size={300} /></div>
+        <p className="text-base text-slate-700">สแกน QR นี้ด้วยมือถือเพื่อดูหมายเลขคิวและ QR ประจำตัวของท่าน แล้วแสดง QR ประจำตัวให้เจ้าหน้าที่สแกนเช็กอิน</p>
+      </section>
       {stations.map((s) => (
         <section key={s.code} className="card p-6 text-center space-y-3 break-after-page">
           <div className="text-sm text-slate-500">สถานีตรวจสุขภาพประจำปี</div>
