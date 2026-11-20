@@ -748,7 +748,7 @@ export function setMyStationMark(actor: AcActor, roundId: number, stationCode: s
   else getDb().prepare("DELETE FROM annual_checkup_station_selfmarks WHERE queue_id = ? AND station_id = ?").run(q.id, stationId);
 }
 
-export type QueueScan = { queue_id: number; round_id: number; round_name: string; kind: "employee" | "external"; label: string; code: string | null;
+export type QueueScan = { queue_id: number; round_id: number; round_name: string; /** subject key for the person page: u<userId> / e<externalId> */ key: string; kind: "employee" | "external"; label: string; code: string | null;
   payer: string | null; queue_no: number; appt_time: string | null; tests: QueueTest[]; checked_in_at: string | null; checked_in_by: string | null;
   kit_no: string | null; stations: StationState[] };
 
@@ -770,7 +770,7 @@ function loadQueueScan(where: string, arg: string | number): QueueScan | null {
     ? ((getDb().prepare("SELECT p.name_th FROM annual_checkup_orders o LEFT JOIN annual_checkup_payers p ON p.id = o.payer_id WHERE o.round_id = ? AND o.user_id = ? AND p.id IS NOT NULL LIMIT 1").get(q.round_id, q.user_id) as { name_th: string } | undefined)?.name_th ?? null)
     : q.ext_payer;
   return {
-    queue_id: q.queue_id, round_id: q.round_id, round_name: q.round_name, kind: isUser ? "employee" : "external",
+    queue_id: q.queue_id, round_id: q.round_id, round_name: q.round_name, key: isUser ? `u${q.user_id}` : `e${q.external_id}`, kind: isUser ? "employee" : "external",
     label: isUser ? nameWithPrefix(q.title_prefix, q.display_name ?? "") : externalLabel(q.full_name, q.sort_no ?? 0, q.ext_payer ?? ""),
     code: q.employee_code, payer, queue_no: q.queue_no, appt_time: q.appt_time,
     tests: orderedTests(q.round_id, isUser ? "user_id" : "external_id", (isUser ? q.user_id : q.external_id) as number),

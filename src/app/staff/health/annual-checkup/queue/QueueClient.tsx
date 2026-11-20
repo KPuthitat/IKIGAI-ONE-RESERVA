@@ -7,7 +7,7 @@ import { apiUrl } from "@/lib/url";
 
 type Test = { code: string; name_th: string };
 type StationState = { code: string; name_th: string; passed: boolean; passed_at: string | null };
-type Scan = { queue_id: number; label: string; code: string | null; payer: string | null; queue_no: number; appt_time: string | null; tests: Test[]; checked_in_at: string | null; checked_in_by: string | null; kind: "employee" | "external"; kit_no: string | null; stations: StationState[] };
+type Scan = { queue_id: number; round_id: number; key: string; label: string; code: string | null; payer: string | null; queue_no: number; appt_time: string | null; tests: Test[]; checked_in_at: string | null; checked_in_by: string | null; kind: "employee" | "external"; kit_no: string | null; stations: StationState[] };
 type Row = { queue_id: number; key: string; kind: "employee" | "external"; label: string; code: string | null; payer: string | null; queue_no: number; appt_time: string | null; checked_in_at: string | null; checked_in_by: string | null; kit_no: string | null; stations_done: number; stations_total: number };
 type Api = { ok: boolean; message?: string; scan?: Scan; already?: boolean };
 
@@ -104,6 +104,7 @@ export default function QueueClient({ roundName, roster, stations }: { roundName
               {scan.checked_in_at ? (
                 <div className="space-y-2">
                   <div className="text-sm text-emerald-700">เช็กอินแล้ว {when(scan.checked_in_at)} โดย {scan.checked_in_by}</div>
+                  <a href={`/staff/health/annual-checkup/${scan.round_id}/person/${scan.key}`} className="btn-primary inline-block text-sm">ลงผลตรวจของคนนี้ →</a>
                   <button type="button" className="btn-secondary text-sm" disabled={busy || !kit.trim()} onClick={() => saveKit(scan.queue_id, kit)}>{scan.kit_no ? "แก้เลขชุด" : "บันทึกเลขชุด"}</button>
                 </div>
               ) : token && (

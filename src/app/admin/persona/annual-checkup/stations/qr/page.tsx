@@ -22,8 +22,10 @@ export default function StationQrPage() {
     <div className="space-y-4">
       <div className="print:hidden">
         <h1 className="text-2xl font-bold text-slate-800">QR ประจำสถานีตรวจสุขภาพ</h1>
-        <p className="text-sm text-slate-500">พิมพ์แล้วติดที่แต่ละสถานี พนักงานที่เช็กอินแล้วสแกนด้วยมือถือเพื่อบันทึกว่าผ่านสถานีนั้น · <Link className="text-brand hover:underline" href="/admin/persona/annual-checkup/stations">กลับไปหน้าสถานี</Link></p>
-        <p className="mt-1 text-xs text-slate-500">กดพิมพ์ด้วยเบราว์เซอร์ (Ctrl/Cmd + P) หนึ่งสถานีต่อหนึ่งหน้า</p>
+        <p className="text-sm text-slate-500">กดปุ่มสั่งพิมพ์ด้านล่างเพื่อได้โปสเตอร์ A4 ติดที่แต่ละสถานี พนักงานที่เช็กอินแล้วสแกนด้วยมือถือเพื่อบันทึกว่าผ่านสถานีนั้น (ด้านล่างเป็นภาพตัวอย่างบนหน้าจอ) · <Link className="text-brand hover:underline" href="/admin/persona/annual-checkup/stations">กลับไปหน้าสถานี</Link></p>
+        <a href="/print/annual-checkup-stations" target="_blank" rel="noreferrer"
+          className="mt-3 inline-flex items-center gap-2 rounded-xl px-5 py-3 text-base font-bold text-white shadow-md"
+          style={{ background: "linear-gradient(100deg,#1CC4B1,#0FA596)" }}>🖨️ สั่งพิมพ์ A4 (โปสเตอร์สวย พร้อมติดที่สถานี)</a>
       </div>
             <section className="card p-6 text-center space-y-3 break-after-page">
         <div className="text-sm text-slate-500">ตรวจสุขภาพประจำปี</div>
