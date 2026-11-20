@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 
 type St = { code: string; name_th: string; passed: boolean; self_marked: boolean };
 
-// The employee's route through the stations. A station is "ผ่านแล้ว" once the clinic has scanned it (official); otherwise the employee can
-// tick "ตรวจแล้ว" themselves to keep track of where they are — their own note, which the clinic's scan overrides.
+// The employee's route through the stations. A station is "ยืนยันแล้ว" once the clinic has scanned it (official); otherwise the employee can
+// press "ผ่านแล้ว" themselves to keep track of where they are — their own note, which the clinic's scan overrides.
 export default function StationChecklist({ roundId, stations }: { roundId: number; stations: St[] }) {
   const router = useRouter();
   const [marks, setMarks] = useState<Record<string, boolean>>(() => Object.fromEntries(stations.map((s) => [s.code, s.self_marked])));
@@ -38,17 +38,17 @@ export default function StationChecklist({ roundId, stations }: { roundId: numbe
             <li key={st.code} className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${st.passed ? "bg-emerald-50 border-emerald-200 text-emerald-800" : mine ? "bg-sky-50 border-sky-200 text-sky-900" : "bg-white border-slate-200 text-slate-800"}`}>
               <span className={`flex h-6 w-6 flex-none items-center justify-center rounded-full text-xs font-bold ${st.passed ? "bg-emerald-600 text-white" : mine ? "bg-sky-600 text-white" : "bg-slate-200 text-slate-700"}`}>{st.passed || mine ? "✓" : i + 1}</span>
               <span className="grow">{st.name_th}</span>
-              {st.passed ? <span className="text-xs">ผ่านแล้ว</span> : (
+              {st.passed ? <span className="text-xs">ยืนยันแล้ว</span> : (
                 <button type="button" onClick={() => toggle(st.code)} disabled={busy === st.code} aria-pressed={!!marks[st.code]}
                   className={`min-h-[36px] rounded-md border px-2.5 text-xs font-medium ${mine ? "border-sky-300 bg-white text-sky-800" : "border-slate-300 bg-white text-slate-700"}`}>
-                  {mine ? "ยกเลิกที่ติ๊ก" : "ฉันตรวจแล้ว"}
+                  {mine ? "ยกเลิกที่ผ่าน" : "ผ่านแล้ว"}
                 </button>
               )}
             </li>
           );
         })}
       </ol>
-      <p className="text-[11px] text-slate-500">ปุ่ม “ฉันตรวจแล้ว” ไว้ให้ท่านจดว่าผ่านจุดไหนแล้ว (สีฟ้า) ส่วนสีเขียวคือเจ้าหน้าที่คลินิกยืนยันแล้ว</p>
+      <p className="text-[11px] text-slate-500">กดปุ่ม “ผ่านแล้ว” เพื่อจดว่าท่านผ่านจุดไหนแล้ว (สีฟ้า) ส่วนสีเขียว “ยืนยันแล้ว” คือเจ้าหน้าที่คลินิกยืนยันแล้ว</p>
       {err && <p className="text-xs text-rose-600" role="alert">{err}</p>}
     </div>
   );
