@@ -201,6 +201,37 @@ export function pendingLeaveList(a: { branch_name?: string }) {
   };
 }
 
+/** Pending OT requests, one line each; `code` is what the owner types to decide it ("OT12"). */
+export function pendingOtList(a: { branch_name?: string }) {
+  const branchId = resolveBranchId(a.branch_name);
+  const rows = getDb().prepare(
+    `SELECT o.id, COALESCE(NULLIF(u.nickname_th,''), u.display_name) AS name, b.name AS branch, o.work_date AS workDate,
+            o.requested_until AS until, o.requested_from AS fromTime, o.status, o.early_status AS earlyStatus
+       FROM ot_requests o JOIN users u ON u.id = o.user_id LEFT JOIN branches b ON b.id = o.branch_id
+      WHERE (o.status = 'pending' OR (o.requested_from IS NOT NULL AND o.early_status = 'pending')) ${branchId != null ? "AND o.branch_id = ?" : ""}
+      ORDER BY o.work_date LIMIT 30`
+  ).all(...(branchId != null ? [branchId] : [])) as Array<{ id: number; name: string; branch: string | null; workDate: string; until: string; fromTime: string | null; status: string; earlyStatus: string | null }>;
+  return {
+    scope: { branch: a.branch_name ?? "ทุกสาขา" }, count: rows.length,
+    requests: rows.map((r) => ({ code: `OT${r.id}`, name: r.name, branch: r.branch, date: r.workDate,
+      lateEnd: r.status === "pending" ? r.until : null, earlyStart: r.fromTime && r.earlyStatus === "pending" ? r.fromTime : null }))
+  };
+}
+
+/** Pending shift-change requests (extra shift / swap), with their reference number. */
+export function pendingShiftList(a: { branch_name?: string }) {
+  const branchId = resolveBranchId(a.branch_name);
+  const rows = getDb().prepare(
+    `SELECT s.ref_no AS ref, COALESCE(NULLIF(u.nickname_th,''), u.display_name) AS name, b.name AS branch, s.kind, s.work_date AS workDate, s.off_date AS offDate
+       FROM shift_change_requests s JOIN users u ON u.id = s.user_id LEFT JOIN branches b ON b.id = s.branch_id
+      WHERE s.status = 'pending' ${branchId != null ? "AND s.branch_id = ?" : ""} ORDER BY s.work_date LIMIT 30`
+  ).all(...(branchId != null ? [branchId] : [])) as Array<{ ref: string | null; name: string; branch: string | null; kind: string; workDate: string; offDate: string | null }>;
+  return {
+    scope: { branch: a.branch_name ?? "ทุกสาขา" }, count: rows.length,
+    requests: rows.map((r) => ({ code: r.ref, name: r.name, branch: r.branch, type: r.kind === "swap" ? "ขอสลับวันหยุด" : "ขอเพิ่มกะ", workDate: r.workDate, offDate: r.offDate }))
+  };
+}
+
 export function staffHeadcount(a: { branch_name?: string }) {
   const db = getDb();
   const branchId = resolveBranchId(a.branch_name);

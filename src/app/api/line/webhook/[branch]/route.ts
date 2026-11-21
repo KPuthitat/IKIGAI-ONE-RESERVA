@@ -214,8 +214,8 @@ export async function POST(req: Request, { params }: { params: { branch: string 
     // Platform OA only; the data prefix keeps us off any unrelated postback.
     if (ev.type === "postback") {
       const data = ev.postback?.data ?? "";
-      // นกฮูกเลขา: the confirm / cancel button of a leave decision, pressed in the executive group
-      if (channel.scope === "platform" && data.startsWith("owl_leave:") && ev.source?.type === "group" && ev.source.groupId) {
+      // นกฮูกเลขา: the confirm / cancel button of a leave / OT / shift-change decision, pressed in the executive group
+      if (channel.scope === "platform" && data.startsWith("owl_dec:") && ev.source?.type === "group" && ev.source.groupId) {
         const reply = handleConfirmPostback({ data, groupId: ev.source.groupId, lineUserId: userId, secret: channel.channel_secret });
         if (reply) {
           const msg = [{ type: "text" as const, text: reply }];

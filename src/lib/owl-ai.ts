@@ -12,7 +12,7 @@ import { getSystemSettings } from "./db";
 import { DEFAULT_OWL_AI_MODEL, owlAiModel } from "./owl-ai-models";
 import {
   referenceLists, expenseSummary, unpaidBills, incomeSummaryTool,
-  daybookSummary, leaveSummary, staffHeadcount, pendingRequests, pendingLeaveList
+  daybookSummary, leaveSummary, staffHeadcount, pendingRequests, pendingLeaveList, pendingOtList, pendingShiftList
 } from "./owl-data";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
@@ -115,6 +115,16 @@ const TOOLS = [
     input_schema: { type: "object", properties: { branch_name: { type: "string" } }, additionalProperties: false }
   },
   {
+    name: "pending_ot_list",
+    description: "รายการคำขอ OT ที่ยังรออนุมัติ (code เช่น OT12 ชื่อ วันที่ เวลา)",
+    input_schema: { type: "object", properties: { branch_name: { type: "string" } }, additionalProperties: false }
+  },
+  {
+    name: "pending_shift_list",
+    description: "รายการคำขอเปลี่ยนเวลางาน (ขอเพิ่มกะ/สลับวันหยุด) ที่ยังรออนุมัติ พร้อมเลขอ้างอิง",
+    input_schema: { type: "object", properties: { branch_name: { type: "string" } }, additionalProperties: false }
+  },
+  {
     name: "staff_headcount",
     description: "จำนวนพนักงานที่ยังทำงานอยู่ (รวมแอดมิน, ไม่นับลาออก/ปิดบัญชี)",
     input_schema: {
@@ -166,6 +176,10 @@ function runTool(name: string, input: ToolInput): unknown {
       return staffHeadcount({ branch_name: str(input.branch_name) });
     case "pending_leave_list":
       return pendingLeaveList({ branch_name: str(input.branch_name) });
+    case "pending_ot_list":
+      return pendingOtList({ branch_name: str(input.branch_name) });
+    case "pending_shift_list":
+      return pendingShiftList({ branch_name: str(input.branch_name) });
     case "pending_requests":
       return pendingRequests({ branch_name: str(input.branch_name) });
     default:
@@ -191,7 +205,7 @@ const GROUP_RULES = `
 - ตอบเป็นข้อความธรรมดาที่อ่านง่ายใน LINE ห้ามใช้ markdown (ห้ามใช้ ** หรือ # หรือตาราง) ใช้บรรทัดสั้นๆ และเลขข้อ
 - ตอบกระชับ ไม่เกิน 15 บรรทัด
 - สรุปคำขอลาให้เห็นเฉพาะ ชื่อ ประเภทลา วันที่ จำนวนวัน และเลขอ้างอิง ห้ามเดาหรือใส่เหตุผลการลา
-- นกฮูกในกลุ่มนี้อ่านข้อมูลได้อย่างเดียว ยังอนุมัติหรือเปลี่ยนแปลงข้อมูลไม่ได้ ถ้าถูกขอให้ทำ ให้บอกว่าทำได้ที่หน้าเว็บ`;
+- นกฮูกในกลุ่มนี้อ่านข้อมูลได้อย่างเดียว ไม่ได้อนุมัติเอง การอนุมัติทำโดยเจ้าของพิมพ์คำสั่ง “อนุมัติ <เลขอ้างอิง>” แล้วกดปุ่มยืนยัน (ใบลา L…, OT เช่น OT12, เปลี่ยนเวลางาน SC…) ถ้าถูกขอให้อนุมัติ ให้บอกวิธีนี้ และแสดงเลขอ้างอิงของรายการที่รออนุมัติ`;
 
 const HR_ONLY = `
 - ผู้ถามในกลุ่มนี้ได้สิทธิ์เฉพาะเรื่องงานบุคคล ถ้าถามเรื่องการเงิน/รายรับ/ค่าใช้จ่าย ให้บอกว่าเรื่องการเงินสอบถามได้เฉพาะเจ้าของ`;
@@ -209,7 +223,7 @@ export type OwlAnswer = {
 
 /** Run one question through the tool-use loop and return the Thai answer. */
 /** Tools an admin who was only granted the group (not the owner) may use: people matters, no money. */
-export const HR_TOOLS = new Set(["get_reference_lists", "leave_summary", "staff_headcount", "pending_requests", "pending_leave_list"]);
+export const HR_TOOLS = new Set(["get_reference_lists", "leave_summary", "staff_headcount", "pending_requests", "pending_leave_list", "pending_ot_list", "pending_shift_list"]);
 
 export async function askOwl(question: string, opts: { surface?: "group"; scope?: "all" | "hr" } = {}): Promise<OwlAnswer> {
   const tools = opts.scope === "hr" ? TOOLS.filter((t) => HR_TOOLS.has(t.name)) : TOOLS;
