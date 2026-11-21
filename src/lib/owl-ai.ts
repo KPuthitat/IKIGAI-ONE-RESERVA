@@ -193,6 +193,9 @@ const GROUP_RULES = `
 - สรุปคำขอลาให้เห็นเฉพาะ ชื่อ ประเภทลา วันที่ จำนวนวัน และเลขอ้างอิง ห้ามเดาหรือใส่เหตุผลการลา
 - นกฮูกในกลุ่มนี้อ่านข้อมูลได้อย่างเดียว ยังอนุมัติหรือเปลี่ยนแปลงข้อมูลไม่ได้ ถ้าถูกขอให้ทำ ให้บอกว่าทำได้ที่หน้าเว็บ`;
 
+const HR_ONLY = `
+- ผู้ถามในกลุ่มนี้ได้สิทธิ์เฉพาะเรื่องงานบุคคล ถ้าถามเรื่องการเงิน/รายรับ/ค่าใช้จ่าย ให้บอกว่าเรื่องการเงินสอบถามได้เฉพาะเจ้าของ`;
+
 type Block = { type: string; [k: string]: unknown };
 type Msg = { role: "user" | "assistant"; content: string | Block[] };
 
@@ -205,7 +208,11 @@ export type OwlAnswer = {
 };
 
 /** Run one question through the tool-use loop and return the Thai answer. */
-export async function askOwl(question: string, opts: { surface?: "group" } = {}): Promise<OwlAnswer> {
+/** Tools an admin who was only granted the group (not the owner) may use: people matters, no money. */
+export const HR_TOOLS = new Set(["get_reference_lists", "leave_summary", "staff_headcount", "pending_requests", "pending_leave_list"]);
+
+export async function askOwl(question: string, opts: { surface?: "group"; scope?: "all" | "hr" } = {}): Promise<OwlAnswer> {
+  const tools = opts.scope === "hr" ? TOOLS.filter((t) => HR_TOOLS.has(t.name)) : TOOLS;
   const s = getSystemSettings();
   if (!s.owl_ai_enabled) throw new OwlAiError("disabled", "น้องฮูก (AI) ปิดอยู่ — เปิดได้ที่ตั้งค่าระบบ");
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -225,7 +232,7 @@ export async function askOwl(question: string, opts: { surface?: "group" } = {})
           "anthropic-version": ANTHROPIC_VERSION,
           "content-type": "application/json"
         },
-        body: JSON.stringify({ model, max_tokens: 1500, system: opts.surface === "group" ? SYSTEM + GROUP_RULES : SYSTEM, tools: TOOLS, messages })
+        body: JSON.stringify({ model, max_tokens: 1500, system: opts.surface === "group" ? SYSTEM + GROUP_RULES + (opts.scope === "hr" ? HR_ONLY : "") : SYSTEM, tools, messages })
       });
     } catch {
       throw new OwlAiError("network", "เชื่อมต่อบริการ AI ไม่ได้ ลองใหม่อีกครั้ง");
@@ -258,7 +265,7 @@ export async function askOwl(question: string, opts: { surface?: "group" } = {})
           const name = String(block.name);
           const input = (block.input ?? {}) as ToolInput;
           let result: unknown;
-          try { result = runTool(name, input); }
+          try { result = opts.scope === "hr" && !HR_TOOLS.has(name) ? { error: "not allowed" } : runTool(name, input); }
           catch (e) { result = { error: e instanceof Error ? e.message : "tool failed" }; }
           toolResults.push({
             type: "tool_result",

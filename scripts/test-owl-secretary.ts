@@ -20,8 +20,9 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   db.prepare("INSERT INTO leave_requests (user_id,type,date_from,date_to,days,reason,status,branch_id,ref_no) VALUES (?,?,?,?,?,?,?,?,?)").run(staff, "sick", "2026-12-01", "2026-12-02", 2, "ลับมาก ผ่าตัด", "pending", br, "L-0001");
 
   let asked: string[] = [];
-  const ask = async (q: string) => { asked.push(q); return { answer: "คำตอบทดสอบ", model: "m", inputTokens: 10, outputTokens: 5 }; };
-  const say = (who: string | undefined, text: string, tagged = true, g = "G1") => S.handleGroupMessage({ groupId: g, lineUserId: who, text, mentionedSelf: tagged, ask });
+  const scopes: string[] = [];
+  const ask = async (q: string, scope: string) => { asked.push(q); scopes.push(scope); return { answer: "คำตอบทดสอบ", model: "m", inputTokens: 10, outputTokens: 5 }; };
+  const say = (who: string | undefined, text: string, tagged = true, g = "G1", others?: string[]) => S.handleGroupMessage({ groupId: g, lineUserId: who, text, mentionedSelf: tagged, ask, others });
 
   ok("an untagged message is never read or answered", (await say("Uowner", "สรุปคำขอลา", false)) === null && asked.length === 0);
   ok("a group that is not enabled stays silent for strangers", (await say("Uadmin", "สรุปคำขอลา")) === null);
@@ -30,7 +31,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("an unknown LINE user cannot enable a group", /เฉพาะเจ้าของ/.test((await say(undefined, "เปิดใช้กลุ่มนี้")) ?? ""));
   ok("the owner enables the group from inside it", /เปิดใช้กลุ่มนี้แล้ว/.test((await say("Uowner", "เปิดใช้กลุ่มนี้")) ?? "") && !!db.prepare("SELECT 1 FROM owl_secretary_groups WHERE group_id='G1'").get());
   ok("the owner's question goes to the AI and the answer comes back", (await say("Uowner", "สรุปคำขอลาที่รออนุมัติ")) === "คำตอบทดสอบ" && asked[0] === "สรุปคำขอลาที่รออนุมัติ");
-  ok("an admin in an enabled group is refused politely, AI not called", /เฉพาะเจ้าของ/.test((await say("Uadmin", "สรุปคำขอลา")) ?? "") && asked.length === 1);
+  ok("an admin in an enabled group is refused politely, AI not called", /เจ้าของให้สิทธิ์/.test((await say("Uadmin", "สรุปคำขอลา")) ?? "") && asked.length === 1);
   ok("approving is refused for now, AI not called", /ยังไม่ได้/.test((await say("Uowner", "อนุมัติใบลา L-0001")) ?? "") && /ยังไม่ได้/.test((await say("Uowner", "ไม่อนุมัติคนนี้")) ?? "") && asked.length === 1
     && (db.prepare("SELECT status FROM leave_requests WHERE ref_no='L-0001'").get() as { status: string }).status === "pending");
   ok("asking about what is waiting for approval is a question, not a command", (await say("Uowner", "คำขอที่รออนุมัติมีอะไรบ้าง")) === "คำตอบทดสอบ" && (await say("Uowner", "ใบลาที่อนุมัติแล้ว")) === "คำตอบทดสอบ");
@@ -39,6 +40,20 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("tool output for the group has no leave reason", (() => { const j = JSON.stringify(D.pendingLeaveList({})); return j.includes("L-0001") && j.includes("สมชาย") && !j.includes("ผ่าตัด") && !j.includes("reason"); })());
   ok("mention stripping removes only the bot's tag", S.stripSelfMention("@นกฮูก สรุปคำขอลา @สมชาย", { mentionees: [{ index: 0, length: 6, isSelf: true }, { index: 18, length: 7, isSelf: false }] }) === "สรุปคำขอลา @สมชาย");
   ok("only a tag of the bot counts as tagging it", S.mentionsSelf({ mentionees: [{ isSelf: true }] }) && !S.mentionsSelf({ mentionees: [{ isSelf: false }] }) && !S.mentionsSelf(undefined));
+
+  // granting (owner 2026-11-21: only people the owner allowed, e.g. admins, may command)
+  const stf = Number(db.prepare("INSERT INTO users (username,password_hash,display_name,role,status,line_user_id) VALUES ('st2','x','พนักงาน','staff','active','Ustaff')").run().lastInsertRowid);
+  ok("an admin cannot grant anyone", /เฉพาะเจ้าของ/.test((await say("Uadmin", "ให้สิทธิ์ @คน", true, "G1", ["Uadmin"])) ?? "") && !db.prepare("SELECT 1 FROM owl_secretary_users").get());
+  ok("a staff member cannot be granted (admins only)", /ไม่พบผู้ที่แท็ก/.test((await say("Uowner", "ให้สิทธิ์ @พนักงาน", true, "G1", ["Ustaff"])) ?? "") && !db.prepare("SELECT 1 FROM owl_secretary_users").get());
+  ok("granting without tagging anyone is refused", /ไม่พบผู้ที่แท็ก/.test((await say("Uowner", "ให้สิทธิ์")) ?? ""));
+  ok("the owner grants an admin by tagging them", /ให้สิทธิ์แล้ว 1/.test((await say("Uowner", "ให้สิทธิ์ @Admin", true, "G1", ["Uadmin"])) ?? "") && !!db.prepare("SELECT 1 FROM owl_secretary_users WHERE user_id = ?").get(adm));
+  const before = asked.length;
+  ok("a granted admin is answered, with people-matters scope only", (await say("Uadmin", "สรุปคำขอลาที่รออนุมัติ")) === "คำตอบทดสอบ" && asked.length === before + 1 && scopes[scopes.length - 1] === "hr");
+  ok("the owner still gets the full scope", (await say("Uowner", "ค่าใช้จ่ายเดือนนี้")) === "คำตอบทดสอบ" && scopes[scopes.length - 1] === "all");
+  ok("a granted admin still cannot approve", /ยังไม่ได้/.test((await say("Uadmin", "อนุมัติใบลา L-0001")) ?? "") && asked.length === before + 2);
+  ok("a granted admin cannot enable groups or grant others", /เฉพาะเจ้าของ/.test((await say("Uadmin", "เปิดใช้กลุ่มนี้")) ?? "") && /เฉพาะเจ้าของ/.test((await say("Uadmin", "ให้สิทธิ์ @คน", true, "G1", ["Uadmin"])) ?? ""));
+  ok("the HR scope has no money tools", (await import("../src/lib/owl-ai")).HR_TOOLS.has("leave_summary") && !(await import("../src/lib/owl-ai")).HR_TOOLS.has("expense_summary") && !(await import("../src/lib/owl-ai")).HR_TOOLS.has("daybook_summary") && !(await import("../src/lib/owl-ai")).HR_TOOLS.has("income_summary"));
+  ok("the owner revokes the right", /ถอนสิทธิ์แล้ว/.test((await say("Uowner", "ถอนสิทธิ์ @Admin", true, "G1", ["Uadmin"])) ?? "") && /เจ้าของให้สิทธิ์/.test((await say("Uadmin", "สรุปคำขอลา")) ?? ""));
 
   // daily cap
   for (let i = 0; i < S.DAILY_CAP - 1; i++) db.prepare("INSERT INTO owl_ai_usage (model,question,created_by) VALUES ('m','[LINE กลุ่ม] x',?)").run(owner);

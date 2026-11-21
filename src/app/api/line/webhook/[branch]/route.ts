@@ -23,7 +23,7 @@ import { sendLinePush, isReviewKeyword, notifyReviewInviteToLineUser, isMemberKe
 import { recordInbound } from "@/lib/inbox";
 import { ingestLineBill, handleBillVerifyPostback } from "@/lib/accounta-line-bill";
 import { getChannelByCode } from "@/lib/messaging-channels";
-import { handleGroupMessage, mentionsSelf, stripSelfMention } from "@/lib/owl-secretary";
+import { handleGroupMessage, mentionsSelf, otherMentionIds, stripSelfMention } from "@/lib/owl-secretary";
 import { sendLineReply } from "@/lib/line";
 
 // LINE retries a delivery when the endpoint is slow; remember the last messages already answered.
@@ -37,7 +37,7 @@ type LineEvent = {
     groupId?: string;
     roomId?: string;
   };
-  message?: { type: string; text?: string; id?: string; fileName?: string; stickerId?: string; mention?: { mentionees?: Array<{ index?: number; length?: number; type?: string; isSelf?: boolean }> } };
+  message?: { type: string; text?: string; id?: string; fileName?: string; stickerId?: string; mention?: { mentionees?: Array<{ index?: number; length?: number; type?: string; isSelf?: boolean; userId?: string }> } };
   postback?: { data?: string };
   replyToken?: string;
 };
@@ -174,7 +174,7 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // answer in the background: the AI call can take longer than LINE waits for a 200
       void (async () => {
         try {
-          const reply = await handleGroupMessage({ groupId, lineUserId: ev.source?.userId, text: stripSelfMention(ev.message?.text ?? "", ev.message?.mention), mentionedSelf: true });
+          const reply = await handleGroupMessage({ groupId, lineUserId: ev.source?.userId, text: stripSelfMention(ev.message?.text ?? "", ev.message?.mention), mentionedSelf: true, others: otherMentionIds(ev.message?.mention) });
           if (!reply) return;
           const msg = [{ type: "text" as const, text: reply }];
           const r = replyToken ? await sendLineReply(token, replyToken, msg) : { ok: false };
