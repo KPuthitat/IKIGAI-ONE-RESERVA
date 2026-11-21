@@ -149,7 +149,7 @@ export function daybookSummary(a: { month?: string; branch_name?: string; compan
 
 // ── PERSONA: leave / headcount / pending requests ──────────────────
 
-const LEAVE_LABEL: Record<string, string> = {
+export const LEAVE_LABEL: Record<string, string> = {
   sick: "ลาป่วย", personal: "ลากิจส่วนตัว", annual: "ลาพักร้อน",
   pt_emergency: "ลาฉุกเฉิน (พาร์ทไทม์)", maternity: "ลาคลอด",
   ordination: "ลาบวช", sterilization: "ลาทำหมัน", military: "ลารับราชการทหาร",
