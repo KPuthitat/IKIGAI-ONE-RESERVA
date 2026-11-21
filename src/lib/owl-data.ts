@@ -182,6 +182,25 @@ export function leaveSummary(a: { month?: string; branch_name?: string; status?:
   };
 }
 
+/** Pending leave requests, one line each — name, type, dates, days, ref. The reason is deliberately NOT
+ *  included: this feeds group chats, and reasons can be personal (health). */
+export function pendingLeaveList(a: { branch_name?: string }) {
+  const db = getDb();
+  const branchId = resolveBranchId(a.branch_name);
+  const rows = db.prepare(
+    `SELECT l.ref_no AS ref, COALESCE(NULLIF(u.nickname_th,''), u.display_name) AS name, b.name AS branch,
+            l.type, l.date_from AS dateFrom, l.date_to AS dateTo, l.days, substr(l.created_at,1,10) AS submitted
+       FROM leave_requests l JOIN users u ON u.id = l.user_id LEFT JOIN branches b ON b.id = l.branch_id
+      WHERE l.status = 'pending' ${branchId != null ? "AND l.branch_id = ?" : ""}
+      ORDER BY l.date_from, l.created_at LIMIT 30`
+  ).all(...(branchId != null ? [branchId] : [])) as Array<{ ref: string | null; name: string; branch: string | null; type: string; dateFrom: string; dateTo: string; days: number; submitted: string }>;
+  return {
+    scope: { branch: a.branch_name ?? "ทุกสาขา" },
+    count: rows.length,
+    requests: rows.map((r) => ({ ref: r.ref, name: r.name, branch: r.branch, type: LEAVE_LABEL[r.type] ?? r.type, dateFrom: r.dateFrom, dateTo: r.dateTo, days: r.days, submitted: r.submitted }))
+  };
+}
+
 export function staffHeadcount(a: { branch_name?: string }) {
   const db = getDb();
   const branchId = resolveBranchId(a.branch_name);

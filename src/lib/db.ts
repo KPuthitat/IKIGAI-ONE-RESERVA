@@ -3529,6 +3529,15 @@ function runMigrations(db: Database.Database): void {
       PRIMARY KEY (eval_id, item_id)
     );
   `);
+  // Owl secretary (owner 2026-11-21): LINE groups where the owner may talk to นกฮูก by tagging it.
+  // Only a group the owner enabled from inside that group is listed here.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS owl_secretary_groups (
+      group_id   TEXT PRIMARY KEY,
+      set_by     INTEGER NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
   // ประกาศนโยบาย / หนังสือแจ้งหลังประชุม (owner 2026-10-12): an all-staff meeting is announced,
   // and after it the admin publishes a letter of topics (heading, details, suggestions raised at
   // the meeting) that every recipient only has to acknowledge. Content is locked once published.
