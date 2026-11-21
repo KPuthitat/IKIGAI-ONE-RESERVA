@@ -14,7 +14,7 @@
 //    names (never money). Unfilled days must be acknowledged explicitly.
 
 import { getDb } from "./db";
-import { advanceMonth, audit, daysInMonth, getMonth, listPositions, SpecialDutyError } from "./special-duty";
+import { advanceMonth, audit, daysInMonth, getMonth, listPositions, positionDates, SpecialDutyError } from "./special-duty";
 import { assignDay, checkAssignment, type RuleResult } from "./special-duty-rules";
 
 const prevMonth = (ym: string) => { const [y, m] = ym.split("-").map(Number); return new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7); };
@@ -55,7 +55,7 @@ export function openDays(branchId: number, yearMonth: string, asOf?: string): Op
   const out: OpenDay[] = [];
   for (const p of listPositions(branchId, yearMonth, { activeOnly: true })) {
     const taken = new Set((db.prepare("SELECT duty_date AS d FROM special_duty_days WHERE position_id = ?").all(p.id) as Array<{ d: string }>).map((r) => r.d));
-    for (const date of monthDates(yearMonth)) {
+    for (const date of positionDates(p)) {
       if (taken.has(date)) continue;
       const candidates = pool.filter((uid) => checkAssignment({ userId: uid, branchId, yearMonth, positionId: p.id, date, asOf }).ok).length;
       out.push({ positionId: p.id, positionName: p.name, date, candidates });
@@ -128,12 +128,13 @@ export type RemoveResult = { ok: true } | { ok: false; code: "not_found" | "not_
 export function removeDay(args: { dayId: number; branchId: number; managerId: number }): RemoveResult {
   const db = getDb();
   const row = db.prepare(`
-    SELECT d.id, d.status, d.user_id AS uid, d.duty_date AS date, d.source, p.id AS pid, p.year_month AS ym
+    SELECT d.id, d.status, d.user_id AS uid, d.duty_date AS date, d.source, p.id AS pid, p.year_month AS ym, p.start_date AS sd
       FROM special_duty_days d JOIN special_duty_positions p ON p.id = d.position_id WHERE d.id = ? AND p.branch_id = ?
-  `).get(args.dayId, args.branchId) as { id: number; status: string; uid: number; date: string; source: string; pid: number; ym: string } | undefined;
+  `).get(args.dayId, args.branchId) as { id: number; status: string; uid: number; date: string; source: string; pid: number; ym: string; sd: string | null } | undefined;
   if (!row) return { ok: false, code: "not_found" };
   const m = getMonth(args.branchId, row.ym);
-  if (!["booking_open", "booking_closed", "filling"].includes(m.status)) return { ok: false, code: "wrong_stage" };
+  // a mid-month position (start date) can still be re-planned after the schedule is published
+  if (!["booking_open", "booking_closed", "filling"].includes(m.status) && !(row.sd && ["special_published", "in_progress"].includes(m.status))) return { ok: false, code: "wrong_stage" };
   if (!["booked", "assigned"].includes(row.status)) return { ok: false, code: "not_removable" };
   db.prepare("DELETE FROM special_duty_days WHERE id = ?").run(row.id);
   audit({ actorId: args.managerId, branchId: args.branchId, yearMonth: row.ym, entity: "assignment", entityId: row.id, action: "remove",

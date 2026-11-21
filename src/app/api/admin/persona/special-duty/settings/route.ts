@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { canManage } from "@/lib/special-duty-access";
-import { disableMonth, enableMonth, getMonth, listBranchConfig, listConfig, listPositions, savePosition, setBranchConfig, setConfig, SpecialDutyError, WORK_GROUPS } from "@/lib/special-duty";
+import { addMidMonthPosition, disableMonth, enableMonth, getMonth, listBranchConfig, listConfig, listPositions, savePosition, setBranchConfig, setConfig, SpecialDutyError, WORK_GROUPS } from "@/lib/special-duty";
 import { bookingAudience } from "@/lib/special-duty-roster";
 import { bookingOpenFlex, pushIndividually } from "@/lib/special-duty-notify";
 import { viewerOf } from "@/lib/special-duty-viewer";
@@ -39,12 +39,13 @@ export async function GET(req: Request) {
 }
 
 const Body = z.object({
-  action: z.enum(["set_config", "set_branch_config", "enable_month", "disable_month", "save_position"]),
+  action: z.enum(["set_config", "set_branch_config", "enable_month", "disable_month", "save_position", "add_mid_month_position"]),
   key: z.string().optional(), value: z.number().nullable().optional(),
   branch_id: z.number().int().optional(), month: YM.optional(),
   slot_no: z.number().int().min(1).max(3).optional(), name: z.string().trim().min(1).max(80).optional(),
   description: z.string().trim().max(300).nullable().optional(), daily_rate: z.number().min(0).max(100000).optional(),
-  eligible_groups: z.array(z.string()).nullable().optional(), active: z.boolean().optional()
+  eligible_groups: z.array(z.string()).nullable().optional(), active: z.boolean().optional(),
+  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
 });
 
 export async function POST(req: Request) {
@@ -87,6 +88,14 @@ export async function POST(req: Request) {
       const m = disableMonth({ branchId: d.branch_id, yearMonth: d.month, actorId: user.id });
       logPersonaAction(user.id, "special_duty.disable", d.branch_id);
       return NextResponse.json({ ok: true, month: m });
+    }
+    if (d.action === "add_mid_month_position") {
+      if (!d.name || !d.start_date) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+      const g = d.eligible_groups == null ? null : d.eligible_groups.filter((x): x is (typeof WORK_GROUPS)[number] => (WORK_GROUPS as readonly string[]).includes(x));
+      const pos = addMidMonthPosition({ branchId: d.branch_id, yearMonth: d.month, name: d.name, description: d.description ?? null,
+        dailyRate: d.daily_rate, eligibleGroups: g && g.length ? g : null, startDate: d.start_date, actorId: user.id });
+      logPersonaAction(user.id, "special_duty.position_mid_month", d.branch_id);
+      return NextResponse.json({ ok: true, position: pos });
     }
     if (!d.slot_no || !d.name) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
     const groups = d.eligible_groups == null ? null : d.eligible_groups.filter((g): g is (typeof WORK_GROUPS)[number] => (WORK_GROUPS as readonly string[]).includes(g));

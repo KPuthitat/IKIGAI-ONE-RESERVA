@@ -8,7 +8,7 @@
 // social-security staff) — the tax itself is applied in service-charge.ts.
 
 import { getDb } from "./db";
-import { cfgNum, daysInMonth, listPositions, monthBudget } from "./special-duty";
+import { cfgNum, listPositions, monthBudget, positionDates } from "./special-duty";
 import { sqlNameWithPrefix } from "./name";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -50,7 +50,7 @@ export function dutyMonthSummary(branchId: number, yearMonth: string): DutyMonth
       FROM special_duty_days d JOIN special_duty_positions p ON p.id = d.position_id JOIN users u ON u.id = d.user_id
      WHERE p.branch_id = ? AND p.year_month = ? AND p.active = 1
   `).all(branchId, yearMonth) as Array<{ status: string; uid: number; payee: number; rate: number; name: string }>;
-  const total = positions.length * daysInMonth(yearMonth);
+  const total = positions.reduce((n, p) => n + positionDates(p).length, 0);
   const approved = rows.filter((r) => r.status === "approved");
   const holders = new Map<number, { name: string; days: number }>();
   for (const r of rows) { const h = holders.get(r.uid) ?? { name: r.name, days: 0 }; h.days++; holders.set(r.uid, h); }

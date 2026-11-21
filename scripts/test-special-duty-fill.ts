@@ -14,6 +14,8 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   const F = await import("../src/lib/special-duty-fill");
   const A = await import("../src/lib/special-duty-access");
   const roster = await import("../src/lib/roster");
+  const PAY = await import("../src/lib/special-duty-payout");
+  const await_ = <T,>(f: () => T) => f();
   const db = getDb();
   let failed = 0;
   const ok = (n: string, c: boolean) => { if (c) console.log(`  ✓ ${n}`); else { failed++; console.error(`  ✗ FAIL: ${n}`); } };
@@ -114,6 +116,29 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   })());
   ok("someone from another branch still cannot see them", (() => { try { A.getPublishedSchedule({ userId: 9999, role: "staff", branchIds: [hypo], adminBranchIds: [] }, nama, YM); return false; } catch { return true; } })());
   ok("once published, days can no longer be removed or assigned here", F.removeDay({ dayId: dayRow.id, branchId: nama, managerId: owner }).ok === false);
+
+  // ── mid-month position (owner 2026-11-21): added after booking closed, even after publication ──
+  const MID = "2026-12-10";
+  const budgetBefore = D.monthBudget(nama, YM);
+  const tryAdd = (over: Record<string, unknown>) => { try { D.addMidMonthPosition({ branchId: nama, yearMonth: YM, name: "ดูแลสวน", dailyRate: 200, startDate: "2026-12-15", actorId: owner, asOf: MID, ...over } as Parameters<typeof D.addMidMonthPosition>[0]); return "ok"; } catch (e) { return (e as { code?: string }).code ?? "err"; } };
+  ok("mid-month: start date in the past refused", tryAdd({ startDate: "2026-12-05" }) === "date_in_past");
+  ok("mid-month: start date outside the month refused", tryAdd({ startDate: "2027-01-05" }) === "invalid_date");
+  ok("mid-month: a month that is off refuses", (() => { try { D.addMidMonthPosition({ branchId: nama, yearMonth: "2027-03", name: "x", startDate: "2027-03-10", actorId: owner, asOf: MID }); return false; } catch (e) { return (e as { code?: string }).code === "mid_month_not_allowed"; } })());
+  ok("mid-month: added after the schedule is published", tryAdd({}) === "ok" && D.getMonth(nama, YM).status === "special_published");
+  const mid = D.listPositions(nama, YM).find((x) => x.startDate)!;
+  ok("mid-month: takes the free slot 3 and keeps its start date", mid.slotNo === 3 && mid.startDate === "2026-12-15" && D.positionDates(mid).length === 17);
+  ok("mid-month: a 4th position (over the maximum) is refused", tryAdd({ name: "อีกตำแหน่ง" }) === "no_free_slot");
+  ok("mid-month: budget grows by rate × days from the start date only", D.monthBudget(nama, YM) === budgetBefore + 200 * 17);
+  const midOpen = F.openDays(nama, YM, MID).filter((o) => o.positionId === mid.id);
+  ok("mid-month: open days run from the start date to month end", midOpen.length === 17 && midOpen[0].date === date(15));
+  const asg = (uid: number, d: number) => F.managerAssign({ branchId: nama, yearMonth: YM, positionId: mid.id, date: date(d), userId: uid, managerId: owner, asOf: MID });
+  const early = asg(a, 12);
+  ok("mid-month: a day before the start date is refused", early.ok === false && early.errors.some((e) => e.code === "before_position_start"));
+  ok("mid-month: the manager can assign from the start date, though the month is published", asg(a, 15).ok === true);
+  ok("mid-month: summary counts only the 17 mid-month days for the new position", (() => { const s2 = (await_(() => PAY.dutyMonthSummary(nama, YM))); return s2.unfilledDays + s2.heldDays === 2 * 31 + 17; })());
+  ok("normal positions are still locked after publication", F.managerAssign({ branchId: nama, yearMonth: YM, positionId: toilet.id, date: date(20), userId: c, managerId: owner, asOf: MID }).ok === false);
+  const midDay = db.prepare("SELECT id FROM special_duty_days WHERE position_id = ? AND duty_date = ?").get(mid.id, date(15)) as { id: number };
+  ok("mid-month: an assigned day can still be taken back", F.removeDay({ dayId: midDay.id, branchId: nama, managerId: owner }).ok === true);
 
   // automatic close
   const YM2 = "2027-01";

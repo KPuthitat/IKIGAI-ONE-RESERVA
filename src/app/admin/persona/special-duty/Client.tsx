@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 import EmptyState from "@/app/components/EmptyState";
 
-type Position = { id: number; slotNo: number; name: string; dailyRate: number };
+type Position = { id: number; slotNo: number; name: string; dailyRate: number; startDate?: string | null };
 type Row = { id: number; positionId: number; date: string; userId: number; name: string; source: "booked" | "assigned"; status: string; performerName: string | null; reviewNote: string | null; evidenceCount: number; presentAtWork: boolean; replacement: { fromName: string; toName: string; reasonText: string; at: string } | null };
 type Open = { positionId: number; positionName: string; date: string; candidates: number };
 type Summary = { budget: number; approvedDays: number; approvedAmount: number; pendingDays: number; absentDays: number; unfilledDays: number; heldDays: number };
@@ -98,6 +98,8 @@ export default function Client({ month }: { month: string }) {
   const st = data.month.status;
   const [y, m] = month.split("-").map(Number);
   const filling = st === "booking_closed" || st === "filling";
+  // a position added mid-month stays assignable after the schedule is published
+  const midEdit = (pid: number) => ["special_published", "in_progress"].includes(st) && !!data.positions.find((x) => x.id === pid)?.startDate;
   const canEdit = st === "booking_open" || filling;   // the back office may add or free days until the schedule is published
   const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
   const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -436,7 +438,7 @@ export default function Client({ month }: { month: string }) {
                 {["booked", "assigned", "submitted", "covered"].includes(selected.status) && ["special_published", "in_progress"].includes(st) && selected.date <= new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10) && (
                   <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { if (!window.confirm("บันทึกว่าผู้ปฏิบัติงานขาดในวันนี้ใช่หรือไม่ รายการนี้นับเป็นการขาดหนึ่งครั้งของผู้ที่ได้รับมอบหมาย")) return; const r = await act({ action: "absent", day_id: selected.id }); r.ok ? done("บันทึกการขาดแล้ว เลือกผู้ปฏิบัติแทนได้ที่ช่องวันนี้") : setMsg({ ok: false, text: r.j.message ?? "ทำรายการไม่สำเร็จ" }); }}>บันทึกว่าขาด</button>
                 )}
-                {canEdit && <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { const r = await act({ action: "remove", day_id: selected.id }); r.ok ? done("ถอนวันนี้ออกแล้ว") : setMsg({ ok: false, text: ERR[r.j.error] ?? "ถอนไม่สำเร็จ" }); }}>ถอนออก</button>}
+                {(canEdit || midEdit(selected.positionId)) && <button type="button" className="btn-secondary" disabled={busy} onClick={async () => { const r = await act({ action: "remove", day_id: selected.id }); r.ok ? done("ถอนวันนี้ออกแล้ว") : setMsg({ ok: false, text: ERR[r.j.error] ?? "ถอนไม่สำเร็จ" }); }}>ถอนออก</button>}
                 <button type="button" className="btn-secondary sm:ml-auto" onClick={() => setSelected(null)}>ปิด</button>
               </div>
             </Sheet>
@@ -448,7 +450,7 @@ export default function Client({ month }: { month: string }) {
             const cells: Array<number | null> = [...Array(first).fill(null), ...Array.from({ length: last }, (_, i) => i + 1)];
             return (
               <section key={p.id} className="card space-y-2">
-                <h2 className="font-bold text-ink">{p.name}</h2>
+                <h2 className="font-bold text-ink">{p.name}{p.startDate && <span className="ml-2 tag tag-warn">ตำแหน่งกลางเดือน · เริ่ม {p.startDate}</span>}</h2>
                 <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-500">{HEAD.map((h) => <div key={h}>{h}</div>)}</div>
                 <div className="grid grid-cols-7 gap-1">
                   {cells.map((d, i) => {
@@ -457,7 +459,7 @@ export default function Client({ month }: { month: string }) {
                     const row = byDate.get(date);
                     const isOpen = openSet.has(date);
                     return (
-                      <button key={date} type="button" disabled={!row && !(canEdit && isOpen)}
+                      <button key={date} type="button" disabled={!row && !((canEdit || midEdit(p.id)) && isOpen)}
                         onClick={async () => {
                           if (row) { await open_(row); return; }
                           const r = await fetch(apiUrl(`/api/admin/persona/special-duty?month=${month}&candidates=${p.id}:${date}`), { cache: "no-store" });

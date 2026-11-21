@@ -10,7 +10,7 @@ export type RuleCode =
   | "month_off" | "roster_not_published" | "booking_not_open" | "booking_closed"
   | "not_in_branch" | "self_booking_disqualified" | "position_invalid" | "date_outside_month" | "date_in_past"
   | "not_in_roster" | "group_not_eligible" | "on_leave" | "below_minimum_days" | "too_many_per_day" | "slot_taken"
-  | "not_open_for_assignment";
+  | "not_open_for_assignment" | "before_position_start";
 
 export type RuleResult = { ok: true; overridden?: RuleCode[] } | { ok: false; errors: Array<{ code: RuleCode; positionId?: number; date?: string }> };
 
@@ -64,6 +64,7 @@ function checkSlot(user: UserRow, branchId: number, ym: string, pos: DutyPositio
   if (!pos || !pos.active) { errs.push({ code: "position_invalid" }); return; }
   if (date.slice(0, 7) !== ym) { errs.push({ code: "date_outside_month", positionId: pos.id, date }); return; }
   if (date < asOf) errs.push({ code: "date_in_past", positionId: pos.id, date });
+  if (pos.startDate && date < pos.startDate) errs.push({ code: "before_position_start", positionId: pos.id, date });
   if (!isGroupEligible(user, pos)) errs.push({ code: "group_not_eligible", positionId: pos.id, date });
   if (!isOnRoster(user.id, branchId, date)) errs.push({ code: "not_in_roster", positionId: pos.id, date });
   if (isOnApprovedLeave(user.id, date)) errs.push({ code: "on_leave", positionId: pos.id, date });
@@ -146,11 +147,13 @@ export function checkAssignment(args: { userId: number; branchId: number; yearMo
   const asOf = args.asOf ?? bkkToday();
   const month = getMonth(branchId, yearMonth);
   if (!month.enabled) return { ok: false, errors: [{ code: "month_off" }] };
-  if (!["booking_open", "booking_closed", "filling"].includes(month.status)) return { ok: false, errors: [{ code: "not_open_for_assignment" }] };
+  const pos = listPositions(branchId, yearMonth).find((p) => p.id === positionId);
+  // a mid-month position (has a start date) keeps being assignable after the month is published
+  const open = ["booking_open", "booking_closed", "filling"].includes(month.status) || (!!pos?.startDate && ["special_published", "in_progress"].includes(month.status));
+  if (!open) return { ok: false, errors: [{ code: "not_open_for_assignment" }] };
   const user = loadUser(userId, branchId);
   if (!user) return { ok: false, errors: [{ code: "not_in_branch" }] };
   const errs: Err[] = [];
-  const pos = listPositions(branchId, yearMonth).find((p) => p.id === positionId);
   checkSlot(user, branchId, yearMonth, pos, date, asOf, errs);
   if (!pos || !pos.active) return { ok: false, errors: errs };
   const db = getDb();

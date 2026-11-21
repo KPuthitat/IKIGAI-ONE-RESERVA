@@ -236,12 +236,22 @@ export function advanceMonth(args: { branchId: number; yearMonth: string; to: Du
 export type DutyPosition = {
   id: number; branchId: number; yearMonth: string; slotNo: number; name: string; description: string | null;
   dailyRate: number; eligibleGroups: WorkGroup[] | null; active: boolean;
+  /** YYYY-MM-DD the position starts (added mid-month); null = whole month. */
+  startDate: string | null;
 };
-type PosRow = { id: number; branch_id: number; year_month: string; slot_no: number; name: string; description: string | null; daily_rate: number; eligible_groups: string | null; active: number };
+type PosRow = { id: number; branch_id: number; year_month: string; slot_no: number; name: string; description: string | null; daily_rate: number; eligible_groups: string | null; active: number; start_date: string | null };
 const shapePos = (r: PosRow): DutyPosition => ({
   id: r.id, branchId: r.branch_id, yearMonth: r.year_month, slotNo: r.slot_no, name: r.name, description: r.description,
-  dailyRate: r.daily_rate, eligibleGroups: r.eligible_groups ? (JSON.parse(r.eligible_groups) as WorkGroup[]) : null, active: !!r.active
+  dailyRate: r.daily_rate, eligibleGroups: r.eligible_groups ? (JSON.parse(r.eligible_groups) as WorkGroup[]) : null, active: !!r.active, startDate: r.start_date ?? null
 });
+
+/** Every date a position runs: the whole month, or from its start date to month end. */
+export function positionDates(p: Pick<DutyPosition, "yearMonth" | "startDate">): string[] {
+  const n = daysInMonth(p.yearMonth);
+  const out: string[] = [];
+  for (let d = 1; d <= n; d++) { const date = `${p.yearMonth}-${String(d).padStart(2, "0")}`; if (!p.startDate || date >= p.startDate) out.push(date); }
+  return out;
+}
 
 export function listPositions(branchId: number, yearMonth: string, opts: { activeOnly?: boolean } = {}): DutyPosition[] {
   return (getDb().prepare(`SELECT * FROM special_duty_positions WHERE branch_id = ? AND year_month = ? ${opts.activeOnly ? "AND active = 1" : ""} ORDER BY slot_no`)
@@ -283,12 +293,46 @@ export function savePosition(args: {
   return shapePos(after);
 }
 
+const MID_MONTH_OK: DutyMonthStatus[] = ["booking_closed", "filling", "special_published", "in_progress"];
+
+/** Add a position in the middle of the month, after the start-of-month booking has closed
+ *  (owner 2026-11-21). Uses the first free slot, so it still counts within the branch maximum.
+ *  It runs from startDate to month end; the manager assigns people (no booking round). */
+export function addMidMonthPosition(args: {
+  branchId: number; yearMonth: string; name: string; description?: string | null; dailyRate?: number;
+  eligibleGroups?: WorkGroup[] | null; startDate: string; actorId: number; asOf?: string;
+}): DutyPosition {
+  const { branchId, yearMonth, actorId } = args;
+  if (!isMonth(yearMonth)) throw new SpecialDutyError("invalid_month");
+  const name = args.name.trim();
+  if (!name) throw new SpecialDutyError("name_required");
+  const rate = args.dailyRate ?? cfgNum("default_daily_rate", branchId);
+  if (!Number.isFinite(rate) || rate < 0) throw new SpecialDutyError("invalid_rate");
+  if (args.eligibleGroups) for (const g of args.eligibleGroups) if (!WORK_GROUPS.includes(g)) throw new SpecialDutyError("invalid_group");
+  const month = getMonth(branchId, yearMonth);
+  if (!month.enabled || !MID_MONTH_OK.includes(month.status)) throw new SpecialDutyError("mid_month_not_allowed", "a mid-month position can be added only after the start-of-month booking has closed");
+  const today = (args.asOf ?? bkkToday()).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(args.startDate) || args.startDate.slice(0, 7) !== yearMonth) throw new SpecialDutyError("invalid_date", "start date must fall within the month");
+  if (args.startDate < today) throw new SpecialDutyError("date_in_past", "start date cannot be in the past");
+  const db = getDb();
+  const used = new Set((db.prepare("SELECT slot_no FROM special_duty_positions WHERE branch_id = ? AND year_month = ?").all(branchId, yearMonth) as Array<{ slot_no: number }>).map((r) => r.slot_no));
+  const max = cfgNum("max_positions_per_branch", branchId);
+  let slot = 0;
+  for (let i = 1; i <= max; i++) if (!used.has(i)) { slot = i; break; }
+  if (!slot) throw new SpecialDutyError("no_free_slot", "this branch already has the maximum number of positions");
+  const groups = args.eligibleGroups && args.eligibleGroups.length ? JSON.stringify([...new Set(args.eligibleGroups)]) : null;
+  db.prepare("INSERT INTO special_duty_positions (branch_id, year_month, slot_no, name, description, daily_rate, eligible_groups, active, start_date) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)")
+    .run(branchId, yearMonth, slot, name, args.description?.trim() || null, rate, groups, args.startDate);
+  const after = db.prepare("SELECT * FROM special_duty_positions WHERE branch_id = ? AND year_month = ? AND slot_no = ?").get(branchId, yearMonth, slot) as PosRow;
+  audit({ actorId, branchId, yearMonth, entity: "position", entityId: after.id, action: "create_mid_month", after: shapePos(after) });
+  return shapePos(after);
+}
+
 // ── budget ────────────────────────────────────────────────────────────────
 
 /** Budget for a branch + month = Σ (days in the month × daily rate) over the active
  *  positions. A month that is off has a budget of zero. */
 export function monthBudget(branchId: number, yearMonth: string): number {
   if (!isEnabled(branchId, yearMonth)) return 0;
-  const days = daysInMonth(yearMonth);
-  return round2(listPositions(branchId, yearMonth, { activeOnly: true }).reduce((s, p) => s + days * p.dailyRate, 0));
+  return round2(listPositions(branchId, yearMonth, { activeOnly: true }).reduce((s, p) => s + positionDates(p).length * p.dailyRate, 0));
 }
