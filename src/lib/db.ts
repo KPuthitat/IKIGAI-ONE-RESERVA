@@ -3495,6 +3495,40 @@ function runMigrations(db: Database.Database): void {
   // Mid-month positions (owner 2026-11-21): a position added after the start-of-month booking has
   // closed carries the date it starts; NULL = a normal whole-month position.
   if (!columnExists(db, "special_duty_positions", "start_date")) db.exec("ALTER TABLE special_duty_positions ADD COLUMN start_date TEXT");
+  // Front-of-house service evaluation (owner 2026-11-21): the supervisor ticks the SOP checklist per
+  // person per day; the day's digest goes to the branch LINE group. One evaluation per (branch, date, person).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS service_eval_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      section TEXT NOT NULL CHECK (section IN ('steps','donts')),   -- steps: pass = done well; donts: pass = not seen
+      title TEXT NOT NULL,
+      tip TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS service_evals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+      eval_date TEXT NOT NULL,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      evaluator_id INTEGER NOT NULL REFERENCES users(id),
+      note TEXT,
+      score INTEGER,                         -- 0..100 = pass / (pass + fail), n/a excluded
+      notified_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (branch_id, eval_date, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_service_evals_branch_date ON service_evals(branch_id, eval_date);
+    CREATE TABLE IF NOT EXISTS service_eval_marks (
+      eval_id INTEGER NOT NULL REFERENCES service_evals(id) ON DELETE CASCADE,
+      item_id INTEGER NOT NULL REFERENCES service_eval_items(id),
+      result TEXT NOT NULL CHECK (result IN ('pass','fail','na')),
+      note TEXT,
+      PRIMARY KEY (eval_id, item_id)
+    );
+  `);
   // ประกาศนโยบาย / หนังสือแจ้งหลังประชุม (owner 2026-10-12): an all-staff meeting is announced,
   // and after it the admin publishes a letter of topics (heading, details, suggestions raised at
   // the meeting) that every recipient only has to acknowledge. Content is locked once published.

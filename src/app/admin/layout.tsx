@@ -193,6 +193,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/ot-approvals", label: "อนุมัติการทำงานล่วงเวลา" },
         { href: "/admin/persona/shift-requests", label: "คำขอเปลี่ยนเวลางาน" },
         { href: "/admin/persona/manager-reports", label: "รายงานผู้จัดการ" },
+        { href: "/admin/persona/service-eval", label: "ประเมินการบริการหน้าร้าน" },
         { href: "/admin/persona/exec-meetings", label: "ประชุมผู้บริหาร" },
         { href: "/admin/persona/special-duty", label: "ตำแหน่งงานค่าตอบแทนพิเศษ" },
         ...(canImportCheckup(user) ? [{ href: "/admin/persona/annual-checkup", label: "ตรวจสุขภาพประจำปี" }] : []),
