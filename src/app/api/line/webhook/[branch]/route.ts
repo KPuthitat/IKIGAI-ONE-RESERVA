@@ -23,7 +23,7 @@ import { sendLinePush, isReviewKeyword, notifyReviewInviteToLineUser, isMemberKe
 import { recordInbound } from "@/lib/inbox";
 import { ingestLineBill, handleBillVerifyPostback } from "@/lib/accounta-line-bill";
 import { getChannelByCode } from "@/lib/messaging-channels";
-import { handleGroupMessage, mentionsSelf, otherMentionIds, stripSelfMention } from "@/lib/owl-secretary";
+import { handleConfirmPostback, handleGroupMessage, mentionsSelf, otherMentionIds, stripSelfMention } from "@/lib/owl-secretary";
 import { sendLineReply } from "@/lib/line";
 
 // LINE retries a delivery when the endpoint is slow; remember the last messages already answered.
@@ -174,9 +174,9 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // answer in the background: the AI call can take longer than LINE waits for a 200
       void (async () => {
         try {
-          const reply = await handleGroupMessage({ groupId, lineUserId: ev.source?.userId, text: stripSelfMention(ev.message?.text ?? "", ev.message?.mention), mentionedSelf: true, others: otherMentionIds(ev.message?.mention) });
+          const reply = await handleGroupMessage({ groupId, lineUserId: ev.source?.userId, text: stripSelfMention(ev.message?.text ?? "", ev.message?.mention), mentionedSelf: true, others: otherMentionIds(ev.message?.mention), secret: channel.channel_secret });
           if (!reply) return;
-          const msg = [{ type: "text" as const, text: reply }];
+          const msg = typeof reply === "string" ? [{ type: "text" as const, text: reply }] : [{ ...reply.flex }];
           const r = replyToken ? await sendLineReply(token, replyToken, msg) : { ok: false };
           if (!r.ok) await sendLinePush(token, { to: groupId, messages: msg });
         } catch (e) { console.error("[owl-secretary]", e); }
@@ -214,6 +214,16 @@ export async function POST(req: Request, { params }: { params: { branch: string 
     // Platform OA only; the data prefix keeps us off any unrelated postback.
     if (ev.type === "postback") {
       const data = ev.postback?.data ?? "";
+      // นกฮูกเลขา: the confirm / cancel button of a leave decision, pressed in the executive group
+      if (channel.scope === "platform" && data.startsWith("owl_leave:") && ev.source?.type === "group" && ev.source.groupId) {
+        const reply = handleConfirmPostback({ data, groupId: ev.source.groupId, lineUserId: userId, secret: channel.channel_secret });
+        if (reply) {
+          const msg = [{ type: "text" as const, text: reply }];
+          const r = ev.replyToken ? await sendLineReply(channel.channel_token, ev.replyToken, msg) : { ok: false };
+          if (!r.ok) await sendLinePush(channel.channel_token, { to: ev.source.groupId, messages: msg });
+        }
+        continue;
+      }
       if (channel.scope === "platform" && data.startsWith("acct_bill_")) {
         await handleBillVerifyPostback({
           channelToken: channel.channel_token,
