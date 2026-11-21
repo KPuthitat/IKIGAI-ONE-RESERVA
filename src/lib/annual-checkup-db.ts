@@ -748,6 +748,26 @@ export function setMyStationMark(actor: AcActor, roundId: number, stationCode: s
   else getDb().prepare("DELETE FROM annual_checkup_station_selfmarks WHERE queue_id = ? AND station_id = ?").run(q.id, stationId);
 }
 
+/**
+ * The employee checks themselves in (owner 2026-11-21), after scanning the registration poster: their own queue row of an OPEN round only.
+ * Idempotent. The sample-kit number, station passes and results stay with clinic staff. The database allows this one write only on the
+ * person's own row (see annual_checkup_queue_upd).
+ */
+export function selfCheckIn(actor: AcActor, roundId: number): { already: boolean } {
+  const a = loadActor(actor);
+  const q = getDb().prepare(`
+    SELECT q.id, q.checked_in_at FROM annual_checkup_queue q JOIN annual_checkup_rounds r ON r.id = q.round_id
+     WHERE q.user_id = ? AND q.round_id = ? AND r.status = 'open'
+  `).get(a.id, roundId) as { id: number; checked_in_at: string | null } | undefined;
+  if (!q) throw new AnnualCheckupInvalid("queue_not_found");
+  if (q.checked_in_at) return { already: true };
+  guard(() => getDb().transaction(() => {
+    getDb().prepare("UPDATE annual_checkup_queue SET checked_in_at = CURRENT_TIMESTAMP, checked_in_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND checked_in_at IS NULL").run(a.id, q.id);
+    audit(a.id, "queue.selfcheckin", { user_id: a.id, external_id: null }, roundId, null);
+  })());
+  return { already: false };
+}
+
 export type QueueScan = { queue_id: number; round_id: number; round_name: string; /** subject key for the person page: u<userId> / e<externalId> */ key: string; kind: "employee" | "external"; label: string; code: string | null;
   payer: string | null; queue_no: number; appt_time: string | null; tests: QueueTest[]; checked_in_at: string | null; checked_in_by: string | null;
   kit_no: string | null; stations: StationState[] };

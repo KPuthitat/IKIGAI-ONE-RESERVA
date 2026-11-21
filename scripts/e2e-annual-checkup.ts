@@ -30,7 +30,9 @@ process.env.DATABASE_PATH = DB; process.env.RESERVA_SECRET_KEY = "e2e-secret-key
   const bcrypt = (await import("bcryptjs")).default;
   const E = mk("emp-e", "staff", { pin_hash: bcrypt.hashSync("4321", 4) }, nama);
   const sess = (uid: number) => { const id = `e2e-${uid}-${Math.random().toString(16).slice(2)}`; db.prepare("INSERT INTO sessions (id,user_id,active_branch_id,expires_at) VALUES (?,?,?,?)").run(id, uid, null, new Date(Date.now() + 3600_000).toISOString()); return id; };
-  const cookie = { R: sess(R), D: sess(D), A: sess(A), HR: sess(HR), E: sess(E) };
+  const SELF = mk("emp-self", "staff", {}, nama);
+  db.prepare("INSERT INTO annual_checkup_queue (round_id, user_id, queue_no) VALUES (?,?,77)").run(round, SELF);
+  const cookie = { R: sess(R), D: sess(D), A: sess(A), HR: sess(HR), E: sess(E), SELF: sess(SELF) };
 
   const port = 3999;
   const srv = spawn("npx", ["next", "start", "-p", String(port)], { env: { ...process.env, PORT: String(port) }, stdio: ["ignore", "pipe", "pipe"], detached: true });
@@ -51,6 +53,22 @@ process.env.DATABASE_PATH = DB; process.env.RESERVA_SECRET_KEY = "e2e-secret-key
     return { status: r.status, text, json: (() => { try { return JSON.parse(text); } catch { return null; } })(), setCookie: r.headers.get("set-cookie") ?? "", loc: r.headers.get("location") ?? "" };
   };
   try {
+    // self check-in from the registration poster
+    const SES = await import("../src/lib/annual-checkup-session");
+    const regTok = SES.makeStationToken(SES.REGISTER_CODE), bloodTok = SES.makeStationToken("BLOOD");
+    const rid = round;
+    const page = await call(`/staff/persona/checkup-queue/station/${encodeURIComponent(regTok)}`, { who: "SELF" });
+    ok("the registration poster page offers the employee a one-tap check-in with their own number", page.status === 200 && page.text.includes("ยืนยันลงทะเบียน") && page.text.includes(">77<") || (page.status === 200 && page.text.includes("77") && page.text.includes("ยืนยันลงทะเบียน")), `status ${page.status}`);
+    ok("a forged or other-station token cannot check in", (await call("/api/annual-checkup/me/checkin", { who: "SELF", json: { roundId: rid, token: bloodTok } })).status === 422 && (await call("/api/annual-checkup/me/checkin", { who: "SELF", json: { roundId: rid, token: regTok.replace("REGISTER", "XEGISTER") } })).status === 422);
+    ok("no session → 401", (await call("/api/annual-checkup/me/checkin", { json: { roundId: rid, token: regTok } })).status === 401);
+    ok("someone who is not in the round cannot check in", (await call("/api/annual-checkup/me/checkin", { who: "HR", json: { roundId: rid, token: regTok } })).status === 422);
+    const ci = await call("/api/annual-checkup/me/checkin", { who: "SELF", json: { roundId: rid, token: regTok } });
+    ok("the employee checks themselves in", ci.status === 200 && ci.json?.ok === true && ci.json?.already === false, `status ${ci.status}`);
+    ok("a second tap changes nothing", (await call("/api/annual-checkup/me/checkin", { who: "SELF", json: { roundId: rid, token: regTok } })).json?.already === true);
+    const row = db.prepare("SELECT checked_in_at, checked_in_by FROM annual_checkup_queue WHERE user_id = ?").get(SELF) as { checked_in_at: string | null; checked_in_by: number };
+    ok("it is stamped as their own check-in", row.checked_in_at !== null && row.checked_in_by === SELF);
+    const after = await call(`/staff/persona/checkup-queue/station/${encodeURIComponent(regTok)}`, { who: "SELF" });
+    ok("scanning again after check-in sends them to their own page", after.status >= 300 && after.status < 400 && after.loc.includes("/staff/persona/checkup-queue"), `status ${after.status} ${after.loc}`);
     // the PIN gate: nothing clinical is served, page or API, until the clinician has typed their PIN
     const g1 = await call("/staff/health/annual-checkup/queue", { who: "R" });
     ok("without the PIN a clinic page redirects to the PIN page and shows nobody", g1.status >= 300 && g1.status < 400 && g1.loc.includes("/staff/health/annual-checkup/pin") && !g1.text.includes("emp-a"), `status ${g1.status} ${g1.loc}`);

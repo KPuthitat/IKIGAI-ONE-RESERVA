@@ -439,8 +439,9 @@ export function ensureAnnualCheckupSchema(db: Database.Database): void {
       CREATE TRIGGER annual_checkup_queue_upd BEFORE UPDATE ON annual_checkup_queue
       BEGIN
         ${abort("NEW.checkin_token IS NOT OLD.checkin_token OR NEW.round_id IS NOT OLD.round_id OR NEW.user_id IS NOT OLD.user_id OR NEW.external_id IS NOT OLD.external_id", "annual_checkup: the token, round and person of a queue row never change")}
-        -- checking in is the one write clinic staff make; it needs a live eligible recorder and can never be undone or re-stamped
-        ${abort(`NEW.checked_in_by IS NOT NULL AND OLD.checked_in_by IS NULL AND NOT ${recorderOk("NEW.checked_in_by")}`, "annual_checkup: only clinic staff with the recorder flag may check people in")}
+        -- checking in needs a live eligible recorder, OR the employee themselves on their own row (self check-in from the registration poster,
+        -- owner 2026-11-21); it can never be undone or re-stamped, and nobody can check in somebody else without being a recorder
+        ${abort(`NEW.checked_in_by IS NOT NULL AND OLD.checked_in_by IS NULL AND NOT ${recorderOk("NEW.checked_in_by")} AND NOT (NEW.user_id IS NOT NULL AND NEW.checked_in_by = NEW.user_id AND ${activeUser("NEW.checked_in_by")})`, "annual_checkup: only clinic staff with the recorder flag may check people in")}
         ${abort("OLD.checked_in_at IS NOT NULL AND (NEW.checked_in_at IS NOT OLD.checked_in_at OR NEW.checked_in_by IS NOT OLD.checked_in_by)", "annual_checkup: a check-in cannot be changed or undone")}
         -- the sample-kit number is linked by clinic staff only (a live eligible recorder), whoever and whenever
         ${abort(`NEW.kit_no IS NOT OLD.kit_no AND (NEW.kit_set_by IS NULL OR NOT ${recorderOk("NEW.kit_set_by")})`, "annual_checkup: only clinic staff with the recorder flag may link a kit number")}

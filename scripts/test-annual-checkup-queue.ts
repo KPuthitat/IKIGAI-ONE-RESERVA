@@ -266,6 +266,26 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
       && (db.prepare("SELECT COUNT(*) n FROM annual_checkup_rounds WHERE id = ?").get(rid) as { n: number }).n === 1;
     return refused && intact;
   })());
+  ok("S9g an employee checks themselves in on their OWN row of an open round, once; never on someone else's, in a closed round, or without a row", (() => {
+    const rid = Number(db.prepare("INSERT INTO annual_checkup_rounds (name, year_be, status) VALUES ('self-checkin', 2572, 'open')").run().lastInsertRowid);
+    db.prepare("INSERT INTO annual_checkup_queue (round_id, user_id, queue_no) VALUES (?,?,1)").run(rid, HR);
+    db.prepare("INSERT INTO annual_checkup_queue (round_id, user_id, queue_no) VALUES (?,?,2)").run(rid, W);
+    const noRow = err(() => G.selfCheckIn({ id: S }, rid)) === "queue_not_found";
+    const first = G.selfCheckIn({ id: HR }, rid).already === false;
+    const again = G.selfCheckIn({ id: HR }, rid).already === true;
+    const row = db.prepare("SELECT checked_in_at, checked_in_by FROM annual_checkup_queue WHERE round_id = ? AND user_id = ?").get(rid, HR) as { checked_in_at: string | null; checked_in_by: number };
+    const own = row.checked_in_at !== null && row.checked_in_by === HR;
+    const otherRow = (db.prepare("SELECT checked_in_at FROM annual_checkup_queue WHERE round_id = ? AND user_id = ?").get(rid, W) as { checked_in_at: string | null }).checked_in_at === null;
+    // the database itself: nobody but a recorder may stamp someone else; the owner of the row may stamp themselves
+    const dbRefusesOther = sqlRefused(() => db.prepare("UPDATE annual_checkup_queue SET checked_in_at = CURRENT_TIMESTAMP, checked_in_by = ? WHERE round_id = ? AND user_id = ?").run(HR, rid, W), /only clinic staff/);
+    const dbAllowsSelf = !sqlRefused(() => db.prepare("UPDATE annual_checkup_queue SET checked_in_at = CURRENT_TIMESTAMP, checked_in_by = ? WHERE round_id = ? AND user_id = ?").run(W, rid, W), /only clinic staff/);
+    // a closed round refuses even their own check-in (W's row there is still not checked in by the SQL above failing / succeeding aside)
+    const rid2 = Number(db.prepare("INSERT INTO annual_checkup_rounds (name, year_be, status) VALUES ('closed-round', 2573, 'closed')").run().lastInsertRowid);
+    db.prepare("INSERT INTO annual_checkup_queue (round_id, user_id, queue_no) VALUES (?,?,1)").run(rid2, S);
+    const closed = err(() => G.selfCheckIn({ id: S }, rid2)) === "queue_not_found";
+    const audited = (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'queue.selfcheckin' AND round_id = ?").get(rid) as { n: number }).n === 1;
+    return noRow && first && again && own && otherRow && dbRefusesOther && dbAllowsSelf && closed && audited;
+  })());
   ok("S10 the database refuses a station pass by a non-recorder or for someone not checked in, and passes are append-only", sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qB.id, W), /may mark a station/)
     && sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qC.id, R), /not checked in/)
     && sqlRefused(() => db.prepare("UPDATE annual_checkup_station_passes SET passed_by = ?").run(S), /append-only/) && sqlRefused(() => db.prepare("DELETE FROM annual_checkup_station_passes").run(), /append-only/));
