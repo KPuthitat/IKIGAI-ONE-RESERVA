@@ -12,7 +12,7 @@ import { getSystemSettings } from "./db";
 import { DEFAULT_OWL_AI_MODEL, owlAiModel } from "./owl-ai-models";
 import {
   referenceLists, expenseSummary, unpaidBills, incomeSummaryTool,
-  daybookSummary, leaveSummary, staffHeadcount, pendingRequests
+  daybookSummary, leaveSummary, staffHeadcount, pendingRequests, pendingLeaveList
 } from "./owl-data";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
@@ -110,6 +110,11 @@ const TOOLS = [
     }
   },
   {
+    name: "pending_leave_list",
+    description: "รายการคำขอลาที่ยังรออนุมัติ (ชื่อ ประเภท วันที่ จำนวนวัน เลขอ้างอิง) ไม่มีเหตุผลการลา",
+    input_schema: { type: "object", properties: { branch_name: { type: "string" } }, additionalProperties: false }
+  },
+  {
     name: "staff_headcount",
     description: "จำนวนพนักงานที่ยังทำงานอยู่ (รวมแอดมิน, ไม่นับลาออก/ปิดบัญชี)",
     input_schema: {
@@ -159,6 +164,8 @@ function runTool(name: string, input: ToolInput): unknown {
       });
     case "staff_headcount":
       return staffHeadcount({ branch_name: str(input.branch_name) });
+    case "pending_leave_list":
+      return pendingLeaveList({ branch_name: str(input.branch_name) });
     case "pending_requests":
       return pendingRequests({ branch_name: str(input.branch_name) });
     default:
@@ -177,6 +184,15 @@ const SYSTEM = `คุณคือ "น้องฮูก" ผู้ช่วย
 - จำนวนเงินจัดรูปแบบมีคอมมา เช่น 12,500 บาท
 - เตือนสั้นๆ ได้ว่าข้อมูลนี้ช่วยติดตามภายใน ไม่ใช่งบการเงินทางการ เมื่อเหมาะสม`;
 
+// Extra rules when the answer is posted in a LINE group (the owner's executive group).
+const GROUP_RULES = `
+
+ตอนนี้กำลังตอบในกลุ่ม LINE ผู้บริหาร:
+- ตอบเป็นข้อความธรรมดาที่อ่านง่ายใน LINE ห้ามใช้ markdown (ห้ามใช้ ** หรือ # หรือตาราง) ใช้บรรทัดสั้นๆ และเลขข้อ
+- ตอบกระชับ ไม่เกิน 15 บรรทัด
+- สรุปคำขอลาให้เห็นเฉพาะ ชื่อ ประเภทลา วันที่ จำนวนวัน และเลขอ้างอิง ห้ามเดาหรือใส่เหตุผลการลา
+- นกฮูกในกลุ่มนี้อ่านข้อมูลได้อย่างเดียว ยังอนุมัติหรือเปลี่ยนแปลงข้อมูลไม่ได้ ถ้าถูกขอให้ทำ ให้บอกว่าทำได้ที่หน้าเว็บ`;
+
 type Block = { type: string; [k: string]: unknown };
 type Msg = { role: "user" | "assistant"; content: string | Block[] };
 
@@ -189,7 +205,7 @@ export type OwlAnswer = {
 };
 
 /** Run one question through the tool-use loop and return the Thai answer. */
-export async function askOwl(question: string): Promise<OwlAnswer> {
+export async function askOwl(question: string, opts: { surface?: "group" } = {}): Promise<OwlAnswer> {
   const s = getSystemSettings();
   if (!s.owl_ai_enabled) throw new OwlAiError("disabled", "น้องฮูก (AI) ปิดอยู่ — เปิดได้ที่ตั้งค่าระบบ");
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -209,7 +225,7 @@ export async function askOwl(question: string): Promise<OwlAnswer> {
           "anthropic-version": ANTHROPIC_VERSION,
           "content-type": "application/json"
         },
-        body: JSON.stringify({ model, max_tokens: 1500, system: SYSTEM, tools: TOOLS, messages })
+        body: JSON.stringify({ model, max_tokens: 1500, system: opts.surface === "group" ? SYSTEM + GROUP_RULES : SYSTEM, tools: TOOLS, messages })
       });
     } catch {
       throw new OwlAiError("network", "เชื่อมต่อบริการ AI ไม่ได้ ลองใหม่อีกครั้ง");

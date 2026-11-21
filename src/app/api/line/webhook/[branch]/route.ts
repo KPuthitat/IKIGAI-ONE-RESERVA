@@ -23,6 +23,11 @@ import { sendLinePush, isReviewKeyword, notifyReviewInviteToLineUser, isMemberKe
 import { recordInbound } from "@/lib/inbox";
 import { ingestLineBill, handleBillVerifyPostback } from "@/lib/accounta-line-bill";
 import { getChannelByCode } from "@/lib/messaging-channels";
+import { handleGroupMessage, mentionsSelf, stripSelfMention } from "@/lib/owl-secretary";
+import { sendLineReply } from "@/lib/line";
+
+// LINE retries a delivery when the endpoint is slow; remember the last messages already answered.
+const answeredMessages = new Set<string>();
 
 type LineEvent = {
   type: string;
@@ -32,7 +37,7 @@ type LineEvent = {
     groupId?: string;
     roomId?: string;
   };
-  message?: { type: string; text?: string; id?: string; fileName?: string; stickerId?: string };
+  message?: { type: string; text?: string; id?: string; fileName?: string; stickerId?: string; mention?: { mentionees?: Array<{ index?: number; length?: number; type?: string; isSelf?: boolean }> } };
   postback?: { data?: string };
   replyToken?: string;
 };
@@ -157,6 +162,25 @@ export async function POST(req: Request, { params }: { params: { branch: string 
       // staff_group_id setting (admin should fix manually if intentional).
       const groupId = ev.source?.groupId;
       console.log(`[line:${channel.scope}] OA left group ${groupId} for ${channel.label}`);
+      continue;
+    }
+
+    // นกฮูกเลขา (owner 2026-11-21): a text in a GROUP that tags this bot. Untagged group chatter is not read (it falls through to the old handlers unchanged).
+    if (channel.scope === "platform" && ev.type === "message" && ev.message?.type === "text" && ev.source?.type === "group" && ev.source.groupId && mentionsSelf(ev.message.mention)) {
+      const mid = ev.message.id ?? "";
+      if (mid && answeredMessages.has(mid)) continue;
+      if (mid) { answeredMessages.add(mid); if (answeredMessages.size > 200) answeredMessages.delete(answeredMessages.values().next().value as string); }
+      const groupId = ev.source.groupId, replyToken = ev.replyToken, token = channel.channel_token;
+      // answer in the background: the AI call can take longer than LINE waits for a 200
+      void (async () => {
+        try {
+          const reply = await handleGroupMessage({ groupId, lineUserId: ev.source?.userId, text: stripSelfMention(ev.message?.text ?? "", ev.message?.mention), mentionedSelf: true });
+          if (!reply) return;
+          const msg = [{ type: "text" as const, text: reply }];
+          const r = replyToken ? await sendLineReply(token, replyToken, msg) : { ok: false };
+          if (!r.ok) await sendLinePush(token, { to: groupId, messages: msg });
+        } catch (e) { console.error("[owl-secretary]", e); }
+      })();
       continue;
     }
 

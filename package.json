@@ -55,6 +55,7 @@
     "test:special-duty-swap": "node --import tsx scripts/test-special-duty-swap.ts",
     "test:special-duty-cron": "node --import tsx scripts/test-special-duty-cron.ts",
     "test:service-eval": "node --import tsx scripts/test-service-eval.ts",
+    "test:owl-secretary": "node --import tsx scripts/test-owl-secretary.ts",
     "test:special-duty-roster": "node --import tsx scripts/test-special-duty-roster.ts",
     "test:payroll-pending-ot": "node --import tsx scripts/test-payroll-pending-ot.ts",
     "test:clinica-analytics": "node --import tsx scripts/test-clinica-analytics.ts",
