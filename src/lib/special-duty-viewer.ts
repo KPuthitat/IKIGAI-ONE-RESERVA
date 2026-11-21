@@ -21,6 +21,7 @@ export const RULE_TEXT: Record<string, string> = {
   position_invalid: "ตำแหน่งงานไม่ถูกต้อง",
   date_outside_month: "วันที่อยู่นอกเดือนที่เลือก",
   date_in_past: "ไม่สามารถเลือกวันที่ผ่านมาแล้ว",
+  before_position_start: "ตำแหน่งนี้เริ่มหลังวันที่เลือก",
   not_in_roster: "ท่านไม่มีตารางทำงานในวันที่เลือก",
   group_not_eligible: "ตำแหน่งนี้ไม่เปิดให้กลุ่มงานของท่าน",
   on_leave: "ท่านมีการลาที่อนุมัติแล้วในวันที่เลือก",

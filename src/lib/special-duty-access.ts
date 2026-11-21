@@ -56,6 +56,7 @@ export function getAnonymousSlots(viewer: Viewer, branchId: number, yearMonth: s
     const days: Array<{ date: string; state: SlotState }> = [];
     if (eligible) for (let d = 1; d <= last; d++) {
       const date = `${yearMonth}-${String(d).padStart(2, "0")}`;
+      if (p.startDate && date < p.startDate) continue;
       if (!isOnRoster(viewer.userId, branchId, date)) continue;
       const holder = taken.get(date);
       days.push({ date, state: holder == null ? "free" : holder === viewer.userId ? "mine" : "full" });

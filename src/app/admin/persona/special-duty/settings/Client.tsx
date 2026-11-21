@@ -7,7 +7,7 @@ import { apiUrl } from "@/lib/url";
 import { FormSection, Field } from "@/app/components/FormKit";
 import Switch from "@/app/components/Switch";
 
-type Position = { id: number; slotNo: number; name: string; description: string | null; dailyRate: number; eligibleGroups: string[] | null; active: boolean };
+type Position = { id: number; slotNo: number; name: string; description: string | null; dailyRate: number; eligibleGroups: string[] | null; active: boolean; startDate?: string | null };
 type Data = {
   isOwner: boolean; config: Record<string, number> | null; branchConfig: Record<string, { value: number; global: number; overridden: boolean }>; branches: Array<{ id: number; name: string }>; branchId: number;
   month: { enabled: boolean; status: string; bookingCloseDate: string | null }; positions: Position[]; workGroups: string[];
@@ -38,7 +38,7 @@ const CONFIG_LABEL: Record<string, string> = {
 const ERR_TH: Record<string, string> = {
   month_in_past: "ไม่สามารถเปิดใช้เดือนที่ผ่านมาแล้ว", has_bookings: "ปิดใช้เดือนนี้ไม่ได้ เพราะมีการเลือกหรือมอบหมายวันแล้ว", month_settled: "เดือนนี้ปิดรอบแล้ว",
   positions_locked: "แก้ตำแหน่งไม่ได้แล้ว เพราะเปิดให้เลือกวันแล้ว (พนักงานเห็นค่าตอบแทนไปแล้ว)", invalid_group: "กลุ่มงานไม่ถูกต้อง", invalid_rate: "ค่าตอบแทนไม่ถูกต้อง",
-  name_required: "กรุณาใส่ชื่อตำแหน่ง", max_positions_capped: "ระบบรองรับสูงสุด 3 ตำแหน่งต่อสาขา", invalid_value: "ค่าที่ใส่ไม่ถูกต้อง", forbidden: "ไม่มีสิทธิ์ทำรายการนี้"
+  name_required: "กรุณาใส่ชื่อตำแหน่ง", mid_month_not_allowed: "เพิ่มตำแหน่งกลางเดือนได้หลังปิดรับเลือกวันต้นเดือนแล้วเท่านั้น", no_free_slot: "สาขานี้มีตำแหน่งครบจำนวนสูงสุดแล้ว (ไม่เกิน 3)", invalid_date: "วันที่เริ่มต้องอยู่ในเดือนนี้", date_in_past: "วันที่เริ่มต้องไม่เป็นวันที่ผ่านมาแล้ว", max_positions_capped: "ระบบรองรับสูงสุด 3 ตำแหน่งต่อสาขา", invalid_value: "ค่าที่ใส่ไม่ถูกต้อง", forbidden: "ไม่มีสิทธิ์ทำรายการนี้"
 };
 const shift = (ym: string, by: number) => { const [y, m] = ym.split("-").map(Number); return new Date(Date.UTC(y, m - 1 + by, 1)).toISOString().slice(0, 7); };
 
@@ -155,6 +155,13 @@ export default function Client({ month, branch }: { month: string; branch: numbe
         </div>
       </section>
 
+      {data.month.enabled && ["booking_closed", "filling", "special_published", "in_progress"].includes(data.month.status) && (
+        <MidMonthForm month={month} branchId={data.branchId} workGroups={data.workGroups} busy={busy}
+          defaultRate={Number(data.branchConfig?.default_daily_rate?.value ?? 150)}
+          used={data.positions.length} max={Number(data.branchConfig?.max_positions_per_branch?.value ?? 3)}
+          existing={data.positions.filter((x) => x.startDate)} onSave={(body) => post({ action: "add_mid_month_position", branch_id: data.branchId, month, ...body }, "เพิ่มตำแหน่งกลางเดือนแล้ว — ไปที่หน้าผู้จัดการเพื่อมอบหมายผู้ปฏิบัติงาน")} />
+      )}
+
       <section className="card space-y-3">
         <h2 className="font-bold text-slate-800">เกณฑ์ของสาขานี้ <span className="text-sm font-normal text-slate-500">({data.branches.find((b) => b.id === data.branchId)?.name})</span></h2>
         <p className="text-sm text-slate-500">แต่ละสาขาตั้งค่าของตัวเองได้ ไม่กระทบสาขาอื่น ถ้าไม่ตั้ง สาขานี้ใช้ค่ากลางที่แสดงข้างล่างแต่ละรายการ การเปลี่ยนมีผลกับการคำนวณต่อจากนี้ และบันทึกประวัติไว้</p>
@@ -190,5 +197,51 @@ export default function Client({ month, branch }: { month: string; branch: numbe
         </section>
       )}
     </div>
+  );
+}
+
+
+/** Add a position after the start-of-month booking closed (owner 2026-11-21). It starts on a chosen day,
+ *  is paid only for approved days from then on, and the manager assigns people (no new booking round). */
+function MidMonthForm({ month, workGroups, busy, defaultRate, used, max, existing, onSave }: {
+  month: string; branchId: number; workGroups: string[]; busy: boolean; defaultRate: number; used: number; max: number;
+  existing: Position[]; onSave: (b: Record<string, unknown>) => Promise<boolean>;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [rate, setRate] = useState(String(defaultRate));
+  const [groups, setGroups] = useState<string[] | null>(null);
+  const [start, setStart] = useState("");
+  const full = used >= max;
+  return (
+    <section className="card space-y-3">
+      <h2 className="font-bold text-slate-800">เพิ่มตำแหน่งกลางเดือน <span className="text-sm font-normal text-slate-500">(หลังปิดรับเลือกวันต้นเดือนแล้ว)</span></h2>
+      <p className="text-sm text-slate-500">ตำแหน่งที่เพิ่มนับรวมในจำนวนสูงสุดของสาขา เริ่มนับตั้งแต่วันที่เลือกถึงสิ้นเดือน ไม่เปิดให้พนักงานเลือกวันเอง ผู้จัดการเป็นผู้มอบหมาย และจ่ายเฉพาะวันที่อนุมัติแล้ว</p>
+      {existing.length > 0 && <ul className="text-sm text-slate-700 list-disc pl-5">{existing.map((x) => <li key={x.id}>{x.name} · เริ่ม {x.startDate} · {x.dailyRate.toLocaleString("en-US")} บาท/วัน</li>)}</ul>}
+      {full ? <p className="text-sm text-amber-800">สาขานี้มีตำแหน่งครบ {max} ตำแหน่งแล้ว จึงเพิ่มไม่ได้</p> : (
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="ชื่อตำแหน่ง"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+          <Field label="วันที่เริ่ม"><input type="date" min={`${month}-01`} max={`${month}-31`} value={start} onChange={(e) => setStart(e.target.value)} /></Field>
+          <Field label="รายละเอียดงาน" hint="ไม่บังคับ"><input value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
+          <Field label="ค่าตอบแทนต่อวัน (บาท)"><input type="number" min="0" value={rate} onChange={(e) => setRate(e.target.value)} /></Field>
+          <div className="sm:col-span-2">
+            <div className="text-xs text-slate-500 mb-1.5">กลุ่มงานที่ทำได้ <span className="text-slate-400">(ไม่เลือกเลย = ทุกกลุ่ม)</span></div>
+            <div className="flex flex-wrap gap-1.5">
+              {workGroups.map((g) => {
+                const on = !!groups?.includes(g);
+                return <button key={g} type="button" aria-pressed={on} className={`chip ${on ? "chip-active" : ""}`}
+                  onClick={() => { const cur = new Set(groups ?? []); if (on) cur.delete(g); else cur.add(g); setGroups(cur.size ? [...cur] : null); }}>{GROUP_TH[g] ?? g}</button>;
+              })}
+            </div>
+          </div>
+          <div className="sm:col-span-2">
+            <button type="button" className="btn-primary w-full" disabled={busy || !name.trim() || !start}
+              onClick={async () => { if (window.confirm(`เพิ่มตำแหน่ง "${name.trim()}" เริ่ม ${start} ใช่หรือไม่ ตำแหน่งนี้จะนับรวมในงบและจำนวนตำแหน่งสูงสุดของสาขา`)) { const ok = await onSave({ name, description: description || null, daily_rate: Number(rate), eligible_groups: groups, start_date: start }); if (ok) { setName(""); setDescription(""); setStart(""); } } }}>
+              เพิ่มตำแหน่งกลางเดือน
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

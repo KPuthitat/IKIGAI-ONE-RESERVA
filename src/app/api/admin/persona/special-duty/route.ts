@@ -21,7 +21,7 @@ import { sqlNameWithPrefix } from "@/lib/name";
 
 // Why a person does not fit a day, worded for the manager (RULE_TEXT is worded for the employee).
 const WHY_NOT: Record<string, string> = {
-  date_in_past: "เป็นวันที่ผ่านมาแล้ว", not_in_roster: "ไม่มีตารางทำงานวันนั้น", on_leave: "ลาในวันนั้น",
+  date_in_past: "เป็นวันที่ผ่านมาแล้ว", before_position_start: "ก่อนวันเริ่มของตำแหน่งนี้", not_in_roster: "ไม่มีตารางทำงานวันนั้น", on_leave: "ลาในวันนั้น",
   group_not_eligible: "อยู่นอกกลุ่มงานของตำแหน่งนี้", too_many_per_day: "ได้ตำแหน่งครบจำนวนต่อวันแล้ว", slot_taken: "มีผู้ได้วันนี้แล้ว",
   not_in_branch: "ไม่ได้สังกัดสาขานี้"
 };
@@ -74,7 +74,8 @@ export async function GET(req: Request) {
     alerts: m.enabled && ["special_published", "in_progress", "settled"].includes(m.status) ? dutyOwnerAlerts(g.branchId, month.data) : [],
     swaps: m.enabled ? listPendingForManager(g.branchId, month.data) : [],
     changes: m.enabled ? listPendingChanges(g.branchId, month.data) : [],
-    open: m.enabled && (filling || m.status === "booking_open") ? openDays(g.branchId, month.data) : []
+    open: m.enabled && (filling || m.status === "booking_open") ? openDays(g.branchId, month.data)
+      : m.enabled && ["special_published", "in_progress"].includes(m.status) ? openDays(g.branchId, month.data).filter((o) => listPositions(g.branchId, month.data).find((p) => p.id === o.positionId)?.startDate) : []
   });
 }
 
@@ -146,6 +147,14 @@ export async function POST(req: Request) {
         if (!d.position_id || !d.date || !d.user_id) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
         const r = managerAssign({ branchId, yearMonth: ym, positionId: d.position_id, date: d.date, userId: d.user_id, managerId: actorId, override: d.override === true });
         if (!r.ok) return NextResponse.json({ ok: false, errors: r.errors.map((e) => ({ ...e, message: RULE_TEXT[e.code] ?? e.code })) }, { status: 422 });
+        // A mid-month position is assigned after the schedule went out: tell only the person who got the day.
+        const pos = listPositions(branchId, ym).find((x) => x.id === d.position_id);
+        if (pos?.startDate && ["special_published", "in_progress"].includes(getMonth(branchId, ym).status)) {
+          const line = (getDb().prepare("SELECT line_user_id AS l FROM users WHERE id = ?").get(d.user_id) as { l: string | null } | undefined)?.l ?? null;
+          const base = (process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || "").replace(/\/$/, "");
+          pushIndividually([line], noticeFlex({ title: "ได้รับมอบหมายตำแหน่งงานค่าตอบแทนพิเศษ", lines: [`${pos.name} · ${d.date}`, `ตำแหน่งใหม่เริ่ม ${pos.startDate} · ค่าตอบแทน ${pos.dailyRate.toLocaleString("en-US")} บาท/วัน`], url: `${base}/staff/persona/special-duty?month=${ym}`, button: "เปิดดู" }))
+            .catch((e) => console.error("mid-month assign push", e));
+        }
         break;
       }
       case "remove": {

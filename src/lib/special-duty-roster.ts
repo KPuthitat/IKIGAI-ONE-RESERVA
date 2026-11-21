@@ -127,7 +127,7 @@ export function coverageGaps(branchId: number, ym: string): CoverageGap[] {
   for (let d = 1; d <= daysInMonth(ym); d++) {
     const date = `${ym}-${String(d).padStart(2, "0")}`;
     const depts = byDate.get(date) ?? [];
-    for (const p of positions) if (!depts.some((x) => eligible(p, x))) gaps.push({ positionId: p.id, positionName: p.name, date });
+    for (const p of positions) if ((!p.startDate || date >= p.startDate) && !depts.some((x) => eligible(p, x))) gaps.push({ positionId: p.id, positionName: p.name, date });
   }
   return gaps;
 }

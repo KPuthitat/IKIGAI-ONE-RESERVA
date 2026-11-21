@@ -3492,6 +3492,9 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_special_duty_audit_scope ON special_duty_audit(branch_id, year_month, at);
   `);
+  // Mid-month positions (owner 2026-11-21): a position added after the start-of-month booking has
+  // closed carries the date it starts; NULL = a normal whole-month position.
+  if (!columnExists(db, "special_duty_positions", "start_date")) db.exec("ALTER TABLE special_duty_positions ADD COLUMN start_date TEXT");
   // ประกาศนโยบาย / หนังสือแจ้งหลังประชุม (owner 2026-10-12): an all-staff meeting is announced,
   // and after it the admin publishes a letter of topics (heading, details, suggestions raised at
   // the meeting) that every recipient only has to acknowledge. Content is locked once published.
