@@ -30,5 +30,5 @@ export default function StationScanPage({ params }: { params: { token: string } 
   if (!q) return shell(<div className="card p-5 text-sm text-slate-700 space-y-3"><p>ไม่พบลำดับตรวจของท่านในรอบที่เปิดอยู่</p>{back}</div>);
   const st = q.stations.find((x) => x.code === code);
   if (!st) return shell(<div className="card p-5 text-sm text-slate-700 space-y-3"><p>สถานีนี้ไม่อยู่ในรายการตรวจของท่าน</p>{back}</div>);
-  return shell(<StationScanConfirm roundId={q.round_id} code={code} name={st.name_th} already={st.passed || st.self_marked} official={st.passed} />);
+  return shell(<StationScanConfirm roundId={q.round_id} code={code} name={st.name_th} already={st.passed} />);
 }

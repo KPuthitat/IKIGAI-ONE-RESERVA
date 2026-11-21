@@ -286,6 +286,28 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     const audited = (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'queue.selfcheckin' AND round_id = ?").get(rid) as { n: number }).n === 1;
     return noRow && first && again && own && otherRow && dbRefusesOther && dbAllowsSelf && closed && audited;
   })());
+  ok("S9h an employee records their OWN station pass (official, append-only) after check-in, on their own route, in an open round; never for someone else, not before check-in, not an off-route station", (() => {
+    const rid = Number(db.prepare("INSERT INTO annual_checkup_rounds (name, year_be, status) VALUES ('self-pass', 2574, 'open')").run().lastInsertRowid);
+    const py = Number(db.prepare("INSERT INTO annual_checkup_payers (round_id, name_th) VALUES (?, 'บริษัท ผ่านเอง')").run(rid).lastInsertRowid);
+    const tid = (db.prepare("SELECT t.id FROM annual_checkup_tests t JOIN annual_checkup_stations s ON s.id = t.station_id WHERE s.code = 'BLOOD' LIMIT 1").get() as { id: number }).id;
+    db.prepare("INSERT INTO annual_checkup_orders (round_id, user_id, payer_id, test_id, status) VALUES (?,?,?,?,'ordered')").run(rid, HR, py, tid);
+    db.prepare("INSERT INTO annual_checkup_queue (round_id, user_id, queue_no) VALUES (?,?,1)").run(rid, HR);
+    const beforeCheckin = err(() => G.selfPassStation({ id: HR }, rid, "BLOOD")) === "not_checked_in";
+    G.selfCheckIn({ id: HR }, rid);
+    const offRoute = err(() => G.selfPassStation({ id: HR }, rid, "XRAY")) === "station_not_needed";
+    const noRow = err(() => G.selfPassStation({ id: S }, rid, "BLOOD")) === "queue_not_found";
+    const first = G.selfPassStation({ id: HR }, rid, "BLOOD").already === false;
+    const again = G.selfPassStation({ id: HR }, rid, "BLOOD").already === true;
+    const q = db.prepare("SELECT id FROM annual_checkup_queue WHERE round_id = ? AND user_id = ?").get(rid, HR) as { id: number };
+    const rows = db.prepare("SELECT passed_by FROM annual_checkup_station_passes WHERE queue_id = ?").all(q.id) as Array<{ passed_by: number }>;
+    const official = rows.length === 1 && rows[0].passed_by === HR;
+    const seen = G.getMyQueue({ id: HR }).find((x) => x.round_id === rid)?.stations.find((x) => x.code === "BLOOD")?.passed === true;
+    // the database: someone else cannot pass a station on this row, the owner of the row can; passes stay append-only
+    const dbRefusesOther = sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 2, ?)").run(q.id, W), /may mark a station/);
+    const dbAppendOnly = sqlRefused(() => db.prepare("DELETE FROM annual_checkup_station_passes WHERE queue_id = ?").run(q.id), /append-only/);
+    const audited = (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'queue.station.self' AND round_id = ?").get(rid) as { n: number }).n === 1;
+    return beforeCheckin && offRoute && noRow && first && again && official && seen && dbRefusesOther && dbAppendOnly && audited;
+  })());
   ok("S10 the database refuses a station pass by a non-recorder or for someone not checked in, and passes are append-only", sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qB.id, W), /may mark a station/)
     && sqlRefused(() => db.prepare("INSERT INTO annual_checkup_station_passes (queue_id, station_id, passed_by) VALUES (?, 1, ?)").run(qC.id, R), /not checked in/)
     && sqlRefused(() => db.prepare("UPDATE annual_checkup_station_passes SET passed_by = ?").run(S), /append-only/) && sqlRefused(() => db.prepare("DELETE FROM annual_checkup_station_passes").run(), /append-only/));

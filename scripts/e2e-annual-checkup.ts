@@ -32,6 +32,7 @@ process.env.DATABASE_PATH = DB; process.env.RESERVA_SECRET_KEY = "e2e-secret-key
   const sess = (uid: number) => { const id = `e2e-${uid}-${Math.random().toString(16).slice(2)}`; db.prepare("INSERT INTO sessions (id,user_id,active_branch_id,expires_at) VALUES (?,?,?,?)").run(id, uid, null, new Date(Date.now() + 3600_000).toISOString()); return id; };
   const SELF = mk("emp-self", "staff", {}, nama);
   db.prepare("INSERT INTO annual_checkup_queue (round_id, user_id, queue_no) VALUES (?,?,77)").run(round, SELF);
+  db.prepare("INSERT INTO annual_checkup_orders (round_id,user_id,payer_id,test_id,status) VALUES (?,?,?,?,'ordered')").run(round, SELF, payer, (db.prepare("SELECT t.id FROM annual_checkup_tests t JOIN annual_checkup_stations s ON s.id = t.station_id WHERE s.code = 'BLOOD' LIMIT 1").get() as { id: number }).id);
   const cookie = { R: sess(R), D: sess(D), A: sess(A), HR: sess(HR), E: sess(E), SELF: sess(SELF) };
 
   const port = 3999;
@@ -69,6 +70,16 @@ process.env.DATABASE_PATH = DB; process.env.RESERVA_SECRET_KEY = "e2e-secret-key
     ok("it is stamped as their own check-in", row.checked_in_at !== null && row.checked_in_by === SELF);
     const after = await call(`/staff/persona/checkup-queue/station/${encodeURIComponent(regTok)}`, { who: "SELF" });
     ok("scanning again after check-in sends them to their own page", after.status >= 300 && after.status < 400 && after.loc.includes("/staff/persona/checkup-queue"), `status ${after.status} ${after.loc}`);
+    // stations scanned by the employee themselves (no staff scan needed)
+    const sp = (who: "SELF" | "HR", code: string, marked = true) => call("/api/annual-checkup/me/station", { who, json: { roundId: rid, code, marked } });
+    ok("an off-route station cannot be passed", (await sp("SELF", "XRAY")).status === 422);
+    ok("someone with no queue place cannot pass a station", (await sp("HR", "BLOOD")).status === 422);
+    ok("the employee passes their station themselves", (await sp("SELF", "BLOOD")).json?.already === false);
+    ok("a second tap changes nothing", (await sp("SELF", "BLOOD")).json?.already === true);
+    ok("a pass cannot be taken back by the employee (422)", (await sp("SELF", "BLOOD", false)).status === 422);
+    const selfQ = await call("/staff/persona/checkup-queue", { who: "SELF" });
+    ok("their queue page shows the station as passed", selfQ.status === 200 && selfQ.text.includes("ผ่านแล้ว"), `status ${selfQ.status}`);
+    ok("it is recorded as an official pass by the employee", (db.prepare("SELECT COUNT(*) n FROM annual_checkup_station_passes p JOIN annual_checkup_queue q ON q.id = p.queue_id WHERE q.user_id = ? AND p.passed_by = ?").get(SELF, SELF) as { n: number }).n === 1);
     // the PIN gate: nothing clinical is served, page or API, until the clinician has typed their PIN
     const g1 = await call("/staff/health/annual-checkup/queue", { who: "R" });
     ok("without the PIN a clinic page redirects to the PIN page and shows nobody", g1.status >= 300 && g1.status < 400 && g1.loc.includes("/staff/health/annual-checkup/pin") && !g1.text.includes("emp-a"), `status ${g1.status} ${g1.loc}`);

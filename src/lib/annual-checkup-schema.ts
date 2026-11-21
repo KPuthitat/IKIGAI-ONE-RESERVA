@@ -449,7 +449,9 @@ export function ensureAnnualCheckupSchema(db: Database.Database): void {
     ["annual_checkup_station_passes_ins", `
       CREATE TRIGGER annual_checkup_station_passes_ins BEFORE INSERT ON annual_checkup_station_passes
       BEGIN
-        ${abort(`NOT ${recorderOk("NEW.passed_by")}`, "annual_checkup: only clinic staff with the recorder flag may mark a station passed")}
+        -- a live eligible recorder, OR the employee themselves on their own queue row (they scan the station's QR, owner 2026-11-21: staff are not
+        -- made to scan every person at every station)
+        ${abort(`NOT ${recorderOk("NEW.passed_by")} AND NOT (${activeUser("NEW.passed_by")} AND NEW.passed_by = (SELECT user_id FROM annual_checkup_queue WHERE id = NEW.queue_id))`, "annual_checkup: only clinic staff with the recorder flag may mark a station passed")}
         ${abort("(SELECT checked_in_at FROM annual_checkup_queue WHERE id = NEW.queue_id) IS NULL", "annual_checkup: a person who has not checked in cannot pass a station")}
       END;`],
     ["annual_checkup_station_passes_upd", `
