@@ -3538,6 +3538,14 @@ function runMigrations(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  // Admins the owner allowed to command นกฮูก in those groups (HR questions only; finance stays with the owner).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS owl_secretary_users (
+      user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      granted_by INTEGER NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
   // ประกาศนโยบาย / หนังสือแจ้งหลังประชุม (owner 2026-10-12): an all-staff meeting is announced,
   // and after it the admin publishes a letter of topics (heading, details, suggestions raised at
   // the meeting) that every recipient only has to acknowledge. Content is locked once published.
