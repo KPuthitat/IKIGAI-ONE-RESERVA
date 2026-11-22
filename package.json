@@ -56,6 +56,7 @@
     "test:special-duty-cron": "node --import tsx scripts/test-special-duty-cron.ts",
     "test:revshare-seller-income": "node --import tsx scripts/test-revshare-seller-income.ts",
     "test:corporate-goal": "node --import tsx scripts/test-corporate-goal.ts",
+    "test:category-mix": "node --import tsx scripts/test-category-mix.ts",
     "test:service-eval": "node --import tsx scripts/test-service-eval.ts",
     "test:owl-secretary": "node --import tsx scripts/test-owl-secretary.ts",
     "test:special-duty-roster": "node --import tsx scripts/test-special-duty-roster.ts",

@@ -588,16 +588,21 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
         // Duplicate-file guard (owner 2026-09-19): warn when an import replaced
         // data that already existed for that day+type.
         const kindTh = (k: string) => k === "close_up" ? "ยอดขาย" : k === "overview" ? "เมนู" : k === "tax_invoice" ? "ใบกำกับภาษี" : "ใบเสร็จ";
-        const imported = r.imported as Array<{ date: string; kind: string; overwritten?: boolean }>;
+        const imported = r.imported as Array<{ date: string; kind: string; overwritten?: boolean; mix?: { day: string | null; month: string | null; others: string[] } }>;
         const dup = imported.filter((x) => x.overwritten);
+        // สัดส่วน Beer / Soft drink / จ้อจี้ ของวันที่นำเข้า และสะสมเดือนนี้ (owner 2026-11-22)
+        const mixed = imported.filter((x) => x.mix && (x.mix.day || x.mix.month)).sort((a, b) => a.date.localeCompare(b.date)).pop();
+        const mixText = mixed?.mix
+          ? `\nสัดส่วนยอดขายตามหมวด วันที่ ${thaiDate(mixed.date)}: ${mixed.mix.day ?? "-"}\nสะสมเดือนนี้: ${mixed.mix.month ?? "-"}${mixed.mix.others.length ? `\nหมวดที่อยู่ใน “อื่นๆ” มากสุด: ${mixed.mix.others.join(" · ")}` : ""}`
+          : "";
         // Tax-invoice files dedup by invoice number silently — a plain "สำเร็จ" is
         // all the owner wants to read (2026-10-03: "เวิ่นเว้อเกินไป").
         const hasTax = imported.some((x) => x.kind === "tax_invoice");
         if (dup.length) {
           const list = dup.map((x) => `${thaiDate(x.date)} (${kindTh(x.kind)})`).join(", ");
-          setMsg({ kind: "warn", text: `นำเข้าไฟล์สำเร็จ · ⚠️ ทับข้อมูลเดิม ${dup.length} รายการ — ${list}` });
+          setMsg({ kind: "warn", text: `นำเข้าไฟล์สำเร็จ · ⚠️ ทับข้อมูลเดิม ${dup.length} รายการ — ${list}${mixText}` });
         } else {
-          setMsg({ kind: "ok", text: "นำเข้าไฟล์สำเร็จ" });
+          setMsg({ kind: "ok", text: `นำเข้าไฟล์สำเร็จ${mixText}` });
         }
         if (hasTax) {
           // Refresh the corporate-customer card if it's open (it's lazy-loaded).
@@ -794,7 +799,7 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
         </div>
       )}
       {msg && (
-        <div className={`card text-sm ${msg.kind === "ok" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : msg.kind === "warn" ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-rose-50 border-rose-200 text-rose-700"}`}>{msg.text}</div>
+        <div className={`card text-sm whitespace-pre-line ${msg.kind === "ok" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : msg.kind === "warn" ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-rose-50 border-rose-200 text-rose-700"}`}>{msg.text}</div>
       )}
 
       {/* Import — POS files for restaurants, APSX/HIS for the clinic (owner
