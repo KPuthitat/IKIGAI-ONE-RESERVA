@@ -62,7 +62,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   // ── phase B: leave decisions behind a confirm button ──
   const ins = (ref: string, tier: number | null, branchId: number) => Number(db.prepare("INSERT INTO leave_requests (user_id,type,date_from,date_to,days,reason,status,branch_id,ref_no,current_tier) VALUES (?,?,?,?,?,?,?,?,?,?)").run(staff, "personal", "2026-12-10", "2026-12-10", 1, "ส่วนตัว", "pending", branchId, ref, tier).lastInsertRowid);
   const status = (ref: string) => db.prepare("SELECT status, current_tier AS tier, decided_by AS by FROM leave_requests WHERE ref_no = ?").get(ref) as { status: string; tier: number | null; by: number | null };
-  const dataOf = (flex: string, kind: "y" | "n") => (flex.match(new RegExp(`"data":"(owl_leave:${kind}:[^"]+)"`)) ?? [])[1] ?? "";
+  const dataOf = (flex: string, kind: "y" | "n", req = "l") => (flex.match(new RegExp(`"data":"(owl_dec:${req}:${kind}:[^"]+)"`)) ?? [])[1] ?? "";
   const press = (data: string, who: string | undefined, nowSec?: number, g = "G1") => S.handleConfirmPostback({ data, groupId: g, lineUserId: who, secret: SECRET, nowSec });
   await say("Uowner", "เปิดใช้กลุ่มนี้");
   const l2 = ins("L20261202", null, br), l3 = ins("L20261203", 1, br), l4 = ins("L20261204", null, br);
@@ -99,6 +99,32 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     return /ถูกถอน/.test(press(dataOf(c!, "y"), "Uadmin") ?? "") && status("L20261205").status === "pending";
   })());
   await say("Uowner", "ให้สิทธิ์ @Admin", true, "G1", ["Uadmin"]);
+
+  // ── phase C: OT and shift-change requests ──
+  const other = Number(db.prepare("INSERT INTO branches (slug,name) VALUES ('hypo','HYPO')").run().lastInsertRowid);
+  const otId = Number(db.prepare("INSERT INTO ot_requests (user_id,branch_id,work_date,requested_until,status,requested_from,early_status) VALUES (?,?,?,?,?,?,?)").run(staff, br, "2026-12-11", "22:30", "pending", "07:30", "pending").lastInsertRowid);
+  const ot2 = Number(db.prepare("INSERT INTO ot_requests (user_id,branch_id,work_date,requested_until,status) VALUES (?,?,?,?,?)").run(adm, br, "2026-12-12", "21:00", "pending").lastInsertRowid);
+  const otFar = Number(db.prepare("INSERT INTO ot_requests (user_id,branch_id,work_date,requested_until,status) VALUES (?,?,?,?,?)").run(staff, other, "2026-12-13", "21:00", "pending").lastInsertRowid);
+  const sh = Number(db.prepare("INSERT INTO shift_change_requests (user_id,branch_id,kind,work_date,off_date,status,ref_no) VALUES (?,?,?,?,?,?,?)").run(staff, br, "swap", "2026-12-14", "2026-12-15", "pending", "SC202612-7").lastInsertRowid);
+  const otSt = (id: number) => db.prepare("SELECT status, early_status AS early FROM ot_requests WHERE id = ?").get(id) as { status: string; early: string | null };
+
+  const oc = await say("Uowner", `อนุมัติ OT${otId}`);
+  ok("OT command gives a card showing both pending segments, nothing changes yet", oc!.startsWith("FLEX") && oc!.includes("22:30") && oc!.includes("07:30") && otSt(otId).status === "pending");
+  ok("someone else cannot press the OT button", press(dataOf(oc!, "y", "o"), "Uadmin") === null && otSt(otId).status === "pending");
+  ok("the owner's OT confirm decides every pending segment", /อนุมัติ OT\d+ ของ สมชาย/.test(press(dataOf(oc!, "y", "o"), "Uowner") ?? "") && otSt(otId).status === "approved" && otSt(otId).early === "approved");
+  ok("an OT already decided is refused", /ตัดสินแล้ว/.test((await say("Uowner", `อนุมัติ OT${otId}`)) ?? ""));
+  const orj = await say("Uowner", `ไม่อนุมัติ OT${ot2}`);
+  ok("OT reject works", /ไม่อนุมัติ OT/.test(press(dataOf(orj!, "y", "o"), "Uowner") ?? "") && otSt(ot2).status === "rejected");
+  ok("the OT decision is logged as made via the LINE group", !!db.prepare("SELECT 1 FROM persona_activity_log WHERE action = 'ot.approve.line_group'").get() && !!db.prepare("SELECT 1 FROM persona_activity_log WHERE action = 'ot.early_approve.line_group'").get());
+  ok("a granted admin outside the OT's branch is refused", /ไม่ได้ดูแล/.test((await say("Uadmin", `อนุมัติ OT${otFar}`)) ?? "") && otSt(otFar).status === "pending");
+  ok("an unknown OT number is refused", /ไม่พบ/.test((await say("Uowner", "อนุมัติ OT99999")) ?? ""));
+
+  const sc = await say("Uowner", "อนุมัติ SC202612-7");
+  ok("shift command gives a card and says the roster is still edited by hand", sc!.startsWith("FLEX") && sc!.includes("แลกหยุด") && sc!.includes("แก้เอง") && (db.prepare("SELECT status FROM shift_change_requests WHERE id = ?").get(sh) as { status: string }).status === "pending");
+  ok("the owner's shift confirm records the decision", /อนุมัติคำขอเปลี่ยนเวลางาน SC202612-7/.test(press(dataOf(sc!, "y", "s"), "Uowner") ?? "") && (db.prepare("SELECT status, decided_by AS by FROM shift_change_requests WHERE id = ?").get(sh) as { status: string; by: number }).status === "approved");
+  ok("a button of one kind cannot be reused for another (signature covers it)", press(dataOf(sc!, "y", "s").replace("owl_dec:s:", "owl_dec:o:"), "Uowner") === null);
+  ok("a shift already decided is refused", /ตัดสินแล้ว/.test((await say("Uowner", "อนุมัติ SC202612-7")) ?? ""));
+  ok("the AI tools list the codes to type (and no reason)", (() => { const j = JSON.stringify(D.pendingOtList({})) + JSON.stringify(D.pendingShiftList({})); return j.includes(`OT${otFar}`); })());
 
   // daily cap
   for (let i = 0; i < S.DAILY_CAP - 1; i++) db.prepare("INSERT INTO owl_ai_usage (model,question,created_by) VALUES ('m','[LINE กลุ่ม] x',?)").run(owner);

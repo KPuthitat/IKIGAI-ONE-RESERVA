@@ -1,5 +1,5 @@
 // นกฮูกเลขา (owner 2026-11-21): the owner tags นกฮูก in a LINE group and it answers from the system.
-// Phase A reads; phase B decides leave requests (approve / reject) behind a confirm button. Rules, all enforced here in code (never left to the model):
+// Phase A reads; phases B/C decide leave, OT and shift-change requests (approve / reject) behind a confirm button. Rules, all enforced here in code (never left to the model):
 //  - the owner may ask anything; an admin the owner granted (by tagging them in the group) may ask people
 //    matters only — never money (owner 2026-11-21);
 //  - nothing is read or answered unless นกฮูก is tagged (the webhook passes `mentionedSelf`);
@@ -12,6 +12,7 @@
 import crypto from "node:crypto";
 import { getDb, logPersonaAction } from "./db";
 import { applyLeaveDecision, checkLeaveDecision, type Actor, type Decision } from "./leave-decide";
+import { applyOtDecision, applyShiftDecision, checkOtDecision, checkShiftDecision, otInfo, shiftInfo } from "./request-decide";
 import { askOwl, OwlAiError, owlAiEnabled } from "./owl-ai";
 import { LEAVE_LABEL, logOwlUsage } from "./owl-data";
 
@@ -53,7 +54,9 @@ const askedToday = () => (getDb().prepare("SELECT COUNT(*) n FROM owl_ai_usage W
 // A command to change something starts a word with the verb ("อนุมัติ L20261101"); "รออนุมัติ" / "ที่อนุมัติแล้ว" are questions.
 // A miss here is harmless: the AI only has read-only tools and is told it cannot approve.
 const WRITE_WORDS = /(^|\s)(ช่วย|กรุณา|ให้)?\s*(ไม่อนุมัติ|อนุมัติ|ปฏิเสธ|ยกเลิกใบลา|approve|reject)(?!แล้ว)/i;
-const REF_RE = /\bL-?(\d{6,12})\b/i;
+const LEAVE_RE = /\bL-?(\d{6,12})\b/i;
+const OT_RE = /\bOT-?(\d{1,9})\b/i;
+const SHIFT_RE = /\bSC(\d{6})-(\d{1,9})\b/i;
 
 export type GroupReply = string | { flex: { type: "flex"; altText: string; contents: unknown } } | null;
 
@@ -61,9 +64,11 @@ export type GroupReply = string | { flex: { type: "flex"; altText: string; conte
 
 const CONFIRM_TTL_SEC = 300;
 const sign = (payload: string, secret: string) => crypto.createHmac("sha256", secret).update(payload).digest("hex").slice(0, 20);
-/** postback data: owl_leave:<y|n>:<id>:<a|r>:<expiry>:<issuer LINE id>:<sig>  (y = confirm, n = cancel; a = approve, r = reject) */
-export function confirmData(kind: "y" | "n", id: number, decision: "a" | "r", lineUserId: string, secret: string, nowSec = Math.floor(Date.now() / 1000)): string {
-  const body = `owl_leave:${kind}:${id}:${decision}:${nowSec + CONFIRM_TTL_SEC}:${lineUserId}`;
+/** postback data: owl_dec:<l|o|s>:<y|n>:<id>:<a|r>:<expiry>:<issuer LINE id>:<sig>
+ *  (l = leave, o = OT, s = shift change; y = confirm, n = cancel; a = approve, r = reject) */
+export type ReqKind = "l" | "o" | "s";
+export function confirmData(req: ReqKind, kind: "y" | "n", id: number, decision: "a" | "r", lineUserId: string, secret: string, nowSec = Math.floor(Date.now() / 1000)): string {
+  const body = `owl_dec:${req}:${kind}:${id}:${decision}:${nowSec + CONFIRM_TTL_SEC}:${lineUserId}`;
   return `${body}:${sign(body, secret)}`;
 }
 
@@ -90,63 +95,112 @@ function leaveInfo(id: number) {
     FROM leave_requests l JOIN users u ON u.id = l.user_id WHERE l.id = ?`).get(id) as { ref: string; name: string; type: string; dateFrom: string; dateTo: string; days: number; tier: number | null };
 }
 
-/** The command "อนุมัติ L…" / "ไม่อนุมัติ L…": validate, then ask for a confirmation — nothing is changed here. */
+function card(args: { altText: string; title: string; lines: string[]; reject: boolean; yes: string; no: string; verb: string }): GroupReply {
+  return { flex: {
+    type: "flex", altText: args.altText,
+    contents: {
+      type: "bubble", size: "kilo",
+      header: { type: "box", layout: "vertical", backgroundColor: args.reject ? "#7f1d1d" : "#14532d", paddingAll: "14px", contents: [
+        { type: "text", text: args.title, color: "#ffffff", weight: "bold", size: "md", wrap: true } ] },
+      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "14px", contents: args.lines.map((t, i) => ({ type: "text", text: t, size: i === 0 ? "md" : "sm", weight: i === 0 ? "bold" : "regular", color: "#1a1a2e", wrap: true })) },
+      footer: { type: "box", layout: "horizontal", spacing: "sm", contents: [
+        { type: "button", style: "secondary", action: { type: "postback", label: "ยกเลิก", data: args.no } },
+        { type: "button", style: "primary", color: args.reject ? "#b91c1c" : "#15803d", action: { type: "postback", label: `ยืนยัน${args.verb}`, data: args.yes } } ] }
+    }
+  } };
+}
+
+const FOOT = "กดยืนยันภายใน 5 นาที เฉพาะผู้สั่งเท่านั้นที่กดได้";
+const DECISION_ERR: Record<string, string> = {
+  not_found: "ไม่พบรายการเลขนี้ครับ", branch_forbidden: "รายการนี้เป็นของสาขาที่ท่านไม่ได้ดูแลครับ", already_decided: "รายการนี้ตัดสินแล้วครับ"
+};
+
+/** The command "อนุมัติ <เลขอ้างอิง>" / "ไม่อนุมัติ …" for a leave, OT or shift-change request: validate, then ask for a
+ *  confirmation — nothing is changed here. */
 function prepareDecision(text: string, lineUserId: string | undefined, secret: string): GroupReply {
   const actor = actorOf(lineUserId);
   if (!actor || !lineUserId) return "คำสั่งผ่านกลุ่มนี้สั่งได้เฉพาะผู้ที่เจ้าของให้สิทธิ์ครับ";
-  const m = text.match(REF_RE);
-  if (!m || /ยกเลิกใบลา/.test(text)) return "ตอนนี้นกฮูกอนุมัติ/ไม่อนุมัติได้เฉพาะใบลา และต้องระบุเลขอ้างอิง เช่น “@นกฮูก อนุมัติ L20261101” (ดูเลขได้จากการสรุปคำขอลา) ครับ";
+  const lm = text.match(LEAVE_RE), om = text.match(OT_RE), sm = text.match(SHIFT_RE);
+  if (/ยกเลิกใบลา/.test(text) || (!lm && !om && !sm)) return "ตอนนี้นกฮูกอนุมัติ/ไม่อนุมัติได้เฉพาะ ใบลา, OT และคำขอเปลี่ยนเวลางาน และต้องระบุเลขอ้างอิง เช่น “@นกฮูก อนุมัติ L20261101”, “อนุมัติ OT12”, “อนุมัติ SC202611-5” (ดูเลขได้จากการสรุปคำขอที่รออนุมัติ) ครับ";
   const reject = /(ไม่อนุมัติ|ปฏิเสธ|reject)/i.test(text);
-  const row = getDb().prepare("SELECT id FROM leave_requests WHERE ref_no = ?").get(`L${m[1]}`) as { id: number } | undefined;
-  if (!row) return ERR_TH.not_found({});
-  const chk = checkLeaveDecision(row.id, actor);
-  if (!chk.ok) return ERR_TH[chk.error](chk);
-  const info = leaveInfo(row.id);
   const verb = reject ? "ไม่อนุมัติ" : "อนุมัติ";
   const dec = reject ? "r" : "a";
-  const lines = [`${info.name}`, `${LEAVE_LABEL[info.type] ?? info.type} · ${info.dateFrom}${info.dateTo !== info.dateFrom ? ` ถึง ${info.dateTo}` : ""} · ${info.days} วัน`,
-    ...(!reject && info.tier === 1 ? ["ชั้นที่ 1: อนุมัติแล้วจะส่งต่อชั้นที่ 2 (ยังไม่อนุมัติขั้นสุดท้าย)"] : []),
-    "กดยืนยันภายใน 5 นาที เฉพาะผู้สั่งเท่านั้นที่กดได้"];
-  return { flex: {
-    type: "flex", altText: `ยืนยัน${verb}ใบลา ${info.ref}`,
-    contents: {
-      type: "bubble", size: "kilo",
-      header: { type: "box", layout: "vertical", backgroundColor: reject ? "#7f1d1d" : "#14532d", paddingAll: "14px", contents: [
-        { type: "text", text: `ยืนยัน${verb}ใบลา ${info.ref}`, color: "#ffffff", weight: "bold", size: "md", wrap: true } ] },
-      body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "14px", contents: lines.map((t, i) => ({ type: "text", text: t, size: i === 0 ? "md" : "sm", weight: i === 0 ? "bold" : "regular", color: "#1a1a2e", wrap: true })) },
-      footer: { type: "box", layout: "horizontal", spacing: "sm", contents: [
-        { type: "button", style: "secondary", action: { type: "postback", label: "ยกเลิก", data: confirmData("n", row.id, dec, lineUserId, secret) } },
-        { type: "button", style: "primary", color: reject ? "#b91c1c" : "#15803d", action: { type: "postback", label: `ยืนยัน${verb}`, data: confirmData("y", row.id, dec, lineUserId, secret) } } ] }
-    }
-  } };
+  const db = getDb();
+
+  if (lm) {
+    const row = db.prepare("SELECT id FROM leave_requests WHERE ref_no = ?").get(`L${lm[1]}`) as { id: number } | undefined;
+    if (!row) return ERR_TH.not_found({});
+    const chk = checkLeaveDecision(row.id, actor);
+    if (!chk.ok) return ERR_TH[chk.error](chk);
+    const info = leaveInfo(row.id);
+    return card({ verb, reject, altText: `ยืนยัน${verb}ใบลา ${info.ref}`, title: `ยืนยัน${verb}ใบลา ${info.ref}`,
+      lines: [info.name, `${LEAVE_LABEL[info.type] ?? info.type} · ${info.dateFrom}${info.dateTo !== info.dateFrom ? ` ถึง ${info.dateTo}` : ""} · ${info.days} วัน`,
+        ...(!reject && info.tier === 1 ? ["ชั้นที่ 1: อนุมัติแล้วจะส่งต่อชั้นที่ 2 (ยังไม่อนุมัติขั้นสุดท้าย)"] : []), FOOT],
+      yes: confirmData("l", "y", row.id, dec, lineUserId, secret), no: confirmData("l", "n", row.id, dec, lineUserId, secret) });
+  }
+  if (om) {
+    const id = Number(om[1]);
+    const chk = checkOtDecision(id, actor);
+    if (!chk.ok) return DECISION_ERR[chk.error];
+    const o = otInfo(id);
+    const segs = [...(o.status === "pending" ? [`ออกงานช้ากว่ากะถึง ${o.until}`] : []), ...(o.from && o.earlyStatus === "pending" ? [`เข้างานก่อนกะตั้งแต่ ${o.from}`] : [])];
+    return card({ verb, reject, altText: `ยืนยัน${verb} OT${id}`, title: `ยืนยัน${verb} OT${id}`,
+      lines: [o.name, `วันที่ ${o.workDate}`, ...segs, FOOT],
+      yes: confirmData("o", "y", id, dec, lineUserId, secret), no: confirmData("o", "n", id, dec, lineUserId, secret) });
+  }
+  const sref = `SC${sm![1]}-${sm![2]}`;
+  const srow = db.prepare("SELECT id FROM shift_change_requests WHERE upper(ref_no) = ?").get(sref.toUpperCase()) as { id: number } | undefined;
+  if (!srow) return DECISION_ERR.not_found;
+  const schk = checkShiftDecision(srow.id, actor);
+  if (!schk.ok) return DECISION_ERR[schk.error];
+  const si = shiftInfo(srow.id);
+  return card({ verb, reject, altText: `ยืนยัน${verb} ${sref}`, title: `ยืนยัน${verb}คำขอเปลี่ยนเวลางาน ${sref}`,
+    lines: [si.name, si.kind === "swap" ? `ขอสลับวันหยุด: ทำงานวันที่ ${si.workDate} แลกหยุดวันที่ ${si.offDate ?? "-"}` : `ขอเพิ่มกะ วันที่ ${si.workDate}`, "การอนุมัติเป็นการบันทึกผลและแจ้งพนักงาน ตารางงานยังต้องแก้เองที่หน้าเว็บ", FOOT],
+    yes: confirmData("s", "y", srow.id, dec, lineUserId, secret), no: confirmData("s", "n", srow.id, dec, lineUserId, secret) });
 }
 
 /** The button press. Returns the text to post in the group, or null to stay silent. */
 export function handleConfirmPostback(a: { data: string; groupId: string; lineUserId?: string; secret: string; nowSec?: number }): string | null {
   const p = a.data.split(":");
-  if (p.length !== 7 || p[0] !== "owl_leave") return null;
-  const [, kind, idStr, dec, expStr, issuer, sig] = p;
-  const good = sign(p.slice(0, 6).join(":"), a.secret);
+  if (p.length !== 8 || p[0] !== "owl_dec") return null;
+  const [, req, kind, idStr, dec, expStr, issuer, sig] = p;
+  const good = sign(p.slice(0, 7).join(":"), a.secret);
   if (sig.length !== good.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(good))) return null;   // forged or altered
   if (!a.lineUserId || a.lineUserId !== issuer) return null;                  // only the person who gave the command may press
   if (!isEnabled(a.groupId)) return null;
   if ((a.nowSec ?? Math.floor(Date.now() / 1000)) > Number(expStr)) return "ปุ่มยืนยันหมดอายุแล้วครับ (เกิน 5 นาที) สั่งใหม่ได้เลย";
   if (kind === "n") return "ยกเลิกคำสั่งแล้วครับ";
-  if (kind !== "y") return null;
+  if (kind !== "y" || (req !== "l" && req !== "o" && req !== "s")) return null;
   const actor = actorOf(a.lineUserId);
   if (!actor) return "สิทธิ์สั่งงานผ่านกลุ่มนี้ถูกถอนแล้วครับ";
   const id = Number(idStr);
-  const chk = checkLeaveDecision(id, actor);                                   // re-checked at press time
-  if (!chk.ok) return ERR_TH[chk.error](chk);
-  const decision: Decision = dec === "r" ? "rejected" : "approved";
-  const info = leaveInfo(id);
-  const res = applyLeaveDecision(id, chk.row, actor, decision);
-  logPersonaAction(actor.id, `leave.${decision}.line_group`, id);
-  if (res.status === "pending") return `อนุมัติชั้นที่ 1 ของใบลา ${info.ref} (${info.name}) แล้ว ส่งต่อชั้นที่ 2 ครับ ยังไม่อนุมัติขั้นสุดท้าย`;
-  return res.status === "approved" ? `อนุมัติใบลา ${info.ref} ของ ${info.name} แล้วครับ ระบบแจ้งพนักงานแล้ว` : `ไม่อนุมัติใบลา ${info.ref} ของ ${info.name} แล้วครับ ระบบแจ้งพนักงานแล้ว`;
+  const reject = dec === "r";
+
+  if (req === "l") {
+    const chk = checkLeaveDecision(id, actor);                                 // re-checked at press time
+    if (!chk.ok) return ERR_TH[chk.error](chk);
+    const decision: Decision = reject ? "rejected" : "approved";
+    const info = leaveInfo(id);
+    const res = applyLeaveDecision(id, chk.row, actor, decision);
+    logPersonaAction(actor.id, `leave.${decision}.line_group`, id);
+    if (res.status === "pending") return `อนุมัติชั้นที่ 1 ของใบลา ${info.ref} (${info.name}) แล้ว ส่งต่อชั้นที่ 2 ครับ ยังไม่อนุมัติขั้นสุดท้าย`;
+    return res.status === "approved" ? `อนุมัติใบลา ${info.ref} ของ ${info.name} แล้วครับ ระบบแจ้งพนักงานแล้ว` : `ไม่อนุมัติใบลา ${info.ref} ของ ${info.name} แล้วครับ ระบบแจ้งพนักงานแล้ว`;
+  }
+  if (req === "o") {
+    const chk = checkOtDecision(id, actor);
+    if (!chk.ok) return DECISION_ERR[chk.error];
+    const o = otInfo(id);
+    applyOtDecision(id, actor, reject ? "rejected" : "approved");
+    return `${reject ? "ไม่อนุมัติ" : "อนุมัติ"} OT${id} ของ ${o.name} (${o.workDate}) แล้วครับ`;
+  }
+  const chk = checkShiftDecision(id, actor);
+  if (!chk.ok) return DECISION_ERR[chk.error];
+  const si = shiftInfo(id);
+  if (!applyShiftDecision(id, actor, reject ? "rejected" : "approved")) return DECISION_ERR.already_decided;
+  return `${reject ? "ไม่อนุมัติ" : "อนุมัติ"}คำขอเปลี่ยนเวลางาน ${si.ref} ของ ${si.name} แล้วครับ แจ้งพนักงานแล้ว${reject ? "" : " (ตารางงานยังต้องแก้เองที่หน้าเว็บ)"}`;
 }
 
-export const HELP_TEXT = "นกฮูกพร้อมช่วยครับ ลองพิมพ์ เช่น\n• @นกฮูก สรุปคำขอลาที่รออนุมัติ\n• @นกฮูก อนุมัติ L20261101 (หรือ ไม่อนุมัติ L20261101)\n• @นกฮูก คำขอที่ยังรอดำเนินการมีอะไรบ้าง\nการอนุมัติ/ไม่อนุมัติจะมีปุ่มให้กดยืนยันก่อนเสมอ ตอนนี้ทำได้เฉพาะใบลาครับ";
+export const HELP_TEXT = "นกฮูกพร้อมช่วยครับ ลองพิมพ์ เช่น\n• @นกฮูก สรุปคำขอลาที่รออนุมัติ\n• @นกฮูก อนุมัติ L20261101 / OT12 / SC202611-5 (หรือ ไม่อนุมัติ …)\n• @นกฮูก คำขอที่ยังรอดำเนินการมีอะไรบ้าง\nการอนุมัติ/ไม่อนุมัติจะมีปุ่มให้กดยืนยันก่อนเสมอ ทำได้กับใบลา OT และคำขอเปลี่ยนเวลางานครับ";
 
 /**
  * Handle one text message from a group. Returns the reply text, or null to stay silent.
