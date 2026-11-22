@@ -36,6 +36,13 @@ export function partnerShopName(p: { name: string; venue?: string | null }): str
   return p.venue?.trim() || p.name;
 }
 
+/** The branch whose ACCOUNTA รายรับ a partner's daily sales are mirrored into (owner 2026-11-22).
+ *  Never the SELLING branch: the partner's sales are rung on that branch's POS, so they are already in its
+ *  sales — mirroring them again counts them twice. Only the month-end share (GP) is that branch's income. */
+export function incomeBranchToPost(p: { branch_id: number; income_branch_id: number | null }): number | null {
+  return p.income_branch_id != null && p.income_branch_id !== p.branch_id ? p.income_branch_id : null;
+}
+
 /** Whether a stored sales_amount already carries VAT. Only 'nett' (POS col 10 —
  *  incl. VAT + service charge) is VAT-inclusive; 'gross' and 'after_discount'
  *  are pre-VAT list amounts (owner 2026-07-25). */
