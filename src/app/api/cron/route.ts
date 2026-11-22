@@ -13,6 +13,7 @@ import { getDb, type Branch, type Booking } from "@/lib/db";
 import { notifyReleasedResults } from "@/lib/annual-checkup-notify";
 import { upcomingBirthdays, birthdayReminderFlex, birthdayReminderSent, markBirthdayReminderSent } from "@/lib/birthday-reminder";
 import { runSpecialDutyDaily } from "@/lib/special-duty-cron";
+import { runGoalDigestWeekly } from "@/lib/corporate-goal";
 import { sendMissingOutLetters } from "@/lib/missing-out";
 import { postDueRecurringExpenses, listDueUnpaidBills, markBillsReminded } from "@/lib/accounta-db";
 import {
@@ -195,6 +196,15 @@ async function runCron(): Promise<NextResponse> {
   } catch (e) {
     console.error("cron special duty error", e);
     reportError(e, "cron special duty", {});
+  }
+
+  // ── Corporate goal: Monday sales-vs-target digest to the executive group(s) (owner 2026-11-22) ──
+  // Only when the owner switched it on; claimed once per week, so a re-run changes nothing.
+  try {
+    await runGoalDigestWeekly({ today: todayBkk, hhmm: nowHhmmBkk });
+  } catch (e) {
+    console.error("cron corporate goal digest error", e);
+    reportError(e, "cron corporate goal digest", {});
   }
 
   // ── Forgotten clock-out letters (owner 2026-11-09) ─────────────────

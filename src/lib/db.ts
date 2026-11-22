@@ -3529,6 +3529,15 @@ function runMigrations(db: Database.Database): void {
       PRIMARY KEY (eval_id, item_id)
     );
   `);
+  // Corporate goal monitor (owner 2026-11-22): small state for the C-level sales-vs-target digest —
+  // 'weekly_enabled' and one row per digest already sent ('sent:weekly:<monday>') so a cron re-run is a no-op.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS corporate_goal_state (
+      key        TEXT PRIMARY KEY,
+      value      TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
   // Owl secretary (owner 2026-11-21): LINE groups where the owner may talk to นกฮูก by tagging it.
   // Only a group the owner enabled from inside that group is listed here.
   db.exec(`
