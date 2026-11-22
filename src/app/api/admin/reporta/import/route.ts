@@ -5,6 +5,7 @@ import { parseSalesFile, type SalesFileParse } from "@/lib/salesa-parse";
 import { getDb } from "@/lib/db";
 import { thaiDate } from "@/lib/revshare";
 import { resolvePendingBills } from "@/lib/insigna";
+import { categoryMix, mixLine } from "@/lib/category-mix";
 
 // REPORTA import — staff (admin / หัวหน้างาน with reporta.manage) upload the POS
 // "Close up" (ยอดขาย) and/or "Overview" (เมนู) .xlsx exports. Each file is
@@ -105,9 +106,17 @@ export async function POST(req: Request) {
     }, { status: 422 });
   }
 
+  // The Beer / Soft drink / จ้อจี้ share of the imported day and of the month so far (owner 2026-11-22).
+  const salesMix = (bId: number, date: string) => {
+    try {
+      const day = categoryMix(bId, date, date), mtd = categoryMix(bId, `${date.slice(0, 7)}-01`, date);
+      return { day: day ? mixLine(day) : null, month: mtd ? mixLine(mtd) : null, others: (mtd ?? day)?.others.slice(0, 4).map((x) => `${x.name} ${x.pct.toFixed(1)}%`) ?? [] };
+    } catch (e) { console.warn("[reporta] category mix failed", e); return undefined; }
+  };
+
   // Pass 2: save. `overwritten` = this (date, kind) already held data before
   // this import, so the importer is warned it replaced existing data.
-  const results: Array<{ filename: string; kind: string; date: string; merchant: string | null; note: string; overwritten: boolean }> = [];
+  const results: Array<{ filename: string; kind: string; date: string; merchant: string | null; note: string; overwritten: boolean; mix?: { day: string | null; month: string | null; others: string[] } }> = [];
   for (const f of parsedFiles) {
     // Per-file try/catch so an unexpected save error returns a clear message
     // instead of a 500 the client can only show as "อัปโหลดผิดพลาด" (owner 2026-09-20).
@@ -129,7 +138,7 @@ export async function POST(req: Request) {
         const o = f.parsed.overview;
         const overwritten = existingKinds(branchId, o.date).menu;
         upsertMenu(branchId, user.id, o);
-        results.push({ filename: f.name, kind: "overview", date: o.date, merchant: o.merchant, note: `เมนู ${o.items.length} รายการ · หมวด ${o.categories.length}`, overwritten });
+        results.push({ filename: f.name, kind: "overview", date: o.date, merchant: o.merchant, note: `เมนู ${o.items.length} รายการ · หมวด ${o.categories.length}`, overwritten, mix: salesMix(branchId, o.date) });
       } else {
         const rc = f.parsed.receipt;
         const overwritten = existingKinds(branchId, rc.date).receipt;
