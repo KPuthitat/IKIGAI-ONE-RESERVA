@@ -109,6 +109,14 @@ export default function CompanyOverviewPage({
   const forecastSales = month === nowMonth && elapsedDays > 0
     ? Math.round((ov.totals.sales / elapsedDays) * daysInMonth * 100) / 100
     : null;
+  // คาดการณ์รายจ่ายและกำไรสุทธิถึงสิ้นเดือน (owner 2026-11-22) — run-rate แบบเดียวกับยอดขาย
+  // (เฉลี่ยต่อวันที่ผ่านไป × วันทั้งเดือน) กำไรคาดการณ์ = ยอดขายคาดการณ์ − รายจ่ายคาดการณ์
+  const forecastExpense = month === nowMonth && elapsedDays > 0
+    ? Math.round((ov.totals.expense / elapsedDays) * daysInMonth * 100) / 100
+    : null;
+  const forecastNet = forecastSales != null && forecastExpense != null
+    ? Math.round((forecastSales - forecastExpense) * 100) / 100
+    : null;
 
   // Full-year projection across this company's branches (owner 2026-09-20):
   // annual target = each branch's monthly target × 12, vs YTD sales + run-rate.
@@ -210,11 +218,25 @@ export default function CompanyOverviewPage({
           <div className="text-xs text-slate-500">รายจ่าย</div>
           <div className="text-2xl font-bold text-slate-800 mt-1 tabular-nums">{fmtMoney(ov.totals.expense)}</div>
           <div className="mt-1"><Delta now={ov.totals.expense} prev={ov.prev.expense} goodUp={false} /></div>
+          {forecastExpense != null && (
+            <div className="mt-2 pt-2 border-t border-slate-100 flex items-baseline justify-between"
+              title={`คาดการณ์แบบ run-rate: รายจ่าย ${fmtMoney(ov.totals.expense)} ÷ ${elapsedDays} วัน × ${daysInMonth} วันทั้งเดือน (รายจ่ายที่จ่ายเป็นก้อนครั้งเดียว เช่น ค่าเช่า อาจทำให้ประมาณสูงกว่าจริง)`}>
+              <span className="text-[11px] text-slate-400">คาดการณ์ทั้งเดือน</span>
+              <span className="text-xs font-medium text-slate-500 tabular-nums">{fmtMoney(forecastExpense)}</span>
+            </div>
+          )}
         </div>
         <div className="card border-l-4 border-emerald-400">
           <div className="text-xs text-slate-500">กำไรสุทธิ (ก่อนภาษี)</div>
           <div className={`text-2xl font-bold mt-1 tabular-nums ${ov.totals.net >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{fmtMoney(ov.totals.net)}</div>
           <div className="mt-1"><Delta now={ov.totals.net} prev={ov.prev.net} /></div>
+          {forecastNet != null && (
+            <div className="mt-2 pt-2 border-t border-slate-100 flex items-baseline justify-between"
+              title="คาดการณ์ = ยอดขายคาดการณ์ทั้งเดือน − รายจ่ายคาดการณ์ทั้งเดือน (run-rate)">
+              <span className="text-[11px] text-slate-400">คาดการณ์ทั้งเดือน</span>
+              <span className={`text-xs font-medium tabular-nums ${forecastNet >= 0 ? "text-emerald-600" : "text-rose-500"}`}>{fmtMoney(forecastNet)}</span>
+            </div>
+          )}
         </div>
       </div>
 
