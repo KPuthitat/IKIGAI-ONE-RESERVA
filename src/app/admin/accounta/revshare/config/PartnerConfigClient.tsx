@@ -119,6 +119,7 @@ export default function PartnerConfigClient({ partner, tiers, floors, branches }
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
           <p className="text-[11px] text-slate-400 mt-1">
+            ห้ามเลือกสาขาเดียวกับที่ขายให้ (เช่น HYPOPLARAEMIA ที่ตีเงินที่ POS) เพราะยอดขายนั้นอยู่ในยอดของสาขาอยู่แล้ว ระบบจะไม่ลงซ้ำ (สาขาผู้ขายได้เฉพาะส่วนแบ่งสิ้นเดือน) ·
             เลือกสาขาที่เป็นบัญชีของคู่ค้า (เช่น ศาลาชิลล์) — ตอนกด “ส่งยอดวันนี้” ระบบจะลงรายรับ (รวม VAT) ที่สาขานี้ ไม่ใช่สาขาที่ขาย
           </p>
         </div>

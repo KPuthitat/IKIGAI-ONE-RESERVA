@@ -6,7 +6,7 @@ import { getDb } from "@/lib/db";
 import { isRevshareBranch, getPartner, previewSettlement, listRounds, markRoundSent, markCatchupsSent, listCatchupsRange, catchupCategoryText, getCatchup, markCatchupReported, partnerCategorySales } from "@/lib/revshare-db";
 import { revshareSettlementFlex, revshareCatchupFlex, revshareWeeklyFlex, revshareDailyFlex, revshareDrinkWelfareFlex, notifyRevsharePartner } from "@/lib/revshare-line";
 import { postRevshareDailyIncome } from "@/lib/accounta-db";
-import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName, salesVat, roundLabel, mondayOf } from "@/lib/revshare";
+import { TH_MONTHS_FULL, thaiDate, salesBaseIncludesVat, partnerShopName, incomeBranchToPost, salesVat, roundLabel, mondayOf } from "@/lib/revshare";
 import { drinkWelfareSummary } from "@/lib/partner-drink-orders";
 
 // Push a sales notification to the partner's LINE group. Three kinds (owner
@@ -151,10 +151,11 @@ export async function POST(req: Request) {
   // idempotently (delete-then-insert keyed by branch+date+channel).
   let incomePosted = false;
   if (kind === "daily" && dailyRoundId != null) {
-    if (partner.income_branch_id != null && dailyIncomeAmount != null && date) {
+    const mirrorBranch = incomeBranchToPost(partner);   // never the selling branch (its POS sales already include these)
+    if (mirrorBranch != null && dailyIncomeAmount != null && date) {
       try {
         postRevshareDailyIncome({
-          branchId: partner.income_branch_id, date, channel: shop,
+          branchId: mirrorBranch, date, channel: shop,
           amount: dailyIncomeAmount, isVat: partner.vat_enabled, userId: user.id
         });
         incomePosted = true;
