@@ -12,7 +12,7 @@ import { nameWithPrefix } from "@/lib/name";
 import { companySvcPayoutState, computePayoutDate, getSvcBatch, svcBatchPayDates, type SvcPayDates } from "@/lib/service-charge";
 import { monthlyPayrollRollup } from "@/lib/payroll-month";
 import { buildLineBreakdown } from "@/lib/payroll-breakdown";
-import { safeFileName, thMonthShort } from "@/lib/download-name";
+import { safeFileName, monthTok, token } from "@/lib/download-name";
 import PayslipDayLog, { PayslipDayLogLegend } from "@/app/components/PayslipDayLog";
 import PayslipPrintButton from "../../[id]/payslip/[userId]/PayslipPrintButton";
 
@@ -21,8 +21,8 @@ export const dynamic = "force-dynamic";
 export function generateMetadata({ params, searchParams }: { params: { userId: string }; searchParams: { m?: string } }): Metadata {
   const userId = Number(params.userId);
   const m = /^\d{4}-\d{2}$/.test(searchParams.m ?? "") ? searchParams.m! : todayMonth();
-  const u = Number.isInteger(userId) ? getDb().prepare("SELECT display_name FROM users WHERE id = ?").get(userId) as { display_name: string } | undefined : undefined;
-  return { title: safeFileName(["สลิปรายเดือน", u?.display_name ?? "", thMonthShort(m)].filter(Boolean).join("_")) };
+  const u = Number.isInteger(userId) ? getDb().prepare("SELECT employee_code FROM users WHERE id = ?").get(userId) as { employee_code: string | null } | undefined : undefined;
+  return { title: safeFileName(["MonthlyPayslip", token(u?.employee_code, `U${userId}`), monthTok(m)].join("_")) };
 }
 
 const TH_MONTHS = [

@@ -1,7 +1,7 @@
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { rowsToCsv, type CsvCell } from "@/lib/csv";
-import { contentDisposition, payRoundBaseName } from "@/lib/download-name";
+import { contentDisposition, payRoundBaseName, token } from "@/lib/download-name";
 
 // GET /api/admin/persona/payroll/periods/[id]/bank-csv
 // Generate a generic bank-transfer CSV from all payroll lines in the period.
@@ -50,7 +50,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
              pl.display_name
   `).all(periodId) as Row[];
 
-  const branchName = period.branch_id != null ? (db.prepare("SELECT name FROM branches WHERE id = ?").get(period.branch_id) as { name: string } | undefined)?.name ?? null : null;
+  const branchRow = period.branch_id != null ? db.prepare("SELECT name, slug FROM branches WHERE id = ?").get(period.branch_id) as { name: string; slug: string } | undefined : undefined;
+  const branchName = branchRow ? token(branchRow.name, token(branchRow.slug, `Branch-${period.branch_id}`)) : null;
   const ref = `PAY-${period.pay_date.replace(/-/g, "")}`;
   const headers = [
     "bank", "account", "amount", "employee_name", "employee_code", "reference"
@@ -71,8 +72,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     status: 200,
     headers: {
       "Content-Type": "text/csv;charset=utf-8",
-      // the name says which round: โอนเงิน_พาร์ทไทม์_<สาขา>_งวด 2026.10.26-11.01_จ่าย 2026.11.02
-      "Content-Disposition": contentDisposition("attachment", payRoundBaseName("โอนเงิน", period, branchName), "csv")
+      // the name says which round: BankTransfer_PartTime_<branch>_Period-2026.10.26-11.01_Pay-2026.11.02
+      "Content-Disposition": contentDisposition("attachment", payRoundBaseName("BankTransfer", period, branchName), "csv")
     }
   });
 }

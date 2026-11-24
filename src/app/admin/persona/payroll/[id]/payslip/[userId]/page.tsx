@@ -7,7 +7,7 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import { buildPayslipView } from "@/lib/payslip";
 import PayslipDocument from "@/app/components/PayslipDocument";
-import { safeFileName, payRoundBaseName } from "@/lib/download-name";
+import { safeFileName, payRoundBaseName, token } from "@/lib/download-name";
 import PayslipPrintButton from "./PayslipPrintButton";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +17,8 @@ export function generateMetadata({ params }: { params: { id: string; userId: str
   if (!Number.isInteger(periodId) || !Number.isInteger(userId)) return { title: "สลิปค่าตอบแทน · PERSONA" };
   const view = buildPayslipView(getDb(), periodId, userId);
   if (!view) return { title: "สลิปค่าตอบแทน · PERSONA" };
-  const branch = view.payslipBranchName;
-  return { title: safeFileName(payRoundBaseName(`สลิป_${view.line.display_name}`, view.period, branch)) };
+  const emp = token(view.line.employee_code, `U${userId}`);
+  return { title: safeFileName(payRoundBaseName(`Payslip_${emp}`, view.period, token(view.payslipBranchName, ""))) };
 }
 
 export default function PayslipPage({

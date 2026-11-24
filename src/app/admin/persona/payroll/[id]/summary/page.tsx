@@ -7,7 +7,7 @@ import { getLang } from "@/lib/lang-server";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
-import { safeFileName, payRoundBaseName } from "@/lib/download-name";
+import { safeFileName, payRoundBaseName, token } from "@/lib/download-name";
 import SummaryPrintButton from "./SummaryPrintButton";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +17,8 @@ export function generateMetadata({ params }: { params: { id: string } }): Metada
   const p = Number.isInteger(id) ? getDb().prepare("SELECT cycle, target, period_start, period_end, pay_date, branch_id FROM payroll_periods WHERE id = ?").get(id) as
     { cycle: string; target: string | null; period_start: string; period_end: string; pay_date: string; branch_id: number | null } | undefined : undefined;
   if (!p) return { title: "สรุปค่าตอบแทนทั้งรอบ · PERSONA" };
-  const branch = p.branch_id != null ? (getDb().prepare("SELECT name FROM branches WHERE id = ?").get(p.branch_id) as { name: string } | undefined)?.name : null;
-  return { title: safeFileName(payRoundBaseName("สรุปค่าตอบแทน", p, branch)) };
+  const b = p.branch_id != null ? getDb().prepare("SELECT name, slug FROM branches WHERE id = ?").get(p.branch_id) as { name: string; slug: string } | undefined : undefined;
+  return { title: safeFileName(payRoundBaseName("RoundSummary", p, b ? token(b.name, token(b.slug, `Branch-${p.branch_id}`)) : null)) };
 }
 
 // Whole-period compensation summary (owner 2026-06-18): one printable sheet

@@ -6,7 +6,8 @@ import {
 } from "@/lib/payroll-summary-doc";
 import { renderPayrollSummaryXlsx } from "@/lib/payroll-summary-xlsx";
 import { generatePayrollSummaryPdf } from "@/lib/payroll-summary-pdf";
-import { contentDisposition, thMonthShort, thRange } from "@/lib/download-name";
+import { contentDisposition, monthTok, rangeTok, token } from "@/lib/download-name";
+import { getDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -33,9 +34,13 @@ export async function GET(req: Request) {
 
   const doc = buildPayrollSummaryDoc(m, scope);
   const generatedLabel = thDateBE(new Date(), { bangkok: true, time: true });
-  // The name says what it covers: สรุปค่าตอบแทน_<ขอบเขต>_<เดือน>_รอบจ่าย 2026.11.02-30 (the pay dates of the rounds inside)
+  // The name says what it covers: PayrollSummary_<scope>_<month>_PayDates-2026.11.02-30 (the pay dates of the rounds inside)
   const payDates = doc.companies.flatMap((c) => c.branches.flatMap((b) => b.roundGroups.map((g) => g.info.payDate))).filter(Boolean).sort();
-  const baseName = ["สรุปค่าตอบแทน", doc.scopeLabel, thMonthShort(m), payDates.length ? `รอบจ่าย ${thRange(payDates[0], payDates[payDates.length - 1])}` : ""].filter(Boolean).join("_");
+  const db = getDb();
+  const scopeTok = scope.kind === "all" ? "AllCompanies"
+    : scope.kind === "company" ? (scope.id == null ? "NoCompany" : token((db.prepare("SELECT name_en FROM companies WHERE id = ?").get(scope.id) as { name_en: string | null } | undefined)?.name_en, `Company-${scope.id}`))
+    : (() => { const b = db.prepare("SELECT name, slug FROM branches WHERE id = ?").get(scope.id) as { name: string; slug: string } | undefined; return b ? token(b.name, token(b.slug, `Branch-${scope.id}`)) : `Branch-${scope.id}`; })();
+  const baseName = ["PayrollSummary", scopeTok, monthTok(m), payDates.length ? `PayDates-${rangeTok(payDates[0], payDates[payDates.length - 1])}` : ""].filter(Boolean).join("_");
 
   if (format === "csv") {
     return new NextResponse(renderPayrollSummaryCsv(doc, generatedLabel, note), {
