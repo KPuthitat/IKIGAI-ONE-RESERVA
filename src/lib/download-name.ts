@@ -1,5 +1,5 @@
 // Readable names for downloaded files (owner 2026-11-24): the file name alone must say which pay round (or month,
-// company, branch) the PDF / Excel / CSV was drawn from. English / ASCII only (owner: "ENG only") — Thai names are
+// company, branch) the PDF / Excel / CSV was drawn from. English / ASCII only, upper case (owner: "ENG only", "พิมพ์ใหญ่หมด") — Thai names are
 // replaced by an English name, the slug, the employee code or an id, so the name is the same everywhere.
 
 /** ASCII-only token: Thai and other characters dropped, spaces and symbols → "-". Empty → `fallback`. */
@@ -8,9 +8,9 @@ export function token(s: string | null | undefined, fallback: string): string {
   return t || fallback;
 }
 
-/** Remove what a file system or a header cannot carry; ASCII only. */
+/** Remove what a file system or a header cannot carry; ASCII only, UPPER CASE (owner 2026-11-24). */
 export function safeFileName(s: string): string {
-  return s.replace(/[^\x20-\x7e]+/g, " ").replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, "-").replace(/_{2,}/g, "_").replace(/^[\s._-]+|[\s._-]+$/g, "").slice(0, 150) || "download";
+  return s.toUpperCase().replace(/[^\x20-\x7e]+/g, " ").replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, "-").replace(/_{2,}/g, "_").replace(/^[\s._-]+|[\s._-]+$/g, "").slice(0, 150) || "DOWNLOAD";
 }
 
 /** Content-Disposition for `<base>.<ext>`. */

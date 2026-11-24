@@ -1,4 +1,4 @@
-// File names that say which pay round a download came from — English / ASCII only.
+// File names that say which pay round a download came from — English / ASCII only, UPPER CASE (extension stays lower case).
 // Run: node --import tsx scripts/test-download-name.ts
 import * as N from "../src/lib/download-name";
 let failed = 0;
@@ -17,15 +17,16 @@ ok("the part-time weekly round's name, without a branch", N.payRoundBaseName("Ro
 
 ok("a token keeps English and digits, spaces become dashes", N.token("NAMA PASTA SRIRACHA", "x") === "NAMA-PASTA-SRIRACHA");
 ok("Thai is dropped from a token; an all-Thai name falls back", N.token("HYPO ศาลา", "x") === "HYPO" && N.token("ศาลาชิลล์", "Company-3") === "Company-3" && N.token(null, "U7") === "U7" && N.token("", "U7") === "U7");
-ok("the file name is pure ASCII even if Thai is passed in", /^[\x20-\x7e]+$/.test(N.safeFileName("โอนเงิน_Hypo_งวด 2026.10.01-31")) && N.safeFileName("โอนเงิน_Hypo") === "Hypo");
-ok("characters a file system cannot hold are removed", N.safeFileName("a/b\\c:d*e?f\"g<h>i|j") === "a-b-c-d-e-f-g-h-i-j");
-ok("an empty or all-Thai name falls back", N.safeFileName("///") === "download" && N.safeFileName("") === "download" && N.safeFileName("ทดสอบ") === "download");
+ok("the file name is pure ASCII even if Thai is passed in", /^[\x20-\x7e]+$/.test(N.safeFileName("โอนเงิน_Hypo_งวด 2026.10.01-31")) && N.safeFileName("โอนเงิน_Hypo") === "HYPO");
+ok("characters a file system cannot hold are removed", N.safeFileName("a/b\\c:d*e?f\"g<h>i|j") === "A-B-C-D-E-F-G-H-I-J");
+ok("an empty or all-Thai name falls back", N.safeFileName("///") === "DOWNLOAD" && N.safeFileName("") === "DOWNLOAD" && N.safeFileName("ทดสอบ") === "DOWNLOAD");
 ok("a very long name is cut", N.safeFileName("A".repeat(400)).length <= 150);
 
 const cd = N.contentDisposition("attachment", N.payRoundBaseName("BankTransfer", fixed, "HYPO"), "csv");
-ok("Content-Disposition is a plain ASCII filename", cd === 'attachment; filename="BankTransfer_FullTime_HYPO_Period-2026.10.01-31_Pay-2026.11.05.csv"');
+ok("Content-Disposition is a plain ASCII filename, upper case with a lower-case extension", cd === 'attachment; filename="BANKTRANSFER_FULLTIME_HYPO_PERIOD-2026.10.01-31_PAY-2026.11.05.csv"');
+ok("any case in is upper case out", N.safeFileName("PayrollSummary_AllCompanies") === "PAYROLLSUMMARY_ALLCOMPANIES");
 ok("no header-breaking characters", !/[\r\n"]{2}/.test(N.contentDisposition("inline", "a\r\nb: c\"d", "pdf")) && !/[\r\n]/.test(N.contentDisposition("inline", "a\r\nb: c", "pdf")));
-ok("the extension is kept", N.contentDisposition("inline", "x", "pdf").endsWith('x.pdf"'));
+ok("the extension is kept", N.contentDisposition("inline", "x", "pdf").endsWith('X.pdf"'));
 
 console.log(failed ? `\n${failed} FAILED` : "\nAll checks passed");
 process.exit(failed ? 1 : 0);
