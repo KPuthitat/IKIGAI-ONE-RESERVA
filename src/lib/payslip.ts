@@ -146,3 +146,19 @@ export function buildPayslipView(
     ftMonthly: breakdown?.ftMonthly ?? false
   };
 }
+
+
+/** The derived totals of a round payslip — ONE definition shared by the page and the PDF so they never disagree. */
+export function payslipFigures(view: PayslipView) {
+  const { period, line, svcRow } = view;
+  const usesMonthlySvc = period.cycle === "monthly" && svcRow != null;
+  const wageComp = line.base_pay + line.ot_pay + line.other_additions + line.meeting_fee;
+  const svcGrossRound = usesMonthlySvc ? (svcRow?.netAllocation ?? 0) : line.service_charge;
+  const svcWhtRound = usesMonthlySvc ? (svcRow?.whtAmount ?? 0) : 0;
+  const svcGiRound = usesMonthlySvc ? (svcRow?.groupInsurance ?? 0) : 0;
+  const incomeTotalRound = wageComp + line.special_payment + svcGrossRound;
+  const whtTotalRound = line.tax_amount + svcWhtRound;
+  const dedTotalRound = line.sso_amount + whtTotalRound + line.drink_deductions + line.mealpass_deductions + line.other_deductions + line.special_paid_out + svcGiRound;
+  const netTotalRound = incomeTotalRound - dedTotalRound;
+  return { usesMonthlySvc, wageComp, svcGrossRound, svcWhtRound, svcGiRound, incomeTotalRound, whtTotalRound, dedTotalRound, netTotalRound };
+}

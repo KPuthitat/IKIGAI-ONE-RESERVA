@@ -3,7 +3,7 @@ import { t, type Lang } from "@/lib/i18n";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
-import type { PayslipView } from "@/lib/payslip";
+import { payslipFigures, type PayslipView } from "@/lib/payslip";
 import PayslipDayLog, { fmtMin } from "./PayslipDayLog";
 
 // Shared payslip document (owner 2026-09-05). Presentational only — the admin
@@ -29,15 +29,7 @@ export default function PayslipDocument({
   const isAdmin = audience === "admin";
 
   const isPt = line.employment_type === "pt";
-  const usesMonthlySvc = period.cycle === "monthly" && svcRow != null;
-  const wageComp = line.base_pay + line.ot_pay + line.other_additions + line.meeting_fee;
-  const svcGrossRound = usesMonthlySvc ? (svcRow?.netAllocation ?? 0) : line.service_charge;
-  const svcWhtRound = usesMonthlySvc ? (svcRow?.whtAmount ?? 0) : 0;
-  const svcGiRound = usesMonthlySvc ? (svcRow?.groupInsurance ?? 0) : 0;
-  const incomeTotalRound = wageComp + line.special_payment + svcGrossRound;
-  const whtTotalRound = line.tax_amount + svcWhtRound;
-  const dedTotalRound = line.sso_amount + whtTotalRound + line.drink_deductions + line.mealpass_deductions + line.other_deductions + line.special_paid_out + svcGiRound;
-  const netTotalRound = incomeTotalRound - dedTotalRound;
+  const { usesMonthlySvc, wageComp, svcGrossRound, svcWhtRound, svcGiRound, incomeTotalRound, whtTotalRound, dedTotalRound, netTotalRound } = payslipFigures(view);
   const svcMonth = period.period_start.slice(0, 7);
 
   // Days worked on วันจ่ายสองเท่า (×2) — the source of the double-pay premium,
