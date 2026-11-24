@@ -33,7 +33,7 @@ export async function GET(req: Request) {
 
   const doc = buildPayrollSummaryDoc(m, scope);
   const generatedLabel = thDateBE(new Date(), { bangkok: true, time: true });
-  // The name says what it covers: สรุปค่าตอบแทน_<ขอบเขต>_<เดือน>_รอบจ่าย 2 พ.ย.-30 พ.ย. 2569 (the pay dates of the rounds inside)
+  // The name says what it covers: สรุปค่าตอบแทน_<ขอบเขต>_<เดือน>_รอบจ่าย 2026.11.02-30 (the pay dates of the rounds inside)
   const payDates = doc.companies.flatMap((c) => c.branches.flatMap((b) => b.roundGroups.map((g) => g.info.payDate))).filter(Boolean).sort();
   const baseName = ["สรุปค่าตอบแทน", doc.scopeLabel, thMonthShort(m), payDates.length ? `รอบจ่าย ${thRange(payDates[0], payDates[payDates.length - 1])}` : ""].filter(Boolean).join("_");
 

@@ -71,7 +71,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     status: 200,
     headers: {
       "Content-Type": "text/csv;charset=utf-8",
-      // the name says which round: โอนเงิน_พาร์ทไทม์_<สาขา>_งวด 26 ต.ค.-1 พ.ย. 2569_จ่าย 2 พ.ย. 2569
+      // the name says which round: โอนเงิน_พาร์ทไทม์_<สาขา>_งวด 2026.10.26-11.01_จ่าย 2026.11.02
       "Content-Disposition": contentDisposition("attachment", payRoundBaseName("โอนเงิน", period, branchName), "csv")
     }
   });
