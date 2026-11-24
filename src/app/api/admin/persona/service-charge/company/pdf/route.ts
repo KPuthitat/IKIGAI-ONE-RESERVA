@@ -1,4 +1,5 @@
 import { thDateBE } from "@/lib/th-month";
+import { contentDisposition } from "@/lib/download-name";
 import { NextResponse } from "next/server";
 import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -157,7 +158,7 @@ export async function GET(req: Request) {
   return new NextResponse(pdf as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="svc-summary-${companyId}-${month}.pdf"`
+      "Content-Disposition": contentDisposition("inline", ["สรุปเซอร์วิสชาร์จ", company?.name_th ?? "", `${TH_MONTHS_FULL[mm]} ${yyyy + 543}`].filter(Boolean).join("_"), "pdf")
     }
   });
 }

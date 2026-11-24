@@ -7,11 +7,17 @@ import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { bkkToday, buildBankPayslip } from "@/lib/payslip-bank";
+import { safeFileName, thMonthShort } from "@/lib/download-name";
 import BankPayslipDocument from "@/app/components/BankPayslipDocument";
 import PayslipPrintButton from "../../../[id]/payslip/[userId]/PayslipPrintButton";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "สลิปเงินเดือน A4 (สำหรับยื่นภายนอก) · PERSONA" };
+export function generateMetadata({ params, searchParams }: { params: { userId: string }; searchParams: { m?: string } }): Metadata {
+  const userId = Number(params.userId);
+  const m = /^\d{4}-\d{2}$/.test(searchParams.m ?? "") ? searchParams.m! : bkkToday().slice(0, 7);
+  const u = Number.isInteger(userId) ? getDb().prepare("SELECT display_name FROM users WHERE id = ?").get(userId) as { display_name: string } | undefined : undefined;
+  return { title: safeFileName(["สลิปเงินเดือน A4 ยื่นภายนอก", u?.display_name ?? "", thMonthShort(m)].filter(Boolean).join("_")) };
+}
 
 export default function BankPayslipPage({
   params, searchParams

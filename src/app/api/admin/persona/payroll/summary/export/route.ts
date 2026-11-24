@@ -6,6 +6,7 @@ import {
 } from "@/lib/payroll-summary-doc";
 import { renderPayrollSummaryXlsx } from "@/lib/payroll-summary-xlsx";
 import { generatePayrollSummaryPdf } from "@/lib/payroll-summary-pdf";
+import { contentDisposition, thMonthShort, thRange } from "@/lib/download-name";
 
 export const dynamic = "force-dynamic";
 
@@ -32,14 +33,15 @@ export async function GET(req: Request) {
 
   const doc = buildPayrollSummaryDoc(m, scope);
   const generatedLabel = thDateBE(new Date(), { bangkok: true, time: true });
-  const slug = scopeToken(scope).replace(/[^a-z0-9]+/gi, "-");
-  const filename = `payroll-summary-${slug}-${m}`;
+  // The name says what it covers: สรุปค่าตอบแทน_<ขอบเขต>_<เดือน>_รอบจ่าย 2 พ.ย.-30 พ.ย. 2569 (the pay dates of the rounds inside)
+  const payDates = doc.companies.flatMap((c) => c.branches.flatMap((b) => b.roundGroups.map((g) => g.info.payDate))).filter(Boolean).sort();
+  const baseName = ["สรุปค่าตอบแทน", doc.scopeLabel, thMonthShort(m), payDates.length ? `รอบจ่าย ${thRange(payDates[0], payDates[payDates.length - 1])}` : ""].filter(Boolean).join("_");
 
   if (format === "csv") {
     return new NextResponse(renderPayrollSummaryCsv(doc, generatedLabel, note), {
       headers: {
         "Content-Type": "text/csv;charset=utf-8",
-        "Content-Disposition": `attachment; filename="${filename}.csv"`
+        "Content-Disposition": contentDisposition("attachment", baseName, "csv")
       }
     });
   }
@@ -48,7 +50,7 @@ export async function GET(req: Request) {
     return new NextResponse(buf as unknown as BodyInit, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${filename}.xlsx"`
+        "Content-Disposition": contentDisposition("attachment", baseName, "xlsx")
       }
     });
   }
@@ -56,7 +58,7 @@ export async function GET(req: Request) {
   return new NextResponse(pdf as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${filename}.pdf"`
+      "Content-Disposition": contentDisposition("inline", baseName, "pdf")
     }
   });
 }

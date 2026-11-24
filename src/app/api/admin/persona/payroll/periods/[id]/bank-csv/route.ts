@@ -1,6 +1,7 @@
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { rowsToCsv, type CsvCell } from "@/lib/csv";
+import { contentDisposition, payRoundBaseName } from "@/lib/download-name";
 
 // GET /api/admin/persona/payroll/periods/[id]/bank-csv
 // Generate a generic bank-transfer CSV from all payroll lines in the period.
@@ -28,10 +29,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
   const db = getDb();
   const period = db.prepare(`
-    SELECT id, period_start, period_end, pay_date, status
+    SELECT id, cycle, target, branch_id, period_start, period_end, pay_date, status
     FROM payroll_periods WHERE id = ?
   `).get(periodId) as
-    { id: number; period_start: string; period_end: string; pay_date: string; status: string } | undefined;
+    { id: number; cycle: string; target: string | null; branch_id: number | null; period_start: string; period_end: string; pay_date: string; status: string } | undefined;
   if (!period) return new Response("period_not_found", { status: 404 });
 
   // Allow downloading for finalized + paid (not draft — numbers may still change)
@@ -49,6 +50,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
              pl.display_name
   `).all(periodId) as Row[];
 
+  const branchName = period.branch_id != null ? (db.prepare("SELECT name FROM branches WHERE id = ?").get(period.branch_id) as { name: string } | undefined)?.name ?? null : null;
   const ref = `PAY-${period.pay_date.replace(/-/g, "")}`;
   const headers = [
     "bank", "account", "amount", "employee_name", "employee_code", "reference"
@@ -69,7 +71,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     status: 200,
     headers: {
       "Content-Type": "text/csv;charset=utf-8",
-      "Content-Disposition": `attachment; filename="bank-transfer-${period.pay_date}.csv"`
+      // the name says which round: โอนเงิน_พาร์ทไทม์_<สาขา>_งวด 26 ต.ค.-1 พ.ย. 2569_จ่าย 2 พ.ย. 2569
+      "Content-Disposition": contentDisposition("attachment", payRoundBaseName("โอนเงิน", period, branchName), "csv")
     }
   });
 }

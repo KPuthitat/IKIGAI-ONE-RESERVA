@@ -7,10 +7,19 @@ import { getLang } from "@/lib/lang-server";
 import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
+import { safeFileName, payRoundBaseName } from "@/lib/download-name";
 import SummaryPrintButton from "./SummaryPrintButton";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "สรุปค่าตอบแทนทั้งรอบ · PERSONA" };
+// "Save as PDF" names the file after the page title, so the title says which round it is (owner 2026-11-24).
+export function generateMetadata({ params }: { params: { id: string } }): Metadata {
+  const id = Number(params.id);
+  const p = Number.isInteger(id) ? getDb().prepare("SELECT cycle, target, period_start, period_end, pay_date, branch_id FROM payroll_periods WHERE id = ?").get(id) as
+    { cycle: string; target: string | null; period_start: string; period_end: string; pay_date: string; branch_id: number | null } | undefined : undefined;
+  if (!p) return { title: "สรุปค่าตอบแทนทั้งรอบ · PERSONA" };
+  const branch = p.branch_id != null ? (getDb().prepare("SELECT name FROM branches WHERE id = ?").get(p.branch_id) as { name: string } | undefined)?.name : null;
+  return { title: safeFileName(payRoundBaseName("สรุปค่าตอบแทน", p, branch)) };
+}
 
 // Whole-period compensation summary (owner 2026-06-18): one printable sheet
 // listing every employee in the pay run with their earnings/deductions/net +
