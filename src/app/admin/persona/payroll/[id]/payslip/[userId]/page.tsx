@@ -8,7 +8,7 @@ import { t } from "@/lib/i18n";
 import { buildPayslipView } from "@/lib/payslip";
 import PayslipDocument from "@/app/components/PayslipDocument";
 import { safeFileName, payRoundBaseName, token } from "@/lib/download-name";
-import PayslipPrintButton from "./PayslipPrintButton";
+import { apiUrl } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +55,7 @@ export default function PayslipPage({
           >
             {asStaff ? "กลับมุมมองแอดมิน" : "ดูตัวอย่างแบบพนักงาน"}
           </Link>
-          <PayslipPrintButton lang={lang} />
+          <a href={apiUrl(`/api/admin/persona/payroll/periods/${periodId}/payslip-pdf?userId=${userId}${asStaff ? "&as=staff" : ""}`)} target="_blank" rel="noopener" className="btn-primary text-sm">ดาวน์โหลด PDF</a>
         </div>
         {asStaff && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">

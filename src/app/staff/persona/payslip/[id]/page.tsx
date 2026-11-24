@@ -8,7 +8,7 @@ import { getDb } from "@/lib/db";
 import { getLang } from "@/lib/lang-server";
 import { buildPayslipView } from "@/lib/payslip";
 import PayslipDocument from "@/app/components/PayslipDocument";
-import PayslipPrintButton from "@/app/admin/persona/payroll/[id]/payslip/[userId]/PayslipPrintButton";
+import { apiUrl } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "สลิปเงินเดือน · PERSONA" };
@@ -34,7 +34,7 @@ export default function StaffPayslipPage({ params }: { params: { id: string } })
           <Link href="/staff/persona/payslip" className="text-sm text-slate-500 hover:text-brand">
             ← สลิปทั้งหมด
           </Link>
-          <PayslipPrintButton lang={lang} />
+          <a href={apiUrl(`/api/staff/persona/payslip/${periodId}/pdf`)} target="_blank" rel="noopener" className="btn-primary text-sm">ดาวน์โหลด PDF</a>
         </div>
       </div>
 
