@@ -1,4 +1,5 @@
 import { thDateBE } from "@/lib/th-month";
+import { contentDisposition, monthTok, token } from "@/lib/download-name";
 import { NextResponse } from "next/server";
 import { requirePayrollAccess } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -31,8 +32,8 @@ export async function GET(req: Request) {
   const companyId = (db.prepare("SELECT company_id FROM branches WHERE id = ?")
     .get(user.activeBranchId) as { company_id: number | null } | undefined)?.company_id ?? null;
   if (!companyId) return NextResponse.json({ error: "no_company" }, { status: 400 });
-  const company = db.prepare("SELECT name_th, tax_id, address FROM companies WHERE id = ?")
-    .get(companyId) as { name_th: string; tax_id: string | null; address: string | null } | undefined;
+  const company = db.prepare("SELECT name_th, name_en, tax_id, address FROM companies WHERE id = ?")
+    .get(companyId) as { name_th: string; name_en: string | null; tax_id: string | null; address: string | null } | undefined;
 
   const summary = computeCompanySvcSummary(companyId, month);
 
@@ -157,7 +158,7 @@ export async function GET(req: Request) {
   return new NextResponse(pdf as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="svc-summary-${companyId}-${month}.pdf"`
+      "Content-Disposition": contentDisposition("inline", ["SVCSummary", token(company?.name_en, `Company-${companyId}`), monthTok(month)].join("_"), "pdf")
     }
   });
 }

@@ -6,6 +6,8 @@ import {
 } from "@/lib/payroll-summary-doc";
 import { renderPayrollSummaryXlsx } from "@/lib/payroll-summary-xlsx";
 import { generatePayrollSummaryPdf } from "@/lib/payroll-summary-pdf";
+import { contentDisposition, monthTok, rangeTok, token } from "@/lib/download-name";
+import { getDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -32,14 +34,19 @@ export async function GET(req: Request) {
 
   const doc = buildPayrollSummaryDoc(m, scope);
   const generatedLabel = thDateBE(new Date(), { bangkok: true, time: true });
-  const slug = scopeToken(scope).replace(/[^a-z0-9]+/gi, "-");
-  const filename = `payroll-summary-${slug}-${m}`;
+  // The name says what it covers: PayrollSummary_<scope>_<month>_PayDates-2026.11.02-30 (the pay dates of the rounds inside)
+  const payDates = doc.companies.flatMap((c) => c.branches.flatMap((b) => b.roundGroups.map((g) => g.info.payDate))).filter(Boolean).sort();
+  const db = getDb();
+  const scopeTok = scope.kind === "all" ? "AllCompanies"
+    : scope.kind === "company" ? (scope.id == null ? "NoCompany" : token((db.prepare("SELECT name_en FROM companies WHERE id = ?").get(scope.id) as { name_en: string | null } | undefined)?.name_en, `Company-${scope.id}`))
+    : (() => { const b = db.prepare("SELECT name, slug FROM branches WHERE id = ?").get(scope.id) as { name: string; slug: string } | undefined; return b ? token(b.name, token(b.slug, `Branch-${scope.id}`)) : `Branch-${scope.id}`; })();
+  const baseName = ["PayrollSummary", scopeTok, monthTok(m), payDates.length ? `PayDates-${rangeTok(payDates[0], payDates[payDates.length - 1])}` : ""].filter(Boolean).join("_");
 
   if (format === "csv") {
     return new NextResponse(renderPayrollSummaryCsv(doc, generatedLabel, note), {
       headers: {
         "Content-Type": "text/csv;charset=utf-8",
-        "Content-Disposition": `attachment; filename="${filename}.csv"`
+        "Content-Disposition": contentDisposition("attachment", baseName, "csv")
       }
     });
   }
@@ -48,7 +55,7 @@ export async function GET(req: Request) {
     return new NextResponse(buf as unknown as BodyInit, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${filename}.xlsx"`
+        "Content-Disposition": contentDisposition("attachment", baseName, "xlsx")
       }
     });
   }
@@ -56,7 +63,7 @@ export async function GET(req: Request) {
   return new NextResponse(pdf as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${filename}.pdf"`
+      "Content-Disposition": contentDisposition("inline", baseName, "pdf")
     }
   });
 }

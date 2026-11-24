@@ -1,6 +1,7 @@
 import { getSessionUser, userCanViewPayroll } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { rowsToCsv, type CsvCell } from "@/lib/csv";
+import { contentDisposition, payRoundBaseName, token } from "@/lib/download-name";
 
 // GET /api/admin/persona/payroll/periods/[id]/bank-csv
 // Generate a generic bank-transfer CSV from all payroll lines in the period.
@@ -28,10 +29,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
   const db = getDb();
   const period = db.prepare(`
-    SELECT id, period_start, period_end, pay_date, status
+    SELECT id, cycle, target, branch_id, period_start, period_end, pay_date, status
     FROM payroll_periods WHERE id = ?
   `).get(periodId) as
-    { id: number; period_start: string; period_end: string; pay_date: string; status: string } | undefined;
+    { id: number; cycle: string; target: string | null; branch_id: number | null; period_start: string; period_end: string; pay_date: string; status: string } | undefined;
   if (!period) return new Response("period_not_found", { status: 404 });
 
   // Allow downloading for finalized + paid (not draft — numbers may still change)
@@ -49,6 +50,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
              pl.display_name
   `).all(periodId) as Row[];
 
+  const branchRow = period.branch_id != null ? db.prepare("SELECT name, slug FROM branches WHERE id = ?").get(period.branch_id) as { name: string; slug: string } | undefined : undefined;
+  const branchName = branchRow ? token(branchRow.name, token(branchRow.slug, `Branch-${period.branch_id}`)) : null;
   const ref = `PAY-${period.pay_date.replace(/-/g, "")}`;
   const headers = [
     "bank", "account", "amount", "employee_name", "employee_code", "reference"
@@ -69,7 +72,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     status: 200,
     headers: {
       "Content-Type": "text/csv;charset=utf-8",
-      "Content-Disposition": `attachment; filename="bank-transfer-${period.pay_date}.csv"`
+      // the name says which round: BankTransfer_PartTime_<branch>_Period-2026.10.26-11.01_Pay-2026.11.02
+      "Content-Disposition": contentDisposition("attachment", payRoundBaseName("BankTransfer", period, branchName), "csv")
     }
   });
 }
