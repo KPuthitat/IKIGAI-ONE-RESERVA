@@ -8,7 +8,8 @@ import { formatLongDate } from "@/lib/time";
 import { fmtMoney } from "@/lib/format";
 import { nameWithPrefix } from "@/lib/name";
 import { safeFileName, payRoundBaseName, token } from "@/lib/download-name";
-import SummaryPrintButton from "./SummaryPrintButton";
+import { buildRoundSummary, branchTaxLabel, maskAccount, STATUS_TH } from "@/lib/round-summary";
+import { apiUrl } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 // "Save as PDF" names the file after the page title, so the title says which round it is (owner 2026-11-24).
@@ -26,51 +27,6 @@ export function generateMetadata({ params }: { params: { id: string } }): Metada
 // a totals row — for sending to the accounting office as a PDF. Print is the
 // browser's "save as PDF" (window.print), same as the single payslip.
 
-type Period = {
-  id: number;
-  cycle: "weekly" | "monthly";
-  target: "pt" | "ft" | "all";
-  period_start: string;
-  period_end: string;
-  pay_date: string;
-  status: "draft" | "finalized" | "paid" | "cancelled";
-};
-
-type Line = {
-  user_id: number;
-  employee_code: string | null;
-  display_name: string;
-  title_prefix: string | null;
-  employment_type: "pt" | "ft" | null;
-  bank_name: string | null;
-  bank_account: string | null;
-  days_worked: number;
-  base_pay: number;
-  ot_pay: number;
-  service_charge: number;
-  other_additions: number;
-  gross_pay: number;
-  sso_amount: number;
-  tax_amount: number;
-  other_deductions: number;
-  drink_deductions: number;
-  mealpass_deductions: number;
-  net_pay: number;
-  special_payment: number;
-  special_paid_out: number;
-};
-
-const STATUS_TH: Record<Period["status"], string> = {
-  draft: "ฉบับร่าง", finalized: "ยืนยันแล้ว", paid: "จ่ายแล้ว", cancelled: "ยกเลิก"
-};
-
-function maskAccount(acc: string | null): string {
-  if (!acc) return "—";
-  const digits = acc.replace(/\D/g, "");
-  if (digits.length < 8) return acc;
-  return `${digits.slice(0, 3)}-x-xxxxx-${digits.slice(-1)}`;
-}
-
 export default function PayrollSummaryPage({ params }: { params: { id: string } }) {
   requirePayrollAccess();
   const lang = getLang();
@@ -79,97 +35,9 @@ export default function PayrollSummaryPage({ params }: { params: { id: string } 
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) notFound();
 
-  const period = db.prepare(`
-    SELECT id, cycle, target, period_start, period_end, pay_date, status
-    FROM payroll_periods WHERE id = ?
-  `).get(id) as Period | undefined;
-  if (!period) notFound();
-
-  const lines = db.prepare(`
-    SELECT pl.user_id, pl.employee_code, pl.display_name, u.title_prefix, pl.employment_type,
-           u.bank_name, u.bank_account,
-           pl.days_worked, pl.base_pay, pl.ot_pay, pl.service_charge, pl.other_additions,
-           pl.gross_pay, pl.sso_amount, pl.tax_amount, pl.other_deductions,
-           pl.drink_deductions, pl.mealpass_deductions, pl.net_pay, pl.special_payment, pl.special_paid_out
-    FROM payroll_lines pl
-    LEFT JOIN users u ON u.id = pl.user_id
-    WHERE pl.period_id = ?
-    ORDER BY CASE WHEN pl.employment_type = 'ft' THEN 0 WHEN pl.employment_type = 'pt' THEN 1 ELSE 2 END,
-             pl.display_name
-  `).all(id) as Line[];
-  // เงินช่วยเหลือพิเศษ shows with the other additions, and what was already paid out early
-  // (aid + advances) with the other deductions, so every printed row and the footer tie out to net.
-  for (const l of lines) { l.other_additions += l.special_payment; l.other_deductions += l.special_paid_out; }
-
-  // Company on the letterhead = the one the run's employees belong to, via
-  // their branch (owner 2026-06-18: หัวกระดาษต้องตรงสังกัดพนักงาน). Pick the
-  // company shared by the most employees; fall back to the default company.
-  type Company = { name_th: string; name_en: string | null; tax_id: string | null; address: string | null; phone: string | null };
-  let company = db.prepare(`
-    SELECT c.name_th, c.name_en, c.tax_id, c.address, c.phone
-    FROM payroll_lines pl
-    JOIN user_branches ub ON ub.user_id = pl.user_id
-    JOIN branches b ON b.id = ub.branch_id
-    JOIN companies c ON c.id = b.company_id
-    WHERE pl.period_id = ?
-    GROUP BY c.id
-    ORDER BY COUNT(*) DESC, c.id ASC
-    LIMIT 1
-  `).get(id) as Company | undefined;
-  if (!company) {
-    company = db.prepare(
-      "SELECT name_th, name_en, tax_id, address, phone FROM companies WHERE active = 1 ORDER BY id LIMIT 1"
-    ).get() as Company | undefined;
-  }
-  // How many distinct companies are represented — if >1 the single letterhead
-  // is only the dominant one, so we note it.
-  const companyCount = (db.prepare(`
-    SELECT COUNT(DISTINCT b.company_id) AS n
-    FROM payroll_lines pl
-    JOIN user_branches ub ON ub.user_id = pl.user_id
-    JOIN branches b ON b.id = ub.branch_id
-    WHERE pl.period_id = ? AND b.company_id IS NOT NULL
-  `).get(id) as { n: number }).n;
-
-  // Tax establishment (สาขา) the run's employees belong to — owner 2026-06-18:
-  // "สาขานามะ มัน 00001". Head office = 00000 = สำนักงานใหญ่; others = สาขาที่ X.
-  type RunBranch = { name: string; tax_branch_code: string | null; reg_address: string | null };
-  const branch = db.prepare(`
-    SELECT b.name, b.tax_branch_code, b.reg_address
-    FROM payroll_lines pl
-    JOIN user_branches ub ON ub.user_id = pl.user_id
-    JOIN branches b ON b.id = ub.branch_id
-    WHERE pl.period_id = ?
-    GROUP BY b.id
-    ORDER BY COUNT(*) DESC, b.id ASC
-    LIMIT 1
-  `).get(id) as RunBranch | undefined;
-  const branchCount = (db.prepare(`
-    SELECT COUNT(DISTINCT ub.branch_id) AS n
-    FROM payroll_lines pl JOIN user_branches ub ON ub.user_id = pl.user_id
-    WHERE pl.period_id = ?
-  `).get(id) as { n: number }).n;
-
-  const branchTaxLabel = (code: string | null): string => {
-    const c = (code ?? "").trim();
-    return !c || c === "00000" ? "สำนักงานใหญ่ (00000)" : `สาขาที่ ${c}`;
-  };
-  // The establishment address (สาขา) is more accurate for the doc than the HQ;
-  // fall back to the company's registered address when the branch has none.
-  const addressToShow = branch?.reg_address?.trim() || company?.address || null;
-
-  // Column totals — summed in code so the printed footer ties out exactly to
-  // the rows above (never recomputed from rounded display strings).
-  const tot = lines.reduce((a, l) => ({
-    base: a.base + l.base_pay, ot: a.ot + l.ot_pay, svc: a.svc + l.service_charge,
-    add: a.add + l.other_additions, gross: a.gross + l.gross_pay,
-    sso: a.sso + l.sso_amount, tax: a.tax + l.tax_amount, ded: a.ded + l.other_deductions,
-    welfare: a.welfare + l.drink_deductions + l.mealpass_deductions,
-    net: a.net + l.net_pay
-  }), { base: 0, ot: 0, svc: 0, add: 0, gross: 0, sso: 0, tax: 0, ded: 0, welfare: 0, net: 0 });
-  // Include welfare deductions (drink + cross-company meal) so the footer ties
-  // out exactly to net_pay (net = gross − sso − tax − other − welfare).
-  const totalDeductions = tot.sso + tot.tax + tot.ded + tot.welfare;
+  const data = buildRoundSummary(db, id);
+  if (!data) notFound();
+  const { period, lines, company, branch, companyCount, branchCount, addressToShow, tot, totalDeductions } = data;
 
   return (
     <>
@@ -181,7 +49,10 @@ export default function PayrollSummaryPage({ params }: { params: { id: string } 
         <Link href={`/admin/persona/payroll/${id}`} className="text-sm text-slate-500 hover:text-brand">
           ← กลับรอบค่าตอบแทน
         </Link>
-        <SummaryPrintButton />
+        {/* a real PDF, laid out on A4 — no browser print dialog (owner 2026-11-24) */}
+        <a href={apiUrl(`/api/admin/persona/payroll/periods/${id}/summary-pdf`)} target="_blank" rel="noopener" className="btn-primary text-sm">
+          ดาวน์โหลด PDF
+        </a>
       </div>
 
       <div className="printable bg-white text-slate-800 p-6 rounded-2xl shadow-card print:shadow-none print:rounded-none">
