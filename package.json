@@ -58,6 +58,7 @@
     "test:corporate-goal": "node --import tsx scripts/test-corporate-goal.ts",
     "test:category-mix": "node --import tsx scripts/test-category-mix.ts",
     "test:download-name": "node --import tsx scripts/test-download-name.ts",
+    "test:round-summary-pdf": "node --import tsx scripts/test-round-summary-pdf.ts",
     "test:service-eval": "node --import tsx scripts/test-service-eval.ts",
     "test:owl-secretary": "node --import tsx scripts/test-owl-secretary.ts",
     "test:special-duty-roster": "node --import tsx scripts/test-special-duty-roster.ts",
