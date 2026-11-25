@@ -1,5 +1,6 @@
 "use client";
 
+import { MoveBar, MoveHistory, PickBox, useSelection } from "../MoveBranch";
 import { useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -74,6 +75,7 @@ export default function IncomeClient(props: {
 }) {
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
+  const move = useSelection();
   const [month, setMonth] = useState(props.month);
   // Default to the active branch so the list + summary + dropdown all agree —
   // previously the filter defaulted to "ทุกสาขา" while the page pre-scoped the
@@ -354,6 +356,9 @@ export default function IncomeClient(props: {
         )}
       </div>
 
+      <MoveBar kind="income" sel={move.sel} clear={move.clear} branches={props.branches} currentBranchId={props.activeBranchId} onDone={async () => { await reload(); router.refresh(); }} />
+      <MoveHistory />
+
       {rows.length === 0 ? (
         <div className="card text-center py-10 text-slate-500">ยังไม่มีรายรับในช่วงที่เลือก</div>
       ) : (
@@ -374,6 +379,7 @@ export default function IncomeClient(props: {
                     <tbody>
                       {d.rows.map((r) => (
                         <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+                          <td className="pl-2 w-8">{["shift_close", "clinic", "revshare"].includes(r.source) ? null : <PickBox id={r.id} sel={move.sel} toggle={move.toggle} />}</td>
                           <td className="px-3 py-2">
                             <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
                               {r.channel || (r.source === "shift_close" ? "ยอดขายรวม" : "—")}

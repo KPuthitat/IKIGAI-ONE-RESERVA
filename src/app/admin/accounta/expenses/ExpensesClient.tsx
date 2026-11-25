@@ -1,5 +1,6 @@
 "use client";
 
+import { MoveBar, MoveHistory, PickBox, useSelection } from "../MoveBranch";
 import { Fragment, useState, useRef, useTransition, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -166,6 +167,7 @@ export default function ExpensesClient(props: {
   const activeCompanyName = activeCompanyId != null
     ? (props.companies.find((c) => c.id === activeCompanyId)?.name ?? null) : null;
 
+  const move = useSelection();
   const [month, setMonth] = useState(props.month);
   const [branchId] = useState<string>(props.activeBranchId != null ? String(props.activeBranchId) : "");
   const [companyId] = useState<string>("");
@@ -1088,6 +1090,9 @@ export default function ExpensesClient(props: {
         </details>
       )}
 
+      <MoveBar kind="expense" sel={move.sel} clear={move.clear} branches={props.branches} currentBranchId={props.activeBranchId} onDone={async () => { await reload(); startTransition(() => router.refresh()); }} />
+      <MoveHistory />
+
       {/* List */}
       {filtered.length === 0 ? (
         <div className="card text-center py-10 text-slate-500">
@@ -1133,7 +1138,7 @@ export default function ExpensesClient(props: {
                       {d.rows.map((e) => (
                 <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50/60">
                   <td className="px-3 py-2 whitespace-nowrap text-slate-600">
-                    {e.branch_name ? <div className="text-[10px] text-slate-400">{e.branch_name}</div> : "—"}
+                    <div className="flex items-center gap-1"><PickBox id={e.id} sel={move.sel} toggle={move.toggle} />{e.branch_name ? <div className="text-[10px] text-slate-400">{e.branch_name}</div> : "—"}</div>
                   </td>
                   <td className="px-3 py-2">
                     <div className="font-medium text-slate-800 flex items-center gap-1.5 flex-wrap">
