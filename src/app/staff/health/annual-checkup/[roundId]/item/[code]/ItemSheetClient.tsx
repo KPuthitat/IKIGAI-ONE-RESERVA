@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { post } from "../../../shared";
-import { DEFAULT_THRESHOLDS, FLAG_TH, flagResult, isCritical, refLabel, type Flag } from "@/lib/health-report/interpret";
+import { DEFAULT_THRESHOLDS, FLAG_TH, withArrow, flagResult, isCritical, refLabel, type Flag } from "@/lib/health-report/interpret";
 import type { Ref } from "@/lib/health-report/catalog";
 
 type Item = { code: string; en: string; th: string; unit: string | null; kind: "number" | "choice" | "text"; choices: string[] | null; normal: string[] | "any" | null; refs: Ref[]; refText: string | null; plausible: [number, number] | null };
@@ -77,7 +77,7 @@ export default function ItemSheetClient({ roundId, current, groups, item, people
                   <input data-entry disabled={p.locked} inputMode={item.kind === "number" ? "decimal" : "text"} className="input min-h-[44px] w-32 text-right" value={raw} onKeyDown={nextField} aria-label={`${item.en} ของ ${p.label}`}
                     onChange={(e) => { const s = item.kind === "number" ? e.target.value.replace(",", ".") : e.target.value; if (item.kind !== "number" || /^-?\d*\.?\d*$/.test(s)) change(p, s); }} />
                 )}
-                <span className={`w-24 text-xs ${flag ? FLAG_CLS[flag] : ""}`}>{flag && flag !== "info" ? (flag === "normal" ? "ปกติ" : FLAG_TH[flag]) : ""}{crit ? <span className="block text-rose-700 font-bold">⚠ แจ้งแพทย์</span> : null}</span>
+                <span className={`w-24 text-xs ${flag ? FLAG_CLS[flag] : ""}`}>{flag && flag !== "info" ? (flag === "normal" ? "ปกติ" : withArrow(FLAG_TH[flag])) : ""}{crit ? <span className="block text-rose-700 font-bold">⚠ แจ้งแพทย์</span> : null}</span>
                 <span className="w-6 text-xs text-slate-400" aria-live="polite">{st[p.orderId] ?? ""}</span>
               </div>
             </div>
