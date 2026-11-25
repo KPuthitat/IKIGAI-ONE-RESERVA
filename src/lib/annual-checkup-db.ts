@@ -1524,3 +1524,149 @@ export function getLinkResultFile(linkId: number, resultId: number): { path: str
   audit(0, "link.file", { user_id: null, external_id: l.external_id }, l.round_id, resultId, `link ${linkId}`);
   return { path: r.file_path, mime: r.file_mime ?? "application/octet-stream" };
 }
+
+
+// ── permissions screen, the doctors' overview, sharing with HR (health report PR 7) ─────────────────────────────────
+
+export type ClinicPerson = { id: number; name: string; employee_code: string | null; status: string; clinical_role: string | null; has_license: boolean; recorder: boolean; approver: boolean; approver_blocker: string | null; in_clinic: boolean };
+
+function eligibilityNote(row: { status: string; clinical_role: string | null; license_no: string | null }, inClinic: boolean): string | null {
+  if (["disabled", "resigned", "terminated"].includes(row.status)) return "ไม่ได้ทำงานแล้ว";
+  if (!inClinic) return "ไม่ได้อยู่สาขา AT HOME CLINIC";
+  if (row.clinical_role !== "doctor") return "ต้องเป็นแพทย์ (ตั้งบทบาทแพทย์ที่หน้าพนักงาน)";
+  if (!row.license_no || !row.license_no.trim()) return "ต้องมีเลขใบอนุญาตประกอบวิชาชีพ";
+  return null;
+}
+
+/** For the owner: everyone on the clinic branch roster with their two capabilities and, for the approver, what is still missing. */
+export function listClinicPeople(actor: AcActor): ClinicPerson[] {
+  const a = loadActor(actor);
+  if (a.role !== "super_admin") throw new AnnualCheckupForbidden("super_admin_only");
+  const rows = getDb().prepare(`
+    SELECT u.id, u.display_name, u.title_prefix, u.employee_code, u.status, u.clinical_role, u.license_no, u.health_result_recorder AS rec, u.health_result_approver AS app
+      FROM users u JOIN user_branches ub ON ub.user_id = u.id JOIN branches b ON b.id = ub.branch_id
+     WHERE b.slug = 'at-home-clinic' AND u.status NOT IN ('disabled','resigned','terminated') ORDER BY u.display_name COLLATE NOCASE
+  `).all() as Array<{ id: number; display_name: string; title_prefix: string | null; employee_code: string | null; status: string; clinical_role: string | null; license_no: string | null; rec: number; app: number }>;
+  return rows.map((r) => ({ id: r.id, name: nameWithPrefix(r.title_prefix, r.display_name), employee_code: r.employee_code, status: r.status, clinical_role: r.clinical_role, has_license: !!r.license_no?.trim(), recorder: r.rec === 1, approver: r.app === 1, approver_blocker: eligibilityNote(r, true), in_clinic: true }));
+}
+
+/** People not on the clinic roster who match a search — the owner may add one deliberately. */
+export function searchPeopleOutsideClinic(actor: AcActor, q: string): Array<{ id: number; name: string; employee_code: string | null; branches: string }> {
+  const a = loadActor(actor);
+  if (a.role !== "super_admin") throw new AnnualCheckupForbidden("super_admin_only");
+  const t = q.trim();
+  if (t.length < 2) return [];
+  const like = `%${t.replace(/[%_]/g, "")}%`;
+  const rows = getDb().prepare(`
+    SELECT u.id, u.display_name, u.title_prefix, u.employee_code,
+           (SELECT GROUP_CONCAT(b.name, ', ') FROM user_branches ub JOIN branches b ON b.id = ub.branch_id WHERE ub.user_id = u.id) AS branches
+      FROM users u
+     WHERE u.status NOT IN ('disabled','resigned','terminated') AND u.role IN ('staff','admin')
+       AND (u.display_name LIKE ? OR u.employee_code LIKE ?)
+       AND NOT EXISTS (SELECT 1 FROM user_branches ub JOIN branches b ON b.id = ub.branch_id WHERE ub.user_id = u.id AND b.slug = 'at-home-clinic')
+     ORDER BY u.display_name COLLATE NOCASE LIMIT 10
+  `).all(like, like) as Array<{ id: number; display_name: string; title_prefix: string | null; employee_code: string | null; branches: string | null }>;
+  return rows.map((r) => ({ id: r.id, name: nameWithPrefix(r.title_prefix, r.display_name), employee_code: r.employee_code, branches: r.branches ?? "—" }));
+}
+
+/** The owner puts a person on the clinic roster (a precondition for any capability). Recorded in the audit list and the activity log. */
+export function addToClinic(actor: AcActor, userId: number, reason: string): void {
+  const a = loadActor(actor);
+  if (a.role !== "super_admin") throw new AnnualCheckupForbidden("super_admin_only");
+  if (!clean(reason)) throw new AnnualCheckupInvalid("reason_required");
+  const db = getDb();
+  guard(() => db.transaction(() => {
+    const b = db.prepare("SELECT id FROM branches WHERE slug = 'at-home-clinic'").get() as { id: number } | undefined;
+    if (!b) throw new AnnualCheckupInvalid("subject_not_found");
+    if (!db.prepare("SELECT 1 FROM users WHERE id = ? AND status NOT IN ('disabled','resigned','terminated')").get(userId)) throw new AnnualCheckupInvalid("subject_not_found");
+    db.prepare("INSERT OR IGNORE INTO user_branches (user_id, branch_id) VALUES (?, ?)").run(userId, b.id);
+    audit(a.id, "clinic.add", { user_id: userId, external_id: null }, null, null, clean(reason) ?? undefined);
+  })());
+  logPersonaAction(a.id, "annual_checkup.add_to_clinic", userId);
+}
+
+export type Dashboard = {
+  round: { id: number; name: string };
+  states: Record<"not_recorded" | "partial" | "to_send" | "awaiting_doctor" | "returned" | "to_release" | "released" | "revised", number>; total: number;
+  byPayer: Array<{ payer: string; total: number; released: number; awaiting_doctor: number }>;
+  byRecorder: Array<{ name: string; returned: number; sent: number }>;
+  followUp: Array<{ key: string; label: string; payer: string; summary: string; released: boolean }>;
+};
+
+/** For the doctors and the clinic team: how many people are at each step, who has what waiting, and who needs follow-up. */
+export function getRoundDashboard(actor: AcActor, roundId: number): Dashboard {
+  const a = requireRecorder(actor);
+  const ov = getRoundOverview(actor, roundId);
+  const states: Dashboard["states"] = { not_recorded: 0, partial: 0, to_send: 0, awaiting_doctor: 0, returned: 0, to_release: 0, released: 0, revised: 0 };
+  const payer = new Map<string, { payer: string; total: number; released: number; awaiting_doctor: number }>();
+  for (const s of ov.subjects) {
+    const k: keyof Dashboard["states"] = s.returned ? "returned"
+      : s.conclusionReleased && s.required > 0 && s.released < s.required ? "revised"
+      : s.required > 0 && s.released === s.required ? "released"
+      : s.required > 0 && s.verified === s.required ? "to_release"
+      : s.required > 0 && s.recorded === s.required ? (s.submitted ? "awaiting_doctor" : "to_send")
+      : s.recorded === 0 ? "not_recorded" : "partial";
+    states[k]++;
+    const p = payer.get(s.payer) ?? { payer: s.payer, total: 0, released: 0, awaiting_doctor: 0 };
+    p.total++; if (k === "released") p.released++; if (k === "awaiting_doctor") p.awaiting_doctor++;
+    payer.set(s.payer, p);
+  }
+  const db = getDb();
+  const byRecorder = db.prepare(`
+    SELECT u.display_name AS name,
+           (SELECT COUNT(*) FROM annual_checkup_returns rt WHERE rt.round_id = ? AND rt.resolved_at IS NULL AND rt.to_user = u.id) AS returned,
+           (SELECT COUNT(*) FROM annual_checkup_submissions sb WHERE sb.round_id = ? AND sb.submitted_by = u.id) AS sent
+      FROM users u WHERE u.health_result_recorder = 1 OR u.health_result_approver = 1 ORDER BY u.display_name COLLATE NOCASE
+  `).all(roundId, roundId) as Dashboard["byRecorder"];
+  const label = new Map(ov.subjects.map((s) => [s.key, { label: s.label, payer: s.payer }]));
+  const fu = db.prepare("SELECT user_id, external_id, summary, released_at FROM annual_checkup_conclusions WHERE round_id = ? AND summary IN ('abnormal','follow_up') ORDER BY id").all(roundId) as Array<{ user_id: number | null; external_id: number | null; summary: string; released_at: string | null }>;
+  const followUp = fu.map((c) => { const key = c.user_id != null ? `u${c.user_id}` : `e${c.external_id}`; const l = label.get(key); return { key, label: l?.label ?? key, payer: l?.payer ?? "", summary: c.summary === "abnormal" ? "ผิดปกติ" : "ต้องติดตาม", released: !!c.released_at }; });
+  audit(a.id, "round.dashboard", null, roundId, null);
+  return { round: { id: ov.round.id, name: ov.round.name }, states, total: ov.subjects.length, byPayer: [...payer.values()], byRecorder: byRecorder.filter((r) => r.returned > 0 || r.sent > 0), followUp };
+}
+
+// ── sharing with HR (employee's own choice) ──
+export type ShareScope = "followup" | "values";
+export function getMyShare(actor: AcActor): Record<ShareScope, boolean> {
+  const a = loadActor(actor);
+  const rows = getDb().prepare("SELECT scope, granted_at, revoked_at FROM annual_checkup_share_consents WHERE user_id = ?").all(a.id) as Array<{ scope: ShareScope; granted_at: string | null; revoked_at: string | null }>;
+  const on = (s: ShareScope) => { const r = rows.find((x) => x.scope === s); return !!r?.granted_at && !r.revoked_at; };
+  return { followup: on("followup"), values: on("values") };
+}
+export function setMyShare(actor: AcActor, scope: ShareScope, on: boolean): void {
+  const a = loadActor(actor);
+  if (scope !== "followup" && scope !== "values") throw new AnnualCheckupInvalid("bad_value");
+  const db = getDb();
+  guard(() => db.transaction(() => {
+    if (on) db.prepare("INSERT INTO annual_checkup_share_consents (user_id, scope, granted_at, revoked_at) VALUES (?, ?, CURRENT_TIMESTAMP, NULL) ON CONFLICT(user_id, scope) DO UPDATE SET granted_at = CURRENT_TIMESTAMP, revoked_at = NULL").run(a.id, scope);
+    else db.prepare("UPDATE annual_checkup_share_consents SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND scope = ?").run(a.id, scope);
+    audit(a.id, on ? "share.on" : "share.off", { user_id: a.id, external_id: null }, null, null, scope);
+  })());
+}
+const isHrActor = (a: { role: string; is_hr_analytics: number }) => a.role === "super_admin" || a.role === "admin" || a.is_hr_analytics === 1;
+
+/** HR / admin / owner: the follow-up names of people who agreed to share them. Name and verdict only — never a value. */
+export function getFollowUpForHr(actor: AcActor, roundId: number): Array<{ user_id: number; name: string; payer: string; verdict: string }> {
+  const a = loadActor(actor);
+  if (!isHrActor(a)) throw new AnnualCheckupForbidden("not_allowed");
+  const rows = getDb().prepare(`
+    SELECT c.user_id, c.summary, u.display_name, u.title_prefix, COALESCE((SELECT p.name_th FROM annual_checkup_orders o JOIN annual_checkup_payers p ON p.id = o.payer_id WHERE o.round_id = c.round_id AND o.user_id = c.user_id LIMIT 1), 'ไม่ระบุ') AS payer
+      FROM annual_checkup_conclusions c JOIN users u ON u.id = c.user_id
+      JOIN annual_checkup_share_consents sc ON sc.user_id = c.user_id AND sc.scope IN ('followup','values') AND sc.granted_at IS NOT NULL AND sc.revoked_at IS NULL
+     WHERE c.round_id = ? AND c.released_at IS NOT NULL AND c.summary IN ('abnormal','follow_up')
+     GROUP BY c.user_id ORDER BY u.display_name COLLATE NOCASE
+  `).all(roundId) as Array<{ user_id: number; summary: string; display_name: string; title_prefix: string | null; payer: string }>;
+  audit(a.id, "hr.followup", null, roundId, null);
+  return rows.map((r) => ({ user_id: r.user_id, name: nameWithPrefix(r.title_prefix, r.display_name), payer: r.payer, verdict: r.summary === "abnormal" ? "ผิดปกติ" : "ต้องติดตาม" }));
+}
+
+/** HR may open ONE employee's released report only if that employee agreed to share values. Audited under the employee's name. */
+export function getSharedReportData(actor: AcActor, roundId: number, userId: number): ReportData | null {
+  const a = loadActor(actor);
+  if (!isHrActor(a)) throw new AnnualCheckupForbidden("not_allowed");
+  const ok = getDb().prepare("SELECT 1 FROM annual_checkup_share_consents WHERE user_id = ? AND scope = 'values' AND granted_at IS NOT NULL AND revoked_at IS NULL").get(userId);
+  if (!ok) throw new AnnualCheckupForbidden("not_allowed");
+  const d = collectReportData(roundId, { userId });
+  if (d) audit(a.id, "hr.view", { user_id: userId, external_id: null }, roundId, null);
+  return d;
+}

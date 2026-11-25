@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { getMyAuditTrail, getMyReportData, getMyRounds } from "@/lib/annual-checkup-db";
+import { getMyAuditTrail, getMyReportData, getMyRounds, getMyShare } from "@/lib/annual-checkup-db";
+import SharePanel from "./SharePanel";
 import { getDb } from "@/lib/db";
 import { buildReport } from "@/lib/health-report/report";
 import { loadItems } from "@/lib/health-report/store";
@@ -20,6 +21,7 @@ const INTERP_TH: Record<string, string> = { normal: "ปกติ", abnormal: "�
 const INTERP_CLS: Record<string, string> = { normal: "bg-emerald-100 text-emerald-700", abnormal: "bg-rose-100 text-rose-700", follow_up: "bg-amber-100 text-amber-800" };
 const ACTION_TH: Record<string, string> = {
   "subject.view": "เปิดดูผลตรวจของท่าน", "subject.release": "เปิดผลให้ท่านดู", "result.record": "บันทึกผล", "result.update": "แก้ไขร่างผล", "result.verify": "ตรวจสอบผล",
+  "hr.view": "ฝ่ายบุคคลเปิดดูผลของท่าน (ตามที่ท่านอนุญาต)", "link.view": "เปิดดูผ่านลิงก์", "share.on": "ท่านอนุญาตให้ฝ่ายบุคคลเห็น", "share.off": "ท่านยกเลิกการอนุญาตให้ฝ่ายบุคคลเห็น",
   "result.revise": "แก้ไขผลที่ตรวจสอบแล้ว", "result.attach": "แนบไฟล์ผล", "conclusion.save": "บันทึกสรุปผล", "file.view": "เปิดไฟล์ผลตรวจ"
 };
 const when = (iso: string) => new Date(iso.replace(" ", "T") + "Z").toLocaleString("th-TH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
@@ -74,6 +76,7 @@ export default function AnnualResultsPage({ searchParams }: { searchParams: { ro
       {report
         ? <HealthReportView report={report} consultUrl={consultUrl} pdfHref={`/api/annual-checkup/me/report-pdf?round=${chosen.id}`} fileHref={(id) => `/api/annual-checkup/me/file/${id}?t=${encodeURIComponent(makeFileToken(id, user.id))}`} />
         : <div className="card p-5 text-sm text-slate-600">ผลของรอบนี้ยังไม่ได้เปิดให้ดู</div>}
+      <SharePanel initial={getMyShare(user)} />
       <div className="card p-4">
         <div className="font-semibold text-slate-800 mb-2">ใครเปิดดูข้อมูลฉัน</div>
         {trail.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีผู้อื่นเปิดดูข้อมูลของท่าน</p> : (

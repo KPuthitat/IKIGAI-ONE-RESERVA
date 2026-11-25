@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { getProgress, isAnnualCheckupForbidden, type ProgressState } from "@/lib/annual-checkup-db";
+import { getFollowUpForHr, getProgress, isAnnualCheckupForbidden, type ProgressState } from "@/lib/annual-checkup-db";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ความคืบหน้าตรวจสุขภาพประจำปี · PERSONA" };
@@ -22,7 +22,8 @@ export default function CheckupStatusPage({ searchParams }: { searchParams: { ro
   const rounds = getDb().prepare("SELECT id, name FROM annual_checkup_rounds ORDER BY id DESC").all() as Array<{ id: number; name: string }>;
   const chosen = rounds.find((r) => String(r.id) === searchParams.round) ?? rounds[0];
   let progress: ReturnType<typeof getProgress> | null = null;
-  try { if (chosen) progress = getProgress(user, chosen.id); }
+  let followUp: ReturnType<typeof getFollowUpForHr> = [];
+  try { if (chosen) { progress = getProgress(user, chosen.id); followUp = getFollowUpForHr(user, chosen.id); } }
   catch (e) { if (isAnnualCheckupForbidden(e)) redirect("/admin?error=forbidden"); throw e; }
   return (
     <div className="space-y-4">
@@ -51,6 +52,13 @@ export default function CheckupStatusPage({ searchParams }: { searchParams: { ro
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="card overflow-x-auto">
+            <div className="px-4 py-3 border-b border-slate-100 font-semibold text-slate-800">รายชื่อที่ต้องติดตาม (เฉพาะผู้ที่ยินยอมให้ฝ่ายบุคคลเห็น)</div>
+            <p className="px-4 pt-2 text-xs text-slate-500">แสดงเฉพาะชื่อและภาพรวม ไม่แสดงค่าผลตรวจ พนักงานเลือกเองได้ที่หน้าผลตรวจของตน คนที่ไม่ได้ยินยอมจะไม่อยู่ในรายการนี้ แต่ยังนับรวมในจำนวนด้านบน</p>
+            <table className="w-full text-sm min-w-[480px]"><thead className="text-left text-slate-500"><tr><th className="px-4 py-2">ชื่อ</th><th className="px-4 py-2">บริษัทผู้จ่าย</th><th className="px-4 py-2">ภาพรวม</th><th className="px-4 py-2" /></tr></thead>
+              <tbody>{followUp.map((f) => <tr key={f.user_id} className="border-t border-slate-100"><td className="px-4 py-2">{f.name}</td><td className="px-4 py-2">{f.payer}</td><td className="px-4 py-2">{f.verdict}</td><td className="px-4 py-2 text-right"><Link className="text-brand underline text-xs" href={`/admin/annual-checkup-status/person/${chosen.id}/${f.user_id}`}>ดูผล (ถ้าได้รับอนุญาต)</Link></td></tr>)}
+                {followUp.length === 0 && <tr><td colSpan={4} className="px-4 py-3 text-slate-500">ไม่มีรายชื่อที่ยินยอมให้แสดง</td></tr>}</tbody></table>
           </div>
         </>
       )}
