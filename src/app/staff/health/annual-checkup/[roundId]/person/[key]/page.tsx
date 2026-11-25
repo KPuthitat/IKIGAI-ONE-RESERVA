@@ -54,7 +54,6 @@ export default function PersonPage({ params }: { params: { roundId: string; key:
           <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/entry`} className="btn-primary min-h-[48px] inline-flex items-center justify-center text-sm sm:col-span-2">กรอกผลตามหมวดของเล่ม</Link>
           <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/review`} className="btn-secondary min-h-[44px] inline-flex items-center justify-center text-sm">แพทย์ตรวจสอบ / เขียนสรุป</Link>
           {conclusion?.released_at && <a href={`/api/annual-checkup/report-pdf?roundId=${roundId}&subject=${params.key}`} target="_blank" rel="noopener" className="btn-secondary min-h-[44px] inline-flex items-center justify-center text-sm">เล่มผล PDF (A5)</a>}
-          {header.kind === "external" && conclusion?.released_at && <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/report`} className="btn-secondary min-h-[44px] inline-flex items-center justify-center text-sm sm:col-span-2" title="ให้ผู้รับการตรวจ ไม่ส่งบริษัท — บริษัทได้สรุปสถานะเท่านั้น">พิมพ์รายงาน A4 ให้ผู้รับการตรวจ</Link>}
         </div>
       </div>
       {header.kind === "external" && subject.externalId != null && conclusion?.released_at && (
@@ -65,7 +64,7 @@ export default function PersonPage({ params }: { params: { roundId: string; key:
       <SubmitPanel roundId={roundId} subject={params.key} submission={clinical.submission} released={!!conclusion?.released_at}
         allRecorded={rows.filter((x) => x.order_status !== "waived").every((x) => x.result_id != null)} />
       {approver && <UnlockPanel unlockedUntil={unlockExpiry(user)} />}
-      <PersonClient rows={rows} conclusion={conclusion} roundId={roundId} subject={params.key} externalId={subject.externalId ?? null}
+      <PersonClient rows={rows} roundId={roundId} subject={params.key} externalId={subject.externalId ?? null}
         needsName={header.kind === "external" && /^รอเพิ่มรายชื่อ/.test(header.label)} isApprover={approver} unlocked={isUnlocked(user)} />
     </div>
   );

@@ -65,6 +65,8 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   G.recordResult(R, v.TG, { valueNum: 20 });
   ok("a verified LDL is not changed when an input changes", ldl(v)?.value_num === 130 && ldl(v)?.status === "verified");
 
+  // reference values follow the booklet: nothing is waiting for a doctor's confirmation, and an old flag is cleared once
+  ok("no item is flagged 'to be confirmed' (reference values follow the sample booklet)", (db.prepare("SELECT COUNT(*) n FROM annual_checkup_items WHERE needs_check = 1").get() as { n: number }).n === 0 && !!db.prepare("SELECT 1 FROM annual_checkup_config WHERE key = 'refs_follow_booklet'").get());
   cleanup();
   if (failed) { console.error(`\n${failed} check(s) failed`); process.exit(1); }
   console.log("\nall LDL checks passed");

@@ -1377,6 +1377,22 @@ export function verifyAllForSubject(actor: AcActor, roundId: number, subject: Ac
   return ids.length;
 }
 
+/** Verify every draft result of everyone of one paying company in one go (the doctor has looked at them). Returns how many people / results. */
+export function verifyCompany(actor: AcActor, roundId: number, payerId: number, opts: { licenseUnlocked: boolean }): { verified: number; people: number } {
+  requireApprover(actor, opts.licenseUnlocked);
+  const db = getDb();
+  const subs = db.prepare(`
+    SELECT DISTINCT o.user_id, o.external_id FROM annual_checkup_orders o LEFT JOIN annual_checkup_externals e ON e.id = o.external_id
+     WHERE o.round_id = ? AND COALESCE(o.payer_id, e.payer_id) = ?
+  `).all(roundId, payerId) as Array<{ user_id: number | null; external_id: number | null }>;
+  const out = { verified: 0, people: 0 };
+  for (const s of subs) {
+    const n = verifyAllForSubject(actor, roundId, s.user_id != null ? { userId: s.user_id } : { externalId: s.external_id as number }, opts);
+    if (n > 0) { out.verified += n; out.people++; }
+  }
+  return out;
+}
+
 /** Open the results of everyone of one paying company whose conclusion is written and whose results are all verified; the rest are listed with why. */
 export function releaseCompany(actor: AcActor, roundId: number, payerId: number, opts: { licenseUnlocked: boolean }): { released: number; people: number; skipped: Array<{ label: string; reason: string }> } {
   requireApprover(actor, opts.licenseUnlocked);

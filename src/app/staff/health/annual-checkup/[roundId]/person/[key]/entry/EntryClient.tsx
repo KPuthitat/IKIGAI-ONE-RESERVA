@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { post, upload } from "../../../../shared";
+import ChoiceField from "../../../../ChoiceField";
 import { apiUrl } from "@/lib/url";
 import { friedewaldLdl, LDL_AUTO_NOTE, bmi, bmiCategory, DEFAULT_THRESHOLDS, FLAG_TH, withArrow, flagResult, globulin, HEARING_FREQS, implausible, indirectBilirubin, interpretHearing, interpretSpirometry, isCritical, refLabel, type Flag } from "@/lib/health-report/interpret";
 import type { Ref } from "@/lib/health-report/catalog";
@@ -160,10 +161,7 @@ export default function EntryClient({ tabs, sex, age, enzymeMultiple, ldlAuto }:
                       {it.computed ? (
                         <span className="min-w-[88px] text-right text-sm tabular-nums">{value != null ? (it.decimals != null ? (value as number).toFixed(it.decimals) : String(value)) : "—"}{it.computed === "bmi" && bmiV != null ? <span className="block text-[11px] text-slate-500">{bmiCategory(bmiV)}</span> : null}</span>
                       ) : it.kind === "choice" ? (
-                        <select data-entry disabled={x.locked} className="input min-h-[44px] w-40" value={raw} onKeyDown={nextField} onChange={(e) => change(x.orderId, it.code, e.target.value)}>
-                          <option value="">—</option>
-                          {it.choices?.map((c) => <option key={c} value={c}>{c}</option>)}
-                        </select>
+                        <ChoiceField value={raw} choices={it.choices ?? []} disabled={x.locked} onKeyDown={nextField} label={it.en} onChange={(v) => change(x.orderId, it.code, v)} />
                       ) : it.kind === "number" ? (
                         <input data-entry disabled={x.locked} inputMode="decimal" className="input min-h-[44px] w-28 text-right" value={raw}
                           onKeyDown={nextField} aria-label={it.en}

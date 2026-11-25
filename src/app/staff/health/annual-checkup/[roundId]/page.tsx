@@ -5,10 +5,12 @@ import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { normExamCode } from "@/lib/health-report/lab-import";
 import { getRoundLineGaps, getRoundOverview, isAnnualCheckupInvalid, isApproverUser, isLdlAutoOn, listMyReturns } from "@/lib/annual-checkup-db";
-import { isUnlocked, requireClinicalUser } from "@/lib/annual-checkup-api";
+import { isUnlocked, requireClinicalUser, unlockExpiry } from "@/lib/annual-checkup-api";
 import ReleaseCompany from "./ReleaseCompany";
 import AddExternal from "./AddExternal";
 import LdlFill from "./LdlFill";
+import UnlockPanel from "../UnlockPanel";
+import { loadItems } from "@/lib/health-report/store";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ผลตรวจสุขภาพประจำปี · NOKHOOK OS PORTAL" };
@@ -54,6 +56,8 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
     : s.verified === s.required && s.required > 0 ? { th: "รอเปิดผล", cls: "bg-sky-100 text-sky-700" }
     : s.recorded === s.required && s.required > 0 ? (s.submitted ? { th: "รอแพทย์ตรวจสอบ", cls: "bg-violet-100 text-violet-700" } : { th: "ลงผลครบ ยังไม่ส่งแพทย์", cls: "bg-indigo-100 text-indigo-700" })
     : s.recorded === 0 ? { th: "ยังไม่ลงผล", cls: "bg-slate-100 text-slate-600" } : { th: "ลงผลบางส่วน", cls: "bg-amber-100 text-amber-800" };
+  const allItems = loadItems(getDb());
+  const firstItem = (testCode: string) => allItems.find((i) => i.test === testCode && !i.hidden && !i.computed && i.kind !== "file")?.code ?? null;
   const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
   const totReq = data.tests.reduce((n, x) => n + x.required, 0), totRec = data.tests.reduce((n, x) => n + x.recorded, 0), totVer = data.tests.reduce((n, x) => n + x.verified, 0), totRel = data.tests.reduce((n, x) => n + x.released, 0);
   const href = (o: { f?: string; t?: string }) => `?${new URLSearchParams({ ...((o.t ?? t) ? { t: o.t ?? t } : {}), ...((o.f ?? f) ? { f: o.f ?? f } : {}), ...(q ? { q } : {}) }).toString()}`;
@@ -131,6 +135,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
 
       {isLdlAutoOn() && <LdlFill roundId={roundId} />}
       <AddExternal roundId={roundId} payers={externalPayers} />
+      {approver && payers.length > 0 && <UnlockPanel unlockedUntil={unlockExpiry(user)} />}
       {approver && payers.length > 0 && <ReleaseCompany roundId={roundId} payers={payers} unlocked={isUnlocked(user)} />}
       {externalPayers.length > 0 && (
         <div className="card flex flex-wrap items-center gap-2 text-sm">
@@ -144,7 +149,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
         <ul className="mt-2 divide-y divide-slate-100">
           {data.tests.map((x) => (
             <li key={x.code} className="py-2">
-              <div className="flex items-center justify-between gap-3"><Link href={`/staff/health/annual-checkup/${roundId}/test/${x.code}`} className="text-brand hover:underline text-sm">{x.nameTh}</Link><span className="text-xs tabular-nums text-slate-600">ลง {x.recorded}/{x.required} · ตรวจ {x.verified} · เปิด {x.released}</span></div>
+              <div className="flex items-center justify-between gap-3">{firstItem(x.code) ? <Link href={`/staff/health/annual-checkup/${roundId}/item/${firstItem(x.code)}`} className="text-brand hover:underline text-sm">{x.nameTh}</Link> : <span className="text-sm">{x.nameTh}</span>}<span className="text-xs tabular-nums text-slate-600">ลง {x.recorded}/{x.required} · ตรวจ {x.verified} · เปิด {x.released}</span></div>
               <div className="mt-1"><Bar v={pct(x.recorded, x.required)} tone="nk-gradient" /></div>
             </li>
           ))}

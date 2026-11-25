@@ -52,6 +52,8 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   // ── release by company covers outside examinees; the unverified one is listed, not released
   const rel = G.releaseCompany(D, round, payer, U);
   ok("'release by company' opens A and B and lists C with the reason", rel.people === 2 && rel.skipped.length === 1 && rel.skipped[0].reason.length > 0);
+  const vc = G.verifyCompany(D, round, payer, U);
+  ok("'verify the whole company' verifies C's remaining draft in one go (and not without the licence unlock / for non-approvers)", vc.people === 1 && vc.verified === 1 && err(() => G.verifyCompany(D, round, payer, { licenseUnlocked: false })) === "license_not_unlocked" && err(() => G.verifyCompany(R, round, payer, U)) === "not_approver");
   ok("the staff member of our own company is not touched by the outside company's release", (db.prepare("SELECT COUNT(*) n FROM annual_checkup_results r JOIN annual_checkup_orders o ON o.id = r.order_id WHERE o.user_id = ? AND r.status = 'released'").get(stf) as { n: number }).n === 0);
 
   // ── personal link
