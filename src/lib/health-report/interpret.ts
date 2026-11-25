@@ -93,6 +93,13 @@ export function bmi(weightKg: number | null | undefined, heightCm: number | null
 export function bmiCategory(v: number): string {
   return v < 18.5 ? "น้ำหนักต่ำกว่าเกณฑ์" : v < 23 ? "น้ำหนักปกติ" : v < 25 ? "น้ำหนักเกิน" : v < 30 ? "อ้วนระดับ 1" : "อ้วนระดับ 2";
 }
+/** Friedewald: LDL = total cholesterol − HDL − triglyceride / 5 (mg/dL). Not valid with triglyceride ≥ 400 or a non-positive result → null (measure it directly). */
+export const LDL_AUTO_NOTE = "คำนวณอัตโนมัติ (TC − HDL − TG/5)";
+export function friedewaldLdl(tc: number | null | undefined, hdl: number | null | undefined, tg: number | null | undefined): number | null {
+  if (tc == null || hdl == null || tg == null || ![tc, hdl, tg].every(Number.isFinite) || tg >= 400 || tg < 0) return null;
+  const v = Math.round(tc - hdl - tg / 5);
+  return v > 0 ? v : null;
+}
 export const globulin = (totalProtein: number, albumin: number) => Math.round((totalProtein - albumin) * 10) / 10;
 export const indirectBilirubin = (total: number, direct: number) => Math.round((total - direct) * 10) / 10;
 

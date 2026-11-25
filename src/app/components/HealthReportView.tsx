@@ -6,7 +6,7 @@ import { withArrow } from "@/lib/health-report/interpret";
 
 const TH_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 export const thaiLongDate = (iso: string | null | undefined) => { if (!iso) return "—"; const [y, m, d] = iso.slice(0, 10).split("-").map(Number); return `${d} ${TH_MONTHS[m - 1]} ${y + 543}`; };
-const NAVY = "bg-[#0B1F3A]";
+const NAVY = "nk-gradient";
 
 function Bar({ children }: { children: React.ReactNode }) {
   return <h2 className={`${NAVY} text-white font-bold text-base sm:text-lg rounded-xl px-4 py-2.5 text-center`}>{children}</h2>;
@@ -66,10 +66,10 @@ function Section({ s, years, fileHref }: { s: RSection; years: number[]; fileHre
           </div>
         </>
       )}
-      {s.lines.length > 0 && <div className="rounded-xl bg-[#FBF6E9] border border-[#EBDDB4] px-4 py-3 text-sm text-slate-800 space-y-1"><div className="font-bold">สรุปผลจากระบบ</div>{s.lines.map((l, i) => <div key={i}>- {l}</div>)}</div>}
+      {s.lines.length > 0 && <div className="rounded-xl bg-white border border-slate-200 shadow-card px-4 py-3 text-sm text-slate-800 space-y-1"><div className="font-bold">สรุปผลจากระบบ</div>{s.lines.map((l, i) => <div key={i}>- {l}</div>)}</div>}
       {s.file && <a href={fileHref(s.file.resultId)} target="_blank" rel="noopener" className="inline-flex items-center min-h-[44px] px-4 rounded-lg border border-slate-300 text-sm text-brand underline">เปิดภาพ/ไฟล์ผลตรวจ</a>}
       {s.note && (
-        <div className="rounded-xl bg-[#FBF6E9] border border-[#EBDDB4] px-4 py-3 text-sm text-slate-800 space-y-2">
+        <div className="rounded-xl bg-white border border-slate-200 shadow-card px-4 py-3 text-sm text-slate-800 space-y-2">
           {s.note.summary && <div><div className="font-bold">สรุปผล · Summary</div><div className="whitespace-pre-line">{s.note.summary}</div></div>}
           {s.note.recommendation && <div><div className="font-bold">คำแนะนำโดยแพทย์ · Doctor&apos;s recommendation</div><div className="whitespace-pre-line">{s.note.recommendation}</div></div>}
         </div>
@@ -86,21 +86,21 @@ export default function HealthReportView({ report, fileHref, consultUrl, pdfHref
     <article className="space-y-6">
       <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
-          <div className="text-[#0B1F3A] font-extrabold text-3xl leading-none whitespace-nowrap">Health <span className="text-base font-bold">Check up report</span></div>
-          <div className="text-[#0B1F3A] text-base">รายงานผลการตรวจสุขภาพ</div>
+          <div className="text-brand font-extrabold text-3xl leading-none whitespace-nowrap">Health <span className="text-base font-bold">Check up report</span></div>
+          <div className="text-brand text-base">รายงานผลการตรวจสุขภาพ</div>
         </div>
-        {consultUrl && <a href={consultUrl} target="_blank" rel="noopener" className="shrink-0 sm:text-right rounded-xl bg-[#0B1F3A] text-white px-3 py-2 min-h-[44px] self-start"><div className="font-bold text-sm">ปรึกษาแพทย์ได้ที่นี่</div><div className="text-[10px] opacity-80">Medical consultation available here</div></a>}
+        {consultUrl && <a href={consultUrl} target="_blank" rel="noopener" className="shrink-0 sm:text-right rounded-xl nk-gradient text-white px-3 py-2 min-h-[44px] self-start"><div className="font-bold text-sm">ปรึกษาแพทย์ได้ที่นี่</div><div className="text-[10px] opacity-80">Medical consultation available here</div></a>}
       </header>
 
       {/* summary card on top */}
-      <section className="rounded-2xl border border-[#EBDDB4] bg-[#FBF6E9] overflow-hidden">
-        <div className={`px-4 py-3 text-white ${sm.overall.verdict === "ปกติ" ? "bg-emerald-700" : sm.overall.verdict ? "bg-amber-700" : "bg-[#0B1F3A]"}`}>
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-card overflow-hidden">
+        <div className="px-4 py-3 text-white nk-gradient">
           <div className="text-xs opacity-90">{report.roundName} · วันที่ตรวจ {thaiLongDate(h.examDate)}</div>
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5"><div className="text-xl font-extrabold leading-tight">{h.name}</div>{sm.overall.verdict && <div className="text-sm font-bold">ภาพรวม: {sm.overall.verdict}</div>}</div>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5"><div className="text-xl font-extrabold leading-tight">{h.name}</div>{sm.overall.verdict && <div className={`rounded-full px-3 py-0.5 text-sm font-bold ${sm.overall.verdict === "ปกติ" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>ภาพรวม: {sm.overall.verdict}</div>}</div>
         </div>
         <div className="p-4 space-y-3">
           <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="rounded-xl bg-white border border-slate-200 py-2"><div className="text-2xl font-extrabold text-[#0B1F3A] tabular-nums">{totalRows}</div><div className="text-[11px] text-slate-600">รายการที่ตรวจ</div></div>
+            <div className="rounded-xl bg-white border border-slate-200 py-2"><div className="text-2xl font-extrabold text-brand tabular-nums">{totalRows}</div><div className="text-[11px] text-slate-600">รายการที่ตรวจ</div></div>
             <div className="rounded-xl bg-white border border-slate-200 py-2"><div className="text-2xl font-extrabold text-emerald-700 tabular-nums">{Math.max(0, totalRows - sm.abnormal.length)}</div><div className="text-[11px] text-slate-600">อยู่ในเกณฑ์</div></div>
             <div className="rounded-xl bg-white border border-slate-200 py-2"><div className={`text-2xl font-extrabold tabular-nums ${sm.abnormal.length ? "text-rose-700" : "text-slate-400"}`}>{sm.abnormal.length}</div><div className="text-[11px] text-slate-600">นอกเกณฑ์อ้างอิง</div></div>
           </div>
@@ -117,8 +117,8 @@ export default function HealthReportView({ report, fileHref, consultUrl, pdfHref
           </div>
           {sm.recommendations.length > 0 && <div><div className="font-bold text-slate-900">คำแนะนำของแพทย์</div><ul className="text-sm text-slate-800 space-y-1 whitespace-pre-line mt-1">{sm.recommendations.map((r, i) => <li key={i}>- {r}</li>)}</ul></div>}
           <div className="flex flex-wrap gap-2">
-            {consultUrl && <a href={consultUrl} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl bg-[#0B1F3A] text-white font-semibold text-sm flex-1 sm:flex-none">ปรึกษาแพทย์</a>}
-            {pdfHref && <a href={pdfHref} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl border border-[#0B1F3A] bg-white text-[#0B1F3A] font-semibold text-sm flex-1 sm:flex-none">ดาวน์โหลดเล่มผล PDF</a>}
+            {consultUrl && <a href={consultUrl} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl nk-gradient text-white font-semibold text-sm flex-1 sm:flex-none">ปรึกษาแพทย์</a>}
+            {pdfHref && <a href={pdfHref} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl border border-brand bg-white text-brand font-semibold text-sm flex-1 sm:flex-none">ดาวน์โหลดเล่มผล PDF</a>}
           </div>
         </div>
       </section>
@@ -127,7 +127,7 @@ export default function HealthReportView({ report, fileHref, consultUrl, pdfHref
       {report.sections.length > 1 && (
         <nav aria-label="ไปยังหมวด" className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-white/95 backdrop-blur border-b border-slate-200 print:hidden">
           <ul className="flex gap-2 overflow-x-auto no-scrollbar">
-            {report.sections.map((x) => <li key={x.key} className="shrink-0"><a href={`#sec-${x.key}`} className="inline-flex items-center min-h-[44px] px-3 rounded-full border border-slate-300 bg-white text-sm text-[#0B1F3A] whitespace-nowrap">{x.th}</a></li>)}
+            {report.sections.map((x) => <li key={x.key} className="shrink-0"><a href={`#sec-${x.key}`} className="inline-flex items-center min-h-[44px] px-3 rounded-full border border-slate-300 bg-white text-sm text-brand whitespace-nowrap">{x.th}</a></li>)}
           </ul>
         </nav>
       )}
@@ -135,7 +135,7 @@ export default function HealthReportView({ report, fileHref, consultUrl, pdfHref
       {/* general information */}
       <section className="space-y-3">
         <Bar>รายงานผลการตรวจสุขภาพ <span className="font-normal opacity-90">· Health check up report</span></Bar>
-        <dl className="rounded-xl bg-[#FBF6E9] border border-[#EBDDB4] px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+        <dl className="rounded-xl bg-white border border-slate-200 shadow-card px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
           {[["วันที่ตรวจสุขภาพ", thaiLongDate(h.examDate)], ["ชื่อ - นามสกุล", h.name], ["อายุ", h.age != null ? `${h.age} ปี` : "—"], ["ชื่อบริษัท", h.company ?? "—"], ["รหัสพนักงาน", h.employeeCode ?? "—"], ["ตำแหน่ง", h.position ?? "—"], ["แผนก", h.department ?? "—"]].map(([k, v]) => (
             <div key={k} className="flex gap-2"><dt className="text-slate-500 shrink-0">{k}:</dt><dd className="font-semibold text-slate-900 break-words">{v}</dd></div>
           ))}
@@ -147,7 +147,7 @@ export default function HealthReportView({ report, fileHref, consultUrl, pdfHref
       <footer className="border-t border-slate-200 pt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/health-report/logos.png" alt="AT HOME CLINIC · OMNIA HEALTH" className="h-10 w-auto" />
-        <div className="text-right"><div className="font-semibold text-[#0B1F3A]">@athomeclinic.bowin</div><div>Every moment matters</div><div>Precision Health • Less Waiting</div></div>
+        <div className="text-right"><div className="font-semibold text-brand">@athomeclinic.bowin</div><div>Every moment matters</div><div>Precision Health • Less Waiting</div></div>
       </footer>
     </article>
   );

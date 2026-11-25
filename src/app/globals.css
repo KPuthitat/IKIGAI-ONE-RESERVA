@@ -354,3 +354,6 @@ header.bg-coffee-gradient { border-radius: 0 0 1.5rem 1.5rem; }
 
 /* Main action = teal (OMNICHECK "บันทึก"); purple stays for links, active tabs and the header. */
 .btn-primary { background-color: #14B8A6; background-image: linear-gradient(100deg, #1CC4B1, #0FA596); }
+
+/* NOKHOOK OS signature gradient (app header, primary hero strips) */
+.nk-gradient { background: linear-gradient(100deg,#7A5AE6 0%,#5C86EA 48%,#33C6B5 100%); }

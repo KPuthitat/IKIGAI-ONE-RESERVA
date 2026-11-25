@@ -13,7 +13,7 @@ const Ref = z.object({ sex: z.enum(["M", "F", "A"]), ageMin: z.number().int().mi
   .refine((r) => r.low == null || r.high == null || r.low <= r.high, "low above high")
   .refine((r) => r.ageMin == null || r.ageMax == null || r.ageMin <= r.ageMax, "age band reversed");
 const Body = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("set_config"), key: z.enum(["consult_url", "critical_enzyme_multiple"]), value: z.string().max(500) }),
+  z.object({ action: z.literal("set_config"), key: z.enum(["consult_url", "critical_enzyme_multiple", "ldl_calc_mode"]), value: z.string().max(500) }),
   z.object({ action: z.literal("item_update"), itemId: z.number().int().positive(), unit: z.string().max(40).nullable().optional(), refText: z.string().max(400).nullable().optional(), plausibleMin: z.number().finite().nullable().optional(), plausibleMax: z.number().finite().nullable().optional(), confirmed: z.boolean().optional(), refs: z.array(Ref).max(12).optional() }),
   z.object({ action: z.literal("explanation_save"), key: z.string().min(1).max(40), title: z.string().max(300).nullable().optional(), body: z.string().min(1).max(8000) }),
   z.object({ action: z.literal("template_save"), id: z.number().int().positive().optional(), section: z.string().regex(/^[a-z_]{2,20}$/), kind: z.enum(["summary", "recommendation"]), text: z.string().min(1).max(1000), active: z.boolean().optional() }),
@@ -30,6 +30,7 @@ export async function POST(req: Request) {
   if (d.action === "set_config") {
     const v = d.value.trim();
     if (d.key === "critical_enzyme_multiple" && !(Number(v) > 0 && Number(v) <= 100)) return NextResponse.json({ ok: false, error: "bad_value", message: "ใส่ตัวเลขระหว่าง 1 ถึง 100" }, { status: 400 });
+    if (d.key === "ldl_calc_mode" && v !== "0" && v !== "1") return NextResponse.json({ ok: false, error: "bad_value", message: "ค่าไม่ถูกต้อง" }, { status: 400 });
     if (d.key === "consult_url" && v && !/^https:\/\//i.test(v)) return NextResponse.json({ ok: false, error: "bad_value", message: "ลิงก์ต้องขึ้นต้นด้วย https://" }, { status: 400 });
     db.prepare("INSERT INTO annual_checkup_config (key, value, updated_by, updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = CURRENT_TIMESTAMP").run(d.key, v, user.id);
   } else if (d.action === "item_update") {

@@ -210,6 +210,7 @@ export function ensureHealthReportSchema(db: Database.Database): void {
       for (const r of it.refs ?? []) addRef.run(id, r.sex, r.ageMin ?? null, r.ageMax ?? null, r.low ?? null, r.high ?? null, r.lowIncl === false ? 0 : 1, r.highIncl === false ? 0 : 1);
     });
     db.prepare("INSERT OR IGNORE INTO annual_checkup_config (key, value) VALUES ('critical_enzyme_multiple', '5')").run();
+    db.prepare("INSERT OR IGNORE INTO annual_checkup_config (key, value) VALUES ('ldl_calc_mode', '0')").run();
     const pp = db.prepare("INSERT OR IGNORE INTO annual_checkup_payer_prefixes (payer_name, prefix) VALUES (?, ?)");
     pp.run('บริษัท ทรานซิสเตอร์ ริช จำกัด', 'TSR'); pp.run('บริษัท ไพร์ม วัน อาร์คิเทคท์ จำกัด', 'POA');
   })();

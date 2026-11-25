@@ -13,6 +13,7 @@
 // Every function takes the actor first and re-reads the actor from the database (never trusts flags the caller passes), and every
 // read or write of a result leaves a row in annual_checkup_audit in the same transaction.
 import crypto from "node:crypto";
+import { friedewaldLdl, LDL_AUTO_NOTE } from "./health-report/interpret";
 import { getDb, logPersonaAction } from "./db";
 import { approverOk, recorderOk } from "./annual-checkup-schema";
 import { nameWithPrefix } from "./name";
@@ -199,8 +200,55 @@ export function recordResult(actor: AcActor, orderId: number, data: ResultInput)
       `).run({ id, ...v, by: a.id, keep: keepFile ? 1 : 0 });
     }
     audit(a.id, cur ? "result.update" : "result.record", o, o.round_id, o.id);
+    autoLdl(a.id, o);
     return id;
   })());
+}
+
+// ── LDL by calculation (when the owner turns the mode on) ──
+const LDL_NOTE = LDL_AUTO_NOTE;
+export const isLdlAutoOn = (): boolean => (getDb().prepare("SELECT value FROM annual_checkup_config WHERE key = 'ldl_calc_mode'").get() as { value: string | null } | undefined)?.value === "1";
+
+/**
+ * With the mode ON, saving total cholesterol, HDL or triglyceride (by hand, by item, or from the analyser file) fills LDL for that person:
+ * LDL = TC − HDL − TG/5, not with triglyceride ≥ 400. Only a result that is missing, or a draft THIS function wrote earlier (marked in
+ * ref_text), is written; a measured LDL a person typed, and anything already verified or released, is never touched.
+ */
+function autoLdl(actorId: number, o: OrderRow): void {
+  if (!isLdlAutoOn()) return;
+  const db = getDb();
+  const col = o.user_id != null ? "o.user_id" : "o.external_id", sid = o.user_id ?? o.external_id;
+  const val = (code: string) => (db.prepare(`SELECT r.value_num FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id JOIN annual_checkup_results r ON r.order_id = o.id
+     WHERE o.round_id = ? AND ${col} = ? AND t.code = ? AND o.status <> 'waived'`).get(o.round_id, sid, code) as { value_num: number | null } | undefined)?.value_num ?? null;
+  const self = db.prepare("SELECT t.code FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id WHERE o.id = ?").get(o.id) as { code: string } | undefined;
+  if (!self || !["CHOL", "HDL", "TG"].includes(self.code)) return;
+  const ord = db.prepare(`SELECT o.id, o.status FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id WHERE o.round_id = ? AND ${col} = ? AND t.code = 'LDL'`).get(o.round_id, sid) as { id: number; status: string } | undefined;
+  if (!ord || ord.status !== "ordered") return;
+  const tc = val("CHOL"), hdl = val("HDL"), tg = val("TG");
+  const calc = friedewaldLdl(tc, hdl, tg);
+  if (calc == null) return;
+  const cur = db.prepare("SELECT id, status, ref_text, value_num FROM annual_checkup_results WHERE order_id = ?").get(ord.id) as { id: number; status: string; ref_text: string | null; value_num: number | null } | undefined;
+  if (!cur) {
+    db.prepare("INSERT INTO annual_checkup_results (order_id, value_num, ref_text, recorded_by) VALUES (?,?,?,?)").run(ord.id, calc, LDL_NOTE, actorId);
+    audit(actorId, "result.auto_ldl", o, o.round_id, ord.id);
+  } else if (cur.status === "draft" && cur.ref_text === LDL_NOTE && cur.value_num !== calc) {
+    db.prepare("UPDATE annual_checkup_results SET value_num = ?, recorded_by = ?, recorded_at = CURRENT_TIMESTAMP WHERE id = ?").run(calc, actorId, cur.id);
+    audit(actorId, "result.auto_ldl", o, o.round_id, ord.id);
+  }
+}
+
+/** After the mode is switched on: fill LDL for everyone in open or draft rounds who has the three values and no LDL yet. Returns how many were filled. */
+export function fillMissingLdl(actor: AcActor, roundId?: number): number {
+  const a = requireRecorder(actor).id;      // results are written by clinic recorders only (the database insists)
+  const db = getDb();
+  if (!isLdlAutoOn()) return 0;
+  const orders = db.prepare(`
+    SELECT o.id, o.round_id, o.user_id, o.external_id, o.status FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id JOIN annual_checkup_rounds r ON r.id = o.round_id
+     WHERE t.code = 'CHOL' AND o.status <> 'waived' AND r.status IN ('draft','open') AND (? IS NULL OR o.round_id = ?)
+       AND EXISTS (SELECT 1 FROM annual_checkup_results x WHERE x.order_id = o.id)`).all(roundId ?? null, roundId ?? null) as OrderRow[];
+  const before = (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'result.auto_ldl'").get() as { n: number }).n;
+  db.transaction(() => { for (const o of orders) autoLdl(a, o); })();
+  return (db.prepare("SELECT COUNT(*) n FROM annual_checkup_audit WHERE action = 'result.auto_ldl'").get() as { n: number }).n - before;
 }
 
 /** The medical reason for waiving a test and the outside lab's name — kept apart from the orders HR can count. */

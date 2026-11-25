@@ -3,10 +3,11 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { normExamCode } from "@/lib/health-report/lab-import";
-import { getRoundLineGaps, getRoundOverview, isAnnualCheckupInvalid, isApproverUser, listMyReturns } from "@/lib/annual-checkup-db";
+import { getRoundLineGaps, getRoundOverview, isAnnualCheckupInvalid, isApproverUser, isLdlAutoOn, listMyReturns } from "@/lib/annual-checkup-db";
 import { isUnlocked, requireClinicalUser } from "@/lib/annual-checkup-api";
 import ReleaseCompany from "./ReleaseCompany";
 import AddExternal from "./AddExternal";
+import LdlFill from "./LdlFill";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ผลตรวจสุขภาพประจำปี · NOKHOOK OS PORTAL" };
@@ -66,7 +67,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
 
       {/* where the round stands */}
       <section className="card space-y-3" aria-label="ความคืบหน้าของรอบ">
-        {[["ลงผลแล้ว", totRec, "bg-sky-600"], ["แพทย์ตรวจสอบแล้ว", totVer, "bg-violet-600"], ["เปิดผลแล้ว", totRel, "bg-emerald-600"]].map(([label, n, tone]) => (
+        {[["ลงผลแล้ว", totRec, "nk-gradient opacity-50"], ["แพทย์ตรวจสอบแล้ว", totVer, "nk-gradient opacity-75"], ["เปิดผลแล้ว", totRel, "nk-gradient"]].map(([label, n, tone]) => (
           <div key={label as string}>
             <div className="flex justify-between text-sm"><span className="text-slate-700">{label}</span><span className="tabular-nums font-semibold text-slate-900">{n as number}/{totReq} <span className="text-xs text-slate-500">({pct(n as number, totReq)}%)</span></span></div>
             <Bar v={pct(n as number, totReq)} tone={tone as string} />
@@ -117,7 +118,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5"><span className="font-semibold text-slate-900 break-words">{s.label}</span>{s.kind === "external" && <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] text-sky-800">ภายนอก · {s.payer}</span>}</div>
                     <div className="text-[11px] text-slate-500">{s.kind === "external" ? "ผู้รับการตรวจภายนอก" : `${s.code ?? ""} · ${s.payer}`}{examCode.get(s.key) ? ` · ${examCode.get(s.key)}` : ""}</div>
-                    <div className="mt-1.5 flex items-center gap-2"><div className="flex-1"><Bar v={pct(s.recorded, s.required)} tone="bg-sky-600" /></div><span className="text-[11px] tabular-nums text-slate-600 w-20 text-right">ลง {s.recorded}/{s.required} · ตรวจ {s.verified}</span></div>
+                    <div className="mt-1.5 flex items-center gap-2"><div className="flex-1"><Bar v={pct(s.recorded, s.required)} tone="nk-gradient" /></div><span className="text-[11px] tabular-nums text-slate-600 w-20 text-right">ลง {s.recorded}/{s.required} · ตรวจ {s.verified}</span></div>
                   </div>
                   <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium text-center max-w-[7.5rem] ${st.cls}`}>{st.th}</span>
                 </Link>
@@ -127,6 +128,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
         </ul>
       </section>
 
+      {isLdlAutoOn() && <LdlFill roundId={roundId} />}
       <AddExternal roundId={roundId} payers={externalPayers} />
       {approver && payers.length > 0 && <ReleaseCompany roundId={roundId} payers={payers} unlocked={isUnlocked(user)} />}
       {externalPayers.length > 0 && (
@@ -142,7 +144,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
           {data.tests.map((x) => (
             <li key={x.code} className="py-2">
               <div className="flex items-center justify-between gap-3"><Link href={`/staff/health/annual-checkup/${roundId}/test/${x.code}`} className="text-brand hover:underline text-sm">{x.nameTh}</Link><span className="text-xs tabular-nums text-slate-600">ลง {x.recorded}/{x.required} · ตรวจ {x.verified} · เปิด {x.released}</span></div>
-              <div className="mt-1"><Bar v={pct(x.recorded, x.required)} tone="bg-sky-600" /></div>
+              <div className="mt-1"><Bar v={pct(x.recorded, x.required)} tone="nk-gradient" /></div>
             </li>
           ))}
         </ul>

@@ -22,6 +22,7 @@ export default function SettingsClient({ cfg, items, refs, expl, templates, sect
   const run = async (body: Record<string, unknown>, okText: string) => { setBusy(true); setMsg(null); const r = await save(body); setBusy(false); setMsg({ ok: r.ok, text: r.ok ? okText : r.message ?? "ไม่สำเร็จ" }); if (r.ok) router.refresh(); return r.ok; };
 
   // config
+  const [ldlAuto, setLdlAuto] = useState(cfg.ldl_calc_mode === "1");
   const [consult, setConsult] = useState(cfg.consult_url ?? ""), [mult, setMult] = useState(cfg.critical_enzyme_multiple ?? "5");
   // item editor
   const [itemId, setItemId] = useState<number>(items.find((i) => i.needsCheck)?.id ?? items[0]?.id);
@@ -50,6 +51,12 @@ export default function SettingsClient({ cfg, items, refs, expl, templates, sect
         <div className="flex gap-2"><input className="input min-h-[44px] flex-1" value={consult} onChange={(e) => setConsult(e.target.value)} placeholder="https://line.me/R/ti/p/@athomeclinic" /><button className="btn-primary min-h-[44px] px-4" disabled={busy} type="button" onClick={() => run({ action: "set_config", key: "consult_url", value: consult }, "บันทึกลิงก์ปรึกษาแพทย์แล้ว")}>บันทึก</button></div>
         <label className="block text-xs text-slate-500">เอนไซม์ตับ (AST, ALT) เกินกี่เท่าของค่าสูงสุดที่อ้างอิง จึงแจ้งเตือนแพทย์ทันที</label>
         <div className="flex gap-2"><input className="input min-h-[44px] w-28" inputMode="decimal" value={mult} onChange={(e) => setMult(e.target.value)} /><button className="btn-primary min-h-[44px] px-4" disabled={busy} type="button" onClick={() => run({ action: "set_config", key: "critical_enzyme_multiple", value: mult }, "บันทึกเกณฑ์แจ้งเตือนแล้ว")}>บันทึก</button></div>
+        <div className="rounded-xl border border-slate-200 p-3 space-y-1">
+          <label className="flex items-start gap-3 min-h-[44px]">
+            <input type="checkbox" className="mt-1 h-5 w-5" checked={ldlAuto} disabled={busy} onChange={(e) => { const on = e.target.checked; setLdlAuto(on); run({ action: "set_config", key: "ldl_calc_mode", value: on ? "1" : "0" }, on ? "เปิดโหมดคำนวณ LDL แล้ว — ค่าที่ลงต่อจากนี้จะคำนวณให้ ส่วนคนที่ลงครบแล้วให้ทีมคลินิกกด “คำนวณ LDL ที่ยังขาด” ที่หน้ารอบ" : "ปิดโหมดคำนวณ LDL แล้ว"); }} />
+            <span><span className="font-semibold text-slate-800">คำนวณ LDL อัตโนมัติ</span><span className="block text-xs text-slate-500">LDL = คอเลสเตอรอลรวม − HDL − ไตรกลีเซอไรด์ ÷ 5 (สูตร Friedewald) เมื่อลงค่า 3 ตัวนี้ครบ ไม่คำนวณถ้าไตรกลีเซอไรด์ ≥ 400 (ต้องวัดตรง) ไม่ทับค่า LDL ที่พิมพ์เอง และไม่แตะผลที่ตรวจสอบหรือเปิดผลแล้ว</span></span>
+          </label>
+        </div>
       </section>
 
       <section className="card space-y-2">

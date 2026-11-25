@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { post, upload } from "../../../../shared";
 import { apiUrl } from "@/lib/url";
-import { bmi, bmiCategory, DEFAULT_THRESHOLDS, FLAG_TH, withArrow, flagResult, globulin, HEARING_FREQS, implausible, indirectBilirubin, interpretHearing, interpretSpirometry, isCritical, refLabel, type Flag } from "@/lib/health-report/interpret";
+import { friedewaldLdl, LDL_AUTO_NOTE, bmi, bmiCategory, DEFAULT_THRESHOLDS, FLAG_TH, withArrow, flagResult, globulin, HEARING_FREQS, implausible, indirectBilirubin, interpretHearing, interpretSpirometry, isCritical, refLabel, type Flag } from "@/lib/health-report/interpret";
 import type { Ref } from "@/lib/health-report/catalog";
 
 type Vals = Record<string, string>;                          // what is typed (numbers stay text so "7." can be typed)
@@ -15,7 +15,7 @@ export type EntryTab = { key: string; th: string; en: string; tests: EntryTest[]
 const FLAG_CLS: Record<Flag, string> = { normal: "text-emerald-700", low: "text-sky-700 font-semibold", high: "text-rose-700 font-semibold", abnormal: "text-rose-700 font-semibold", info: "text-slate-500" };
 const SAVE_MS = 700;
 
-export default function EntryClient({ tabs, sex, age, enzymeMultiple }: { tabs: EntryTab[]; sex: "M" | "F" | null; age: number | null; enzymeMultiple: number }) {
+export default function EntryClient({ tabs, sex, age, enzymeMultiple, ldlAuto }: { tabs: EntryTab[]; sex: "M" | "F" | null; age: number | null; enzymeMultiple: number; ldlAuto: boolean }) {
   const [active, setActive] = useState(tabs[0].key);
   const asText = (x: Saved): Vals => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, v == null ? "" : String(v)]));
   const kinds = useRef(Object.fromEntries(tabs.flatMap((t) => t.tests).map((x) => [x.orderId, Object.fromEntries(x.items.map((i) => [i.code, i.kind]))])) as Record<number, Record<string, string>>);
@@ -43,12 +43,30 @@ export default function EntryClient({ tabs, sex, age, enzymeMultiple }: { tabs: 
     else setState((s) => ({ ...s, [orderId]: { s: "error", msg: r.message ?? "บันทึกไม่สำเร็จ" } }));
   }, []);
 
+  // LDL by calculation (owner's setting): the order that holds each of the four items
+  const orderOfItem = (code: string): number | null => tabs.flatMap((t) => t.tests).find((x) => x.items.some((i) => i.code === code))?.orderId ?? null;
+  const ldlCalc = (all: Record<number, Vals>): number | null => {
+    const n = (c: string) => { const o = orderOfItem(c); const t = o == null ? "" : (all[o]?.[c] ?? "").trim(); return t === "" || !Number.isFinite(Number(t)) ? null : Number(t); };
+    return friedewaldLdl(n("CHOL"), n("HDL"), n("TG"));
+  };
   const change = (orderId: number, code: string, v: string) => {
     setVals((s) => {
       const next = { ...s[orderId], [code]: v };
       clearTimeout(timers.current[orderId]);
       timers.current[orderId] = setTimeout(() => save(orderId, next), SAVE_MS);
-      return { ...s, [orderId]: next };
+      const all = { ...s, [orderId]: next };
+      // keep LDL in step: only when it is empty or still the value this calculation gave before (a typed LDL is never overwritten)
+      const ldlO = orderOfItem("LDL");
+      if (ldlAuto && ["CHOL", "HDL", "TG"].includes(code) && ldlO != null && !tabs.flatMap((t) => t.tests).find((x) => x.orderId === ldlO)?.locked) {
+        const prev = ldlCalc(s), now = ldlCalc(all), cur = (s[ldlO]?.LDL ?? "").trim();
+        if (now != null && (cur === "" || cur === String(prev))) {
+          const nl = { ...(all[ldlO] ?? {}), LDL: String(now) };
+          all[ldlO] = nl;
+          clearTimeout(timers.current[ldlO]);
+          timers.current[ldlO] = setTimeout(() => save(ldlO, nl), SAVE_MS + 100);
+        }
+      }
+      return all;
     });
   };
   useEffect(() => () => { for (const t of Object.values(timers.current)) clearTimeout(t); }, []);
@@ -136,7 +154,7 @@ export default function EntryClient({ tabs, sex, age, enzymeMultiple }: { tabs: 
                   <div key={it.code} className="grid gap-y-1 sm:grid-cols-[1fr_auto] sm:gap-x-3 items-center border-b border-slate-100 py-2">
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-slate-800 break-words">{it.en}</div>
-                      <div className="text-xs text-slate-500 break-words">{it.th}{ref ? ` · อ้างอิง ${ref.replace(/\n/g, " / ")}` : ""}</div>
+                      <div className="text-xs text-slate-500 break-words">{it.th}{ref ? ` · อ้างอิง ${ref.replace(/\n/g, " / ")}` : ""}</div>{ldlAuto && it.code === "LDL" && <div className="text-[11px] text-brand">{LDL_AUTO_NOTE} — พิมพ์ทับได้ (ไม่คำนวณถ้า TG ≥ 400)</div>}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                       {it.computed ? (

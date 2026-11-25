@@ -30,12 +30,12 @@ export default function DobForm({ token }: { token: string }) {
     setBusy(false);
   }
   return (
-    <form onSubmit={submit} className="max-w-sm mx-auto my-8 space-y-4 rounded-2xl border border-[#EBDDB4] bg-[#FBF6E9] p-5 shadow-sm">
+    <form onSubmit={submit} className="max-w-sm mx-auto my-8 space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="text-center space-y-2">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/health-report/logos.png" alt="AT HOME CLINIC · OMNIA HEALTH" className="h-10 w-auto mx-auto" />
-        <div className="text-[#0B1F3A] font-extrabold text-3xl leading-none">Health <span className="text-base">Check up report</span></div>
-        <div className="text-[#0B1F3A]">รายงานผลการตรวจสุขภาพ</div>
+        <div className="text-brand font-extrabold text-3xl leading-none">Health <span className="text-base">Check up report</span></div>
+        <div className="text-brand">รายงานผลการตรวจสุขภาพ</div>
       </div>
       <div className="flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-3 py-2 text-xs text-slate-600"><span aria-hidden>🔒</span><span>ข้อมูลสุขภาพเป็นความลับ ลิงก์นี้เปิดได้เฉพาะเจ้าของผลตรวจ</span></div>
       <p className="text-sm text-slate-700">เพื่อความปลอดภัยของข้อมูลสุขภาพ กรุณายืนยันตัวตนด้วย{mode === "dob" ? "วันเดือนปีเกิด (พุทธศักราช)" : "เลขบัตรประจำตัว 4 ตัวท้าย"}ของท่าน</p>
@@ -46,7 +46,7 @@ export default function DobForm({ token }: { token: string }) {
       </div>}
       <button type="button" className="text-sm underline text-slate-600 min-h-[44px]" onClick={() => { setMode(mode === "dob" ? "id" : "dob"); setErr(null); }}>{mode === "dob" ? "ใช้เลขบัตร 4 ตัวท้ายแทน" : "ใช้วันเดือนปีเกิดแทน"}</button>
       {err && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{err}</div>}
-      <button type="submit" disabled={busy} className="w-full min-h-[48px] rounded-xl bg-[#0B1F3A] text-white font-semibold disabled:opacity-60">{busy ? "กำลังตรวจสอบ…" : "เปิดดูผลตรวจ"}</button>
+      <button type="submit" disabled={busy} className="w-full min-h-[48px] rounded-xl btn-primary font-semibold disabled:opacity-60">{busy ? "กำลังตรวจสอบ…" : "เปิดดูผลตรวจ"}</button>
       <p className="text-xs text-slate-500">ถ้ากรอกผิดหลายครั้ง ลิงก์จะถูกล็อกชั่วคราว</p>
     </form>
   );
