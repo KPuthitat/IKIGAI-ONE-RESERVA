@@ -72,10 +72,15 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     db.prepare("INSERT INTO annual_checkup_results (order_id, value_text, recorded_by) VALUES (?, 'x', ?)").run(orderId, by);
 
   // ── catalogue + migration ──
-  ok("catalogue seeded with the 20 tests of the programme", (db.prepare("SELECT COUNT(*) n FROM annual_checkup_tests").get() as { n: number }).n === 20);
-  ok("migration is idempotent (run again: still 20 tests, 26 triggers, no error)", (() => {
+  // The health report (docs: health-report) adds more orderable tests on top of the programme's 20, so count the 20 by code.
+  const PROGRAMME_20 = "'PHYSICAL','CXR','CBC','URINE','BUN','CREAT','SGOT','SGPT','CHOL','TG','HDL','LDL','GLUCOSE','URIC','HAV','SPIRO','AUDIO','EYE','HBSAG','STOOL'";
+  const nProgramme = () => (db.prepare(`SELECT COUNT(*) n FROM annual_checkup_tests WHERE code IN (${PROGRAMME_20})`).get() as { n: number }).n;
+  const nAll = () => (db.prepare("SELECT COUNT(*) n FROM annual_checkup_tests").get() as { n: number }).n;
+  ok("catalogue seeded with the 20 tests of the programme", nProgramme() === 20);
+  ok("migration is idempotent (run again: same tests, 26 triggers, no error)", (() => {
+    const before = nAll();
     ensureAnnualCheckupSchema(db); ensureAnnualCheckupSchema(db);
-    return (db.prepare("SELECT COUNT(*) n FROM annual_checkup_tests").get() as { n: number }).n === 20
+    return nProgramme() === 20 && nAll() === before
       && (db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='trigger' AND name LIKE 'annual_checkup%'").get() as { n: number }).n === 26;
   })());
   ok("orders have no medical / reason column (HR-readable by design)", !(db.prepare("PRAGMA table_info(annual_checkup_orders)").all() as Array<{ name: string }>).some((c) => /reason|waive|clinical/i.test(c.name)));
