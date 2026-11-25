@@ -9,6 +9,7 @@ import { dailyAnalytics, weeklyAnalytics, monthlyAnalytics, monthComparison, wee
 import { expenseCategoryTotals, expenseAccrualTotal } from "@/lib/accounta-db";
 import { salesPushPlan } from "@/lib/salesa-push";
 import { corporateCustomers } from "@/lib/salesa-corporate";
+import { categoryMixDetail } from "@/lib/category-mix";
 
 // REPORTA read view. Default: a month's daily rows (list). ?date=YYYY-MM-DD: one
 // day's full analytics + menu ranking. ?week=YYYY-MM-DD (a Monday): the weekly
@@ -55,6 +56,13 @@ export function GET(req: Request) {
   if (sp.get("corporate") != null) {
     const cy = Number(sp.get("year")) || bkkNow().year;
     return NextResponse.json({ ok: true, corporate: corporateCustomers(branchId, cy, todayBkkIso()) });
+  }
+
+  // Sales mix by POS category for one month (owner 2026-11-25) — every category with its share, active branch.
+  if (sp.get("catmix") != null) {
+    const ym = sp.get("ym") ?? "";
+    if (!YM.test(ym)) return NextResponse.json({ error: "invalid_month" }, { status: 400 });
+    return NextResponse.json({ ok: true, catmix: categoryMixDetail(branchId, ym) });
   }
 
   // Full-year per-branch growth bars (owner 2026-09-21) — same role scoping.

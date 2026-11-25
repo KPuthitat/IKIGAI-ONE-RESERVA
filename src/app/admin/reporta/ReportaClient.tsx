@@ -312,6 +312,19 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
   const [festBusy, setFestBusy] = useState(false);
   // Corporate customers from the tax-invoice export (owner 2026-10-02) — lazy.
   const [corpOpen, setCorpOpen] = useState(false);
+  type CatMix = { total: number; groups: Array<{ key: string; label: string; pct: number }>; categories: Array<{ name: string; group: string; nett: number; pct: number }> };
+  const [mixOpen, setMixOpen] = useState(false);
+  const [mixData, setMixData] = useState<{ ym: string; mix: CatMix | null } | null>(null);
+  const [mixBusy, setMixBusy] = useState(false);
+  const mixYm = `${year}-${String(month).padStart(2, "0")}`;
+  const loadMix = useCallback(async (ym: string) => {
+    setMixBusy(true);
+    try {
+      const r = await fetch(`/api/admin/reporta/view?catmix=1&ym=${ym}`, { cache: "no-store" }).then((x) => x.json());
+      if (r.ok) setMixData({ ym, mix: r.catmix });
+    } catch { /* ignore */ } finally { setMixBusy(false); }
+  }, []);
+  useEffect(() => { if (mixOpen && mixData?.ym !== mixYm) loadMix(mixYm); }, [mixOpen, mixYm, mixData?.ym, loadMix]);
   const [corpYear, setCorpYear] = useState(Number(initial.slice(0, 4)));
   const [corpData, setCorpData] = useState<CorporateReport | null>(null);
   const corpReqRef = useRef(0);
@@ -588,21 +601,16 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
         // Duplicate-file guard (owner 2026-09-19): warn when an import replaced
         // data that already existed for that day+type.
         const kindTh = (k: string) => k === "close_up" ? "ยอดขาย" : k === "overview" ? "เมนู" : k === "tax_invoice" ? "ใบกำกับภาษี" : "ใบเสร็จ";
-        const imported = r.imported as Array<{ date: string; kind: string; overwritten?: boolean; mix?: { day: string | null; month: string | null; others: string[] } }>;
+        const imported = r.imported as Array<{ date: string; kind: string; overwritten?: boolean }>;
         const dup = imported.filter((x) => x.overwritten);
-        // สัดส่วน Beer / Soft drink / จ้อจี้ ของวันที่นำเข้า และสะสมเดือนนี้ (owner 2026-11-22)
-        const mixed = imported.filter((x) => x.mix && (x.mix.day || x.mix.month)).sort((a, b) => a.date.localeCompare(b.date)).pop();
-        const mixText = mixed?.mix
-          ? `\nสัดส่วนยอดขายตามหมวด วันที่ ${thaiDate(mixed.date)}: ${mixed.mix.day ?? "-"}\nสะสมเดือนนี้: ${mixed.mix.month ?? "-"}${mixed.mix.others.length ? `\nหมวดที่อยู่ใน “อื่นๆ” มากสุด: ${mixed.mix.others.join(" · ")}` : ""}`
-          : "";
         // Tax-invoice files dedup by invoice number silently — a plain "สำเร็จ" is
         // all the owner wants to read (2026-10-03: "เวิ่นเว้อเกินไป").
         const hasTax = imported.some((x) => x.kind === "tax_invoice");
         if (dup.length) {
           const list = dup.map((x) => `${thaiDate(x.date)} (${kindTh(x.kind)})`).join(", ");
-          setMsg({ kind: "warn", text: `นำเข้าไฟล์สำเร็จ · ⚠️ ทับข้อมูลเดิม ${dup.length} รายการ — ${list}${mixText}` });
+          setMsg({ kind: "warn", text: `นำเข้าไฟล์สำเร็จ · ⚠️ ทับข้อมูลเดิม ${dup.length} รายการ — ${list}` });
         } else {
-          setMsg({ kind: "ok", text: `นำเข้าไฟล์สำเร็จ${mixText}` });
+          setMsg({ kind: "ok", text: "นำเข้าไฟล์สำเร็จ" });
         }
         if (hasTax) {
           // Refresh the corporate-customer card if it's open (it's lazy-loaded).
@@ -1431,6 +1439,44 @@ export default function ReportaClient({ branchName, operatorName, defaultColor, 
           the box above. Per company: cadence, visits this year, when in the
           month / which weekday, near which holiday, spend so far, gone quiet.
           Display-only (never a sales total). Lazy-loaded, active branch. */}
+      {!isClinic && (
+        <div className="card">
+          <button type="button" onClick={() => setMixOpen(!mixOpen)} className="w-full flex items-center justify-between gap-2 text-left">
+            <div>
+              <h2 className="font-bold text-slate-800">สัดส่วนยอดขายตามหมวด POS</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Beer / Soft drink / จ้อจี้ และทุกหมวดของเดือนที่เลือก — คำนวณจากไฟล์ Overview ที่นำเข้า</p>
+            </div>
+            <span className="text-slate-400 text-sm shrink-0">{mixOpen ? "▲ ซ่อน" : "▼ ดู"}</span>
+          </button>
+          {mixOpen && (
+            <div className="mt-3 space-y-2">
+              {mixBusy && !mixData ? <p className="text-sm text-slate-400 text-center py-3">กำลังโหลด…</p>
+                : !mixData?.mix ? <p className="text-sm text-slate-400 text-center py-3">เดือนนี้ยังไม่มีข้อมูลหมวดจากไฟล์ Overview</p> : (
+                <>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm font-medium text-slate-700">
+                    {mixData.mix.groups.map((g) => <span key={g.key}>{g.label} {g.pct.toFixed(1)}%</span>)}
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead><tr className="text-left text-xs text-slate-500 border-b border-slate-200"><th className="py-1 pr-2">หมวดใน POS</th><th className="py-1 pr-2 text-right">ยอดสุทธิ</th><th className="py-1 pr-2 text-right">%</th><th className="py-1">นับเป็น</th></tr></thead>
+                    <tbody>
+                      {mixData.mix.categories.map((c) => (
+                        <tr key={c.name} className="border-b border-slate-100">
+                          <td className="py-1 pr-2">{c.name}</td>
+                          <td className="py-1 pr-2 text-right tabular-nums">{Math.round(c.nett).toLocaleString("en-US")}</td>
+                          <td className="py-1 pr-2 text-right tabular-nums">{c.pct.toFixed(1)}%</td>
+                          <td className="py-1 text-xs text-slate-500">{mixData.mix!.groups.find((g) => g.key === c.group)?.label ?? c.group}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="text-[11px] text-slate-400">ถ้าหมวดไหนควรเป็น Beer หรือ Soft drink แต่ขึ้น “อื่นๆ” บอกชื่อหมวดนั้นมา แล้วจะเพิ่มกฎจัดกลุ่มให้</p>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {!isClinic && (
         <div className="card">
           <button type="button" onClick={toggleCorporate} className="w-full flex items-center justify-between gap-2 text-left">
