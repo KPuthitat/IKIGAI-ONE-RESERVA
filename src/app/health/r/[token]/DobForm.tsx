@@ -1,0 +1,46 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/url";
+
+const MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+
+export default function DobForm({ token }: { token: string }) {
+  const router = useRouter();
+  const [d, setD] = useState(""), [m, setM] = useState(""), [y, setY] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const thisYearBe = new Date().getFullYear() + 543;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!d || !m || !y) { setErr("กรุณาเลือกวัน เดือน และปีเกิดให้ครบ"); return; }
+    const ce = Number(y) - 543;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl("/api/annual-checkup/link/verify"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, dob: `${ce}-${m.padStart(2, "0")}-${d.padStart(2, "0")}` }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) { router.refresh(); return; }
+      setErr(j.message ?? "ไม่สำเร็จ ลองอีกครั้ง");
+    } catch { setErr("เชื่อมต่อไม่สำเร็จ ลองอีกครั้ง"); }
+    setBusy(false);
+  }
+  return (
+    <form onSubmit={submit} className="max-w-sm mx-auto py-10 space-y-4">
+      <div className="text-center">
+        <div className="text-[#0B1F3A] font-extrabold text-3xl leading-none">Health <span className="text-base">Check up report</span></div>
+        <div className="text-[#0B1F3A]">รายงานผลการตรวจสุขภาพ</div>
+      </div>
+      <p className="text-sm text-slate-700">เพื่อความปลอดภัยของข้อมูลสุขภาพ กรุณายืนยันตัวตนด้วยวันเดือนปีเกิด (พุทธศักราช) ของท่าน</p>
+      <div className="grid grid-cols-3 gap-2">
+        <select className="input min-h-[44px]" value={d} onChange={(e) => setD(e.target.value)} aria-label="วันที่เกิด"><option value="">วัน</option>{Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}</select>
+        <select className="input min-h-[44px]" value={m} onChange={(e) => setM(e.target.value)} aria-label="เดือนเกิด"><option value="">เดือน</option>{MONTHS.map((x, i) => <option key={x} value={i + 1}>{x}</option>)}</select>
+        <select className="input min-h-[44px]" value={y} onChange={(e) => setY(e.target.value)} aria-label="ปีเกิด พ.ศ."><option value="">ปี พ.ศ.</option>{Array.from({ length: 90 }, (_, i) => thisYearBe - 15 - i).map((x) => <option key={x} value={x}>{x}</option>)}</select>
+      </div>
+      {err && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{err}</div>}
+      <button type="submit" disabled={busy} className="w-full min-h-[44px] rounded-xl bg-[#0B1F3A] text-white font-semibold">{busy ? "กำลังตรวจสอบ…" : "เปิดดูผลตรวจ"}</button>
+      <p className="text-xs text-slate-500">ถ้ากรอกผิดหลายครั้ง ลิงก์จะถูกล็อกชั่วคราว</p>
+    </form>
+  );
+}

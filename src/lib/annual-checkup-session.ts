@@ -70,3 +70,17 @@ export function readClinicToken(token: string | null | undefined, userId: number
   const [uid, exp] = v.split("|").map(Number);
   return uid === userId && Number.isFinite(exp) && exp > now ? exp : null;
 }
+
+// ── the page opened from a link by a person without an account (health report PR 5): date of birth opens a 15-minute window for ONE link ──
+export const LINK_COOKIE = "ac_link";
+export const LINK_MINUTES = 15;
+export function makeLinkToken(linkId: number, now = Date.now()): string {
+  return signValue(`${linkId}|${now + minutes(LINK_MINUTES)}`, "ac-link");
+}
+/** The link id when the window is open right now, else null. */
+export function readLinkToken(token: string | null | undefined, now = Date.now()): number | null {
+  const v = verifySignedValue(token, "ac-link");
+  if (!v) return null;
+  const [id, exp] = v.split("|").map(Number);
+  return Number.isInteger(id) && Number.isFinite(exp) && exp > now ? id : null;
+}
