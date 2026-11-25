@@ -145,6 +145,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     && sqlRefused(() => db.prepare("UPDATE annual_checkup_results SET status='verified', verified_by=?, verified_at=CURRENT_TIMESTAMP WHERE id=?").run(R, resHav), /status change not allowed/));
   ok("3b the doctor without the session licence unlock cannot verify", err(() => G.verifyResult({ id: D }, resHav, { licenseUnlocked: false })) === "license_not_unlocked");
   ok("3c the licence check compares digits only; wrong number / non-doctor refused", G.verifyApproverLicense({ id: D }, "ว. 12345") && G.verifyApproverLicense({ id: D }, "12345") && !G.verifyApproverLicense({ id: D }, "99999") && !G.verifyApproverLicense({ id: R }, "12345"));
+  ok("3d Thai numerals are read as the same number", G.licenseDigits("ว.๑๒๓๔๕") === "12345" && G.licenseDigits(null) === "");
   ok("3d a draft cannot skip straight to released (database)", sqlRefused(() => db.prepare("UPDATE annual_checkup_results SET status='released', released_by=?, released_at=CURRENT_TIMESTAMP WHERE id=?").run(D, resHav), /status change not allowed/));
   G.verifyResult({ id: D }, resHav, { licenseUnlocked: true });
   ok("3e the doctor verifies a draft", (db.prepare("SELECT status, verified_by FROM annual_checkup_results WHERE id = ?").get(resHav) as { status: string; verified_by: number }).verified_by === D);

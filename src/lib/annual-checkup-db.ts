@@ -61,12 +61,15 @@ function requireApprover(actor: AcActor, licenseUnlocked: boolean): ActorRow {
   return a;
 }
 
+/** Digits of a licence number as typed or stored: "ว.12345", "ว 12345", "ว.๑๒๓๔๕" (Thai numerals) all become "12345". */
+export const licenseDigits = (s: string | null | undefined): string => String(s ?? "").replace(/[๐-๙]/g, (c) => String(c.charCodeAt(0) - 0x0e50)).replace(/\D/g, "");
+
 /** The licence number the doctor types at the unlock gate (digits compared, like Mounjaro's verifyClinicalLicense). */
 export function verifyApproverLicense(actor: AcActor, provided: string): boolean {
   const a = loadActor(actor);
   if (!isApproverEligible(a.id)) return false;
-  const want = ((getDb().prepare("SELECT license_no FROM users WHERE id = ?").get(a.id) as { license_no: string | null }).license_no ?? "").replace(/\D/g, "");
-  return want.length > 0 && want === (provided ?? "").replace(/\D/g, "");
+  const want = licenseDigits((getDb().prepare("SELECT license_no FROM users WHERE id = ?").get(a.id) as { license_no: string | null }).license_no);
+  return want.length > 0 && want === licenseDigits(provided);
 }
 
 /** A refusal raised by one of the database triggers surfaces as a Forbidden carrying the trigger's message. */
