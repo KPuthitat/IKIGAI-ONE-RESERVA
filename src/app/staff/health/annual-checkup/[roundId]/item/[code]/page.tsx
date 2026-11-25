@@ -25,7 +25,7 @@ export default function ItemSheetPage({ params }: { params: { roundId: string; c
   const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
   const mult = Number((getDb().prepare("SELECT value FROM annual_checkup_config WHERE key = 'critical_enzyme_multiple'").get() as { value: string } | undefined)?.value ?? 5);
   const people = rows.map((r) => ({
-    orderId: r.order_id, key: r.key, label: r.label, code: r.code, sex: r.sex, age: ageOn(r.dob, today), locked: r.result_status != null && r.result_status !== "draft",
+    orderId: r.order_id, key: r.key, label: r.label, code: r.code, external: r.key[0] === "e", payer: r.payer, sex: r.sex, age: ageOn(r.dob, today), locked: r.result_status != null && r.result_status !== "draft",
     value: valuesFromResult(testItems, { value_num: r.value_num, value_text: r.value_text, value_json: r.value_json })[item.code] ?? null
   }));
   // the picker: every enterable item grouped by its booklet section

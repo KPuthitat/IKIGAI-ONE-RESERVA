@@ -15,7 +15,7 @@ const FILTERS: Array<{ v: string; th: string }> = [
   { v: "", th: "ทั้งหมด" }, { v: "todo", th: "ยังลงผลไม่ครบ" }, { v: "verify", th: "ส่งแพทย์แล้ว รอตรวจสอบ" }, { v: "release", th: "รอเปิดผล" }, { v: "done", th: "เปิดผลแล้ว" }
 ];
 
-export default function RoundOverviewPage({ params, searchParams }: { params: { roundId: string }; searchParams: { f?: string; q?: string } }) {
+export default function RoundOverviewPage({ params, searchParams }: { params: { roundId: string }; searchParams: { f?: string; q?: string; t?: string } }) {
   const user = requireClinicalUser();
   const roundId = Number(params.roundId);
   if (!Number.isInteger(roundId) || roundId <= 0) notFound();
@@ -34,7 +34,11 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
   const scanned = q ? normExamCode(q) : "";
   const byScan = scanned ? data.subjects.filter((s) => examCode.get(s.key) === scanned) : [];
   if (byScan.length === 1) redirect(`/staff/health/annual-checkup/${roundId}/person/${byScan[0].key}`);   // scan a tube → open that person
+  const t = searchParams.t === "staff" || searchParams.t === "ext" ? searchParams.t : "";
+  const nExt = data.subjects.filter((s) => s.kind === "external").length;
   const subjects = data.subjects.filter((s) => {
+    if (t === "staff" && s.kind !== "employee") return false;
+    if (t === "ext" && s.kind !== "external") return false;
     if (q && !`${s.label} ${s.code ?? ""} ${examCode.get(s.key) ?? ""}`.toLowerCase().includes(q)) return false;
     if (f === "todo") return s.recorded < s.required;
     if (f === "verify") return s.recorded === s.required && s.submitted && s.verified < s.required;
@@ -93,11 +97,12 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm font-semibold text-slate-800 mr-2">รายคน ({subjects.length})</div>
           <form method="get" className="flex gap-2">
-            {f && <input type="hidden" name="f" value={f} />}
+            {f && <input type="hidden" name="f" value={f} />}{t && <input type="hidden" name="t" value={t} />}
             <input name="q" defaultValue={searchParams.q ?? ""} placeholder="ค้นหาชื่อ รหัสพนักงาน หรือสแกนบาร์โค้ดหลอด" autoFocus className="input min-h-[44px] w-56" />
             <button type="submit" className="btn-secondary min-h-[44px] px-4">ค้นหา</button>
           </form>
-          {FILTERS.map((x) => <Link key={x.v} href={`?${new URLSearchParams({ ...(x.v ? { f: x.v } : {}), ...(q ? { q } : {}) }).toString()}`} className={`chip ${f === x.v ? "chip-active" : ""}`}>{x.th}</Link>)}
+          {nExt > 0 && [{ v: "", th: "ทั้งหมด" }, { v: "staff", th: "พนักงาน" }, { v: "ext", th: `ภายนอก (${nExt})` }].map((x) => <Link key={`t${x.v}`} href={`?${new URLSearchParams({ ...(x.v ? { t: x.v } : {}), ...(f ? { f } : {}), ...(q ? { q } : {}) }).toString()}`} className={`chip ${t === x.v ? "chip-active" : ""}`}>{x.th}</Link>)}
+          {FILTERS.map((x) => <Link key={x.v} href={`?${new URLSearchParams({ ...(x.v ? { f: x.v } : {}), ...(t ? { t } : {}), ...(q ? { q } : {}) }).toString()}`} className={`chip ${f === x.v ? "chip-active" : ""}`}>{x.th}</Link>)}
         </div>
         <table className="w-full text-sm mt-2 min-w-[640px]">
           <thead><tr className="text-left text-xs text-slate-500 border-b border-slate-200"><th className="py-1 pr-3">ชื่อ</th><th className="py-1 pr-3">ผู้จ่าย</th><th className="py-1 pr-3 text-right">ลงผล</th><th className="py-1 pr-3 text-right">ตรวจสอบ</th><th className="py-1 pr-3">สถานะ</th></tr></thead>
@@ -106,7 +111,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
               const st = state(s);
               return (
                 <tr key={s.key} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                  <td className="py-1.5 pr-3"><Link href={`/staff/health/annual-checkup/${roundId}/person/${s.key}`} className="font-medium text-brand hover:underline">{s.label}</Link><div className="text-[11px] text-slate-400">{s.code ?? "ผู้เข้าตรวจภายนอก"}{examCode.get(s.key) ? ` · ${examCode.get(s.key)}` : ""}</div></td>
+                  <td className="py-1.5 pr-3"><Link href={`/staff/health/annual-checkup/${roundId}/person/${s.key}`} className="font-medium text-brand hover:underline">{s.label}</Link>{s.kind === "external" && <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] text-sky-800">ภายนอก · {s.payer}</span>}<div className="text-[11px] text-slate-400">{s.code ?? "ผู้เข้าตรวจภายนอก"}{examCode.get(s.key) ? ` · ${examCode.get(s.key)}` : ""}</div></td>
                   <td className="py-1.5 pr-3 text-xs text-slate-600">{s.payer}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{s.recorded}/{s.required}</td><td className="py-1.5 pr-3 text-right tabular-nums">{s.verified}/{s.required}</td>
                   <td className="py-1.5 pr-3"><span className={`rounded px-1.5 py-0.5 text-[11px] ${st.cls}`}>{st.th}</span></td>

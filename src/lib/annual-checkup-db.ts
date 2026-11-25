@@ -1728,11 +1728,14 @@ export function upsertExternalPerson(roundId: number, payerId: number, d: Extern
     const id = Number(db.prepare("INSERT INTO annual_checkup_externals (round_id, payer_id, full_name, is_placeholder, sex, dob, sort_no) VALUES (?,?,?,0,?,?,?)").run(roundId, payerId, full, sex, d.dob ?? null, sortNo).lastInsertRowid);
     db.prepare(`INSERT INTO annual_checkup_external_details (external_id, title, first_name, last_name, phone, email, id_last4, sponsor_employee_code, consent_pdpa_at, created_by)
       VALUES (?,?,?,?,?,?,?,?,?,?)`).run(id, title, first, last, clean(d.phone, 40), clean(d.email, 120), d.idLast4 ? d.idLast4.toUpperCase() : null, clean(d.sponsorEmployeeCode, 40), d.pdpa ? new Date().toISOString().slice(0, 19).replace("T", " ") : null, createdBy);
-    const code = externalExamCode(db, payer.name_th, round.year_be, sortNo);
+    // the running number starts at the person's place in the company's list and moves on if that code is already used in the round
     let examCode: string | null = null;
-    if (code && !db.prepare("SELECT 1 FROM annual_checkup_exam_codes WHERE round_id = ? AND exam_code = ?").get(roundId, code)) {
+    for (let n = sortNo; n < sortNo + 500; n++) {
+      const code = externalExamCode(db, payer.name_th, round.year_be, n);
+      if (!code) break;
+      if (db.prepare("SELECT 1 FROM annual_checkup_exam_codes WHERE round_id = ? AND exam_code = ?").get(roundId, code)) continue;
       db.prepare("INSERT INTO annual_checkup_exam_codes (round_id, external_id, exam_code, created_by) VALUES (?,?,?,?)").run(roundId, id, code, createdBy);
-      examCode = code;
+      examCode = code; break;
     }
     audit(createdBy, "external.create", { user_id: null, external_id: id }, roundId, null);
     return { externalId: id, created: true, sortNo, examCode };

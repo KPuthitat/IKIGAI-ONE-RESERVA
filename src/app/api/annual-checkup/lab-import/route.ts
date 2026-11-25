@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { handleClinical } from "@/lib/annual-checkup-api";
 import { isRecorderEligible } from "@/lib/annual-checkup-db";
-import { buildLabPlan, commitLabPlan, LabImportRefused, parseLabWorkbook } from "@/lib/health-report/lab-import";
+import { buildLabPlan, commitLabPlan, LabImportRefused, parseLabWorkbook, parseReportBackup } from "@/lib/health-report/lab-import";
 import { loadItems } from "@/lib/health-report/store";
 
-// POST multipart: file (.xlsx ≤ 5 MB), roundId, mode "preview" | "commit".
+// POST multipart: file (.xlsx, or the analyser's ReportBackup text file; ≤ 5 MB), roundId, mode "preview" | "commit".
 //   preview → what would happen (nothing is written). commit → needs planHash from the preview; overwrite / registerByName / confirmImplausible
 //   are the choices the person made on the preview screen. Only clinic recorders (the gateway checks again on every write).
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -19,12 +19,14 @@ export async function POST(req: Request) {
     const file = form.get("file");
     const roundId = Number(form.get("roundId"));
     if (!Number.isInteger(roundId) || roundId <= 0) return NextResponse.json({ ok: false, error: "bad_round", message: "ไม่พบรอบตรวจ" }, { status: 400 });
-    if (!(file instanceof File) || file.size === 0) return NextResponse.json({ ok: false, error: "no_file", message: "กรุณาเลือกไฟล์ Excel (.xlsx)" }, { status: 400 });
+    if (!(file instanceof File) || file.size === 0) return NextResponse.json({ ok: false, error: "no_file", message: "กรุณาเลือกไฟล์ Excel (.xlsx) หรือไฟล์ ReportBackup" }, { status: 400 });
     if (file.size > MAX_BYTES) return NextResponse.json({ ok: false, error: "too_large", message: "ไฟล์เกิน 5 MB" }, { status: 400 });
-    if (!/\.xlsx$/i.test(file.name)) return NextResponse.json({ ok: false, error: "bad_type", message: "รองรับเฉพาะไฟล์ .xlsx" }, { status: 400 });
+    const isXlsx = /\.xlsx$/i.test(file.name);
+    if (!isXlsx && !/\.(txt|csv|rpt|dat|log|bak)$|^ReportBackup[^.]*$/i.test(file.name)) return NextResponse.json({ ok: false, error: "bad_type", message: "รองรับไฟล์ .xlsx หรือไฟล์ข้อความของเครื่อง (ReportBackup .txt / .csv)" }, { status: 400 });
     const db = getDb();
     const items = loadItems(db);
-    const parsed = parseLabWorkbook(Buffer.from(await file.arrayBuffer()), items);
+    const buf = Buffer.from(await file.arrayBuffer());
+    const parsed = isXlsx ? parseLabWorkbook(buf, items) : parseReportBackup(buf.toString("utf8"), items);
     if (parsed.issues.length && parsed.rows.length === 0) return NextResponse.json({ ok: false, error: "bad_file", message: parsed.issues.join(" ") }, { status: 422 });
     try {
       if (form.get("mode") !== "commit") return NextResponse.json({ ok: true, plan: buildLabPlan(db, user, roundId, parsed, items, { registerByName: flag(form, "registerByName") }) });
