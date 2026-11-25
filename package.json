@@ -63,6 +63,7 @@
     "test:health-import": "node --import tsx scripts/test-health-import.ts",
     "test:health-doctor": "node --import tsx scripts/test-health-doctor.ts",
     "test:health-view": "node --import tsx scripts/test-health-view.ts",
+    "test:health-external": "node --import tsx scripts/test-health-external.ts",
     "test:health-admin": "node --import tsx scripts/test-health-admin.ts",
     "test:category-mix": "node --import tsx scripts/test-category-mix.ts",
     "test:download-name": "node --import tsx scripts/test-download-name.ts",

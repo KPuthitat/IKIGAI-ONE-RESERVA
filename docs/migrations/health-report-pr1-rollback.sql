@@ -5,6 +5,8 @@
 --
 -- Back up data/reserva.db first. Also remove the ensureHealthReportSchema(db) call in src/lib/db.ts (and redeploy), or the
 -- tables come back at the next boot. Nothing that existed before PR 1 was altered, so this removes only what PR 1 added.
+DROP TABLE IF EXISTS annual_checkup_external_details;   -- added by the external examinee work
+DROP TABLE IF EXISTS annual_checkup_payer_prefixes;
 DROP TABLE IF EXISTS annual_checkup_share_consents;   -- added by PR 7
 DROP TABLE IF EXISTS annual_checkup_access_links;   -- added by PR 5
 DROP TRIGGER IF EXISTS health_report_notes_ins;   -- added by PR 4

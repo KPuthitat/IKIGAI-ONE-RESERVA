@@ -1670,3 +1670,103 @@ export function getSharedReportData(actor: AcActor, roundId: number, userId: num
   if (d) audit(a.id, "hr.view", { user_id: userId, external_id: null }, roundId, null);
   return d;
 }
+
+
+// ── examinees from outside companies (no account, never in PERSONA) ─────────────────────────────────────────────────────
+
+export type ExternalInput = {
+  title?: string | null; firstName: string; lastName: string; sex?: "M" | "F" | null; dob?: string | null; phone?: string | null; email?: string | null;
+  idLast4?: string | null; sponsorEmployeeCode?: string | null; pdpa?: boolean;
+};
+const SEX_BY_TITLE: Array<[RegExp, "M" | "F"]> = [[/^(นาย|ด\.ช\.|mr\.?)$/i, "M"], [/^(นางสาว|นาง|น\.ส\.|ด\.ญ\.|mrs\.?|ms\.?|miss)$/i, "F"]];
+export const sexFromTitle = (t: string | null | undefined): "M" | "F" | null => { const x = (t ?? "").trim(); for (const [re, s] of SEX_BY_TITLE) if (re.test(x)) return s; return null; };
+const PERSON_TITLE = /^(นางสาว|นาย|นาง|น\.ส\.|ด\.ช\.|ด\.ญ\.|mr\.?|mrs\.?|miss|ms\.?)\s*/i;
+/** "นางสาว สมหญิง ใจดี" → title / first / last (the last word is the surname; a single word has no surname). */
+export function splitThaiName(full: string): { title: string | null; first: string; last: string } {
+  const s = full.replace(/\s+/g, " ").trim();
+  const m = PERSON_TITLE.exec(s);
+  const title = m ? m[1] : null;
+  const rest = (m ? s.slice(m[0].length) : s).trim();
+  const parts = rest.split(" ").filter(Boolean);
+  return { title, first: parts.length > 1 ? parts.slice(0, -1).join(" ") : rest, last: parts.length > 1 ? parts[parts.length - 1] : "" };
+}
+export const normPersonKey = (first: string, last: string) => `${first}${last}`.replace(/[\s.]+/g, "").toLowerCase();
+
+/** The examination code of an outside person: <company prefix><year 2 digits>-<running number 4 digits>, e.g. TSR69-0004 (null when the company has no prefix). */
+function externalExamCode(db: ReturnType<typeof getDb>, payerName: string, yearBe: number | null, sortNo: number): string | null {
+  const pre = db.prepare("SELECT prefix FROM annual_checkup_payer_prefixes WHERE payer_name = ?").get(payerName) as { prefix: string } | undefined;
+  if (!pre || yearBe == null) return null;
+  return `${pre.prefix}${String(yearBe % 100).padStart(2, "0")}-${String(sortNo).padStart(4, "0")}`;
+}
+
+/** Internal: add (or find) a named outside person of a paying company in a round. Matching: first + last name + company, and the date of birth when both sides have one. */
+export function upsertExternalPerson(roundId: number, payerId: number, d: ExternalInput, createdBy: number): { externalId: number; created: boolean; sortNo: number; examCode: string | null } {
+  const db = getDb();
+  const first = d.firstName.trim(), last = d.lastName.trim();
+  if (!first) throw new AnnualCheckupInvalid("name_required");
+  if (d.dob != null && !/^\d{4}-\d{2}-\d{2}$/.test(d.dob)) throw new AnnualCheckupInvalid("bad_value");
+  if (d.idLast4 != null && d.idLast4 !== "" && !/^[A-Za-z0-9]{4}$/.test(d.idLast4)) throw new AnnualCheckupInvalid("bad_value");
+  return db.transaction(() => {
+    const key = normPersonKey(first, last);
+    const cands = db.prepare(`
+      SELECT e.id, e.sort_no, e.dob, x.first_name, x.last_name FROM annual_checkup_externals e LEFT JOIN annual_checkup_external_details x ON x.external_id = e.id
+       WHERE e.round_id = ? AND e.payer_id = ? AND e.is_placeholder = 0
+    `).all(roundId, payerId) as Array<{ id: number; sort_no: number | null; dob: string | null; first_name: string | null; last_name: string | null }>;
+    const same = cands.filter((c) => c.first_name != null && normPersonKey(c.first_name, c.last_name ?? "") === key && (!d.dob || !c.dob || c.dob.slice(0, 10) === d.dob));
+    const payer = db.prepare("SELECT name_th FROM annual_checkup_payers WHERE id = ? AND round_id = ?").get(payerId, roundId) as { name_th: string } | undefined;
+    const round = db.prepare("SELECT year_be FROM annual_checkup_rounds WHERE id = ?").get(roundId) as { year_be: number | null } | undefined;
+    if (!payer || !round) throw new AnnualCheckupInvalid("subject_not_found");
+    if (same.length === 1) {
+      const e = same[0];
+      return { externalId: e.id, created: false, sortNo: e.sort_no ?? 0, examCode: (db.prepare("SELECT exam_code FROM annual_checkup_exam_codes WHERE round_id = ? AND external_id = ?").get(roundId, e.id) as { exam_code: string } | undefined)?.exam_code ?? null };
+    }
+    if (same.length > 1) throw new AnnualCheckupInvalid("ambiguous");
+    const sortNo = ((db.prepare("SELECT COALESCE(MAX(sort_no), 0) AS m FROM annual_checkup_externals WHERE round_id = ? AND payer_id = ?").get(roundId, payerId) as { m: number }).m) + 1;
+    const title = clean(d.title, 20);
+    const full = [title, first, last].filter(Boolean).join(" ");
+    const sex = d.sex ?? sexFromTitle(title);
+    const id = Number(db.prepare("INSERT INTO annual_checkup_externals (round_id, payer_id, full_name, is_placeholder, sex, dob, sort_no) VALUES (?,?,?,0,?,?,?)").run(roundId, payerId, full, sex, d.dob ?? null, sortNo).lastInsertRowid);
+    db.prepare(`INSERT INTO annual_checkup_external_details (external_id, title, first_name, last_name, phone, email, id_last4, sponsor_employee_code, consent_pdpa_at, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(id, title, first, last, clean(d.phone, 40), clean(d.email, 120), d.idLast4 ? d.idLast4.toUpperCase() : null, clean(d.sponsorEmployeeCode, 40), d.pdpa ? new Date().toISOString().slice(0, 19).replace("T", " ") : null, createdBy);
+    const code = externalExamCode(db, payer.name_th, round.year_be, sortNo);
+    let examCode: string | null = null;
+    if (code && !db.prepare("SELECT 1 FROM annual_checkup_exam_codes WHERE round_id = ? AND exam_code = ?").get(roundId, code)) {
+      db.prepare("INSERT INTO annual_checkup_exam_codes (round_id, external_id, exam_code, created_by) VALUES (?,?,?,?)").run(roundId, id, code, createdBy);
+      examCode = code;
+    }
+    audit(createdBy, "external.create", { user_id: null, external_id: id }, roundId, null);
+    return { externalId: id, created: true, sortNo, examCode };
+  })();
+}
+
+/** A clinic recorder adds one outside examinee by hand (people who are not in the planning file). */
+export function addExternalPerson(actor: AcActor, roundId: number, payerId: number, d: ExternalInput): { externalId: number; created: boolean; examCode: string | null } {
+  const a = requireRecorder(actor);
+  return guard(() => { const r = upsertExternalPerson(roundId, payerId, d, a.id); return { externalId: r.externalId, created: r.created, examCode: r.examCode }; });
+}
+
+export type ExternalDetails = { external_id: number; title: string | null; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; id_last4: string | null; sponsor_employee_code: string | null; consent_pdpa_at: string | null; consent_release_to_sponsor: boolean; sex: "M" | "F" | null; dob: string | null; payer: string };
+export function getExternalDetails(actor: AcActor, externalId: number): ExternalDetails | null {
+  const a = requireRecorder(actor);
+  const r = getDb().prepare(`
+    SELECT e.id AS external_id, e.sex, e.dob, p.name_th AS payer, x.title, x.first_name, x.last_name, x.phone, x.email, x.id_last4, x.sponsor_employee_code, x.consent_pdpa_at, COALESCE(x.consent_release_to_sponsor, 0) AS rel
+      FROM annual_checkup_externals e JOIN annual_checkup_payers p ON p.id = e.payer_id LEFT JOIN annual_checkup_external_details x ON x.external_id = e.id WHERE e.id = ?
+  `).get(externalId) as (Omit<ExternalDetails, "consent_release_to_sponsor"> & { rel: number }) | undefined;
+  if (!r) return null;
+  audit(a.id, "external.view", { user_id: null, external_id: externalId }, null, null);
+  const { rel, ...rest } = r;
+  return { ...rest, consent_release_to_sponsor: rel === 1 };
+}
+
+/** Record what the person agreed to: the PDPA notice, and whether the paying company may see their values. */
+export function setExternalConsent(actor: AcActor, externalId: number, c: { pdpa?: boolean; releaseToSponsor?: boolean }): void {
+  const a = requireRecorder(actor);
+  const db = getDb();
+  guard(() => db.transaction(() => {
+    if (!db.prepare("SELECT 1 FROM annual_checkup_externals WHERE id = ?").get(externalId)) throw new AnnualCheckupInvalid("subject_not_found");
+    db.prepare("INSERT OR IGNORE INTO annual_checkup_external_details (external_id, created_by) VALUES (?, ?)").run(externalId, a.id);
+    if (c.pdpa !== undefined) db.prepare("UPDATE annual_checkup_external_details SET consent_pdpa_at = CASE WHEN ? = 1 THEN COALESCE(consent_pdpa_at, CURRENT_TIMESTAMP) ELSE NULL END, updated_at = CURRENT_TIMESTAMP WHERE external_id = ?").run(c.pdpa ? 1 : 0, externalId);
+    if (c.releaseToSponsor !== undefined) db.prepare("UPDATE annual_checkup_external_details SET consent_release_to_sponsor = ?, updated_at = CURRENT_TIMESTAMP WHERE external_id = ?").run(c.releaseToSponsor ? 1 : 0, externalId);
+    audit(a.id, "external.consent", { user_id: null, external_id: externalId }, null, null, JSON.stringify(c));
+  })());
+}
