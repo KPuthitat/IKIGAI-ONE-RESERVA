@@ -56,6 +56,22 @@ export function ensureHealthReportSchema(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- The code a laboratory gives a person in a round (AHC69-0001, TSR69-0004). It identifies a row in the laboratory's Excel;
+    -- it carries no health data. One code → one person in the round, and a person has one code.
+    CREATE TABLE IF NOT EXISTS annual_checkup_exam_codes (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      round_id    INTEGER NOT NULL REFERENCES annual_checkup_rounds(id) ON DELETE CASCADE,
+      user_id     INTEGER REFERENCES users(id),
+      external_id INTEGER REFERENCES annual_checkup_externals(id),
+      exam_code   TEXT NOT NULL,           -- upper case, no spaces, no tube suffix
+      created_by  INTEGER REFERENCES users(id),
+      created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CHECK ((user_id IS NOT NULL AND external_id IS NULL) OR (user_id IS NULL AND external_id IS NOT NULL))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_exam_code ON annual_checkup_exam_codes(round_id, exam_code);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_exam_user ON annual_checkup_exam_codes(round_id, user_id) WHERE user_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_exam_ext  ON annual_checkup_exam_codes(round_id, external_id) WHERE external_id IS NOT NULL;
+
     -- Small settings: critical-value thresholds, the consultation link behind the SCAN ME code, …
     CREATE TABLE IF NOT EXISTS annual_checkup_config (
       key        TEXT PRIMARY KEY,
