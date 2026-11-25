@@ -78,7 +78,7 @@ function Section({ s, years, fileHref }: { s: RSection; years: number[]; fileHre
   );
 }
 
-export default function HealthReportView({ report, fileHref, consultUrl }: { report: Report; fileHref: (resultId: number) => string; consultUrl: string | null }) {
+export default function HealthReportView({ report, fileHref, consultUrl, pdfHref }: { report: Report; fileHref: (resultId: number) => string; consultUrl: string | null; pdfHref?: string }) {
   const h = report.header, sm = report.summary;
   return (
     <article className="space-y-6">
@@ -101,7 +101,10 @@ export default function HealthReportView({ report, fileHref, consultUrl }: { rep
           )}
         </div>
         {sm.recommendations.length > 0 && <div><div className="font-bold text-slate-900">คำแนะนำของแพทย์</div><ul className="text-sm text-slate-800 space-y-1 whitespace-pre-line">{sm.recommendations.map((r, i) => <li key={i}>- {r}</li>)}</ul></div>}
-        {consultUrl && <a href={consultUrl} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl bg-[#0B1F3A] text-white font-semibold text-sm">ปรึกษาแพทย์</a>}
+        <div className="flex flex-wrap gap-2">
+          {consultUrl && <a href={consultUrl} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl bg-[#0B1F3A] text-white font-semibold text-sm">ปรึกษาแพทย์</a>}
+          {pdfHref && <a href={pdfHref} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl border border-[#0B1F3A] text-[#0B1F3A] font-semibold text-sm">ดาวน์โหลดเล่มผล PDF</a>}
+        </div>
       </section>
 
       {/* general information */}

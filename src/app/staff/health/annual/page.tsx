@@ -72,7 +72,7 @@ export default function AnnualResultsPage({ searchParams }: { searchParams: { ro
         </div>
       )}
       {report
-        ? <HealthReportView report={report} consultUrl={consultUrl} fileHref={(id) => `/api/annual-checkup/me/file/${id}?t=${encodeURIComponent(makeFileToken(id, user.id))}`} />
+        ? <HealthReportView report={report} consultUrl={consultUrl} pdfHref={`/api/annual-checkup/me/report-pdf?round=${chosen.id}`} fileHref={(id) => `/api/annual-checkup/me/file/${id}?t=${encodeURIComponent(makeFileToken(id, user.id))}`} />
         : <div className="card p-5 text-sm text-slate-600">ผลของรอบนี้ยังไม่ได้เปิดให้ดู</div>}
       <div className="card p-4">
         <div className="font-semibold text-slate-800 mb-2">ใครเปิดดูข้อมูลฉัน</div>

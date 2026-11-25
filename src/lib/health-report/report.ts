@@ -82,7 +82,7 @@ export function buildReport(d: ReportData, allItems: DbItem[], texts: Texts, tod
           const worst: Flag | null = rv == null && lv == null ? null : [flagResult(r, rv, sex, age), flagResult(l, lv, sex, age)].includes("high") ? "high" : "normal";
           return { year: y, text: `${rv ?? "-"} / ${lv ?? "-"}`, flag: worst };
         });
-        rows.push({ code: `AUD_${f}`, en: `Frequency ${f.toLocaleString("en-US")} Hertz (Hz)`, th: `ระดับการได้ยิน - ความถี่ ${f.toLocaleString("en-US")} เฮิรตซ์ (ขวา / ซ้าย)`, unit: "dB", ref: "≤ 25 dB", cells, flagWord: cells[cells.length - 1]?.flag === "high" ? "สูง" : "", explain: null });
+        rows.push({ code: `AUD_${f}`, en: `Frequency ${f.toLocaleString("en-US")} Hertz (Hz)`, th: `ระดับการได้ยิน - ความถี่ ${f.toLocaleString("en-US")} เฮิรตซ์ (ขวา / ซ้าย)`, unit: "dB", ref: "≤ 25 dB", cells, flagWord: cells[cells.length - 1]?.flag === "high" ? "ลดลง" : "", explain: null });
       }
       const ear = (e: "R" | "L") => Object.fromEntries(HEARING_FREQS.map((f) => [f, num(currentVals.get(`AUD_${e}_${f}`))]));
       const h = interpretHearing(ear("R"), ear("L"));
