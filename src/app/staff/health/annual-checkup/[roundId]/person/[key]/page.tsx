@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db";
-import { getSubjectClinical, getSubjectDob, getSubjectHeader, isAnnualCheckupInvalid, isApproverUser, listAccessLinks, parseSubjectKey } from "@/lib/annual-checkup-db";
+import { getSubjectClinical, getExternalDetails, getSubjectDob, getSubjectHeader, isAnnualCheckupInvalid, isApproverUser, listAccessLinks, parseSubjectKey } from "@/lib/annual-checkup-db";
 import AccessLinkPanel from "../../../AccessLinkPanel";
 import { isUnlocked, requireClinicalUser, unlockExpiry } from "@/lib/annual-checkup-api";
 import { fileLink } from "@/lib/annual-checkup-session";
@@ -47,12 +47,12 @@ export default function PersonPage({ params }: { params: { roundId: string; key:
         <p className="text-sm text-slate-500">{header.code ?? "ผู้เข้าตรวจภายนอก (ไม่มีบัญชี)"} · ผู้จ่าย: {header.payer ?? "—"}</p>
       </div>
       {header.kind === "external" && conclusion?.released_at && (
-        <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/report`} className="btn-secondary text-sm inline-block">พิมพ์รายงานผลตรวจ (A4) ส่งบริษัทผู้จ่าย</Link>
+        <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/report`} className="btn-secondary text-sm inline-block">พิมพ์รายงานผลตรวจ (A4) ให้ผู้รับการตรวจ (ไม่ส่งบริษัท — บริษัทได้สรุปสถานะเท่านั้น)</Link>
       )}
       <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/entry`} className="btn-primary text-sm inline-block min-h-[44px] leading-[44px]">กรอกผลแบบแท็บตามหมวดของเล่ม</Link>
       <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/review`} className="btn-secondary text-sm inline-block min-h-[44px] leading-[44px] ml-2">หน้าแพทย์ตรวจสอบและเขียนสรุปตามหมวด</Link>
       {header.kind === "external" && subject.externalId != null && conclusion?.released_at && (
-        <AccessLinkPanel roundId={roundId} externalId={subject.externalId} links={listAccessLinks(user, roundId, subject.externalId)} hasDob={!!getSubjectDob(user, subject)} />
+        <AccessLinkPanel roundId={roundId} externalId={subject.externalId} links={listAccessLinks(user, roundId, subject.externalId)} hasProof={(() => { const d = getExternalDetails(user, subject.externalId as number); return !!(d?.dob || d?.id_last4) || !!getSubjectDob(user, subject); })()} />
       )}
       {conclusion?.released_at && <a href={`/api/annual-checkup/report-pdf?roundId=${roundId}&subject=${params.key}`} target="_blank" rel="noopener" className="btn-secondary text-sm inline-block min-h-[44px] leading-[44px] ml-2">ดาวน์โหลดเล่มผล PDF (A5)</a>}
       <SubmitPanel roundId={roundId} subject={params.key} submission={clinical.submission} released={!!conclusion?.released_at}

@@ -1443,21 +1443,23 @@ const plusMin = (m: number) => new Date(Date.now() + m * 60_000).toISOString().s
 export type LinkInfo = { id: number; round_id: number; external_id: number; expires_at: string; open_count: number; last_opened_at: string | null; revoked_at: string | null; created_at: string; locked_until: string | null };
 
 /** Make a link for an outside person whose results are released. The token is returned ONCE and never stored (only its hash). */
-export function createAccessLink(actor: AcActor, roundId: number, externalId: number, days: number): { token: string; expires_at: string } {
+export function createAccessLink(actor: AcActor, roundId: number, externalId: number, days: number, opts: { reissue?: boolean } = {}): { token: string; expires_at: string; revoked: number } {
   const a = requireRecorder(actor);
   const db = getDb();
   const d = Math.min(90, Math.max(1, Math.floor(days)));
   return guard(() => db.transaction(() => {
-    const e = db.prepare("SELECT dob FROM annual_checkup_externals WHERE id = ? AND round_id = ?").get(externalId, roundId) as { dob: string | null } | undefined;
+    const e = db.prepare("SELECT e.dob, x.id_last4 FROM annual_checkup_externals e LEFT JOIN annual_checkup_external_details x ON x.external_id = e.id WHERE e.id = ? AND e.round_id = ?").get(externalId, roundId) as { dob: string | null; id_last4: string | null } | undefined;
     if (!e) throw new AnnualCheckupInvalid("subject_not_found");
-    if (!e.dob) throw new AnnualCheckupInvalid("dob_required");
+    if (!e.dob && !e.id_last4) throw new AnnualCheckupInvalid("dob_required");   // nothing to check the person against
     const rel = db.prepare("SELECT 1 FROM annual_checkup_conclusions WHERE round_id = ? AND external_id = ? AND released_at IS NOT NULL").get(roundId, externalId);
     if (!rel) throw new AnnualCheckupInvalid("not_released");
+    // reissue: every link still open for this person is cancelled first (a lost or forwarded link stops working)
+    const revoked = opts.reissue ? db.prepare("UPDATE annual_checkup_access_links SET revoked_at = CURRENT_TIMESTAMP WHERE round_id = ? AND external_id = ? AND revoked_at IS NULL").run(roundId, externalId).changes : 0;
     const token = crypto.randomBytes(24).toString("base64url");
     const expires = plusMin(d * 24 * 60);
     db.prepare("INSERT INTO annual_checkup_access_links (round_id, external_id, token_hash, expires_at, created_by) VALUES (?,?,?,?,?)").run(roundId, externalId, sha(token), expires, a.id);
-    audit(a.id, "link.create", { user_id: null, external_id: externalId }, roundId, null, `days ${d}`);
-    return { token, expires_at: expires };
+    audit(a.id, "link.create", { user_id: null, external_id: externalId }, roundId, null, `days ${d}${revoked ? `, reissued (${revoked} cancelled)` : ""}`);
+    return { token, expires_at: expires, revoked };
   })());
 }
 
@@ -1484,13 +1486,16 @@ export function resolveAccessLink(token: string): LinkState | null {
 }
 
 /** Public: check a date of birth (yyyy-mm-dd, Christian era). Wrong answers are counted; five in a row lock the link for 30 minutes. */
-export function verifyAccessLink(token: string, dobIso: string): { ok: true; linkId: number } | { ok: false; reason: "invalid" | "expired" | "revoked" | "locked" | "wrong"; attemptsLeft?: number } {
+export function verifyAccessLink(token: string, dobIso: string | null, idLast4?: string | null): { ok: true; linkId: number } | { ok: false; reason: "invalid" | "expired" | "revoked" | "locked" | "wrong"; attemptsLeft?: number } {
   const st = resolveAccessLink(token);
   if (!st) return { ok: false, reason: "invalid" };
   if (!st.usable) return { ok: false, reason: st.reason as "expired" | "revoked" | "locked" };
   const db = getDb();
-  const row = db.prepare("SELECT l.failed_count, e.dob FROM annual_checkup_access_links l JOIN annual_checkup_externals e ON e.id = l.external_id WHERE l.id = ?").get(st.id) as { failed_count: number; dob: string | null };
-  const good = !!row.dob && /^\d{4}-\d{2}-\d{2}$/.test(dobIso) && row.dob.slice(0, 10) === dobIso;
+  const row = db.prepare("SELECT l.failed_count, e.dob, x.id_last4 FROM annual_checkup_access_links l JOIN annual_checkup_externals e ON e.id = l.external_id LEFT JOIN annual_checkup_external_details x ON x.external_id = e.id WHERE l.id = ?").get(st.id) as { failed_count: number; dob: string | null; id_last4: string | null };
+  // either proof opens the link: the date of birth, or the last 4 characters of the ID the clinic has on file
+  const byDob = !!row.dob && !!dobIso && /^\d{4}-\d{2}-\d{2}$/.test(dobIso) && row.dob.slice(0, 10) === dobIso;
+  const byId = !!row.id_last4 && !!idLast4 && /^[A-Za-z0-9]{4}$/.test(idLast4) && row.id_last4.toUpperCase() === idLast4.toUpperCase();
+  const good = byDob || byId;
   if (good) {
     db.prepare("UPDATE annual_checkup_access_links SET failed_count = 0, locked_until = NULL, open_count = open_count + 1, last_opened_at = CURRENT_TIMESTAMP WHERE id = ?").run(st.id);
     return { ok: true, linkId: st.id };
@@ -1789,4 +1794,60 @@ export function setExternalConsent(actor: AcActor, externalId: number, c: { pdpa
     if (c.releaseToSponsor !== undefined) db.prepare("UPDATE annual_checkup_external_details SET consent_release_to_sponsor = ?, updated_at = CURRENT_TIMESTAMP WHERE external_id = ?").run(c.releaseToSponsor ? 1 : 0, externalId);
     audit(a.id, "external.consent", { user_id: null, external_id: externalId }, null, null, JSON.stringify(c));
   })());
+}
+
+
+// ── summary for the paying company: counts and readiness, never a person's values unless they agreed ───────────────────
+
+export type Readiness = "suitable" | "suitable_follow_up" | "see_doctor";
+export const READINESS_TH: Record<Readiness, string> = { suitable: "เหมาะสม", suitable_follow_up: "เหมาะสมแต่ควรติดตาม", see_doctor: "ควรพบแพทย์" };
+export type SponsorSummary = {
+  round: { id: number; name: string }; payer: { id: number; name: string };
+  counts: { total: number; resultsComplete: number; released: number; pending: number; readiness: Record<Readiness, number> };
+  people: Array<{ label: string; stage: "not_started" | "in_progress" | "complete" | "released"; readiness: Readiness | null; sharedValues: Array<{ test: string; value: string }> | null }>;
+};
+const READINESS_OF: Record<string, Readiness> = { normal: "suitable", follow_up: "suitable_follow_up", abnormal: "see_doctor" };
+
+/**
+ * What the clinic hands the paying company (an outside company's examinees only). Status and readiness come from the doctor's released
+ * conclusion; the lab values of a person appear ONLY when that person agreed (consent_release_to_sponsor) AND their results are released.
+ */
+export function getSponsorSummary(actor: AcActor, roundId: number, payerId: number): SponsorSummary {
+  const a = requireRecorder(actor);
+  const db = getDb();
+  const round = db.prepare("SELECT id, name FROM annual_checkup_rounds WHERE id = ?").get(roundId) as { id: number; name: string } | undefined;
+  const payer = db.prepare("SELECT id, name_th AS name, is_external FROM annual_checkup_payers WHERE id = ? AND round_id = ?").get(payerId, roundId) as { id: number; name: string; is_external: number } | undefined;
+  if (!round) throw new AnnualCheckupInvalid("round_not_found");
+  if (!payer || payer.is_external !== 1) throw new AnnualCheckupInvalid("subject_not_found");
+  const rows = db.prepare(`
+    SELECT e.id, e.full_name, e.sort_no, COALESCE(x.consent_release_to_sponsor, 0) AS consent,
+           (SELECT COUNT(*) FROM annual_checkup_orders o WHERE o.external_id = e.id AND o.status <> 'waived') AS required,
+           (SELECT COUNT(*) FROM annual_checkup_orders o JOIN annual_checkup_results r ON r.order_id = o.id WHERE o.external_id = e.id AND o.status <> 'waived') AS recorded,
+           (SELECT COUNT(*) FROM annual_checkup_orders o JOIN annual_checkup_results r ON r.order_id = o.id WHERE o.external_id = e.id AND o.status <> 'waived' AND r.status = 'released') AS released,
+           c.summary, c.released_at
+      FROM annual_checkup_externals e LEFT JOIN annual_checkup_external_details x ON x.external_id = e.id
+      LEFT JOIN annual_checkup_conclusions c ON c.round_id = e.round_id AND c.external_id = e.id
+     WHERE e.round_id = ? AND e.payer_id = ? AND e.is_placeholder = 0 ORDER BY e.sort_no, e.id
+  `).all(roundId, payerId) as Array<{ id: number; full_name: string | null; sort_no: number | null; consent: number; required: number; recorded: number; released: number; summary: string | null; released_at: string | null }>;
+  const readiness: Record<Readiness, number> = { suitable: 0, suitable_follow_up: 0, see_doctor: 0 };
+  let released = 0, complete = 0;
+  const people = rows.map((r) => {
+    const isReleased = r.required > 0 && r.released === r.required && !!r.released_at;
+    const stage: SponsorSummary["people"][number]["stage"] = isReleased ? "released" : r.required > 0 && r.recorded === r.required ? "complete" : r.recorded > 0 ? "in_progress" : "not_started";
+    if (isReleased) released++;
+    if (stage === "released" || stage === "complete") complete++;
+    const rd = isReleased && r.summary ? READINESS_OF[r.summary] ?? null : null;
+    if (rd) readiness[rd]++;
+    let shared: SponsorSummary["people"][number]["sharedValues"] = null;
+    if (isReleased && r.consent === 1) {
+      const vals = db.prepare(`
+        SELECT t.name_th AS test, x.value_num, x.value_text FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id
+          JOIN annual_checkup_results x ON x.order_id = o.id WHERE o.external_id = ? AND o.status <> 'waived' AND x.status = 'released' AND (x.value_num IS NOT NULL OR x.value_text IS NOT NULL) ORDER BY t.sort_no
+      `).all(r.id) as Array<{ test: string; value_num: number | null; value_text: string | null }>;
+      shared = vals.map((v) => ({ test: v.test, value: v.value_num != null ? String(v.value_num) : (v.value_text as string) }));
+    }
+    return { label: r.full_name ?? `คนที่ ${r.sort_no ?? "?"}`, stage, readiness: rd, sharedValues: shared };
+  });
+  audit(a.id, "sponsor.view", null, roundId, null, `payer ${payerId}`);
+  return { round, payer: { id: payer.id, name: payer.name }, counts: { total: rows.length, resultsComplete: complete, released, pending: rows.length - released, readiness }, people };
 }

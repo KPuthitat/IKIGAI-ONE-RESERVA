@@ -70,6 +70,12 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
         </div>
       )}
       <AddExternal roundId={roundId} payers={externalPayers} />
+      {externalPayers.length > 0 && (
+        <div className="card flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-semibold text-slate-800">สรุปสถานะสำหรับบริษัทผู้จ่าย (ไม่มีค่าผลตรวจรายคน):</span>
+          {externalPayers.map((p) => <Link key={p.id} href={`/staff/health/annual-checkup/${roundId}/sponsor/${p.id}`} className="btn-secondary min-h-[44px] leading-[44px] inline-block px-4">{p.name}</Link>)}
+        </div>
+      )}
       {approver && payers.length > 0 && <ReleaseCompany roundId={roundId} payers={payers} unlocked={isUnlocked(user)} />}
 
       <div className="card flex flex-wrap items-center gap-3">
