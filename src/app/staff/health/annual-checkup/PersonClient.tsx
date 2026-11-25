@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { glueParen } from "@/lib/text";
 import { useRouter } from "next/navigation";
 import { Banner, INTERP, INTERP_TH, STATUS_CLS, STATUS_TH, post, upload } from "./shared";
 
@@ -85,7 +86,7 @@ function TestRow({ r, doctor, isApprover, onDone }: { r: PersonRow; doctor: bool
     return (
       <div className="card !py-3 flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <div className="font-medium text-slate-800 break-words">{r.name_th}</div>
+          <div className="font-medium text-slate-800 break-words">{glueParen(r.name_th)}</div>
           <div className="text-xs text-slate-500">{r.ref_text ? `อ้างอิง ${r.ref_text} · ` : ""}{r.result_status ? STATUS_TH[r.result_status] : ""}{r.revision && r.revision > 1 ? ` · ฉบับที่ ${r.revision}` : ""}{r.interpretation ? ` · ${INTERP_TH[r.interpretation]}` : ""}</div>
         </div>
         <div className="text-right shrink-0"><div className="font-bold text-slate-900 whitespace-pre-line">{shown}</div><div className="text-[11px] text-slate-500">{r.unit ?? r.test_unit ?? ""}</div></div>
@@ -97,7 +98,7 @@ function TestRow({ r, doctor, isApprover, onDone }: { r: PersonRow; doctor: bool
   return (
     <div className="card space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="font-medium text-slate-800">{r.name_th}</div>
+        <div className="font-medium text-slate-800">{glueParen(r.name_th)}</div>
         {locked && <button type="button" className="ml-auto text-xs underline text-slate-500 min-h-[44px]" onClick={() => setOpen(false)}>ย่อ</button>}
         {badge}
         {r.result_status && <span className={`rounded px-1.5 py-0.5 text-[11px] ${STATUS_CLS[r.result_status]}`}>{STATUS_TH[r.result_status]}{r.revision && r.revision > 1 ? ` · ฉบับที่ ${r.revision}` : ""}</span>}

@@ -1,11 +1,12 @@
 import type { Report, RSection } from "@/lib/health-report/report";
+import { glueCompany } from "@/lib/text";
 import { withArrow } from "@/lib/health-report/interpret";
 
 // The health check-up report on screen (mobile first): navy section bars, grey striped rows, cream boxes, the three years side by side.
 // A flag is always a WORD (สูง / ต่ำ / ผิดปกติ) next to the colour, never colour alone. Server component: nothing here fetches.
 
 const TH_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-export const thaiLongDate = (iso: string | null | undefined) => { if (!iso) return "—"; const [y, m, d] = iso.slice(0, 10).split("-").map(Number); return `${d} ${TH_MONTHS[m - 1]} ${y + 543}`; };
+export const thaiLongDate = (iso: string | null | undefined) => { if (!iso) return "—"; const [y, m, d] = iso.slice(0, 10).split("-").map(Number); return `${d}\u00A0${TH_MONTHS[m - 1]}\u00A0${y + 543}`; };
 const NAVY = "nk-gradient";
 
 function Bar({ children }: { children: React.ReactNode }) {
@@ -66,7 +67,7 @@ function Section({ s, years, fileHref }: { s: RSection; years: number[]; fileHre
           </div>
         </>
       )}
-      {s.lines.length > 0 && <div className="rounded-xl bg-white border border-slate-200 shadow-card px-4 py-3 text-sm text-slate-800 space-y-1"><div className="font-bold">สรุปผลจากระบบ</div>{s.lines.map((l, i) => <div key={i}>- {l}</div>)}</div>}
+      {s.lines.length > 0 && <div className="rounded-xl bg-white border border-slate-200 shadow-card px-4 py-3 text-sm text-slate-800 space-y-1"><div className="font-bold">สรุปผลจากระบบ</div>{s.lines.map((l, i) => <div key={i} className="pl-3 -indent-3">- {l}</div>)}</div>}
       {s.file && <a href={fileHref(s.file.resultId)} target="_blank" rel="noopener" className="inline-flex items-center min-h-[44px] px-4 rounded-lg border border-slate-300 text-sm text-brand underline">เปิดภาพ/ไฟล์ผลตรวจ</a>}
       {s.note && (
         <div className="rounded-xl bg-white border border-slate-200 shadow-card px-4 py-3 text-sm text-slate-800 space-y-2">
@@ -115,7 +116,7 @@ export default function HealthReportView({ report, fileHref, consultUrl, pdfHref
               ))}</ul>
             )}
           </div>
-          {sm.recommendations.length > 0 && <div><div className="font-bold text-slate-900">คำแนะนำของแพทย์</div><ul className="text-sm text-slate-800 space-y-1 whitespace-pre-line mt-1">{sm.recommendations.map((r, i) => <li key={i}>- {r}</li>)}</ul></div>}
+          {sm.recommendations.length > 0 && <div><div className="font-bold text-slate-900">คำแนะนำของแพทย์</div><ul className="text-sm text-slate-800 space-y-1 whitespace-pre-line mt-1">{sm.recommendations.map((r, i) => <li key={i} className="pl-3 -indent-3">- {r}</li>)}</ul></div>}
           <div className="flex flex-wrap gap-2">
             {consultUrl && <a href={consultUrl} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl nk-gradient text-white font-semibold text-sm flex-1 sm:flex-none">ปรึกษาแพทย์</a>}
             {pdfHref && <a href={pdfHref} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl border border-brand bg-white text-brand font-semibold text-sm flex-1 sm:flex-none">ดาวน์โหลดเล่มผล PDF</a>}
@@ -136,7 +137,7 @@ export default function HealthReportView({ report, fileHref, consultUrl, pdfHref
       <section className="space-y-3">
         <Bar>รายงานผลการตรวจสุขภาพ <span className="font-normal opacity-90">· Health check up report</span></Bar>
         <dl className="rounded-xl bg-white border border-slate-200 shadow-card px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
-          {[["วันที่ตรวจสุขภาพ", thaiLongDate(h.examDate)], ["ชื่อ - นามสกุล", h.name], ["อายุ", h.age != null ? `${h.age} ปี` : "—"], ["ชื่อบริษัท", h.company ?? "—"], ["รหัสพนักงาน", h.employeeCode ?? "—"], ["ตำแหน่ง", h.position ?? "—"], ["แผนก", h.department ?? "—"]].map(([k, v]) => (
+          {[["วันที่ตรวจสุขภาพ", thaiLongDate(h.examDate)], ["ชื่อ - นามสกุล", h.name], ["อายุ", h.age != null ? `${h.age} ปี` : "—"], ["ชื่อบริษัท", h.company ? glueCompany(h.company) : "—"], ["รหัสพนักงาน", h.employeeCode ?? "—"], ["ตำแหน่ง", h.position ?? "—"], ["แผนก", h.department ?? "—"]].map(([k, v]) => (
             <div key={k} className="flex gap-2"><dt className="text-slate-500 shrink-0">{k}:</dt><dd className="font-semibold text-slate-900 break-words">{v}</dd></div>
           ))}
         </dl>

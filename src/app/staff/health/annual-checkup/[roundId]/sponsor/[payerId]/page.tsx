@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { glueCompany } from "@/lib/text";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSponsorSummary, isAnnualCheckupInvalid, READINESS_TH } from "@/lib/annual-checkup-db";
@@ -27,7 +28,7 @@ export default function SponsorSummaryPage({ params }: { params: { roundId: stri
       </div>
       <article className="bg-white mx-auto max-w-[210mm] p-[14mm] text-[13px] leading-relaxed text-slate-900 border border-slate-200 print:border-0 print:p-0">
         <h1 className="text-lg font-bold text-center">สรุปสถานะการตรวจสุขภาพประจำปี</h1>
-        <p className="text-center text-slate-600">{s.round.name} · {s.payer.name}</p>
+        <p className="text-center text-slate-600">{s.round.name} · {glueCompany(s.payer.name)}</p>
         <p className="text-center text-xs text-slate-500">ข้อมูล ณ วันที่ {today}</p>
         <div className="mt-4 grid grid-cols-4 gap-2 text-center">
           {[["ผู้เข้ารับการตรวจ", s.counts.total], ["ตรวจครบแล้ว", s.counts.resultsComplete], ["ออกผลแล้ว", s.counts.released], ["ยังไม่เสร็จ", s.counts.pending]].map(([l, v]) => (

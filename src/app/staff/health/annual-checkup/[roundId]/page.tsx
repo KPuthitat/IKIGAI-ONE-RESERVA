@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { glueCompany } from "@/lib/text";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
@@ -116,8 +117,8 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
               <li key={s.key}>
                 <Link href={`/staff/health/annual-checkup/${roundId}/person/${s.key}`} className="flex items-center gap-3 py-2.5 min-h-[56px] hover:bg-slate-50 -mx-2 px-2 rounded-lg">
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5"><span className="font-semibold text-slate-900 break-words">{s.label}</span>{s.kind === "external" && <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] text-sky-800">ภายนอก · {s.payer}</span>}</div>
-                    <div className="text-[11px] text-slate-500">{s.kind === "external" ? "ผู้รับการตรวจภายนอก" : `${s.code ?? ""} · ${s.payer}`}{examCode.get(s.key) ? ` · ${examCode.get(s.key)}` : ""}</div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5"><span className="font-semibold text-slate-900 break-words">{s.label}</span>{s.kind === "external" && <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] text-sky-800">ภายนอก · {glueCompany(s.payer)}</span>}</div>
+                    <div className="text-[11px] text-slate-500">{s.kind === "external" ? "ผู้รับการตรวจภายนอก" : `${s.code ?? ""} · ${glueCompany(s.payer)}`}{examCode.get(s.key) ? ` · ${examCode.get(s.key)}` : ""}</div>
                     <div className="mt-1.5 flex items-center gap-2"><div className="flex-1"><Bar v={pct(s.recorded, s.required)} tone="nk-gradient" /></div><span className="text-[11px] tabular-nums text-slate-600 w-20 text-right">ลง {s.recorded}/{s.required} · ตรวจ {s.verified}</span></div>
                   </div>
                   <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium text-center max-w-[7.5rem] ${st.cls}`}>{st.th}</span>
@@ -134,7 +135,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
       {externalPayers.length > 0 && (
         <div className="card flex flex-wrap items-center gap-2 text-sm">
           <span className="font-semibold text-slate-800 w-full">สรุปสถานะสำหรับบริษัทผู้จ่าย (ไม่มีค่าผลตรวจรายคน)</span>
-          {externalPayers.map((p) => <Link key={p.id} href={`/staff/health/annual-checkup/${roundId}/sponsor/${p.id}`} className="btn-secondary min-h-[44px] inline-flex items-center px-4">{p.name}</Link>)}
+          {externalPayers.map((p) => <Link key={p.id} href={`/staff/health/annual-checkup/${roundId}/sponsor/${p.id}`} className="btn-secondary min-h-[44px] inline-flex items-center px-4">{glueCompany(p.name)}</Link>)}
         </div>
       )}
 

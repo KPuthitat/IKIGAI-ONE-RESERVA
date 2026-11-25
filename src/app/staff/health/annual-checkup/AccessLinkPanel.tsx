@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { post } from "./shared";
 import type { LinkInfo } from "@/lib/annual-checkup-db";
 
-const when = (s: string) => new Date(s.replace(" ", "T") + "Z").toLocaleString("th-TH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
+const when = (s: string) => new Date(s.replace(" ", "T") + "Z").toLocaleString("th-TH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }).replace(/(\d{1,2}) (\S+) (\d{4})/, "$1\u00A0$2\u00A0$3");
 
 export default function AccessLinkPanel({ roundId, externalId, links, hasProof }: { roundId: number; externalId: number; links: LinkInfo[]; hasProof: boolean }) {
   const router = useRouter();

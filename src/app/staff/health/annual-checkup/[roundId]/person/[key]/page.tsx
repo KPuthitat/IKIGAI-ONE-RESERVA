@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { glueCompany } from "@/lib/text";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db";
@@ -48,7 +49,7 @@ export default function PersonPage({ params }: { params: { roundId: string; key:
           {header.kind === "external" && <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] text-sky-800">ภายนอก</span>}
           {conclusion?.released_at ? <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs text-emerald-800">เปิดผลแล้ว</span> : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600">ยังไม่เปิดผล</span>}
         </div>
-        <p className="text-sm text-slate-500">{header.code ?? "ผู้เข้าตรวจภายนอก (ไม่มีบัญชี)"} · ผู้จ่าย: {header.payer ?? "—"}</p>
+        <p className="text-sm text-slate-500">{header.code ?? "ผู้เข้าตรวจภายนอก (ไม่มีบัญชี)"} · ผู้จ่าย: {header.payer ? glueCompany(header.payer) : "—"}</p>
         <div className="grid gap-2 pt-2 sm:grid-cols-2">
           <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/entry`} className="btn-primary min-h-[48px] inline-flex items-center justify-center text-sm sm:col-span-2">กรอกผลตามหมวดของเล่ม</Link>
           <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/review`} className="btn-secondary min-h-[44px] inline-flex items-center justify-center text-sm">แพทย์ตรวจสอบ / เขียนสรุป</Link>

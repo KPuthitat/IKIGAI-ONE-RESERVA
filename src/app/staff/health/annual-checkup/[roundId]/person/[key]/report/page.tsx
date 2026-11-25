@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { glueParen } from "@/lib/text";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getExternalReport, isAnnualCheckupInvalid, parseSubjectKey } from "@/lib/annual-checkup-db";
@@ -11,7 +12,7 @@ export const metadata: Metadata = { title: "รายงานผลตรวจ
 // Printable A4 report for a person without an account, made by clinical staff after the doctor has released the results.
 // "Print → Save as PDF" gives the file to send to the paying company; the person never gets a login.
 const INTERP_TH: Record<string, string> = { normal: "ปกติ", abnormal: "ผิดปกติ", follow_up: "ต้องติดตาม" };
-const day = (iso: string) => new Date(iso.includes("T") ? iso : iso.replace(" ", "T") + "Z").toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" });
+const day = (iso: string) => new Date(iso.includes("T") ? iso : iso.replace(" ", "T") + "Z").toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" }).replace(/ /g, "\u00A0");
 function show(r: Record<string, unknown>): string {
   if (r.value_num != null) return `${r.value_num}${r.unit ? ` ${r.unit}` : ""}`;
   if (typeof r.value_text === "string" && r.value_text) return r.value_text;
@@ -49,7 +50,7 @@ export default function ExternalReportPage({ params }: { params: { roundId: stri
           <tbody>
             {rep.results.map((r) => (
               <tr key={r.code as string} className="align-top">
-                <td className="border border-slate-300 px-2 py-1">{r.name_th as string}</td>
+                <td className="border border-slate-300 px-2 py-1">{glueParen(r.name_th as string)}</td>
                 <td className="border border-slate-300 px-2 py-1 whitespace-pre-line">{show(r)}</td>
                 <td className="border border-slate-300 px-2 py-1">{(r.ref_text as string | null) || "—"}</td>
                 <td className="border border-slate-300 px-2 py-1">{r.interpretation ? INTERP_TH[r.interpretation as string] : "—"}</td>
