@@ -11,7 +11,7 @@ const FILTERS: Array<{ v: string; th: string }> = [
   { v: "", th: "ทั้งหมด" }, { v: "todo", th: "ยังลงผลไม่ครบ" }, { v: "verify", th: "ส่งแพทย์แล้ว รอตรวจสอบ" }, { v: "release", th: "รอเปิดผล" }, { v: "done", th: "เปิดผลแล้ว" }
 ];
 
-export default function RoundOverviewPage({ params, searchParams }: { params: { roundId: string }; searchParams: { f?: string } }) {
+export default function RoundOverviewPage({ params, searchParams }: { params: { roundId: string }; searchParams: { f?: string; q?: string } }) {
   const user = requireClinicalUser();
   const roundId = Number(params.roundId);
   if (!Number.isInteger(roundId) || roundId <= 0) notFound();
@@ -19,7 +19,9 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
   try { data = getRoundOverview(user, roundId); } catch (e) { if (isAnnualCheckupInvalid(e)) notFound(); throw e; }
   const lineGaps = getRoundLineGaps(user, roundId);
   const f = searchParams.f ?? "";
+  const q = (searchParams.q ?? "").trim().toLowerCase();
   const subjects = data.subjects.filter((s) => {
+    if (q && !`${s.label} ${s.code ?? ""}`.toLowerCase().includes(q)) return false;
     if (f === "todo") return s.recorded < s.required;
     if (f === "verify") return s.recorded === s.required && s.submitted && s.verified < s.required;
     if (f === "release") return s.verified === s.required && s.released < s.required;
@@ -40,6 +42,11 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
         </div>
       )}
 
+      <div className="card flex flex-wrap items-center gap-3">
+        <div className="text-sm text-slate-700">ลงผลรายรายการตามหมวดของเล่ม (เช่น น้ำตาลในเลือด หรือ WBC ของทุกคนต่อกัน)</div>
+        <Link href={`/staff/health/annual-checkup/${roundId}/item/FBS`} className="btn-secondary text-sm min-h-[44px] leading-[44px] inline-block px-4">เปิดหน้ากรอกรายรายการ</Link>
+      </div>
+
       <div className="card overflow-x-auto">
         <div className="text-sm font-semibold text-slate-800">ลงผลรายรายการ (ลงรายการเดียวให้หลายคนพร้อมกัน)</div>
         <table className="w-full text-sm mt-2 min-w-[520px]">
@@ -58,7 +65,12 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
       <div className="card overflow-x-auto">
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm font-semibold text-slate-800 mr-2">รายคน ({subjects.length})</div>
-          {FILTERS.map((x) => <Link key={x.v} href={x.v ? `?f=${x.v}` : "?"} className={`chip ${f === x.v ? "chip-active" : ""}`}>{x.th}</Link>)}
+          <form method="get" className="flex gap-2">
+            {f && <input type="hidden" name="f" value={f} />}
+            <input name="q" defaultValue={searchParams.q ?? ""} placeholder="ค้นหาชื่อหรือรหัสพนักงาน" className="input min-h-[44px] w-56" />
+            <button type="submit" className="btn-secondary min-h-[44px] px-4">ค้นหา</button>
+          </form>
+          {FILTERS.map((x) => <Link key={x.v} href={`?${new URLSearchParams({ ...(x.v ? { f: x.v } : {}), ...(q ? { q } : {}) }).toString()}`} className={`chip ${f === x.v ? "chip-active" : ""}`}>{x.th}</Link>)}
         </div>
         <table className="w-full text-sm mt-2 min-w-[640px]">
           <thead><tr className="text-left text-xs text-slate-500 border-b border-slate-200"><th className="py-1 pr-3">ชื่อ</th><th className="py-1 pr-3">ผู้จ่าย</th><th className="py-1 pr-3 text-right">ลงผล</th><th className="py-1 pr-3 text-right">ตรวจสอบ</th><th className="py-1 pr-3">สถานะ</th></tr></thead>
