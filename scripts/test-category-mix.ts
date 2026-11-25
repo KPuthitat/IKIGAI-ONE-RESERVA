@@ -36,6 +36,12 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("no data gives null, not a 0% line", M.categoryMix(b, "2026-12-01", "2026-12-31") === null);
   ok("the one-line text", M.mixLine(day) === "Beer 10.0% · Soft drink 5.0% · จ้อจี้ 2.5% · อื่นๆ 82.5%");
 
+  const det = M.categoryMixDetail(b, "2026-11");
+  ok("the detail lists every category of the month, biggest first, with its group", !!det && det.categories.length >= 4 && det.categories[0].nett >= det.categories[1].nett && det.categories.some((c) => c.name === "WINE" && c.group === "other"));
+  ok("the detail shares add up to ~100%", !!det && Math.abs(det.categories.reduce((a, c) => a + c.pct, 0) - 100) < 0.1);
+  ok("lager counts as beer", M.groupOfCategory("LAGER") === "beer");
+  ok("a month with no rows has no detail", M.categoryMixDetail(b, "2025-01") === null);
+
   console.log(failed ? `\n${failed} FAILED` : "\nAll checks passed");
   cleanup(); process.exit(failed ? 1 : 0);
 })();

@@ -10,7 +10,7 @@ export const MIX_LABEL: Record<MixKey, string> = { beer: "Beer", soft: "Soft dri
 
 export function groupOfCategory(name: string): MixKey {
   if (/จ้อจี้|jojee|jo\s*gee/i.test(name)) return "jojee";
-  if (/beer|เบียร์/i.test(name)) return "beer";
+  if (/beer|เบียร์|lager/i.test(name)) return "beer";
   if (/soft\s*drink|ซอฟ(ท์)?\s*ดริ[๋่้]?งค?์?|น้ำอัดลม/i.test(name)) return "soft";
   return "other";
 }
@@ -37,6 +37,17 @@ export function categoryMix(branchId: number, from: string, to: string): Categor
     groups: (["beer", "soft", "jojee", "other"] as MixKey[]).map((key) => ({ key, label: MIX_LABEL[key], nett: round2(sum[key]), pct: pct(sum[key]) })),
     others: rows.filter((r) => groupOfCategory(r.name) === "other").sort((a, b) => b.nett - a.nett).slice(0, 6).map((r) => ({ name: r.name, nett: round2(r.nett), pct: pct(r.nett) }))
   };
+}
+
+/** Every category of a month with its share and the group it was put in — the card on the ANALYTICA page, so a wrongly
+ *  grouped category is visible and can be fixed. Biggest first. */
+export function categoryMixDetail(branchId: number, ym: string): (CategoryMix & { categories: Array<{ name: string; group: MixKey; nett: number; pct: number }> }) | null {
+  const from = `${ym}-01`, to = `${ym}-31`;
+  const m = categoryMix(branchId, from, to);
+  if (!m) return null;
+  const rows = getDb().prepare("SELECT name, SUM(nett) AS nett FROM salesa_menu WHERE branch_id = ? AND kind = 'category' AND sale_date BETWEEN ? AND ? GROUP BY name ORDER BY nett DESC")
+    .all(branchId, from, to) as Array<{ name: string; nett: number }>;
+  return { ...m, categories: rows.map((r) => ({ name: r.name, group: groupOfCategory(r.name), nett: round2(r.nett), pct: round2((r.nett / m.total) * 100) })) };
 }
 
 /** "Beer 12.5% · Soft drink 8.0% · จ้อจี้ 4.2% · อื่นๆ 75.3%" */
