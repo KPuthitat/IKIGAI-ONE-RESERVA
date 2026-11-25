@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireSuperAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { addDays, BASELINE_2026, buildWeeklyDigest, execGroups, getState, GOAL_PLAN, GOAL_YEAR, goalBranches, monthlySplit, salesMeasures } from "@/lib/corporate-goal";
+import { buildCostRatios } from "@/lib/cost-guardrails";
 import Client from "./Client";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,9 @@ export default function GoalPage() {
     const base = b.plan.key === "nama" ? BASELINE_2026.nama : BASELINE_2026.hypo;
     return { label: base.label, doc: base.doc, ...salesMeasures(b.id, base.from, base.to) };
   });
+  const costs = branches.map((b) => ({ label: b.plan.label, r: buildCostRatios(today.slice(0, 7), b.id) }));
   return <Client
+    costs={costs}
     unmatched={GOAL_PLAN.filter((p) => !branches.some((b) => b.plan.key === p.key)).map((p) => p.label)}
     targets={targets} backtest={backtest} digest={buildWeeklyDigest(monday)} monday={monday}
     groups={execGroups().length} weeklyEnabled={getState("weekly_enabled") === "1"} year={GOAL_YEAR} />;

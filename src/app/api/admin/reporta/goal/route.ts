@@ -2,14 +2,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { logPersonaAction } from "@/lib/db";
+import { setBand } from "@/lib/cost-guardrails";
 import { execGroups, seedGoalTargets, sendWeeklyDigest, setState } from "@/lib/corporate-goal";
 
 // Corporate goal monitor — owner only (C-level figures).
-//   POST {action: seed_targets {overwrite} | set_weekly {enabled} | send_now {monday}}
+//   POST {action: seed_targets {overwrite} | set_weekly {enabled} | send_now {monday} | set_band {code|PROFIT,min,max}}
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  action: z.enum(["seed_targets", "set_weekly", "send_now"]),
+  action: z.enum(["seed_targets", "set_weekly", "send_now", "set_band"]),
+  code: z.string().max(10).optional(), min: z.number().min(0).max(100).nullable().optional(), max: z.number().min(0).max(100).nullable().optional(),
   overwrite: z.boolean().optional(), enabled: z.boolean().optional(), monday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
 });
 
@@ -24,6 +26,11 @@ export async function POST(req: Request) {
     const r = seedGoalTargets(d.overwrite === true);
     logPersonaAction(user.id, "corporate_goal.seed_targets", 0);
     return NextResponse.json({ ok: true, result: r });
+  }
+  if (d.action === "set_band") {
+    if (!d.code || !setBand(d.code, d.min ?? null, d.max ?? null)) return NextResponse.json({ error: "invalid_band", message: "ช่วงไม่ถูกต้อง (ต่ำสุดต้องไม่เกินสูงสุด และอยู่ระหว่าง 0–100)" }, { status: 400 });
+    logPersonaAction(user.id, "corporate_goal.set_band", 0);
+    return NextResponse.json({ ok: true });
   }
   if (d.action === "set_weekly") {
     setState("weekly_enabled", d.enabled ? "1" : "0");

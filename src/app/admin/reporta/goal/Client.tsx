@@ -3,9 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
+import type { CostRatios } from "@/lib/cost-guardrails";
+import CostSection from "./CostSection";
 
 type Digest = { weekFrom: string; weekTo: string; month: string; branches: Array<{ label: string; weekSales: number; prevWeekSales: number; mtd: number; target: number | null; pctOfTarget: number | null; forecast: number | null; forecastPct: number | null; pacePct: number | null }>; total: { weekSales: number; mtd: number; target: number | null; forecast: number | null } };
 type Props = {
+  costs: Array<{ label: string; r: CostRatios }>;
   unmatched: string[]; year: number; groups: number; weeklyEnabled: boolean; monday: string; digest: Digest;
   targets: Array<{ name: string; label: string; annual: number; provisional: number[]; current: Array<number | null> }>;
   backtest: Array<{ label: string; doc: number; grossLessDiscount: number; nett: number; nettLessVatSc: number; gross: number; days: number }>;
@@ -82,6 +85,7 @@ export default function Client(p: Props) {
         </div>
         {p.groups === 0 && <p className="text-xs text-amber-700">ยังไม่มีกลุ่มผู้บริหารที่เปิดใช้นกฮูก พิมพ์ “@นกฮูก เปิดใช้กลุ่มนี้” ในกลุ่มก่อน</p>}
       </section>
+      <CostSection items={p.costs} busy={busy} onSave={(code, min, max) => post({ action: "set_band", code, min, max }, () => "บันทึกช่วงเกณฑ์แล้ว")} />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { getDb } from "./db";
 import { getMonthlyTargetFor, setMonthlyTargetFor } from "./salesa-db";
 import { sendLinePush } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
+import { buildCostRatios, costAlerts } from "./cost-guardrails";
 
 export const GOAL_YEAR = 2027;
 
@@ -80,6 +81,7 @@ export type BranchWeek = {
   weekSales: number; prevWeekSales: number;
   month: string; mtd: number; target: number | null; pctOfTarget: number | null;
   elapsedDays: number; dim: number; forecast: number | null; forecastPct: number | null; pacePct: number | null;
+  costAlerts: string[];   // cost lines over their band / profit under its band, month to date (bills arrive late, so read as a heads-up)
 };
 export type WeeklyDigest = { weekFrom: string; weekTo: string; month: string; branches: BranchWeek[]; total: { weekSales: number; prevWeekSales: number; mtd: number; target: number | null; forecast: number | null } };
 
@@ -101,7 +103,8 @@ export function buildWeeklyDigest(today: string): WeeklyDigest {
       branchId: b.id, name: b.name, label: b.plan.label, weekSales, prevWeekSales, month, mtd, target,
       pctOfTarget: target ? Math.round((mtd / target) * 100) : null, elapsedDays: elapsed, dim, forecast,
       forecastPct: target && forecast != null ? Math.round((forecast / target) * 100) : null,
-      pacePct: target ? Math.round((mtd / (target * (elapsed / dim))) * 100) : null
+      pacePct: target ? Math.round((mtd / (target * (elapsed / dim))) * 100) : null,
+      costAlerts: (() => { try { return costAlerts(buildCostRatios(month, b.id)); } catch { return []; } })()
     };
   });
   const sum = (f: (b: BranchWeek) => number) => branches.reduce((s, b) => s + f(b), 0);
@@ -126,6 +129,7 @@ export function digestFlex(d: WeeklyDigest): Flex {
     { type: "text", text: b.label, weight: "bold", size: "md", color: "#1a1a2e", margin: "lg" },
     { type: "text", text: `สัปดาห์นี้ ${baht(b.weekSales)} บาท ${delta(b.weekSales, b.prevWeekSales)}`.trim(), size: "sm", color: "#334155", wrap: true },
     { type: "text", text: `สะสมเดือนนี้ ${baht(b.mtd)}${b.target ? ` จากเป้า ${baht(b.target)} (${b.pctOfTarget}%)` : " (ยังไม่ได้ตั้งเป้า)"}`, size: "sm", color: "#334155", wrap: true },
+    ...(b.costAlerts.length ? [{ type: "text", text: `⚠ ต้นทุนหลุดเกณฑ์ (สะสมเดือนนี้): ${b.costAlerts.join(" · ")}`, size: "xs", color: "#b45309", wrap: true }] : []),
     ...(b.target ? [{ type: "text", text: `คาดสิ้นเดือน ${b.forecast == null ? "-" : baht(b.forecast)} (${b.forecastPct ?? "-"}% ของเป้า) · เทียบจังหวะ ${b.pacePct}%`, size: "sm", weight: "bold", color: pctColor(b.forecastPct), wrap: true }] : [])
   ]);
   const t = d.total;

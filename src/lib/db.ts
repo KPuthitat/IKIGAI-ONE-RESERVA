@@ -9074,6 +9074,14 @@ function runMigrations(db: Database.Database): void {
     "WHERE code = ?"
   );
   for (const [code, desc, mn, mx] of CAT_BENCHMARKS) setBench.run(desc, mn, mx, code);
+  // Owner 2026-11-25: restaurant cost bands (COGS 30–35, labor 15–20, rent 15–20, utilities 1–5, G&A 1–5). Moves a
+  // band only while it still holds the old seeded default, so a figure the owner edited is never overwritten.
+  const moveBench = db.prepare(
+    "UPDATE accounta_categories SET target_pct_min = ?, target_pct_max = ? WHERE code = ? AND target_pct_min = ? AND target_pct_max = ?"
+  );
+  for (const [code, oMn, oMx, nMn, nMx] of [["GD", 30, 40, 30, 35], ["LB", 18, 25, 15, 20], ["RT", 5, 10, 15, 20], ["UT", 2, 4, 1, 5], ["AO", 1, 3, 1, 5]] as const) {
+    moveBench.run(nMn, nMx, code, oMn, oMx);
+  }
 
   const pmCount = (db.prepare("SELECT COUNT(*) AS c FROM accounta_payment_methods").get() as { c: number }).c;
   if (pmCount === 0) {
