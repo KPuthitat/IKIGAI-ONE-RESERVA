@@ -143,6 +143,16 @@ export function ensureHealthReportSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_annual_checkup_links_ext ON annual_checkup_access_links(round_id, external_id);
 
+    -- What an employee agrees to share with HR (PDPA): 'followup' = HR may see that they are on the follow-up list (name + overall verdict, no values);
+    -- 'values' = HR may open their released report. Off by default, the employee changes it any time. Gateway-only.
+    CREATE TABLE IF NOT EXISTS annual_checkup_share_consents (
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      scope      TEXT NOT NULL CHECK (scope IN ('followup','values')),
+      granted_at TEXT,
+      revoked_at TEXT,
+      PRIMARY KEY (user_id, scope)
+    );
+
     -- Small settings: critical-value thresholds, the consultation link behind the SCAN ME code, …
     CREATE TABLE IF NOT EXISTS annual_checkup_config (
       key        TEXT PRIMARY KEY,

@@ -31,7 +31,7 @@ export default function AnnualCheckupPage() {
         <h1 className="text-2xl font-bold text-slate-800">ตรวจสุขภาพประจำปี</h1>
         <p className="text-sm text-slate-500">นำเข้ารายชื่อและรายการตรวจของรอบจากไฟล์ Excel — ดูตัวอย่างก่อนเสมอ ระบบไม่เดาแถวที่จับคู่ไม่ได้ และนำเข้าซ้ำได้โดยไม่เกิดข้อมูลซ้ำ</p>
       </div>
-      <div className="flex gap-2"><Link href="/admin/persona/annual-checkup/queue" className="btn-secondary text-sm">แก้ลำดับคิว / เวลานัด</Link><Link href="/admin/persona/annual-checkup/stations" className="btn-secondary text-sm">สถานีตรวจ</Link></div>
+      <div className="flex gap-2 flex-wrap">{user.role === "super_admin" && <><Link href="/admin/persona/annual-checkup/permissions" className="btn-secondary text-sm">สิทธิ์ผู้ลงผลและแพทย์</Link><Link href="/admin/persona/annual-checkup/settings" className="btn-secondary text-sm">ตั้งค่าเล่มผลตรวจ (ค่าอ้างอิง ข้อความ)</Link></>}<Link href="/admin/persona/annual-checkup/queue" className="btn-secondary text-sm">แก้ลำดับคิว / เวลานัด</Link><Link href="/admin/persona/annual-checkup/stations" className="btn-secondary text-sm">สถานีตรวจ</Link></div>
       {isRecorderEligible(user.id) ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <Link href="/staff/health/annual-checkup/queue"
