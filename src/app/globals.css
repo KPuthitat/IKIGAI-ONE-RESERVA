@@ -354,3 +354,18 @@ header.bg-coffee-gradient { border-radius: 0 0 1.5rem 1.5rem; }
 
 /* Main action = teal (OMNICHECK "บันทึก"); purple stays for links, active tabs and the header. */
 .btn-primary { background-color: #14B8A6; background-image: linear-gradient(100deg, #1CC4B1, #0FA596); }
+
+/* NOKHOOK OS signature gradient (app header, primary hero strips) */
+.nk-gradient { background: linear-gradient(100deg,#7A5AE6 0%,#5C86EA 48%,#33C6B5 100%); }
+
+/* ── Thai line breaking ──
+   Thai has no spaces, so the browser breaks at dictionary words. Two things keep paragraphs tidy:
+   · text-wrap: pretty  → no one-word / one-syllable last line (orphan) in running text, inherited everywhere
+   · text-wrap: balance → short multi-line labels (headings, buttons, chips, table heads) split into even lines
+   Long unbroken strings (codes, URLs) may still break so nothing overflows. Dates, times and "number unit" pairs are glued with
+   no-break spaces in the code that prints them (see lib/text.ts). */
+body { text-wrap: pretty; overflow-wrap: break-word; }
+h1, h2, h3, h4, summary, th, label, button, .btn, .btn-primary, .btn-secondary, .chip, .text-balance { text-wrap: balance; }
+.nowrap-th { white-space: nowrap; }
+/* names and labels are set in bold / semibold / medium: balance them so a two-line name is not "long line + one word" */
+[class~="font-bold"], [class~="font-semibold"], [class~="font-medium"], [class~="font-extrabold"] { text-wrap: balance; }

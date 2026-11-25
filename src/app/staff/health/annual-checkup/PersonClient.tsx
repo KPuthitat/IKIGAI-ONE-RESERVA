@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { glueParen } from "@/lib/text";
 import { useRouter } from "next/navigation";
 import { Banner, INTERP, INTERP_TH, STATUS_CLS, STATUS_TH, post, upload } from "./shared";
 
@@ -59,6 +60,7 @@ function TestRow({ r, doctor, isApprover, onDone }: { r: PersonRow; doctor: bool
   const [reason, setReason] = useState(r.waive_reason ?? "");
   const [lab, setLab] = useState(r.external_lab_name ?? "");
   const [revising, setRevising] = useState(false);
+  const [open, setOpen] = useState(false);
   const [why, setWhy] = useState("");
   const [busy, setBusy] = useState(false);
   const locked = r.result_status === "verified" || r.result_status === "released";
@@ -78,10 +80,26 @@ function TestRow({ r, doctor, isApprover, onDone }: { r: PersonRow; doctor: bool
   const badge = r.order_status === "waived" ? <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[11px] text-slate-700">งดตรวจ</span>
     : r.order_status === "external_lab" ? <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[11px] text-violet-700">แล็บนอก</span> : null;
 
+  // a verified / released result is shown as one read-only line; the form opens only when someone needs to revise it
+  if (locked && !open) {
+    const shown = r.value_num != null ? String(r.value_num) : r.value_text ?? (r.has_file ? "ไฟล์แนบ" : "หลายรายการ");
+    return (
+      <div className="card !py-3 flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-slate-800 break-words">{glueParen(r.name_th)}</div>
+          <div className="text-xs text-slate-500">{r.ref_text ? `อ้างอิง ${r.ref_text} · ` : ""}{r.result_status ? STATUS_TH[r.result_status] : ""}{r.revision && r.revision > 1 ? ` · ฉบับที่ ${r.revision}` : ""}{r.interpretation ? ` · ${INTERP_TH[r.interpretation]}` : ""}</div>
+        </div>
+        <div className="text-right shrink-0"><div className="font-bold text-slate-900 whitespace-pre-line">{shown}</div><div className="text-[11px] text-slate-500">{r.unit ?? r.test_unit ?? ""}</div></div>
+        <button type="button" className="btn-secondary text-xs min-h-[44px] px-3 shrink-0" onClick={() => setOpen(true)} aria-label={`รายละเอียด ${r.name_th}`}>รายละเอียด</button>
+      </div>
+    );
+  }
+
   return (
     <div className="card space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="font-medium text-slate-800">{r.name_th}</div>
+        <div className="font-medium text-slate-800">{glueParen(r.name_th)}</div>
+        {locked && <button type="button" className="ml-auto text-xs underline text-slate-500 min-h-[44px]" onClick={() => setOpen(false)}>ย่อ</button>}
         {badge}
         {r.result_status && <span className={`rounded px-1.5 py-0.5 text-[11px] ${STATUS_CLS[r.result_status]}`}>{STATUS_TH[r.result_status]}{r.revision && r.revision > 1 ? ` · ฉบับที่ ${r.revision}` : ""}</span>}
         {!r.result_status && r.order_status !== "waived" && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">ยังไม่ลงผล</span>}

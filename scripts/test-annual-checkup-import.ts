@@ -77,7 +77,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
 
   // ── parser ──
   const p0 = parse(clean);
-  ok("parser reads 5 rows: 3 staff + 2 placeholders, 20 test columns, no file issues", p0.people.length === 5 && p0.people.filter((p) => p.kind === "placeholder").length === 2 && p0.testHeaders.length === 20 && p0.issues.length === 0);
+  ok("parser reads 5 rows: 3 staff + 2 placeholders, 20 test columns, no file issues", p0.people.length === 5 && p0.people.filter((p) => p.kind === "placeholder").length === 2 && p0.testHeaders.length === tests.length && p0.issues.length === 0);
   ok("parser reads ✓ / งด / แล็บนอก and the lung flag", p0.people[1].marks[T("HAV").name_th] === "waived" && p0.people[1].marks[T("STOOL").name_th] === "external_lab" && p0.people[0].marks[T("CXR").name_th] === "ordered" && p0.people[2].lungExtra);
   ok("parser reads the totals row and stops there (summary tables below are ignored)", p0.fileTotals?.[T("CXR").name_th] === 5 && p0.people.length === 5);
   ok("parser reads the programme per company, incl. 'เฉพาะคนที่ระบุ'", p0.programmes.length === 2 && p0.programmes[1].tests[T("SPIRO").name_th] === "selected" && p0.programmes[0].tests[T("CXR").name_th] === "all");
@@ -97,7 +97,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
     return a.companyId === coClinic && !a.external && b.companyId === null && b.external && plan1.warnings.some((w) => w.includes(OUT));
   })());
   ok("plan: order counts = every ✓ / งด / แล็บนอก of the 5 rows (5×14 basic + HBsAg + stool + SPIRO − 1 swapped)", plan1.orders.add === 5 * 14 + 1 + 1 + 1 + 1 && plan1.orders.change + plan1.orders.same + plan1.orders.remove + plan1.orders.conflict === 0);
-  ok("plan: per-test counts reconcile with the file's own totals row (no warning)", plan1.perTest.length === 20 && !plan1.warnings.some((w) => /แถวรวมของไฟล์/.test(w)));
+  ok("plan: per-test counts reconcile with the file's own totals row (no warning)", plan1.perTest.length === tests.length && !plan1.warnings.some((w) => /แถวรวมของไฟล์/.test(w)));
 
   // ── never import on a guess ──
   const messy: Row[] = [

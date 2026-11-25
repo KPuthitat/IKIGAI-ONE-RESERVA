@@ -139,6 +139,70 @@ export function parseLabWorkbook(buf: Buffer | ArrayBuffer, items: DbItem[]): Pa
   return out;
 }
 
+// ── the analyser's own file (ReportBackup) ──────────────────────────────────────────────────────────────
+// Blocks of "Sample ID=TSR69-0004-R" (and "Patient ID=…") followed by one result per line ("GLU 95.2 mg/dL", "CHOL=180", "TRI,120"…).
+// The format is read tolerantly; anything it cannot place is listed, never guessed. The tube letter says which analyser run the value is from:
+// G = glucose tube (only GLU), R = the other chemistry. A value from the wrong tube is not imported.
+export const MACHINE_MAP: Record<string, string> = { GLU: "FBS", CHOL: "CHOL", TRI: "TG", BUN: "BUN", CRE: "CREAT", URIC: "URIC", AST: "AST", ALT: "ALT" };
+const NOT_RESULT = new Set(["DATE", "TIME", "RACK", "POS", "POSITION", "CUP", "OPERATOR", "SEQ", "NO", "ID", "FLAG", "SAMPLE", "PATIENT", "SEX", "AGE", "TYPE", "NAME", "VERSION", "PAGE", "TEST", "UNIT"]);
+const CODE_LIKE = /^[A-Z]{2,6}\d{2}-\d{2,6}(?:-[A-Z]{1,2})?$/i;
+
+export function parseReportBackup(text: string, items: DbItem[]): ParsedLab {
+  const out: ParsedLab = { sheet: "ReportBackup", columns: [], rows: [], issues: [], hasName: false };
+  const byCode = new Map(items.map((i) => [i.code, i]));
+  const colOf = new Map<string, number>();
+  const col = (m: string) => {
+    let c = colOf.get(m);
+    if (c == null) {
+      c = out.columns.length; colOf.set(m, c);
+      const target = MACHINE_MAP[m];
+      out.columns.push(target && byCode.has(target) ? { col: c, header: m, itemCode: target, why: "mapped" } : { col: c, header: m, itemCode: null, why: "unknown" });
+    }
+    return c;
+  };
+  type Blk = { sample: string; patient: string; line: number; vals: Array<{ m: string; v: string }> };
+  const blocks: Blk[] = [];
+  let cur: Blk | null = null;
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const l = raw.replace(/\u0000/g, "").trim();
+    if (!l) return;
+    const s = /sample\s*(?:id|no)\s*[=:]\s*([^\s,;\t]+)/i.exec(l);
+    if (s) {
+      cur = { sample: s[1].trim(), patient: "", line: i + 1, vals: [] }; blocks.push(cur);
+      const p = /patient\s*(?:id|name)\s*[=:]\s*(.*)$/i.exec(l.slice(s.index + s[0].length));
+      if (p) cur.patient = p[1].replace(/^[,;\t\s]+|[,;\t\s]+$/g, "");
+      return;
+    }
+    const p = /^patient\s*(?:id|name)\s*[=:]\s*(.*)$/i.exec(l);
+    if (p) { if (cur) cur.patient = p[1].trim(); return; }
+    const r = /^([A-Za-z][A-Za-z0-9_.\-/%]{0,11})\s*[=:,\t ]\s*([-+]?\d+(?:[.,]\d+)?)(?![\d-])/.exec(l);
+    if (!r || !cur) return;
+    const m = r[1].toUpperCase();
+    if (NOT_RESULT.has(m)) return;
+    cur.vals.push({ m, v: r[2].replace(",", ".") });
+  });
+  if (blocks.length === 0) { out.issues.push("ไม่พบบรรทัด \"Sample ID=…\" ในไฟล์นี้ — ไม่ใช่ไฟล์ ReportBackup หรือรูปแบบต่างไปจากที่รองรับ"); return out; }
+  const rows = new Map<string, LabRow>();
+  for (const b of blocks) {
+    const tube = /^([A-Z]{2,6}\d{2}-\d{2,6})-([A-Z]{1,2})$/i.exec(b.sample);
+    const code = normExamCode(b.sample);
+    const letter = tube ? tube[2].toUpperCase() : null;
+    const name = b.patient && !CODE_LIKE.test(b.patient) && /[ก-๙\s]/.test(b.patient) ? b.patient : "";
+    let row = rows.get(code);
+    if (!row) { row = { sheetRow: b.line, code, name, cells: {} }; rows.set(code, row); }
+    if (name) { row.name = name; out.hasName = true; }
+    for (const { m, v } of b.vals) {
+      const c = col(m);
+      if (letter && ((letter === "G") !== (m === "GLU")) && m in MACHINE_MAP) { out.issues.push(`บรรทัด ${b.line}: ${code} ค่า ${m} มาจากหลอด ${letter} ซึ่งไม่ตรงกับชนิดหลอด (G = น้ำตาล, R = เคมีอื่น) — ไม่นำเข้าค่านี้`); continue; }
+      if (row.cells[c] != null && Number(row.cells[c]) !== Number(v)) { out.issues.push(`บรรทัด ${b.line}: ${code} ค่า ${m} มีสองค่าไม่ตรงกัน (${row.cells[c]} และ ${v}) — ไม่นำเข้าค่านี้`); row.cells[c] = ""; (row as LabRow & { dup?: Set<number> }).dup = ((row as LabRow & { dup?: Set<number> }).dup ?? new Set()).add(c); continue; }
+      if ((row as LabRow & { dup?: Set<number> }).dup?.has(c)) continue;
+      row.cells[c] = v;
+    }
+  }
+  for (const r of rows.values()) { for (const k of Object.keys(r.cells)) if (r.cells[Number(k)] === "") delete r.cells[Number(k)]; out.rows.push(r); }
+  return out;
+}
+
 // ── the round's people and their codes ──────────────────────────────────────────────────────────────────
 export type Subject = { key: string; userId: number | null; externalId: number | null; label: string; name: string; employeeCode: string | null; sex: "M" | "F" | null; dob: string | null; examCode: string | null };
 

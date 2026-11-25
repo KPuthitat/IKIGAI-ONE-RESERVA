@@ -5,31 +5,33 @@ import { useRouter } from "next/navigation";
 import { post } from "./shared";
 import type { LinkInfo } from "@/lib/annual-checkup-db";
 
-const when = (s: string) => new Date(s.replace(" ", "T") + "Z").toLocaleString("th-TH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
+const when = (s: string) => new Date(s.replace(" ", "T") + "Z").toLocaleString("th-TH", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }).replace(/(\d{1,2}) (\S+) (\d{4})/, "$1\u00A0$2\u00A0$3");
 
-export default function AccessLinkPanel({ roundId, externalId, links, hasDob }: { roundId: number; externalId: number; links: LinkInfo[]; hasDob: boolean }) {
+export default function AccessLinkPanel({ roundId, externalId, links, hasProof }: { roundId: number; externalId: number; links: LinkInfo[]; hasProof: boolean }) {
   const router = useRouter();
-  const [days, setDays] = useState(14);
+  const [days, setDays] = useState(30);
+  const [reissue, setReissue] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const now = new Date().toISOString().slice(0, 19).replace("T", " ");
   async function create() {
     setBusy(true); setMsg(null); setUrl(null);
-    const r = await post("access-link", { action: "create", roundId, externalId, days });
+    const r = await post("access-link", { action: "create", roundId, externalId, days, reissue });
     setBusy(false);
-    if (!r.ok) { setMsg(r.error === "dob_required" ? "ยังไม่มีวันเกิดของคนนี้ กรุณาใส่วันเกิดก่อน" : r.message ?? "สร้างลิงก์ไม่สำเร็จ"); return; }
+    if (!r.ok) { setMsg(r.error === "dob_required" ? "ยังไม่มีวันเกิดหรือเลขบัตร 4 ตัวท้ายของคนนี้ กรุณาใส่อย่างใดอย่างหนึ่งก่อน" : r.message ?? "สร้างลิงก์ไม่สำเร็จ"); return; }
     setUrl(r.url as string); router.refresh();
   }
   async function revoke(id: number) { if (!window.confirm("ยกเลิกลิงก์นี้?")) return; await post("access-link", { action: "revoke", linkId: id }); router.refresh(); }
   return (
     <div className="card space-y-2">
       <div className="font-semibold text-slate-800">ลิงก์ดูผลสำหรับผู้ที่ไม่มีบัญชี</div>
-      <p className="text-xs text-slate-500">สร้างลิงก์เฉพาะคนนี้ ส่งให้เจ้าตัว เปิดได้เมื่อกรอกวันเดือนปีเกิดถูกต้อง หมดอายุตามที่เลือก กรอกผิด 5 ครั้งล็อก 30 นาที ลิงก์แสดงให้เห็นครั้งเดียว</p>
-      {!hasDob && <p className="text-sm text-amber-800">ยังไม่มีวันเกิดของคนนี้ในระบบ จึงสร้างลิงก์ไม่ได้</p>}
+      <p className="text-xs text-slate-500">สร้างลิงก์เฉพาะคนนี้ ส่งให้เจ้าตัว เปิดได้เมื่อกรอกวันเดือนปีเกิด หรือเลขบัตร 4 ตัวท้าย ถูกต้อง หมดอายุตามที่เลือก (ปกติ 30 วัน) กรอกผิด 5 ครั้งล็อก 30 นาที ลิงก์แสดงให้เห็นครั้งเดียว</p>
+      {!hasProof && <p className="text-sm text-amber-800">ยังไม่มีวันเกิดหรือเลขบัตร 4 ตัวท้ายของคนนี้ในระบบ จึงสร้างลิงก์ไม่ได้</p>}
       <div className="flex flex-wrap items-center gap-2">
         <select className="input min-h-[44px]" value={days} onChange={(e) => setDays(Number(e.target.value))}>{[3, 7, 14, 30, 60, 90].map((n) => <option key={n} value={n}>หมดอายุใน {n} วัน</option>)}</select>
-        <button type="button" className="btn-primary min-h-[44px] px-4" disabled={busy || !hasDob} onClick={create}>สร้างลิงก์ใหม่</button>
+        <button type="button" className="btn-primary min-h-[44px] px-4" disabled={busy || !hasProof} onClick={create}>{reissue ? "ออกลิงก์ใหม่" : "สร้างลิงก์ใหม่"}</button>
+        <label className="flex items-center gap-2 text-sm min-h-[44px]"><input type="checkbox" checked={reissue} onChange={(e) => setReissue(e.target.checked)} />ยกเลิกลิงก์เดิมที่ยังใช้ได้ทั้งหมด (กรณีลิงก์หลุด/ส่งผิดคน)</label>
       </div>
       {msg && <div className="text-sm text-rose-700">{msg}</div>}
       {url && <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm break-all"><b>ลิงก์ (คัดลอกตอนนี้ จะไม่แสดงอีก):</b><div className="font-mono text-xs mt-1 select-all">{url}</div></div>}

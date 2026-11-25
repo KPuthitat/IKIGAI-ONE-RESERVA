@@ -153,6 +153,31 @@ export function ensureHealthReportSchema(db: Database.Database): void {
       PRIMARY KEY (user_id, scope)
     );
 
+    -- Identity and contact details of a person from an outside company (health report, external examinees). One row per annual_checkup_externals
+    -- row; kept apart from it because it is personal data: read and written only through the gateway (check:risks). Never the full ID number:
+    -- only the last 4 characters, enough to confirm who is opening a link. consent_release_to_sponsor is off until the person agrees.
+    CREATE TABLE IF NOT EXISTS annual_checkup_external_details (
+      external_id                 INTEGER PRIMARY KEY REFERENCES annual_checkup_externals(id) ON DELETE CASCADE,
+      title                       TEXT,
+      first_name                  TEXT,
+      last_name                   TEXT,
+      phone                       TEXT,
+      email                       TEXT,
+      id_last4                    TEXT CHECK (id_last4 IS NULL OR length(id_last4) = 4),
+      sponsor_employee_code       TEXT,
+      consent_pdpa_at             TEXT,
+      consent_release_to_sponsor  INTEGER NOT NULL DEFAULT 0 CHECK (consent_release_to_sponsor IN (0,1)),
+      created_by                  INTEGER REFERENCES users(id),
+      created_at                  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at                  TEXT
+    );
+
+    -- The short code a paying company has in examination codes (TSR69-0004 = Transistor Rich, 2569, person 4). Editable; used to make the code of an outside examinee.
+    CREATE TABLE IF NOT EXISTS annual_checkup_payer_prefixes (
+      payer_name TEXT PRIMARY KEY,
+      prefix     TEXT NOT NULL CHECK (prefix GLOB '[A-Z][A-Z][A-Z]*' AND length(prefix) BETWEEN 2 AND 6)
+    );
+
     -- Small settings: critical-value thresholds, the consultation link behind the SCAN ME code, …
     CREATE TABLE IF NOT EXISTS annual_checkup_config (
       key        TEXT PRIMARY KEY,
@@ -185,6 +210,9 @@ export function ensureHealthReportSchema(db: Database.Database): void {
       for (const r of it.refs ?? []) addRef.run(id, r.sex, r.ageMin ?? null, r.ageMax ?? null, r.low ?? null, r.high ?? null, r.lowIncl === false ? 0 : 1, r.highIncl === false ? 0 : 1);
     });
     db.prepare("INSERT OR IGNORE INTO annual_checkup_config (key, value) VALUES ('critical_enzyme_multiple', '5')").run();
+    db.prepare("INSERT OR IGNORE INTO annual_checkup_config (key, value) VALUES ('ldl_calc_mode', '0')").run();
+    const pp = db.prepare("INSERT OR IGNORE INTO annual_checkup_payer_prefixes (payer_name, prefix) VALUES (?, ?)");
+    pp.run('บริษัท ทรานซิสเตอร์ ริช จำกัด', 'TSR'); pp.run('บริษัท ไพร์ม วัน อาร์คิเทคท์ จำกัด', 'POA');
   })();
 
   // The booklet's "what is this test?" texts. By key and only when the key is missing, so an edit is never overwritten.

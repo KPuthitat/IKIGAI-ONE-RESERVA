@@ -12,12 +12,13 @@ import * as XLSX from "xlsx";
 export type ParsedMark = "ordered" | "waived" | "external_lab";
 export type ParsedPerson = {
   sheetRow: number;                       // 1-based row in the sheet (for messages)
-  kind: "employee" | "placeholder";       // placeholder = "รอเพิ่มรายชื่อ คนที่ N": no name yet, no account
+  kind: "employee" | "placeholder" | "named";   // named = a named row with no employee code (maybe an outside examinee); placeholder = "รอเพิ่มรายชื่อ คนที่ N": no name yet, no account
   code: string | null;
   name: string;
   seq: number | null;                     // the "ลำดับ" column = the person's starting queue number (blank / not a positive whole number → null)
   payer: string;
   placeholderNo: number | null;           // the N of "คนที่ N"
+  dob: string | null;                     // optional "วันเกิด" column, as yyyy-mm-dd
   lungExtra: boolean;                     // ticked "ตรวจปอดเพิ่ม"
   marks: Record<string, ParsedMark>;      // by test name_th (the column header)
 };
@@ -25,6 +26,7 @@ export type ParsedProgramme = { payer: string; tests: Record<string, "all" | "se
 export type ParsedWorkbook = {
   testHeaders: string[];                  // the test columns, in file order
   people: ParsedPerson[];
+  named: ParsedPerson[];                  // named rows without a code: never matched to staff, offered as outside examinees by the importer
   programmes: ParsedProgramme[];
   fileTotals: Record<string, number> | null;     // the "รวมจำนวนคนที่ตรวจแต่ละรายการ" row, by test name_th
   detailNames: Map<string, string>;       // code → "prefix first last" from the staff-details sheet
@@ -46,10 +48,21 @@ function sheetRows(wb: XLSX.WorkBook, name: string): Rows | null {
   if (!ws) return null;
   return (XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" }) as unknown[][]).map((r) => r.map(str));
 }
+/** "1985-03-02", "02/03/2528" (Buddhist year) or "2/3/1985" → yyyy-mm-dd; anything else → null (never guessed). */
+export function parseDob(v: string): string | null {
+  const t = v.trim();
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t), y: number, mo: number, d: number;
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else if ((m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(t))) { d = +m[1]; mo = +m[2]; y = +m[3]; }
+  else return null;
+  if (y > 2400) y -= 543;
+  if (y < 1900 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
 const headerRowIndex = (rows: Rows, needs: string[]): number => rows.findIndex((r) => needs.every((n) => r.includes(n)));
 
 export function parseCheckupWorkbook(buf: Buffer | ArrayBuffer): ParsedWorkbook {
-  const out: ParsedWorkbook = { testHeaders: [], people: [], programmes: [], fileTotals: null, detailNames: new Map(), skippedNoCode: [], issues: [] };
+  const out: ParsedWorkbook = { testHeaders: [], people: [], named: [], programmes: [], fileTotals: null, detailNames: new Map(), skippedNoCode: [], issues: [] };
   let wb: XLSX.WorkBook;
   try { wb = XLSX.read(buf, { type: "buffer" }); }
   catch { out.issues.push({ sheet: "", row: null, message: "อ่านไฟล์ไม่ได้ (ต้องเป็นไฟล์ Excel .xlsx)" }); return out; }
@@ -69,7 +82,7 @@ export function parseCheckupWorkbook(buf: Buffer | ArrayBuffer): ParsedWorkbook 
   if (h < 0) { out.issues.push({ sheet: peopleName, row: null, message: "ไม่พบแถวหัวตาราง (รหัสพนักงาน / ชื่อ-นามสกุล)" }); return out; }
   const header = rows[h];
   const col = (name: string) => header.indexOf(name);
-  const cSeq = col("ลำดับ"), cCode = col("รหัสพนักงาน"), cName = col("ชื่อ-นามสกุล"), cPayer = col("บริษัทที่รับค่าใช้จ่าย"), cLung = col(LUNG_FLAG);
+  const cSeq = col("ลำดับ"), cCode = col("รหัสพนักงาน"), cName = col("ชื่อ-นามสกุล"), cPayer = col("บริษัทที่รับค่าใช้จ่าย"), cLung = col(LUNG_FLAG), cDob = col("วันเกิด");
   if (cPayer < 0) out.issues.push({ sheet: peopleName, row: h + 1, message: "ไม่พบคอลัมน์ “บริษัทที่รับค่าใช้จ่าย”" });
   // test columns = everything after the payer / lung-flag columns up to the count column ("จำนวนรายการ")
   const cEnd = header.findIndex((x, i) => i > Math.max(cPayer, cLung) && /^จำนวนรายการ/.test(x));
@@ -101,10 +114,15 @@ export function parseCheckupWorkbook(buf: Buffer | ArrayBuffer): ParsedWorkbook 
       else out.issues.push({ sheet: peopleName, row: r + 1, message: `ค่าในช่อง “${c.name}” ของ ${name || row[cCode]} ไม่รู้จัก: “${v}” (ใช้ได้ ✓ / งด / แล็บนอก / ว่าง)` });
     }
     // a named employee row without a code is left out, never matched on the name alone (placeholders have no code by design)
-    if (!ph && !row[cCode]) { out.skippedNoCode.push({ sheetRow: r + 1, name }); continue; }
     const seqNum = cSeq >= 0 && /^\d+$/.test(row[cSeq] ?? "") ? Number(row[cSeq]) : null;
+    const dob = cDob >= 0 ? parseDob(row[cDob] ?? "") : null;
+    if (!ph && !row[cCode]) {
+      out.skippedNoCode.push({ sheetRow: r + 1, name });
+      out.named.push({ sheetRow: r + 1, kind: "named", code: null, name, seq: seqNum && seqNum > 0 ? seqNum : null, payer: cPayer >= 0 ? row[cPayer] ?? "" : "", placeholderNo: null, dob, lungExtra: cLung >= 0 && row[cLung] === "ตรวจ", marks });
+      continue;
+    }
     out.people.push({
-      sheetRow: r + 1, kind: ph ? "placeholder" : "employee", code: row[cCode] || null, name, seq: seqNum && seqNum > 0 ? seqNum : null, payer: cPayer >= 0 ? row[cPayer] ?? "" : "",
+      sheetRow: r + 1, kind: ph ? "placeholder" : "employee", dob, code: row[cCode] || null, name, seq: seqNum && seqNum > 0 ? seqNum : null, payer: cPayer >= 0 ? row[cPayer] ?? "" : "",
       placeholderNo: ph && ph[1] ? Number(ph[1]) : null, lungExtra: cLung >= 0 && row[cLung] === "ตรวจ", marks
     });
   }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db";
-import { getSubjectClinical, getSubjectDob, getSubjectHeader, isAnnualCheckupInvalid, parseSubjectKey } from "@/lib/annual-checkup-db";
+import { getSubjectClinical, getSubjectDob, getSubjectHeader, isAnnualCheckupInvalid, isLdlAutoOn, parseSubjectKey } from "@/lib/annual-checkup-db";
 import { requireClinicalUser } from "@/lib/annual-checkup-api";
 import { fileLink } from "@/lib/annual-checkup-session";
 import { ageOn } from "@/lib/health-report/interpret";
@@ -38,7 +38,7 @@ export default function EntryPage({ params }: { params: { roundId: string; key: 
       </div>
       {tabs.length === 0
         ? <div className="card text-sm text-slate-500">คนนี้ยังไม่มีรายการตรวจที่กรอกในหน้านี้ได้</div>
-        : <EntryClient tabs={tabs} sex={header.sex} age={age} enzymeMultiple={Number.isFinite(mult) && mult > 0 ? mult : 5} />}
+        : <EntryClient tabs={tabs} sex={header.sex} age={age} ldlAuto={isLdlAutoOn()} enzymeMultiple={Number.isFinite(mult) && mult > 0 ? mult : 5} />}
     </div>
   );
 }

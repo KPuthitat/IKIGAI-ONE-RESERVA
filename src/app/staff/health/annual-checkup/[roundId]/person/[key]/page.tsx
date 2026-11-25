@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { glueCompany } from "@/lib/text";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db";
-import { getSubjectClinical, getSubjectDob, getSubjectHeader, isAnnualCheckupInvalid, isApproverUser, listAccessLinks, parseSubjectKey } from "@/lib/annual-checkup-db";
+import { getSubjectClinical, getExternalDetails, getSubjectDob, getSubjectHeader, isAnnualCheckupInvalid, isApproverUser, listAccessLinks, parseSubjectKey } from "@/lib/annual-checkup-db";
 import AccessLinkPanel from "../../../AccessLinkPanel";
 import { isUnlocked, requireClinicalUser, unlockExpiry } from "@/lib/annual-checkup-api";
 import { fileLink } from "@/lib/annual-checkup-session";
@@ -41,20 +42,26 @@ export default function PersonPage({ params }: { params: { roundId: string; key:
   const conclusion = clinical.conclusion ? { summary: clinical.conclusion.summary as "normal" | "abnormal" | "follow_up" | null, doctor_comment: clinical.conclusion.doctor_comment as string | null, released_at: clinical.conclusion.released_at as string | null } : null;
   return (
     <div className="space-y-4">
-      <Link href={`/staff/health/annual-checkup/${roundId}`} className="text-sm text-slate-500 hover:text-brand">← กลับรายชื่อ</Link>
-      <div>
-        <h1 className="text-xl font-bold text-slate-800">{header.label}</h1>
-        <p className="text-sm text-slate-500">{header.code ?? "ผู้เข้าตรวจภายนอก (ไม่มีบัญชี)"} · ผู้จ่าย: {header.payer ?? "—"}</p>
+      <Link href={`/staff/health/annual-checkup/${roundId}`} className="text-sm text-slate-500 hover:text-brand min-h-[44px] inline-flex items-center">← กลับรายชื่อ</Link>
+      <div className="card space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-xl font-bold text-slate-800">{header.label}</h1>
+          {header.kind === "external" && <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] text-sky-800">ภายนอก</span>}
+          {conclusion?.released_at ? <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs text-emerald-800">เปิดผลแล้ว</span> : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600">ยังไม่เปิดผล</span>}
+        </div>
+        <p className="text-sm text-slate-500">{header.code ?? "ผู้เข้าตรวจภายนอก (ไม่มีบัญชี)"} · ผู้จ่าย: {header.payer ? glueCompany(header.payer) : "—"}</p>
+        <div className="grid gap-2 pt-2 sm:grid-cols-2">
+          <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/entry`} className="btn-primary min-h-[48px] inline-flex items-center justify-center text-sm sm:col-span-2">กรอกผลตามหมวดของเล่ม</Link>
+          <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/review`} className="btn-secondary min-h-[44px] inline-flex items-center justify-center text-sm">แพทย์ตรวจสอบ / เขียนสรุป</Link>
+          {conclusion?.released_at && <a href={`/api/annual-checkup/report-pdf?roundId=${roundId}&subject=${params.key}`} target="_blank" rel="noopener" className="btn-secondary min-h-[44px] inline-flex items-center justify-center text-sm">เล่มผล PDF (A5)</a>}
+          {header.kind === "external" && conclusion?.released_at && <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/report`} className="btn-secondary min-h-[44px] inline-flex items-center justify-center text-sm sm:col-span-2" title="ให้ผู้รับการตรวจ ไม่ส่งบริษัท — บริษัทได้สรุปสถานะเท่านั้น">พิมพ์รายงาน A4 ให้ผู้รับการตรวจ</Link>}
+        </div>
       </div>
-      {header.kind === "external" && conclusion?.released_at && (
-        <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/report`} className="btn-secondary text-sm inline-block">พิมพ์รายงานผลตรวจ (A4) ส่งบริษัทผู้จ่าย</Link>
-      )}
-      <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/entry`} className="btn-primary text-sm inline-block min-h-[44px] leading-[44px]">กรอกผลแบบแท็บตามหมวดของเล่ม</Link>
-      <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/review`} className="btn-secondary text-sm inline-block min-h-[44px] leading-[44px] ml-2">หน้าแพทย์ตรวจสอบและเขียนสรุปตามหมวด</Link>
       {header.kind === "external" && subject.externalId != null && conclusion?.released_at && (
-        <AccessLinkPanel roundId={roundId} externalId={subject.externalId} links={listAccessLinks(user, roundId, subject.externalId)} hasDob={!!getSubjectDob(user, subject)} />
+        <details className="space-y-2"><summary className="cursor-pointer select-none card !py-3 min-h-[44px] flex items-center text-sm font-semibold text-slate-800 list-none">ลิงก์ดูผลสำหรับผู้ที่ไม่มีบัญชี ▾</summary>
+          <AccessLinkPanel roundId={roundId} externalId={subject.externalId} links={listAccessLinks(user, roundId, subject.externalId)} hasProof={(() => { const d = getExternalDetails(user, subject.externalId as number); return !!(d?.dob || d?.id_last4) || !!getSubjectDob(user, subject); })()} />
+        </details>
       )}
-      {conclusion?.released_at && <a href={`/api/annual-checkup/report-pdf?roundId=${roundId}&subject=${params.key}`} target="_blank" rel="noopener" className="btn-secondary text-sm inline-block min-h-[44px] leading-[44px] ml-2">ดาวน์โหลดเล่มผล PDF (A5)</a>}
       <SubmitPanel roundId={roundId} subject={params.key} submission={clinical.submission} released={!!conclusion?.released_at}
         allRecorded={rows.filter((x) => x.order_status !== "waived").every((x) => x.result_id != null)} />
       {approver && <UnlockPanel unlockedUntil={unlockExpiry(user)} />}

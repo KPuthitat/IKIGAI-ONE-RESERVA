@@ -31,7 +31,17 @@ export default function AnnualCheckupPage() {
         <h1 className="text-2xl font-bold text-slate-800">ตรวจสุขภาพประจำปี</h1>
         <p className="text-sm text-slate-500">นำเข้ารายชื่อและรายการตรวจของรอบจากไฟล์ Excel — ดูตัวอย่างก่อนเสมอ ระบบไม่เดาแถวที่จับคู่ไม่ได้ และนำเข้าซ้ำได้โดยไม่เกิดข้อมูลซ้ำ</p>
       </div>
-      <div className="flex gap-2 flex-wrap">{user.role === "super_admin" && <><Link href="/admin/persona/annual-checkup/permissions" className="btn-secondary text-sm">สิทธิ์ผู้ลงผลและแพทย์</Link><Link href="/admin/persona/annual-checkup/settings" className="btn-secondary text-sm">ตั้งค่าเล่มผลตรวจ (ค่าอ้างอิง ข้อความ)</Link></>}<Link href="/admin/persona/annual-checkup/queue" className="btn-secondary text-sm">แก้ลำดับคิว / เวลานัด</Link><Link href="/admin/persona/annual-checkup/stations" className="btn-secondary text-sm">สถานีตรวจ</Link></div>
+      <section className="card space-y-2" aria-label="ตั้งค่าและจัดการรอบ">
+        <div className="text-sm font-semibold text-slate-800">ตั้งค่าและจัดการ</div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {([
+            ...(user.role === "super_admin" ? [["/admin/persona/annual-checkup/permissions", "สิทธิ์ผู้ลงผลและแพทย์", "ใครลงผลได้ ใครเป็นแพทย์ผู้อนุมัติ"], ["/admin/persona/annual-checkup/settings", "ตั้งค่าเล่มผลตรวจ", "ค่าอ้างอิง ข้อความอธิบาย ลิงก์ปรึกษาแพทย์"]] : []),
+            ["/admin/persona/annual-checkup/queue", "แก้ลำดับคิว / เวลานัด", "ลำดับคิวและเวลานัดของแต่ละคน"], ["/admin/persona/annual-checkup/stations", "สถานีตรวจ", "สถานีและ QR ประจำสถานี"]
+          ] as Array<[string, string, string]>).map(([href, title, sub]) => (
+            <Link key={href} href={href} className="rounded-xl border border-slate-200 px-4 py-3 min-h-[56px] hover:bg-slate-50"><div className="font-semibold text-slate-800 text-sm">{title}</div><div className="text-xs text-slate-500">{sub}</div></Link>
+          ))}
+        </div>
+      </section>
       {isRecorderEligible(user.id) ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <Link href="/staff/health/annual-checkup/queue"
