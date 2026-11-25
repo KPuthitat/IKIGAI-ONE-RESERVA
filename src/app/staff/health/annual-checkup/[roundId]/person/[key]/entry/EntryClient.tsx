@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { post, upload } from "../../../../shared";
 import { apiUrl } from "@/lib/url";
-import { bmi, bmiCategory, DEFAULT_THRESHOLDS, FLAG_TH, flagResult, globulin, HEARING_FREQS, implausible, indirectBilirubin, interpretHearing, interpretSpirometry, isCritical, refLabel, type Flag } from "@/lib/health-report/interpret";
+import { bmi, bmiCategory, DEFAULT_THRESHOLDS, FLAG_TH, withArrow, flagResult, globulin, HEARING_FREQS, implausible, indirectBilirubin, interpretHearing, interpretSpirometry, isCritical, refLabel, type Flag } from "@/lib/health-report/interpret";
 import type { Ref } from "@/lib/health-report/catalog";
 
 type Vals = Record<string, string>;                          // what is typed (numbers stay text so "7." can be typed)
@@ -155,7 +155,7 @@ export default function EntryClient({ tabs, sex, age, enzymeMultiple }: { tabs: 
                       )}
                       <span className="w-14 text-xs text-slate-400">{it.unit ?? ""}</span>
                       <span className={`w-20 text-xs ${flag ? FLAG_CLS[flag] : ""}`}>
-                        {flag && flag !== "info" ? (flag === "normal" ? "ปกติ" : FLAG_TH[flag]) : ""}
+                        {flag && flag !== "info" ? (flag === "normal" ? "ปกติ" : withArrow(FLAG_TH[flag])) : ""}
                         {crit ? <span className="block text-rose-700 font-bold">⚠ แจ้งแพทย์ทันที</span> : null}
                         {odd ? <span className="block text-amber-700">ตรวจค่าอีกครั้ง</span> : null}
                       </span>

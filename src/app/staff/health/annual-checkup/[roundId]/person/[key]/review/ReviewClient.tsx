@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { post } from "../../../../shared";
-import { FLAG_TH, bmi, flagResult, globulin, indirectBilirubin, refLabel } from "@/lib/health-report/interpret";
+import { FLAG_TH, withArrow, bmi, flagResult, globulin, indirectBilirubin, refLabel } from "@/lib/health-report/interpret";
 import type { Tab } from "@/lib/health-report/tabs";
 
 type Note = { summary: string; recommendation: string };
@@ -74,7 +74,7 @@ export default function ReviewClient({ roundId, subject, tabs, sex, age, isAppro
                   const v = it.computed === "bmi" ? bmi(num("WEIGHT"), num("HEIGHT")) : it.computed === "globulin" ? (num("TP") != null && num("ALB") != null ? globulin(num("TP")!, num("ALB")!) : null) : it.computed === "indirect_bili" ? (num("TBIL") != null && num("DBIL") != null ? indirectBilirubin(num("TBIL")!, num("DBIL")!) : null) : x.values[it.code] ?? null;
                   if (v == null || v === "") return null;
                   const f = flagResult({ kind: it.kind === "file" ? "text" : it.kind, refs: it.refs, normal: it.normal ?? undefined }, v, sex, age);
-                  const word = f && f !== "normal" && f !== "info" ? FLAG_TH[f] : "";
+                  const word = f && f !== "normal" && f !== "info" ? withArrow(FLAG_TH[f]) : "";
                   return (
                     <div key={it.code} className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1 text-sm">
                       <span className="min-w-0 break-words">{it.en}</span>

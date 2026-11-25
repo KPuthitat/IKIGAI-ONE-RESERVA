@@ -1,4 +1,5 @@
 import type { Report, RSection } from "@/lib/health-report/report";
+import { withArrow } from "@/lib/health-report/interpret";
 
 // The health check-up report on screen (mobile first): navy section bars, grey striped rows, cream boxes, the three years side by side.
 // A flag is always a WORD (สูง / ต่ำ / ผิดปกติ) next to the colour, never colour alone. Server component: nothing here fetches.
@@ -41,7 +42,7 @@ function Section({ s, years, fileHref }: { s: RSection; years: number[]; fileHre
                 {s.rows.map((r, i) => (
                   <tr key={r.code} className={`align-top ${i % 2 === 0 ? "bg-slate-100" : "bg-slate-50"}`}>
                     <td className="py-2 px-3 rounded-l-lg"><div className="font-bold text-slate-900">{r.en}</div><div className="text-[11px] text-slate-500">{r.th}</div>{r.explain && <Explain text={r.explain} />}</td>
-                    {r.cells.map((c, k) => <td key={k} className={`py-2 px-2 text-center ${k === r.cells.length - 1 ? `font-bold ${flagCls(r.flagWord)}` : "text-slate-500"}`}>{c.text}{k === r.cells.length - 1 && r.flagWord ? <div className="text-xs">{r.flagWord}</div> : null}</td>)}
+                    {r.cells.map((c, k) => <td key={k} className={`py-2 px-2 text-center ${k === r.cells.length - 1 ? `font-bold ${flagCls(r.flagWord)}` : "text-slate-500"}`}>{c.text}{k === r.cells.length - 1 && r.flagWord ? <div className="text-xs">{withArrow(r.flagWord)}</div> : null}</td>)}
                     <td className="py-2 px-2 text-center text-xs text-slate-600 whitespace-pre-line">{r.ref || "—"}</td>
                     <td className="py-2 px-2 text-center text-xs text-slate-600 rounded-r-lg">{r.unit || "—"}</td>
                   </tr>
@@ -55,7 +56,7 @@ function Section({ s, years, fileHref }: { s: RSection; years: number[]; fileHre
               <div key={r.code} className={`rounded-xl px-3 py-2.5 ${i % 2 === 0 ? "bg-slate-100" : "bg-slate-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0"><div className="font-bold text-slate-900 break-words">{r.en}</div><div className="text-[11px] text-slate-500">{r.th}</div></div>
-                  <div className={`text-right shrink-0 ${flagCls(r.flagWord)}`}><div className="text-lg font-bold leading-tight">{r.cells[r.cells.length - 1]?.text}</div><div className="text-xs">{r.unit}{r.flagWord ? ` · ${r.flagWord}` : ""}</div></div>
+                  <div className={`text-right shrink-0 ${flagCls(r.flagWord)}`}><div className="text-lg font-bold leading-tight">{r.cells[r.cells.length - 1]?.text}</div><div className="text-xs">{r.unit}{r.flagWord ? ` · ${withArrow(r.flagWord)}` : ""}</div></div>
                 </div>
                 {r.ref && <div className="mt-1 text-[11px] text-slate-500 whitespace-pre-line">อ้างอิง {r.ref}</div>}
                 {r.cells.length > 1 && r.cells.slice(0, -1).some((c) => c.text !== "-") && <div className="mt-1 text-[11px] text-slate-500">ปีก่อน: {r.cells.slice(0, -1).map((c) => `${c.year} = ${c.text}`).join(" · ")}</div>}
@@ -97,7 +98,7 @@ export default function HealthReportView({ report, fileHref, consultUrl, pdfHref
         <div>
           <div className="font-bold text-slate-900">รายการที่ผิดปกติ ({sm.abnormal.length})</div>
           {sm.abnormal.length === 0 ? <div className="text-sm text-emerald-800">ไม่พบรายการที่นอกเกณฑ์อ้างอิง</div> : (
-            <ul className="text-sm text-slate-800 space-y-0.5">{sm.abnormal.map((a, i) => <li key={i}><b>{a.name}</b> {a.value} <span className="text-rose-700 font-semibold">({a.word})</span> <span className="text-xs text-slate-500">— {a.section}</span></li>)}</ul>
+            <ul className="text-sm text-slate-800 space-y-0.5">{sm.abnormal.map((a, i) => <li key={i}><b>{a.name}</b> {a.value} <span className="text-rose-700 font-semibold">({withArrow(a.word)})</span> <span className="text-xs text-slate-500">— {a.section}</span></li>)}</ul>
           )}
         </div>
         {sm.recommendations.length > 0 && <div><div className="font-bold text-slate-900">คำแนะนำของแพทย์</div><ul className="text-sm text-slate-800 space-y-1 whitespace-pre-line">{sm.recommendations.map((r, i) => <li key={i}>- {r}</li>)}</ul></div>}

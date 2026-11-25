@@ -6,6 +6,9 @@ import type { Item, Ref, Sex } from "./catalog";
 
 export type Flag = "normal" | "low" | "high" | "abnormal" | "info";
 export const FLAG_TH: Record<Flag, string> = { normal: "ปกติ", low: "ต่ำ", high: "สูง", abnormal: "ผิดปกติ", info: "" };
+/** High / low are shown as a triangle AND the word (▲ สูง, ▼ ต่ำ): quicker to scan than words alone, and still readable without colour. */
+export const FLAG_ARROW: Record<string, string> = { "สูง": "▲", "ต่ำ": "▼", "ลดลง": "▼" };
+export const withArrow = (word: string): string => (FLAG_ARROW[word] ? `${FLAG_ARROW[word]} ${word}` : word);
 
 /** Whole years between a birth date and the examination date (both yyyy-mm-dd). */
 export function ageOn(dob: string | null | undefined, on: string): number | null {
