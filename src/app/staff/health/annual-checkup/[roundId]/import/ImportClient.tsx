@@ -68,9 +68,9 @@ export default function ImportClient({ roundId, people, coded }: { roundId: numb
       </section>
 
       <section className="card space-y-3">
-        <h2 className="font-bold text-slate-800">2. นำเข้าผลจากไฟล์ Excel ของแล็บ</h2>
+        <h2 className="font-bold text-slate-800">2. นำเข้าผลจากไฟล์ของแล็บ (Excel หรือไฟล์ ReportBackup จากเครื่อง)</h2>
         <p className="text-xs text-slate-500">ระบบจับคู่คนด้วยรหัส แล้วตรวจชื่อ-นามสกุลซ้ำอีกชั้น ถ้าชื่อไม่ตรงจะหยุดแถวนั้นและแจ้งเตือน ไม่นำเข้าเงียบๆ ดูตัวอย่างก่อนบันทึกทุกครั้ง ผลที่นำเข้าเป็นร่าง รอแพทย์ตรวจสอบ</p>
-        <input type="file" accept=".xlsx,.txt,.csv,.rpt,.dat" className="block text-sm" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPlan(null); setMsg(null); }} />
+        <input type="file" accept=".xlsx,.txt,.csv,.rpt,.dat" className="input w-full" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPlan(null); setMsg(null); }} />
         <button type="button" className="btn-primary min-h-[44px] px-4" disabled={busy || !file} onClick={() => send("preview")}>ดูตัวอย่าง (ยังไม่บันทึก)</button>
 
         {plan && (

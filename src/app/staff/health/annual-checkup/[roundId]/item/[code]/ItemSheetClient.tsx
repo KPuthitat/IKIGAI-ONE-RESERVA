@@ -70,8 +70,8 @@ export default function ItemSheetClient({ roundId, current, groups, item, people
           const flag = flagResult({ kind: item.kind, refs: item.refs, normal: item.normal ?? undefined }, value, p.sex, p.age);
           const crit = typeof value === "number" && isCritical({ code: item.code, refs: item.refs }, value, p.sex, p.age, th);
           return (
-            <div key={p.orderId} className="py-2 grid grid-cols-[1fr_auto] gap-x-3 items-center">
-              <div className="min-w-0"><div className="text-sm text-slate-800 truncate">{p.label}{p.external && <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] text-sky-800">ภายนอก · {p.payer}</span>}</div><div className="text-xs text-slate-500">{p.code ?? "ผู้เข้าตรวจภายนอก"} · {p.sex === "M" ? "ชาย" : p.sex === "F" ? "หญิง" : "ไม่ระบุเพศ"}{p.age != null ? ` · ${p.age} ปี` : ""}{p.locked ? " · 🔒 ตรวจสอบแล้ว" : ""}</div></div>
+            <div key={p.orderId} className="py-2.5 grid gap-y-1.5 sm:grid-cols-[1fr_auto] sm:gap-x-3 items-center">
+              <div className="min-w-0"><div className="text-sm font-medium text-slate-800 break-words">{p.label}{p.external && <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] text-sky-800">ภายนอก · {p.payer}</span>}</div><div className="text-xs text-slate-500">{p.code ?? "ผู้เข้าตรวจภายนอก"} · {p.sex === "M" ? "ชาย" : p.sex === "F" ? "หญิง" : "ไม่ระบุเพศ"}{p.age != null ? ` · ${p.age} ปี` : ""}{p.locked ? " · 🔒 ตรวจสอบแล้ว" : ""}</div></div>
               <div className="flex items-center gap-2">
                 {item.kind === "choice" ? (
                   <select data-entry disabled={p.locked} className="input min-h-[44px] w-40" value={raw} onKeyDown={nextField} onChange={(e) => change(p, e.target.value)}><option value="">—</option>{item.choices?.map((c) => <option key={c} value={c}>{c}</option>)}</select>

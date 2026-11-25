@@ -133,12 +133,12 @@ export default function EntryClient({ tabs, sex, age, enzymeMultiple }: { tabs: 
                 const odd = typeof value === "number" && !it.computed && it.plausible && implausible({ plausible: it.plausible }, value);
                 const ref = refLabel({ refs: it.refs, refText: it.refText ?? undefined });
                 return (
-                  <div key={it.code} className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 items-center border-b border-slate-100 py-1.5">
+                  <div key={it.code} className="grid gap-y-1 sm:grid-cols-[1fr_auto] sm:gap-x-3 items-center border-b border-slate-100 py-2">
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-slate-800 break-words">{it.en}</div>
                       <div className="text-xs text-slate-500 break-words">{it.th}{ref ? ` · อ้างอิง ${ref.replace(/\n/g, " / ")}` : ""}</div>
                     </div>
-                    <div className="flex items-center gap-2 justify-end">
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                       {it.computed ? (
                         <span className="min-w-[88px] text-right text-sm tabular-nums">{value != null ? (it.decimals != null ? (value as number).toFixed(it.decimals) : String(value)) : "—"}{it.computed === "bmi" && bmiV != null ? <span className="block text-[11px] text-slate-500">{bmiCategory(bmiV)}</span> : null}</span>
                       ) : it.kind === "choice" ? (

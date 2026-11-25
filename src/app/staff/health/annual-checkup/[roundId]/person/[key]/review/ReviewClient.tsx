@@ -76,9 +76,9 @@ export default function ReviewClient({ roundId, subject, tabs, sex, age, isAppro
                   const f = flagResult({ kind: it.kind === "file" ? "text" : it.kind, refs: it.refs, normal: it.normal ?? undefined }, v, sex, age);
                   const word = f && f !== "normal" && f !== "info" ? withArrow(FLAG_TH[f]) : "";
                   return (
-                    <div key={it.code} className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1 text-sm">
-                      <span className="min-w-0 break-words">{it.en}</span>
-                      <span className={`shrink-0 tabular-nums ${word ? "text-rose-700 font-semibold" : ""}`}>{String(v)} <span className="text-xs text-slate-400">{it.unit ?? ""}</span>{word ? ` · ${word}` : ""} <span className="text-[11px] font-normal text-slate-400">[{refLabel({ refs: it.refs, refText: it.refText ?? undefined }).replace(/\n/g, " / ") || "—"}]</span></span>
+                    <div key={it.code} className="flex items-start justify-between gap-3 border-b border-slate-100 py-1.5 text-sm">
+                      <div className="min-w-0 flex-1"><div className="break-words">{it.en}</div><div className="text-[11px] text-slate-400 break-words">อ้างอิง {refLabel({ refs: it.refs, refText: it.refText ?? undefined }).replace(/\n/g, " / ") || "—"}</div></div>
+                      <div className={`shrink-0 text-right tabular-nums ${word ? "text-rose-700 font-semibold" : ""}`}><div>{String(v)} <span className="text-xs font-normal text-slate-400">{it.unit ?? ""}</span></div>{word ? <div className="text-xs">{word}</div> : null}</div>
                     </div>
                   );
                 })}
