@@ -4,6 +4,7 @@
 // docs/migrations/health-report-pr1-rollback.sql.
 import type Database from "better-sqlite3";
 import { EXTRA_TESTS, ITEMS, SECTIONS } from "./catalog";
+import { approverOk, CLINIC_BRANCH_SLUG } from "../annual-checkup-schema";
 
 export function ensureHealthReportSchema(db: Database.Database): void {
   db.exec(`
@@ -72,6 +73,57 @@ export function ensureHealthReportSchema(db: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_exam_user ON annual_checkup_exam_codes(round_id, user_id) WHERE user_id IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_exam_ext  ON annual_checkup_exam_codes(round_id, external_id) WHERE external_id IS NOT NULL;
 
+    -- The doctor's wording per section of the booklet ("overall" = the closing summary and recommendation). Clinical text: read and
+    -- written only through the gateway; only a clinic approver doctor may write (trigger below).
+    CREATE TABLE IF NOT EXISTS annual_checkup_section_notes (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      round_id            INTEGER NOT NULL REFERENCES annual_checkup_rounds(id),
+      user_id             INTEGER REFERENCES users(id),
+      external_id         INTEGER REFERENCES annual_checkup_externals(id),
+      section             TEXT NOT NULL,
+      summary_text        TEXT,
+      recommendation_text TEXT,
+      written_by          INTEGER NOT NULL REFERENCES users(id),
+      written_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CHECK ((user_id IS NOT NULL AND external_id IS NULL) OR (user_id IS NULL AND external_id IS NOT NULL))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_note_user ON annual_checkup_section_notes(round_id, user_id, section) WHERE user_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_annual_checkup_note_ext  ON annual_checkup_section_notes(round_id, external_id, section) WHERE external_id IS NOT NULL;
+
+    -- The doctor sends a person's results back to the recorder with a note saying what to fix. Open until the recorder sends them again.
+    CREATE TABLE IF NOT EXISTS annual_checkup_returns (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      round_id    INTEGER NOT NULL REFERENCES annual_checkup_rounds(id),
+      user_id     INTEGER REFERENCES users(id),
+      external_id INTEGER REFERENCES annual_checkup_externals(id),
+      note        TEXT NOT NULL,
+      returned_by INTEGER NOT NULL REFERENCES users(id),
+      to_user     INTEGER REFERENCES users(id),          -- the recorder who had sent it to the doctor
+      returned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      resolved_at TEXT,
+      CHECK ((user_id IS NOT NULL AND external_id IS NULL) OR (user_id IS NULL AND external_id IS NOT NULL))
+    );
+    CREATE INDEX IF NOT EXISTS idx_annual_checkup_returns_open ON annual_checkup_returns(round_id, resolved_at);
+
+    -- A person whose released results were changed and approved again is told once. Holds no result and no value.
+    CREATE TABLE IF NOT EXISTS annual_checkup_revision_notices (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      round_id   INTEGER NOT NULL REFERENCES annual_checkup_rounds(id),
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      sent_at    TEXT
+    );
+
+    -- Ready-made wording the doctor can pick and edit (editable in settings; nothing here is a diagnosis).
+    CREATE TABLE IF NOT EXISTS annual_checkup_note_templates (
+      id      INTEGER PRIMARY KEY AUTOINCREMENT,
+      section TEXT NOT NULL,                  -- a section key, or "overall"
+      kind    TEXT NOT NULL CHECK (kind IN ('summary','recommendation')),
+      text    TEXT NOT NULL,
+      sort_no INTEGER NOT NULL DEFAULT 0,
+      active  INTEGER NOT NULL DEFAULT 1
+    );
+
     -- Small settings: critical-value thresholds, the consultation link behind the SCAN ME code, …
     CREATE TABLE IF NOT EXISTS annual_checkup_config (
       key        TEXT PRIMARY KEY,
@@ -105,4 +157,37 @@ export function ensureHealthReportSchema(db: Database.Database): void {
     });
     db.prepare("INSERT OR IGNORE INTO annual_checkup_config (key, value) VALUES ('critical_enzyme_multiple', '5')").run();
   })();
+
+  // Seed the ready-made wording once (an empty table only), so a later edit or deletion is never undone.
+  if ((db.prepare("SELECT COUNT(*) n FROM annual_checkup_note_templates").get() as { n: number }).n === 0) {
+    const t = db.prepare("INSERT INTO annual_checkup_note_templates (section, kind, text, sort_no) VALUES (?,?,?,?)");
+    db.transaction(() => {
+      NOTE_TEMPLATES.forEach(([section, kind, text], i) => t.run(section, kind, text, i));
+    })();
+  }
+
+  // The database refuses these writes from anyone but a clinic approver doctor, whatever code ran them (same idea as the result triggers).
+  const abort = (cond: string, msg: string) => `SELECT CASE WHEN ${cond} THEN RAISE(ABORT, '${msg}') END;`;
+  db.exec(`
+    DROP TRIGGER IF EXISTS health_report_notes_ins;  DROP TRIGGER IF EXISTS health_report_notes_upd;  DROP TRIGGER IF EXISTS health_report_returns_ins;
+    CREATE TRIGGER health_report_notes_ins BEFORE INSERT ON annual_checkup_section_notes BEGIN ${abort(`NOT ${approverOk("NEW.written_by")}`, "health_report: only a clinic approver doctor may write the summary")} END;
+    CREATE TRIGGER health_report_notes_upd BEFORE UPDATE ON annual_checkup_section_notes BEGIN ${abort(`NOT ${approverOk("NEW.written_by")}`, "health_report: only a clinic approver doctor may write the summary")} END;
+    CREATE TRIGGER health_report_returns_ins BEFORE INSERT ON annual_checkup_returns BEGIN ${abort(`NOT ${approverOk("NEW.returned_by")}`, "health_report: only a clinic approver doctor may send results back")} END;
+  `);
+  void CLINIC_BRANCH_SLUG;
 }
+
+/** Starting wording for the doctor to pick from and edit. Neutral statements only; the doctor decides what applies. */
+const NOTE_TEMPLATES: Array<[section: string, kind: "summary" | "recommendation", text: string]> = [
+  ["general", "summary", "ตรวจร่างกายอยู่ในเกณฑ์ปกติ"], ["general", "summary", "ดัชนีมวลกายอยู่ในเกณฑ์ปกติ"], ["general", "summary", "น้ำหนักเกินเกณฑ์ ควรควบคุมอาหารและออกกำลังกาย"],
+  ["cbc", "summary", "ผลตรวจความสมบูรณ์ของเม็ดเลือดอยู่ในเกณฑ์ปกติ"], ["cbc", "recommendation", "ควรตรวจซ้ำและติดตามผลตามคำแนะนำของแพทย์"],
+  ["ua", "summary", "ผลตรวจปัสสาวะอยู่ในเกณฑ์ปกติ"], ["ua", "recommendation", "ดื่มน้ำให้เพียงพอ และตรวจซ้ำหากมีอาการผิดปกติ"],
+  ["chem", "summary", "ผลตรวจทางชีวเคมีในเลือดอยู่ในเกณฑ์ปกติ"], ["chem", "recommendation", "ควบคุมอาหาร ออกกำลังกายสม่ำเสมอ และตรวจติดตามประจำปี"],
+  ["audio", "summary", "การได้ยินอยู่ในเกณฑ์ปกติ"], ["audio", "recommendation", "หลีกเลี่ยงเสียงดังและใช้อุปกรณ์ป้องกันเสียงเมื่อทำงานในที่เสียงดัง"],
+  ["vision", "summary", "สายตาอาชีวอนามัยอยู่ในเกณฑ์ปกติ"], ["vision", "recommendation", "ควรพบจักษุแพทย์เพื่อประเมินเพิ่มเติม"],
+  ["pft", "summary", "สมรรถภาพปอดอยู่ในเกณฑ์ปกติ"], ["pft", "recommendation", "งดสูบบุหรี่ และตรวจติดตามสมรรถภาพปอดประจำปี"],
+  ["cxr", "summary", "เอกซเรย์ทรวงอกปกติ ไม่พบพยาธิสภาพในปอด"], ["ecg", "summary", "ผลคลื่นไฟฟ้าหัวใจปกติ"],
+  ["other", "summary", "ผลตรวจทางห้องปฏิบัติการอื่นๆ อยู่ในเกณฑ์ปกติ"], ["stool", "summary", "ผลตรวจอุจจาระปกติ"],
+  ["overall", "summary", "ผลการตรวจสุขภาพโดยรวมอยู่ในเกณฑ์ปกติ"], ["overall", "recommendation", "ดูแลสุขภาพอย่างสม่ำเสมอ และตรวจสุขภาพประจำปีทุกปี"],
+  ["overall", "recommendation", "ควรพบแพทย์เพื่อติดตามผลรายการที่ผิดปกติ"]
+];
