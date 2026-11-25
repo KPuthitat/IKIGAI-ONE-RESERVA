@@ -40,6 +40,18 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   if (bank) ok("bank A4 PDF renders", isPdf(await BP.generateBankPayslipPdf(bank)));
   else console.log("  – bank payslip skipped (no monthly rollup for the fixture)");
 
+  const MP = await import("../src/lib/monthly-payslip");
+  const MPP = await import("../src/lib/monthly-payslip-pdf");
+  const md = MP.buildMonthlyPayslip(db, uid, "2026-11", "th");
+  ok("monthly payslip builds from the paid round", !!md);
+  if (md) {
+    ok("monthly figures tie out: income − deductions = net", Math.abs(md.incomeTotal - md.dedTotal - md.netTotal) < 0.01);
+    const mb = await MPP.generateMonthlyPayslipPdf(md, "2026-11");
+    ok("monthly PDF renders", isPdf(mb));
+    fs.writeFileSync(process.env.MPDF_OUT ?? "/dev/null", mb);
+  }
+  ok("a month with no pay has no monthly payslip", MP.buildMonthlyPayslip(db, uid, "2025-01", "th") === null);
+
   cleanup();
   if (failed) { console.error(`\n${failed} failed`); process.exit(1); }
   console.log("\nAll payslip PDF tests passed");
