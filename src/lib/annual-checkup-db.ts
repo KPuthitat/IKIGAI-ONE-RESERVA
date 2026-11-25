@@ -350,6 +350,8 @@ export function releaseSubject(actor: AcActor, roundId: number, subject: AcSubje
       }
     }
     if (!concl.released_at) db.prepare("UPDATE annual_checkup_conclusions SET released_by = ?, released_at = CURRENT_TIMESTAMP WHERE id = ?").run(a.id, concl.id);
+    // results of a person who already had their results released were changed and approved again → tell them once
+    if (concl.released_at && n > 0 && subject.userId != null) db.prepare("INSERT INTO annual_checkup_revision_notices (round_id, user_id) VALUES (?, ?)").run(roundId, subject.userId);
     audit(a.id, "subject.release", subjectCols(subject), roundId, null, `released ${n}`);
     return n;
   })());
@@ -530,6 +532,7 @@ export type SubjectRow = {
   key: string; kind: "employee" | "external"; label: string; code: string | null; payer: string;
   required: number; recorded: number; verified: number; released: number; hasConclusion: boolean; conclusionReleased: boolean;
   submitted: boolean;                      // the recorder has sent this person's results to the doctor
+  returned: boolean;                       // the doctor sent them back to be fixed and nobody has sent them again
 };
 export type TestRow = { code: string; nameTh: string; required: number; recorded: number; verified: number; released: number };
 
@@ -547,7 +550,8 @@ export function getRoundOverview(actor: AcActor, roundId: number): { round: { id
            SUM(o.status <> 'waived' AND r.id IS NOT NULL) AS recorded,
            SUM(o.status <> 'waived' AND r.status IN ('verified','released')) AS verified,
            SUM(o.status <> 'waived' AND r.status = 'released') AS released,
-           MAX(c.id) AS concl_id, MAX(c.released_at) AS concl_released, MAX(sb.id) AS sub_id
+           MAX(c.id) AS concl_id, MAX(c.released_at) AS concl_released, MAX(sb.id) AS sub_id,
+           MAX(EXISTS (SELECT 1 FROM annual_checkup_returns rt WHERE rt.round_id = o.round_id AND rt.resolved_at IS NULL AND ((o.user_id IS NOT NULL AND rt.user_id = o.user_id) OR (o.external_id IS NOT NULL AND rt.external_id = o.external_id)))) AS returned
       FROM annual_checkup_orders o
       LEFT JOIN users u ON u.id = o.user_id LEFT JOIN annual_checkup_externals e ON e.id = o.external_id
       LEFT JOIN annual_checkup_payers p ON p.id = o.payer_id LEFT JOIN annual_checkup_payers ep ON ep.id = e.payer_id
@@ -556,12 +560,12 @@ export function getRoundOverview(actor: AcActor, roundId: number): { round: { id
       LEFT JOIN annual_checkup_submissions sb ON sb.round_id = o.round_id AND ((o.user_id IS NOT NULL AND sb.user_id = o.user_id) OR (o.external_id IS NOT NULL AND sb.external_id = o.external_id))
      WHERE o.round_id = ? GROUP BY o.user_id, o.external_id
   `).all(roundId) as Array<{ user_id: number | null; external_id: number | null; display_name: string | null; title_prefix: string | null; employee_code: string | null;
-    full_name: string | null; sort_no: number | null; payer: string; required: number; recorded: number; verified: number; released: number; concl_id: number | null; concl_released: string | null; sub_id: number | null }>;
+    full_name: string | null; sort_no: number | null; payer: string; required: number; recorded: number; verified: number; released: number; concl_id: number | null; concl_released: string | null; sub_id: number | null; returned: number }>;
   const subjects: SubjectRow[] = rows.map((r) => ({
     key: r.user_id != null ? `u${r.user_id}` : `e${r.external_id}`, kind: (r.user_id != null ? "employee" : "external") as SubjectRow["kind"],
     label: r.user_id != null ? nameWithPrefix(r.title_prefix, r.display_name ?? "") : externalLabel(r.full_name, r.sort_no, r.payer),
     code: r.employee_code, payer: r.payer, required: r.required, recorded: r.recorded, verified: r.verified, released: r.released,
-    hasConclusion: r.concl_id != null, conclusionReleased: !!r.concl_released, submitted: r.sub_id != null
+    hasConclusion: r.concl_id != null, conclusionReleased: !!r.concl_released, submitted: r.sub_id != null && !r.returned, returned: !!r.returned
   })).sort((x, y) => (x.kind === y.kind ? x.label.localeCompare(y.label, "th") : x.kind === "employee" ? -1 : 1));
   const tests = db.prepare(`
     SELECT t.code, t.name_th AS nameTh, SUM(o.status <> 'waived') AS required, SUM(o.status <> 'waived' AND r.id IS NOT NULL) AS recorded,
@@ -1195,6 +1199,7 @@ export function submitToDoctor(actor: AcActor, roundId: number, subject: AcSubje
     const have = db.prepare(`SELECT id FROM annual_checkup_submissions WHERE round_id = ? AND ${col} = ?`).get(roundId, id) as { id: number } | undefined;
     if (have) db.prepare("UPDATE annual_checkup_submissions SET submitted_by = ?, submitted_at = CURRENT_TIMESTAMP WHERE id = ?").run(a.id, have.id);
     else db.prepare(`INSERT INTO annual_checkup_submissions (round_id, ${col}, submitted_by) VALUES (?, ?, ?)`).run(roundId, id, a.id);
+    db.prepare(`UPDATE annual_checkup_returns SET resolved_at = CURRENT_TIMESTAMP WHERE round_id = ? AND ${col} = ? AND resolved_at IS NULL`).run(roundId, id);
     audit(a.id, "result.submit", subjectCols(subject), roundId, null);
   })());
   const at = (db.prepare(`SELECT submitted_at FROM annual_checkup_submissions WHERE round_id = ? AND ${col} = ?`).get(roundId, id) as { submitted_at: string }).submitted_at;
@@ -1205,7 +1210,10 @@ export function submitToDoctor(actor: AcActor, roundId: number, subject: AcSubje
 export function countAwaitingDoctor(roundId: number): number {
   return (getDb().prepare(`
     SELECT COUNT(*) n FROM annual_checkup_submissions sb
-     WHERE sb.round_id = ? AND EXISTS (
+     WHERE sb.round_id = ?
+       AND NOT EXISTS (SELECT 1 FROM annual_checkup_returns rt WHERE rt.round_id = sb.round_id AND rt.resolved_at IS NULL
+                         AND ((sb.user_id IS NOT NULL AND rt.user_id = sb.user_id) OR (sb.external_id IS NOT NULL AND rt.external_id = sb.external_id)))
+       AND EXISTS (
        SELECT 1 FROM annual_checkup_orders o JOIN annual_checkup_results r ON r.order_id = o.id
         WHERE o.round_id = sb.round_id AND o.status <> 'waived' AND r.status = 'draft'
           AND ((sb.user_id IS NOT NULL AND o.user_id = sb.user_id) OR (sb.external_id IS NOT NULL AND o.external_id = sb.external_id)))
@@ -1218,4 +1226,136 @@ export function listApproverLineIds(): string[] {
     SELECT u.line_user_id FROM users u
      WHERE u.line_user_id IS NOT NULL AND u.line_user_id <> '' AND ${approverOk("u.id")}
   `).all() as Array<{ line_user_id: string }>).map((r) => r.line_user_id);
+}
+
+
+// ── the doctor's wording, sending back, releasing a whole company (health report PR 4) ─────────────────────────────────
+
+export type SectionNote = { section: string; summary_text: string | null; recommendation_text: string | null };
+
+/** The doctor's per-section wording for one person (recorders and doctors read it; the person reads it only after release, through getMySectionNotes). */
+export function getSectionNotes(actor: AcActor, roundId: number, subject: AcSubject): SectionNote[] {
+  requireRecorder(actor);
+  const ccol = subject.userId != null ? "user_id" : "external_id";
+  return getDb().prepare(`SELECT section, summary_text, recommendation_text FROM annual_checkup_section_notes WHERE round_id = ? AND ${ccol} = ?`)
+    .all(roundId, subject.userId ?? subject.externalId) as SectionNote[];
+}
+
+/** Write one section's wording ("overall" = the closing summary). Doctors only. Editing after release records a notice so the person is told. */
+export function saveSectionNote(actor: AcActor, roundId: number, subject: AcSubject, section: string, d: { summary?: string | null; recommendation?: string | null }, opts: { licenseUnlocked: boolean }): void {
+  const a = requireApprover(actor, opts.licenseUnlocked);
+  if (!/^[a-z_]{2,20}$/.test(section)) throw new AnnualCheckupInvalid("bad_value");
+  const db = getDb();
+  const ccol = subject.userId != null ? "user_id" : "external_id";
+  const id = (subject.userId ?? subject.externalId) as number;
+  guard(() => db.transaction(() => {
+    const cur = db.prepare(`SELECT id FROM annual_checkup_section_notes WHERE round_id = ? AND ${ccol} = ? AND section = ?`).get(roundId, id, section) as { id: number } | undefined;
+    const sum = clean(d.summary, 4000), rec = clean(d.recommendation, 4000);
+    if (cur) db.prepare("UPDATE annual_checkup_section_notes SET summary_text = ?, recommendation_text = ?, written_by = ?, written_at = CURRENT_TIMESTAMP WHERE id = ?").run(sum, rec, a.id, cur.id);
+    else db.prepare(`INSERT INTO annual_checkup_section_notes (round_id, ${ccol}, section, summary_text, recommendation_text, written_by) VALUES (?, ?, ?, ?, ?, ?)`).run(roundId, id, section, sum, rec, a.id);
+    const rel = db.prepare(`SELECT released_at FROM annual_checkup_conclusions WHERE round_id = ? AND ${ccol} = ?`).get(roundId, id) as { released_at: string | null } | undefined;
+    if (rel?.released_at && subject.userId != null) db.prepare("INSERT INTO annual_checkup_revision_notices (round_id, user_id) VALUES (?, ?)").run(roundId, subject.userId);
+    audit(a.id, rel?.released_at ? "note.revise" : "note.save", subjectCols(subject), roundId, null, section);
+  })());
+}
+
+/** The person's own released wording (only once their conclusion is released). */
+export function getMySectionNotes(actor: AcActor, roundId: number): SectionNote[] {
+  const a = loadActor(actor);
+  return getDb().prepare(`
+    SELECT n.section, n.summary_text, n.recommendation_text
+      FROM annual_checkup_section_notes n JOIN annual_checkup_conclusions c ON c.round_id = n.round_id AND c.user_id = n.user_id
+     WHERE n.round_id = ? AND n.user_id = ? AND c.released_at IS NOT NULL
+  `).all(roundId, a.id) as SectionNote[];
+}
+
+/** The doctor sends a person back to the recorder who sent them, with what to fix. The person is no longer "waiting for the doctor" until the recorder sends them again (the submission itself is never deleted). */
+export function returnToRecorder(actor: AcActor, roundId: number, subject: AcSubject, note: string, opts: { licenseUnlocked: boolean }): void {
+  const a = requireApprover(actor, opts.licenseUnlocked);
+  const text = clean(note, 2000);
+  if (!text) throw new AnnualCheckupInvalid("reason_required");
+  const db = getDb();
+  const col = subject.userId != null ? "user_id" : "external_id";
+  const id = (subject.userId ?? subject.externalId) as number;
+  guard(() => db.transaction(() => {
+    const sub = db.prepare(`SELECT submitted_by FROM annual_checkup_submissions WHERE round_id = ? AND ${col} = ?`).get(roundId, id) as { submitted_by: number } | undefined;
+    db.prepare(`INSERT INTO annual_checkup_returns (round_id, ${col}, note, returned_by, to_user) VALUES (?, ?, ?, ?, ?)`).run(roundId, id, text, a.id, sub?.submitted_by ?? null);
+    audit(a.id, "result.return", subjectCols(subject), roundId, null);
+  })());
+}
+
+export type ReturnedJob = { key: string; label: string; note: string; returned_at: string; by_name: string; round_id: number };
+/** Work waiting for this recorder: persons the doctor sent back to them (or to any recorder when the original sender is unknown). */
+export function listMyReturns(actor: AcActor, roundId?: number): ReturnedJob[] {
+  const a = requireRecorder(actor);
+  const rows = getDb().prepare(`
+    SELECT rt.round_id, rt.user_id, rt.external_id, rt.note, rt.returned_at, d.display_name AS by_name, u.display_name, u.title_prefix, e.full_name, e.sort_no,
+           COALESCE((SELECT name_th FROM annual_checkup_payers p WHERE p.id = e.payer_id), '') AS payer
+      FROM annual_checkup_returns rt JOIN users d ON d.id = rt.returned_by
+      LEFT JOIN users u ON u.id = rt.user_id LEFT JOIN annual_checkup_externals e ON e.id = rt.external_id
+     WHERE rt.resolved_at IS NULL AND (rt.to_user IS NULL OR rt.to_user = ?) AND (? IS NULL OR rt.round_id = ?)
+     ORDER BY rt.returned_at DESC
+  `).all(a.id, roundId ?? null, roundId ?? null) as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
+    key: r.user_id != null ? `u${r.user_id}` : `e${r.external_id}`, round_id: r.round_id as number,
+    label: r.user_id != null ? nameWithPrefix(r.title_prefix as string | null, r.display_name as string) : externalLabel(r.full_name as string | null, r.sort_no as number | null, r.payer as string),
+    note: r.note as string, returned_at: r.returned_at as string, by_name: r.by_name as string
+  }));
+}
+
+/** The latest open note on one person (shown to whoever opens that person). */
+export function getOpenReturn(actor: AcActor, roundId: number, subject: AcSubject): { note: string; by_name: string; returned_at: string } | null {
+  requireRecorder(actor);
+  const col = subject.userId != null ? "rt.user_id" : "rt.external_id";
+  return (getDb().prepare(`SELECT rt.note, d.display_name AS by_name, rt.returned_at FROM annual_checkup_returns rt JOIN users d ON d.id = rt.returned_by WHERE rt.round_id = ? AND ${col} = ? AND rt.resolved_at IS NULL ORDER BY rt.id DESC LIMIT 1`)
+    .get(roundId, subject.userId ?? subject.externalId) as { note: string; by_name: string; returned_at: string } | undefined) ?? null;
+}
+
+/** Verify every draft result of one person in one go (the doctor looked at the whole booklet). Returns how many were verified. */
+export function verifyAllForSubject(actor: AcActor, roundId: number, subject: AcSubject, opts: { licenseUnlocked: boolean }): number {
+  requireApprover(actor, opts.licenseUnlocked);
+  const db = getDb();
+  const col = subject.userId != null ? "o.user_id" : "o.external_id";
+  const ids = db.prepare(`
+    SELECT r.id FROM annual_checkup_orders o JOIN annual_checkup_results r ON r.order_id = o.id
+     WHERE o.round_id = ? AND ${col} = ? AND o.status <> 'waived' AND r.status = 'draft'
+       AND (r.value_num IS NOT NULL OR r.value_text IS NOT NULL OR r.value_json IS NOT NULL OR r.file_path IS NOT NULL)
+  `).all(roundId, subject.userId ?? subject.externalId) as Array<{ id: number }>;
+  for (const x of ids) verifyResult(actor, x.id, opts);
+  return ids.length;
+}
+
+/** Open the results of everyone of one paying company whose conclusion is written and whose results are all verified; the rest are listed with why. */
+export function releaseCompany(actor: AcActor, roundId: number, payerId: number, opts: { licenseUnlocked: boolean }): { released: number; people: number; skipped: Array<{ label: string; reason: string }> } {
+  requireApprover(actor, opts.licenseUnlocked);
+  const db = getDb();
+  const subs = db.prepare(`
+    SELECT DISTINCT o.user_id, o.external_id, u.display_name, u.title_prefix, e.full_name, e.sort_no, COALESCE(p.name_th, 'ไม่ระบุ') AS payer
+      FROM annual_checkup_orders o LEFT JOIN users u ON u.id = o.user_id LEFT JOIN annual_checkup_externals e ON e.id = o.external_id
+      LEFT JOIN annual_checkup_payers p ON p.id = COALESCE(o.payer_id, e.payer_id)
+     WHERE o.round_id = ? AND COALESCE(o.payer_id, e.payer_id) = ?
+  `).all(roundId, payerId) as Array<{ user_id: number | null; external_id: number | null; display_name: string | null; title_prefix: string | null; full_name: string | null; sort_no: number | null; payer: string }>;
+  const out = { released: 0, people: 0, skipped: [] as Array<{ label: string; reason: string }> };
+  for (const s of subs) {
+    const subject: AcSubject = s.user_id != null ? { userId: s.user_id } : { externalId: s.external_id as number };
+    const label = s.user_id != null ? nameWithPrefix(s.title_prefix, s.display_name ?? "") : externalLabel(s.full_name, s.sort_no, s.payer);
+    try { const n = releaseSubject(actor, roundId, subject, opts); if (n > 0) { out.released += n; out.people++; } }
+    catch (e) {
+      const code = isAnnualCheckupInvalid(e) ? e.code : "error";
+      out.skipped.push({ label, reason: code === "no_conclusion" ? "ยังไม่มีสรุปผลของแพทย์" : code === "not_all_verified" ? "ยังมีรายการที่ยังไม่ตรวจสอบ" : code === "nothing_to_release" ? "ไม่มีรายการให้เปิดผล" : "เปิดผลไม่ได้" });
+    }
+  }
+  return out;
+}
+
+/** People whose released results were changed and approved again and have not been told yet (only those with LINE linked). */
+export function listPendingRevisionNotices(limit = 50): Array<{ id: number; user_id: number; line_user_id: string }> {
+  return getDb().prepare(`
+    SELECT n.id, n.user_id, u.line_user_id FROM annual_checkup_revision_notices n JOIN users u ON u.id = n.user_id
+     WHERE n.sent_at IS NULL AND u.status NOT IN ('disabled', 'resigned', 'terminated') AND u.line_user_id IS NOT NULL AND u.line_user_id <> ''
+     ORDER BY n.id LIMIT ?
+  `).all(limit) as Array<{ id: number; user_id: number; line_user_id: string }>;
+}
+export function markRevisionNoticed(id: number): void {
+  getDb().prepare("UPDATE annual_checkup_revision_notices SET sent_at = CURRENT_TIMESTAMP WHERE id = ? AND sent_at IS NULL").run(id);
 }

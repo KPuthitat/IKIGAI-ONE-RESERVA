@@ -1,6 +1,6 @@
 // Annual check-up — the LINE notice sent when a person's results are released (phase 5). The card says only that the results are
 // ready: no value, no verdict, no test name. A person without LINE gets nothing (the recorders see a names-only list instead).
-import { countAwaitingDoctor, listApproverLineIds, listPendingNotifications, markNotified } from "./annual-checkup-db";
+import { countAwaitingDoctor, listApproverLineIds, listPendingNotifications, listPendingRevisionNotices, markNotified, markRevisionNoticed } from "./annual-checkup-db";
 import { sendLinePush, type LineFlexMessage } from "./line";
 import { getPlatformChannel } from "./messaging-channels";
 
@@ -85,3 +85,30 @@ export async function notifyDoctorsAwaiting(roundId: number, now = Date.now()): 
   } catch { return 0; }
 }
 export const resetDoctorNoticeThrottle = (): void => { lastDoctorNotice = 0; };
+
+
+// ── "your results were corrected" (health report PR 4) ──
+// A person whose released results were changed and approved again is told once. Like the first card it carries no value and no test name.
+export function resultsRevisedCard(): LineFlexMessage {
+  const base = resultsReadyCard();
+  const c = base.contents as { body: { contents: Array<{ text?: string }> } };
+  c.body.contents[0].text = "ผลตรวจสุขภาพประจำปีของท่านมีการแก้ไข";
+  c.body.contents[1].text = "แพทย์ตรวจสอบและอนุมัติฉบับแก้ไขแล้ว เปิดดูได้ในพอร์ทัล โดยยืนยันตัวตนด้วยรหัส PIN ของท่าน";
+  return { ...base, altText: "ผลตรวจสุขภาพประจำปีของท่านมีการแก้ไข" };
+}
+
+export async function notifyRevisedResults(): Promise<number> {
+  const token = getPlatformChannel()?.channel_token ?? null;
+  if (!token) return 0;
+  let sent = 0;
+  const done = new Set<number>();
+  const pending = listPendingRevisionNotices(60);
+  for (const p of pending) {
+    if (done.has(p.user_id)) { markRevisionNoticed(p.id); continue; }     // several edits, one message
+    try {
+      const r = await sendLinePush(token, { to: p.line_user_id, messages: [resultsRevisedCard()] });
+      if (r.ok) { done.add(p.user_id); markRevisionNoticed(p.id); sent++; }
+    } catch { /* try again on the next ping */ }
+  }
+  return sent;
+}

@@ -3,8 +3,9 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { normExamCode } from "@/lib/health-report/lab-import";
-import { getRoundLineGaps, getRoundOverview, isAnnualCheckupInvalid } from "@/lib/annual-checkup-db";
-import { requireClinicalUser } from "@/lib/annual-checkup-api";
+import { getRoundLineGaps, getRoundOverview, isAnnualCheckupInvalid, isApproverUser, listMyReturns } from "@/lib/annual-checkup-db";
+import { isUnlocked, requireClinicalUser } from "@/lib/annual-checkup-api";
+import ReleaseCompany from "./ReleaseCompany";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ผลตรวจสุขภาพประจำปี · NOKHOOK OS PORTAL" };
@@ -20,6 +21,9 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
   let data: ReturnType<typeof getRoundOverview>;
   try { data = getRoundOverview(user, roundId); } catch (e) { if (isAnnualCheckupInvalid(e)) notFound(); throw e; }
   const lineGaps = getRoundLineGaps(user, roundId);
+  const myReturns = listMyReturns(user, roundId);
+  const approver = isApproverUser(user.id);
+  const payers = approver ? (getDb().prepare("SELECT id, name_th AS name FROM annual_checkup_payers WHERE round_id = ? ORDER BY id").all(roundId) as Array<{ id: number; name: string }>) : [];
   const f = searchParams.f ?? "";
   const q = (searchParams.q ?? "").trim().toLowerCase();
   // the laboratory's examination code per person (AHC69-0001); a scanned tube label (AHC69-0001-R) is cut back to the code
@@ -36,7 +40,9 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
     if (f === "done") return s.required > 0 && s.released === s.required;
     return true;
   });
-  const state = (s: (typeof data.subjects)[number]) => s.required > 0 && s.released === s.required ? { th: "เปิดผลแล้ว", cls: "bg-emerald-100 text-emerald-700" }
+  const state = (s: (typeof data.subjects)[number]) => s.returned ? { th: "ส่งกลับให้แก้ไข", cls: "bg-amber-100 text-amber-800" }
+    : s.conclusionReleased && s.required > 0 && s.released < s.required ? { th: "แก้ไขหลังเปิดผล รออนุมัติใหม่", cls: "bg-rose-100 text-rose-700" }
+    : s.required > 0 && s.released === s.required ? { th: "เปิดผลแล้ว", cls: "bg-emerald-100 text-emerald-700" }
     : s.verified === s.required && s.required > 0 ? { th: "รอเปิดผล", cls: "bg-sky-100 text-sky-700" }
     : s.recorded === s.required && s.required > 0 ? (s.submitted ? { th: "รอแพทย์ตรวจสอบ", cls: "bg-violet-100 text-violet-700" } : { th: "ลงผลครบ ยังไม่ส่งแพทย์", cls: "bg-indigo-100 text-indigo-700" })
     : s.recorded === 0 ? { th: "ยังไม่ลงผล", cls: "bg-slate-100 text-slate-600" } : { th: "ลงผลบางส่วน", cls: "bg-amber-100 text-amber-800" };
@@ -49,6 +55,14 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
           ผลออกแล้วแต่ยังไม่ได้ผูก LINE จึงไม่ได้รับแจ้ง ({lineGaps.length} คน): {lineGaps.join(", ")} — แจ้งให้เปิดดูผลในพอร์ทัลได้เอง
         </div>
       )}
+
+      {myReturns.length > 0 && (
+        <div className="card border-amber-300 bg-amber-50 space-y-1">
+          <div className="text-sm font-semibold text-amber-900">งานค้างของท่าน: แพทย์ส่งกลับให้แก้ไข ({myReturns.length})</div>
+          {myReturns.map((j) => <div key={j.key} className="text-sm"><Link href={`/staff/health/annual-checkup/${roundId}/person/${j.key}/entry`} className="text-brand hover:underline font-medium">{j.label}</Link> — {j.note} <span className="text-xs text-slate-500">({j.by_name})</span></div>)}
+        </div>
+      )}
+      {approver && payers.length > 0 && <ReleaseCompany roundId={roundId} payers={payers} unlocked={isUnlocked(user)} />}
 
       <div className="card flex flex-wrap items-center gap-3">
         <div className="text-sm text-slate-700">ลงผลรายรายการตามหมวดของเล่ม (เช่น น้ำตาลในเลือด หรือ WBC ของทุกคนต่อกัน)</div>

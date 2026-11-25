@@ -10,7 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { getDb, type Branch, type Booking } from "@/lib/db";
-import { notifyReleasedResults } from "@/lib/annual-checkup-notify";
+import { notifyReleasedResults, notifyRevisedResults } from "@/lib/annual-checkup-notify";
 import { upcomingBirthdays, birthdayReminderFlex, birthdayReminderSent, markBirthdayReminderSent } from "@/lib/birthday-reminder";
 import { runSpecialDutyDaily } from "@/lib/special-duty-cron";
 import { runGoalDigestWeekly } from "@/lib/corporate-goal";
@@ -129,6 +129,7 @@ async function runCron(): Promise<NextResponse> {
   let checkupNotices = 0;
   try {
     checkupNotices = await notifyReleasedResults();
+    checkupNotices += await notifyRevisedResults();
   } catch (e) {
     console.error("cron annual check-up notice error", e);
     reportError(e, "cron annual check-up notice", {});
