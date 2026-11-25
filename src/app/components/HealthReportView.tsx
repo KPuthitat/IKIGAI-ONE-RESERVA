@@ -25,7 +25,7 @@ function Explain({ text }: { text: string }) {
 function Section({ s, years, fileHref }: { s: RSection; years: number[]; fileHref: (id: number) => string }) {
   const yearsShown = years.length ? years : [0];
   return (
-    <section className="space-y-3" id={`sec-${s.key}`}>
+    <section className="space-y-3 scroll-mt-16" id={`sec-${s.key}`}>
       <Bar>{s.th} <span className="font-normal opacity-90">· {s.en}</span></Bar>
       {s.intro && <p className="text-sm text-slate-700 px-1 whitespace-pre-line">{s.intro.body}</p>}
       {s.rows.length > 0 && (
@@ -81,6 +81,7 @@ function Section({ s, years, fileHref }: { s: RSection; years: number[]; fileHre
 
 export default function HealthReportView({ report, fileHref, consultUrl, pdfHref }: { report: Report; fileHref: (resultId: number) => string; consultUrl: string | null; pdfHref?: string }) {
   const h = report.header, sm = report.summary;
+  const totalRows = report.sections.reduce((n, x) => n + x.rows.length, 0);
   return (
     <article className="space-y-6">
       <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -92,21 +93,44 @@ export default function HealthReportView({ report, fileHref, consultUrl, pdfHref
       </header>
 
       {/* summary card on top */}
-      <section className="rounded-2xl bg-[#FBF6E9] border border-[#EBDDB4] p-4 space-y-3">
-        <div className="text-sm text-slate-600">{report.roundName} · วันที่ตรวจ {thaiLongDate(h.examDate)}</div>
-        <div className="flex flex-wrap items-baseline gap-x-3"><div className="text-xl font-bold text-slate-900">{h.name}</div>{sm.overall.verdict && <span className={`rounded-full px-3 py-0.5 text-sm font-semibold ${sm.overall.verdict === "ปกติ" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>ภาพรวม: {sm.overall.verdict}</span>}</div>
-        <div>
-          <div className="font-bold text-slate-900">รายการที่ผิดปกติ ({sm.abnormal.length})</div>
-          {sm.abnormal.length === 0 ? <div className="text-sm text-emerald-800">ไม่พบรายการที่นอกเกณฑ์อ้างอิง</div> : (
-            <ul className="text-sm text-slate-800 space-y-0.5">{sm.abnormal.map((a, i) => <li key={i}><b>{a.name}</b> {a.value} <span className="text-rose-700 font-semibold">({withArrow(a.word)})</span> <span className="text-xs text-slate-500">— {a.section}</span></li>)}</ul>
-          )}
+      <section className="rounded-2xl border border-[#EBDDB4] bg-[#FBF6E9] overflow-hidden">
+        <div className={`px-4 py-3 text-white ${sm.overall.verdict === "ปกติ" ? "bg-emerald-700" : sm.overall.verdict ? "bg-amber-700" : "bg-[#0B1F3A]"}`}>
+          <div className="text-xs opacity-90">{report.roundName} · วันที่ตรวจ {thaiLongDate(h.examDate)}</div>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5"><div className="text-xl font-extrabold leading-tight">{h.name}</div>{sm.overall.verdict && <div className="text-sm font-bold">ภาพรวม: {sm.overall.verdict}</div>}</div>
         </div>
-        {sm.recommendations.length > 0 && <div><div className="font-bold text-slate-900">คำแนะนำของแพทย์</div><ul className="text-sm text-slate-800 space-y-1 whitespace-pre-line">{sm.recommendations.map((r, i) => <li key={i}>- {r}</li>)}</ul></div>}
-        <div className="flex flex-wrap gap-2">
-          {consultUrl && <a href={consultUrl} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl bg-[#0B1F3A] text-white font-semibold text-sm">ปรึกษาแพทย์</a>}
-          {pdfHref && <a href={pdfHref} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl border border-[#0B1F3A] text-[#0B1F3A] font-semibold text-sm">ดาวน์โหลดเล่มผล PDF</a>}
+        <div className="p-4 space-y-3">
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-white border border-slate-200 py-2"><div className="text-2xl font-extrabold text-[#0B1F3A] tabular-nums">{totalRows}</div><div className="text-[11px] text-slate-600">รายการที่ตรวจ</div></div>
+            <div className="rounded-xl bg-white border border-slate-200 py-2"><div className="text-2xl font-extrabold text-emerald-700 tabular-nums">{Math.max(0, totalRows - sm.abnormal.length)}</div><div className="text-[11px] text-slate-600">อยู่ในเกณฑ์</div></div>
+            <div className="rounded-xl bg-white border border-slate-200 py-2"><div className={`text-2xl font-extrabold tabular-nums ${sm.abnormal.length ? "text-rose-700" : "text-slate-400"}`}>{sm.abnormal.length}</div><div className="text-[11px] text-slate-600">นอกเกณฑ์อ้างอิง</div></div>
+          </div>
+          <div>
+            <div className="font-bold text-slate-900 mb-1">รายการที่ต้องใส่ใจ</div>
+            {sm.abnormal.length === 0 ? <div className="text-sm text-emerald-800">ไม่พบรายการที่นอกเกณฑ์อ้างอิง</div> : (
+              <ul className="space-y-1.5">{sm.abnormal.map((a, i) => (
+                <li key={i} className="flex items-center justify-between gap-3 rounded-xl bg-white border border-rose-200 px-3 py-2 min-h-[44px]">
+                  <div className="min-w-0"><div className="font-semibold text-sm text-slate-900 break-words">{a.name}</div><div className="text-[11px] text-slate-500">{a.section}</div></div>
+                  <div className="text-right shrink-0"><div className="font-bold text-slate-900">{a.value}</div><div className="text-xs font-semibold text-rose-700">{withArrow(a.word)}</div></div>
+                </li>
+              ))}</ul>
+            )}
+          </div>
+          {sm.recommendations.length > 0 && <div><div className="font-bold text-slate-900">คำแนะนำของแพทย์</div><ul className="text-sm text-slate-800 space-y-1 whitespace-pre-line mt-1">{sm.recommendations.map((r, i) => <li key={i}>- {r}</li>)}</ul></div>}
+          <div className="flex flex-wrap gap-2">
+            {consultUrl && <a href={consultUrl} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl bg-[#0B1F3A] text-white font-semibold text-sm flex-1 sm:flex-none">ปรึกษาแพทย์</a>}
+            {pdfHref && <a href={pdfHref} target="_blank" rel="noopener" className="inline-flex items-center justify-center min-h-[44px] px-5 rounded-xl border border-[#0B1F3A] bg-white text-[#0B1F3A] font-semibold text-sm flex-1 sm:flex-none">ดาวน์โหลดเล่มผล PDF</a>}
+          </div>
         </div>
       </section>
+
+      {/* jump to a section (sticks to the top while scrolling) */}
+      {report.sections.length > 1 && (
+        <nav aria-label="ไปยังหมวด" className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-white/95 backdrop-blur border-b border-slate-200 print:hidden">
+          <ul className="flex gap-2 overflow-x-auto no-scrollbar">
+            {report.sections.map((x) => <li key={x.key} className="shrink-0"><a href={`#sec-${x.key}`} className="inline-flex items-center min-h-[44px] px-3 rounded-full border border-slate-300 bg-white text-sm text-[#0B1F3A] whitespace-nowrap">{x.th}</a></li>)}
+          </ul>
+        </nav>
+      )}
 
       {/* general information */}
       <section className="space-y-3">
