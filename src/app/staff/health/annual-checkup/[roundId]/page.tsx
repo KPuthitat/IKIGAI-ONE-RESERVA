@@ -6,6 +6,7 @@ import { normExamCode } from "@/lib/health-report/lab-import";
 import { getRoundLineGaps, getRoundOverview, isAnnualCheckupInvalid, isApproverUser, listMyReturns } from "@/lib/annual-checkup-db";
 import { isUnlocked, requireClinicalUser } from "@/lib/annual-checkup-api";
 import ReleaseCompany from "./ReleaseCompany";
+import AddExternal from "./AddExternal";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ผลตรวจสุขภาพประจำปี · NOKHOOK OS PORTAL" };
@@ -23,6 +24,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
   const lineGaps = getRoundLineGaps(user, roundId);
   const myReturns = listMyReturns(user, roundId);
   const approver = isApproverUser(user.id);
+  const externalPayers = getDb().prepare("SELECT id, name_th AS name FROM annual_checkup_payers WHERE round_id = ? AND is_external = 1 ORDER BY id").all(roundId) as Array<{ id: number; name: string }>;
   const payers = approver ? (getDb().prepare("SELECT id, name_th AS name FROM annual_checkup_payers WHERE round_id = ? ORDER BY id").all(roundId) as Array<{ id: number; name: string }>) : [];
   const f = searchParams.f ?? "";
   const q = (searchParams.q ?? "").trim().toLowerCase();
@@ -63,6 +65,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
           {myReturns.map((j) => <div key={j.key} className="text-sm"><Link href={`/staff/health/annual-checkup/${roundId}/person/${j.key}/entry`} className="text-brand hover:underline font-medium">{j.label}</Link> — {j.note} <span className="text-xs text-slate-500">({j.by_name})</span></div>)}
         </div>
       )}
+      <AddExternal roundId={roundId} payers={externalPayers} />
       {approver && payers.length > 0 && <ReleaseCompany roundId={roundId} payers={payers} unlocked={isUnlocked(user)} />}
 
       <div className="card flex flex-wrap items-center gap-3">

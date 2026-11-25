@@ -20,6 +20,10 @@ export default function ImportClient({ rounds }: { rounds: RoundOption[] }) {
   const [endDate, setEndDate] = useState("");
   const [location, setLocation] = useState("");
   const [skip, setSkip] = useState(false);
+  const [stale, setStale] = useState(false);
+  const [pickRows, setPickRows] = useState<number[]>([]);
+  const [pickPayers, setPickPayers] = useState<string[]>([]);
+  const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [plan, setPlan] = useState<ImportPlan | null>(null);
@@ -32,22 +36,26 @@ export default function ImportClient({ rounds }: { rounds: RoundOption[] }) {
     f.set("file", file); f.set("mode", mode);
     if (roundId) f.set("roundId", roundId);
     else { f.set("name", name); f.set("yearBe", yearBe); f.set("startDate", startDate); f.set("endDate", endDate); f.set("location", location); }
+    f.set("externalRows", JSON.stringify(pickRows)); f.set("externalPayers", JSON.stringify(pickPayers));
     if (mode === "commit" && plan) { f.set("planHash", plan.hash); if (skip) f.set("skipUnresolved", "1"); }
     setBusy(true); setMsg(null);
     try {
       const r = await fetch(apiUrl("/api/admin/persona/annual-checkup/import"), { method: "POST", body: f });
       const j = await r.json();
       if (!j.ok) { setMsg({ ok: false, text: j.message ?? j.error ?? "ทำรายการไม่สำเร็จ" }); return; }
-      if (mode === "preview") { setPlan(j.plan); setResult(null); }
+      if (mode === "preview") { setPlan(j.plan); setResult(null); setStale(false); }
       else { setResult(j.result); setPlan(null); setMsg({ ok: true, text: "นำเข้าเรียบร้อยแล้ว" }); }
     } catch { setMsg({ ok: false, text: "เชื่อมต่อไม่สำเร็จ ลองอีกครั้ง" }); }
     finally { setBusy(false); }
   };
 
-  const blocked = !plan || plan.fileIssues.length > 0 || (plan.needsFix > 0 && !skip);
+  const blocked = !plan || stale || plan.fileIssues.length > 0 || (plan.needsFix > 0 && !skip);
   const matched = plan?.people.filter((p) => p.match.state === "matched").length ?? 0;
   const placeholders = plan?.people.filter((p) => p.match.state === "placeholder").length ?? 0;
   const fixes = plan?.people.filter((p) => p.match.state === "needs_fix") ?? [];
+  const groupB = plan?.people.filter((p) => p.group === "b") ?? [];
+  const groupC = plan?.people.filter((p) => p.group === "c") ?? [];
+  const bByPayer = groupB.reduce<Record<string, typeof groupB>>((m, p) => { (m[p.payer] ??= []).push(p); return m; }, {});
 
   return (
     <div className="space-y-4">
@@ -84,7 +92,7 @@ export default function ImportClient({ rounds }: { rounds: RoundOption[] }) {
       {result && (
         <div className="card space-y-1 text-sm">
           <div className="font-semibold text-slate-800">ผลการนำเข้า</div>
-          <div>{result.created ? "สร้างรอบใหม่" : "ปรับรอบเดิม"} · เพิ่มคำสั่งตรวจ {result.ordersAdded} · เปลี่ยน {result.ordersChanged} · ลบ {result.ordersRemoved} · เพิ่มช่องรอเติมชื่อ {result.externalsAdded} · ลำดับคิวเพิ่ม {result.queueAdded} เปลี่ยน {result.queueChanged}</div>
+          <div>{result.created ? "สร้างรอบใหม่" : "ปรับรอบเดิม"} · เพิ่มคำสั่งตรวจ {result.ordersAdded} · เปลี่ยน {result.ordersChanged} · ลบ {result.ordersRemoved} · เพิ่มช่องรอเติมชื่อ {result.externalsAdded} · ผู้รับการตรวจภายนอกใหม่ {result.namedAdded} (ใช้ต่อ {result.namedFound}) · ลำดับคิวเพิ่ม {result.queueAdded} เปลี่ยน {result.queueChanged}</div>
           {result.skippedRows > 0 && <div className="text-amber-700">ข้ามแถวที่ต้องแก้ {result.skippedRows} แถว — แก้ข้อมูลแล้วนำเข้าไฟล์เดิมอีกครั้งได้ ไม่เกิดข้อมูลซ้ำ</div>}
           {result.conflicts > 0 && <div className="text-amber-700">มี {result.conflicts} รายการที่ขัดแย้งกับผล/ข้อมูลทางคลินิก ไม่ได้เปลี่ยน</div>}
         </div>
@@ -95,8 +103,10 @@ export default function ImportClient({ rounds }: { rounds: RoundOption[] }) {
           <div className="card space-y-3">
             <div className="text-sm font-semibold text-slate-800">2. ตัวอย่างสิ่งที่จะเกิดขึ้น · {plan.round.mode === "new" ? "สร้างรอบใหม่" : "นำเข้าเข้ารอบเดิม"} “{plan.round.name}”</div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 text-sm">
-              <Stat label="พนักงานที่จับคู่ได้" value={matched} tone="ok" />
               <Stat label="ต้องแก้" value={plan.needsFix} tone={plan.needsFix ? "bad" : "ok"} />
+              <Stat label="ก. พนักงานที่จับคู่ได้" value={matched} tone="ok" />
+              <Stat label="ข. ผู้เข้าตรวจภายนอก (ให้เลือก)" value={groupB.length} />
+              <Stat label="ค. ข้าม (ผู้จ่ายอยู่ในกลุ่ม)" value={groupC.length} tone={groupC.length ? "warn" : "ok"} />
               <Stat label="รอเพิ่มรายชื่อ (ไม่มีบัญชี)" value={placeholders} />
               <Stat label="คำสั่งตรวจที่เพิ่ม" value={plan.orders.add} />
               <Stat label="เปลี่ยน" value={plan.orders.change} />
@@ -145,6 +155,40 @@ export default function ImportClient({ rounds }: { rounds: RoundOption[] }) {
                 </tbody>
               </table>
               <p className="text-xs text-slate-500 mt-2">แก้รหัสหรือชื่อให้ตรงกับระบบพนักงาน (หรือแก้ในไฟล์) แล้วดูตัวอย่างใหม่ หรือเลือก “ข้ามแถวที่ต้องแก้” เพื่อนำเข้าเฉพาะแถวที่ถูกต้องก่อน แล้วนำเข้าไฟล์เดิมซ้ำเมื่อแก้แล้ว</p>
+            </div>
+          )}
+
+          {groupB.length > 0 && (
+            <div className="card space-y-3">
+              <div className="text-sm font-semibold text-slate-800">ข. ไม่พบในรายชื่อพนักงาน และบริษัทผู้จ่ายเป็นบริษัทภายนอก ({groupB.length})</div>
+              <p className="text-xs text-slate-600">ติ๊กเพื่อสร้างเป็น “ผู้รับการตรวจภายนอก” (ไม่มีบัญชี ไม่ปนกับพนักงาน) — ระบบไม่สร้างให้เองโดยอัตโนมัติ ถ้าไม่ติ๊ก แถวนี้จะไม่ถูกนำเข้า</p>
+              {Object.entries(bByPayer).map(([payer, rows]) => (
+                <div key={payer} className="rounded-lg border border-slate-200">
+                  <label className="flex items-center gap-2 bg-slate-50 px-3 py-2 text-sm font-medium min-h-[44px]">
+                    <input type="checkbox" checked={pickPayers.includes(payer)} onChange={() => { setPickPayers(toggle(pickPayers, payer)); setStale(true); }} />
+                    <span>สร้างเป็นผู้รับการตรวจภายนอกทั้งบริษัท · {payer} ({rows.length} คน)</span>
+                  </label>
+                  <ul className="divide-y divide-slate-100 text-sm">
+                    {rows.map((p) => p.match.state === "external_candidate" && (
+                      <li key={p.sheetRow} className="flex items-center gap-2 px-3 py-1.5 min-h-[44px]">
+                        <input type="checkbox" checked={pickPayers.includes(payer) || pickRows.includes(p.sheetRow)} disabled={pickPayers.includes(payer)} onChange={() => { setPickRows(toggle(pickRows, p.sheetRow)); setStale(true); }} />
+                        <span className="tabular-nums text-xs text-slate-500">แถว {p.sheetRow}</span>
+                        <span>{p.name}</span>
+                        {p.match.exists && <span className="rounded bg-slate-100 px-1.5 text-xs text-slate-600">มีในรอบแล้ว</span>}
+                        {p.match.selected && <span className="text-xs text-emerald-700">จะสร้าง/ใช้ต่อ</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              <p className="text-xs text-slate-500">เมื่อเปลี่ยนการเลือก ให้กด “ดูตัวอย่างก่อนนำเข้า” อีกครั้งเพื่อยืนยันผลก่อนนำเข้า{stale && <b className="text-amber-700"> — เปลี่ยนการเลือกแล้ว ต้องดูตัวอย่างใหม่</b>}</p>
+            </div>
+          )}
+
+          {groupC.length > 0 && (
+            <div className="card overflow-x-auto">
+              <div className="text-sm font-semibold text-amber-800">ค. ข้าม ({groupC.length}) — ไม่พบในรายชื่อพนักงานและผู้จ่ายอยู่ในกลุ่มของเรา</div>
+              <ul className="list-disc pl-5 text-sm mt-1">{groupC.map((p) => p.match.state === "skipped" && <li key={p.sheetRow}>แถว {p.sheetRow} {p.name} ({p.payer || "ไม่ระบุผู้จ่าย"}) — {p.match.reason}</li>)}</ul>
             </div>
           )}
 
@@ -198,6 +242,8 @@ export default function ImportClient({ rounds }: { rounds: RoundOption[] }) {
                         {p.match.state === "matched" && <><span className="text-emerald-700">จับคู่แล้ว</span>{p.match.warnings.map((w, i) => <div key={i} className="text-amber-700">{w}</div>)}</>}
                         {p.match.state === "placeholder" && <span className="text-slate-600">รอเพิ่มรายชื่อ คนที่ {p.match.sortNo}</span>}
                         {p.match.state === "needs_fix" && <span className="text-rose-700">ต้องแก้</span>}
+                        {p.match.state === "external_candidate" && <span className="text-sky-700">ภายนอก{p.match.selected ? " · จะสร้าง" : " · ยังไม่เลือก"}</span>}
+                        {p.match.state === "skipped" && <span className="text-amber-700">ข้าม</span>}
                       </td>
                     </tr>
                   ))}

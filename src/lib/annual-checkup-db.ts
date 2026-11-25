@@ -1739,10 +1739,27 @@ export function upsertExternalPerson(roundId: number, payerId: number, d: Extern
   })();
 }
 
+/** For the importer: the names of the outside examinees already in a round (external id → first / last name), so the same person is found again. */
+export function listExternalNamesForImport(roundId: number): Map<number, { first: string; last: string }> {
+  const rows = getDb().prepare(`SELECT x.external_id, x.first_name, x.last_name FROM annual_checkup_external_details x JOIN annual_checkup_externals e ON e.id = x.external_id
+    WHERE e.round_id = ? AND e.is_placeholder = 0 AND x.first_name IS NOT NULL`).all(roundId) as Array<{ external_id: number; first_name: string; last_name: string | null }>;
+  return new Map(rows.map((r) => [r.external_id, { first: r.first_name, last: r.last_name ?? "" }]));
+}
+
 /** A clinic recorder adds one outside examinee by hand (people who are not in the planning file). */
-export function addExternalPerson(actor: AcActor, roundId: number, payerId: number, d: ExternalInput): { externalId: number; created: boolean; examCode: string | null } {
+export function addExternalPerson(actor: AcActor, roundId: number, payerId: number, d: ExternalInput): { externalId: number; created: boolean; examCode: string | null; ordersAdded: number } {
   const a = requireRecorder(actor);
-  return guard(() => { const r = upsertExternalPerson(roundId, payerId, d, a.id); return { externalId: r.externalId, created: r.created, examCode: r.examCode }; });
+  return guard(() => getDb().transaction(() => {
+    const r = upsertExternalPerson(roundId, payerId, d, a.id);
+    // the person gets the tests their company's programme gives to everyone ("เฉพาะคนที่ระบุ" tests are added by hand afterwards)
+    const db = getDb();
+    const tests = db.prepare(`SELECT pt.test_id FROM annual_checkup_program_tests pt JOIN annual_checkup_programs pg ON pg.id = pt.program_id
+       WHERE pg.round_id = ? AND pg.payer_id = ? AND pt.scope = 'all'`).all(roundId, payerId) as Array<{ test_id: number }>;
+    const ins = db.prepare("INSERT OR IGNORE INTO annual_checkup_orders (round_id, external_id, payer_id, test_id, status) VALUES (?,?,?,?, 'ordered')");
+    let ordersAdded = 0;
+    for (const t of tests) if (!db.prepare("SELECT 1 FROM annual_checkup_orders WHERE round_id = ? AND external_id = ? AND test_id = ?").get(roundId, r.externalId, t.test_id)) { ins.run(roundId, r.externalId, payerId, t.test_id); ordersAdded++; }
+    return { externalId: r.externalId, created: r.created, examCode: r.examCode, ordersAdded };
+  })());
 }
 
 export type ExternalDetails = { external_id: number; title: string | null; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; id_last4: string | null; sponsor_employee_code: string | null; consent_pdpa_at: string | null; consent_release_to_sponsor: boolean; sex: "M" | "F" | null; dob: string | null; payer: string };

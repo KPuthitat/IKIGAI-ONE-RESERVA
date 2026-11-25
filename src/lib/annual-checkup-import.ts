@@ -14,19 +14,25 @@
 import crypto from "node:crypto";
 import type Database from "better-sqlite3";
 import { logPersonaAction } from "./db";
-import { applyQueuePlan, isRecorderEligible, listQueueForImport, lockedOrderIds } from "./annual-checkup-db";
+import { applyQueuePlan, isRecorderEligible, listQueueForImport, lockedOrderIds, listExternalNamesForImport, normPersonKey, sexFromTitle, splitThaiName, upsertExternalPerson } from "./annual-checkup-db";
 import { offerNameKey } from "./recruita-offer";
 import { nameWithPrefix } from "./name";
 import type { ParsedMark, ParsedWorkbook } from "./annual-checkup-xlsx";
 
-export type RoundInput = { roundId?: number | null; name?: string | null; yearBe?: number | null; startDate?: string | null; endDate?: string | null; location?: string | null };
+export type RoundInput = { roundId?: number | null; name?: string | null; yearBe?: number | null; startDate?: string | null; endDate?: string | null; location?: string | null;
+  /** Outside examinees the user chose to create: whole paying companies (by name) and/or single rows (sheet row numbers). Nothing is created unless chosen. */
+  externals?: { payers: string[]; rows: number[] } | null };
 
 export type PersonMatch =
   | { state: "matched"; userId: number; display: string; warnings: string[] }
   | { state: "needs_fix"; reason: "not_found" | "name_mismatch" | "ambiguous" | "inactive" | "duplicate_row"; message: string }
-  | { state: "placeholder"; sortNo: number };
+  | { state: "placeholder"; sortNo: number }
+  // group ข — no match among staff and the paying company is outside the group: may become an outside examinee, only when ticked
+  | { state: "external_candidate"; selected: boolean; exists: boolean; sponsorCode: string | null }
+  // group ค — no match among staff but the paying company is one of ours: never made external, skipped with a reason
+  | { state: "skipped"; reason: string };
 
-export type PlanPerson = { sheetRow: number; kind: "employee" | "placeholder"; code: string | null; name: string; payer: string; queueNo: number | null; match: PersonMatch; ordered: number; waived: number; externalLab: number };
+export type PlanPerson = { sheetRow: number; kind: "employee" | "placeholder" | "named"; group: "a" | "b" | "c" | null; code: string | null; name: string; payer: string; queueNo: number | null; match: PersonMatch; ordered: number; waived: number; externalLab: number };
 export type PlanCounts = { add: number; change: number; same: number; remove: number; conflict: number };
 /** The queue numbers ("ลำดับ" column): what would be added / changed / left alone, and what could not be placed. */
 export type QueuePlan = { add: number; change: number; same: number; noNumber: number; clashes: string[]; skippedNoCode: string[] };
@@ -54,13 +60,14 @@ export class ImportRefused extends Error {
   constructor(public code: "file_issues" | "needs_fix" | "plan_changed" | "round_not_found" | "round_invalid", message: string) { super(message); this.name = "ImportRefused"; }
 }
 
-type Subject = { userId: number } | { placeholder: { payer: string; sortNo: number } };
+type Subject = { userId: number } | { placeholder: { payer: string; sortNo: number } } | { named: string };
 type OrderOp = { subject: Subject; payer: string; testId: number; status: ParsedMark; kind: "add" | "change" | "remove"; orderId: number | null };
 type Ops = {
   round: ImportPlan["round"];
   payers: ImportPlan["payers"];
   programmes: Array<{ payer: string; tests: Array<{ testId: number; scope: "all" | "selected" }> }>;
   placeholders: Array<{ payer: string; sortNo: number }>;
+  named: Array<{ key: string; payer: string; first: string; last: string; title: string | null; dob: string | null; sponsorCode: string | null }>;
   orders: OrderOp[];
   queue: Array<{ userId: number | null; ph: { payer: string; sortNo: number } | null; queueNo: number }>;
 };
@@ -121,10 +128,11 @@ function compute(db: Database.Database, parsed: ParsedWorkbook, input: RoundInpu
   const people: PlanPerson[] = [];
   const matched: Array<{ person: typeof parsed.people[number]; userId: number }> = [];
   const placeholders: Array<{ person: typeof parsed.people[number]; payer: string; sortNo: number }> = [];
+  const namedRows: Array<typeof parsed.people[number]> = [];
 
   for (const p of parsed.people) {
     const marks = Object.values(p.marks);
-    const base = { sheetRow: p.sheetRow, kind: p.kind, code: p.code, name: p.name, payer: norm(p.payer), queueNo: p.seq, ordered: marks.filter((m) => m === "ordered").length, waived: marks.filter((m) => m === "waived").length, externalLab: marks.filter((m) => m === "external_lab").length };
+    const base = { sheetRow: p.sheetRow, kind: p.kind, group: null as PlanPerson["group"], code: p.code, name: p.name, payer: norm(p.payer), queueNo: p.seq, ordered: marks.filter((m) => m === "ordered").length, waived: marks.filter((m) => m === "waived").length, externalLab: marks.filter((m) => m === "external_lab").length };
     if (p.kind === "placeholder") {
       const payer = norm(p.payer);
       const sortNo = p.placeholderNo ?? (phCounter.get(payer) ?? 0) + 1;
@@ -150,10 +158,11 @@ function compute(db: Database.Database, parsed: ParsedWorkbook, input: RoundInpu
       if (others.length > 0) w.push(`รหัส ${p.code} ซ้ำในระบบกับ ${others.map(userLabel).join(", ")} — จับคู่ด้วยชื่อ (ควรแก้รหัสในระบบ)`);
       const detail = parsed.detailNames.get(p.code ?? "");
       if (detail && offerNameKey(detail) !== fileKey) w.push(`ชื่อในแผ่นรายการตรวจ “${p.name}” ต่างจากแผ่นรายชื่อ “${detail}”`);
-      people.push({ ...base, match: { state: "matched", userId: u.id, display: userLabel(u), warnings: w } });
+      people.push({ ...base, group: "a", match: { state: "matched", userId: u.id, display: userLabel(u), warnings: w } });
       matched.push({ person: p, userId: u.id });
       continue;
     }
+    if (active.length === 0 && nameMatches.length === 0 && candidates.length === 0 && !companyByName.has(norm(p.payer)) && norm(p.payer)) { namedRows.push(p); continue; }
     let fix: PersonMatch;
     if (active.length > 1) fix = { state: "needs_fix", reason: "ambiguous", message: `รหัสและชื่อตรงกับพนักงานมากกว่าหนึ่งคน (${active.map(userLabel).join(", ")})` };
     else if (nameMatches.length > 0) fix = { state: "needs_fix", reason: "inactive", message: `พบ ${userLabel(nameMatches[0])} แต่สถานะไม่ใช่พนักงานที่ทำงานอยู่` };
@@ -164,6 +173,35 @@ function compute(db: Database.Database, parsed: ParsedWorkbook, input: RoundInpu
     }
     people.push({ ...base, match: fix });
   }
+  // ── named rows without a staff match: group ข (outside company) / group ค (our own company) ──
+  const existingNamed = new Map<string, number>();   // payer#nameKey → external id, for people already in the round
+  if (round.id) {
+    const names = listExternalNamesForImport(round.id);
+    const rows = db.prepare("SELECT e.id, pa.name_th AS payer FROM annual_checkup_externals e JOIN annual_checkup_payers pa ON pa.id = e.payer_id WHERE e.round_id = ? AND e.is_placeholder = 0").all(round.id) as Array<{ id: number; payer: string }>;
+    for (const r of rows) { const n = names.get(r.id); if (n) existingNamed.set(`${norm(r.payer)}#${normPersonKey(n.first, n.last)}`, r.id); }
+  }
+  const pick = input.externals ?? { payers: [], rows: [] };
+  const pickPayers = new Set(pick.payers.map(norm)), pickRows = new Set(pick.rows);
+  const named: Ops["named"] = [];
+  const namedKeys = new Set<string>();
+  const namedParsed = new Map<string, typeof parsed.people[number]>();
+  for (const p of [...parsed.named, ...namedRows]) {
+    const payer = norm(p.payer);
+    const base = { sheetRow: p.sheetRow, kind: "named" as const, group: null as PlanPerson["group"], code: p.code, name: p.name, payer, queueNo: p.seq, ordered: Object.values(p.marks).filter((m) => m === "ordered").length, waived: Object.values(p.marks).filter((m) => m === "waived").length, externalLab: Object.values(p.marks).filter((m) => m === "external_lab").length };
+    if (!payer || companyByName.has(payer)) {
+      people.push({ ...base, group: "c", match: { state: "skipped", reason: !payer ? "ไม่ระบุบริษัทที่รับค่าใช้จ่าย" : "ไม่พบในรายชื่อพนักงานและบริษัทผู้จ่ายอยู่ในกลุ่มของเรา — ไม่สร้างเป็นผู้รับการตรวจภายนอก (ตรวจรหัส/ชื่อ หรือเพิ่มพนักงานก่อน)" } });
+      continue;
+    }
+    const sp = splitThaiName(p.name);
+    const key = `${payer}#${normPersonKey(sp.first, sp.last)}`;
+    if (!sp.first) { people.push({ ...base, group: "c", match: { state: "skipped", reason: "ไม่มีชื่อ" } }); continue; }
+    if (namedKeys.has(key)) { fileIssues.push(`แถว ${p.sheetRow}: ${p.name} (${payer}) ซ้ำกับแถวอื่นในไฟล์`); continue; }
+    namedKeys.add(key);
+    const selected = pickPayers.has(payer) || pickRows.has(p.sheetRow);
+    const exists = existingNamed.has(key);
+    people.push({ ...base, group: "b", match: { state: "external_candidate", selected, exists, sponsorCode: p.code } });
+    if (selected) { named.push({ key, payer, first: sp.first, last: sp.last, title: sp.title, dob: p.dob, sponsorCode: p.code }); namedParsed.set(key, p); }
+  }
   const needsFix = people.filter((p) => p.match.state === "needs_fix").length;
 
   // ── queue numbers: the "ลำดับ" column, placed for everyone who is imported (matched staff and placeholders) ──
@@ -171,7 +209,7 @@ function compute(db: Database.Database, parsed: ParsedWorkbook, input: RoundInpu
     ...matched.map((m) => ({ key: `u${m.userId}`, label: userLabel(users.find((u) => u.id === m.userId) as UserRow), userId: m.userId, ph: null, no: m.person.seq, sheetRow: m.person.sheetRow })),
     ...placeholders.map((x) => ({ key: `p${x.payer}#${x.sortNo}`, label: `${x.payer} คนที่ ${x.sortNo}`, userId: null, ph: { payer: x.payer, sortNo: x.sortNo }, no: x.person.seq, sheetRow: x.person.sheetRow }))
   ];
-  const queuePlan: QueuePlan = { add: 0, change: 0, same: 0, noNumber: 0, clashes: [], skippedNoCode: parsed.skippedNoCode.map((x) => `แถว ${x.sheetRow} ${x.name}`) };
+  const queuePlan: QueuePlan = { add: 0, change: 0, same: 0, noNumber: 0, clashes: [], skippedNoCode: people.filter((x) => x.group === "c").map((x) => `แถว ${x.sheetRow} ${x.name}`) };
   if (queuePlan.skippedNoCode.length > 0) warnings.push(`ข้าม ${queuePlan.skippedNoCode.length} แถวที่ยังไม่มีรหัสพนักงาน (ไม่จับคู่ด้วยชื่ออย่างเดียว): ${queuePlan.skippedNoCode.join(", ")}`);
   const seenNo = new Map<number, string>();
   for (const q of queueAsk) {
@@ -197,13 +235,15 @@ function compute(db: Database.Database, parsed: ParsedWorkbook, input: RoundInpu
 
   // ── orders: file vs what is already there ──
   const locked = round.id ? lockedOrderIds(round.id) : new Set<number>();
-  type Existing = { id: number; user_id: number | null; external_id: number | null; test_id: number; status: ParsedMark; payer: string | null; ext_payer: string | null; ext_sort: number | null };
+  type Existing = { id: number; user_id: number | null; external_id: number | null; test_id: number; status: ParsedMark; payer: string | null; ext_payer: string | null; ext_sort: number | null; ext_first?: string | null; ext_last?: string | null };
   const existing = round.id ? db.prepare(`
     SELECT o.id, o.user_id, o.external_id, o.test_id, o.status, p.name_th AS payer, ep.name_th AS ext_payer, e.sort_no AS ext_sort
       FROM annual_checkup_orders o LEFT JOIN annual_checkup_payers p ON p.id = o.payer_id
       LEFT JOIN annual_checkup_externals e ON e.id = o.external_id LEFT JOIN annual_checkup_payers ep ON ep.id = e.payer_id
      WHERE o.round_id = ?`).all(round.id) as Existing[] : [];
-  const subjKey = (e: Existing) => e.user_id != null ? `u${e.user_id}` : `p${norm(e.ext_payer ?? "")}#${e.ext_sort}`;
+  const extNames = round.id ? listExternalNamesForImport(round.id) : new Map<number, { first: string; last: string }>();
+  for (const e of existing) if (e.external_id != null) { const n = extNames.get(e.external_id); if (n) { e.ext_first = n.first; e.ext_last = n.last; } }
+  const subjKey = (e: Existing) => e.user_id != null ? `u${e.user_id}` : e.ext_first ? `n${norm(e.ext_payer ?? "")}#${normPersonKey(e.ext_first, e.ext_last ?? "")}` : `p${norm(e.ext_payer ?? "")}#${e.ext_sort}`;
   const existingBySubject = new Map<string, Existing[]>();
   for (const e of existing) existingBySubject.set(subjKey(e), [...(existingBySubject.get(subjKey(e)) ?? []), e]);
 
@@ -234,6 +274,7 @@ function compute(db: Database.Database, parsed: ParsedWorkbook, input: RoundInpu
     return m;
   };
   for (const { person, userId } of matched) handle(`u${userId}`, { userId }, person.name, norm(person.payer), wantedOf(person));
+  for (const n of named) handle(`n${n.key}`, { named: n.key }, [n.title, n.first, n.last].filter(Boolean).join(" "), n.payer, wantedOf(namedParsed.get(n.key) as typeof parsed.people[number]));
   for (const { person, payer, sortNo } of placeholders) handle(`p${payer}#${sortNo}`, { placeholder: { payer, sortNo } }, `${payer} คนที่ ${sortNo}`, payer, wantedOf(person));
 
   // A person who has orders in this round but is gone from the file loses them — only when every row was understood, otherwise a
@@ -251,7 +292,7 @@ function compute(db: Database.Database, parsed: ParsedWorkbook, input: RoundInpu
       }
     }
   }
-  const goneExternals = [...existingBySubject.keys()].filter((k) => k.startsWith("p") && !inFile.has(k));
+  const goneExternals = [...existingBySubject.keys()].filter((k) => (k.startsWith("p") || k.startsWith("n")) && !inFile.has(k) && ![...namedKeys].some((nk) => `n${nk}` === k));
   if (goneExternals.length > 0) warnings.push(`มีผู้เข้าตรวจภายนอก ${goneExternals.length} รายที่มีคำสั่งตรวจแต่ไม่อยู่ในไฟล์ — คงไว้ ไม่ลบ (อาจเติมชื่อไปแล้ว)`);
 
   // ── per-test counts, reconciled with the file's own totals row ──
@@ -264,9 +305,9 @@ function compute(db: Database.Database, parsed: ParsedWorkbook, input: RoundInpu
     return [row];
   });
 
-  const ordersOut = ops.map((o) => ({ ...o, subject: "userId" in o.subject ? { u: o.subject.userId } : o.subject.placeholder }));
-  const ops2: Ops = { round, payers, programmes, placeholders: placeholders.map((p) => ({ payer: p.payer, sortNo: p.sortNo })), orders: ops, queue: queueOps };
-  const hash = crypto.createHash("sha256").update(JSON.stringify({ round, payers, programmes, ph: ops2.placeholders, orders: ordersOut, queue: queueOps, needsFix, fileIssues })).digest("hex").slice(0, 24);
+  const ordersOut = ops.map((o) => ({ ...o, subject: "userId" in o.subject ? { u: o.subject.userId } : "named" in o.subject ? { n: o.subject.named } : o.subject.placeholder }));
+  const ops2: Ops = { round, payers, programmes, placeholders: placeholders.map((p) => ({ payer: p.payer, sortNo: p.sortNo })), named, orders: ops, queue: queueOps };
+  const hash = crypto.createHash("sha256").update(JSON.stringify({ round, payers, programmes, ph: ops2.placeholders, named, orders: ordersOut, queue: queueOps, needsFix, fileIssues })).digest("hex").slice(0, 24);
   return { plan: { fileIssues, round, payers, programmes: programmes.map((p) => ({ payer: p.payer, testCount: p.tests.length })), people, orders: counts, queue: queuePlan, conflicts, perTest, warnings, needsFix, hash }, ops: ops2 };
 }
 
@@ -275,7 +316,7 @@ export function buildImportPlan(db: Database.Database, parsed: ParsedWorkbook, i
   return compute(db, parsed, input).plan;
 }
 
-export type CommitResult = { roundId: number; created: boolean; ordersAdded: number; ordersChanged: number; ordersRemoved: number; externalsAdded: number; skippedRows: number; conflicts: number; queueAdded: number; queueChanged: number };
+export type CommitResult = { roundId: number; created: boolean; ordersAdded: number; ordersChanged: number; ordersRemoved: number; externalsAdded: number; namedAdded: number; namedFound: number; skippedRows: number; conflicts: number; queueAdded: number; queueChanged: number };
 
 /**
  * Write the plan the user looked at. Refused if the file has problems of its own, if rows still need fixing (unless the user chose to skip
@@ -327,13 +368,23 @@ export function commitImport(db: Database.Database, parsed: ParsedWorkbook, inpu
       }
     }
 
+    // outside examinees the user ticked: found again by name + company (+ date of birth), never duplicated
+    let namedAdded = 0, namedFound = 0;
+    const namedId = new Map<string, number>();
+    for (const n of ops.named) {
+      const pid = payerId.get(n.payer) as number;
+      const r = upsertExternalPerson(rid, pid, { title: n.title, firstName: n.first, lastName: n.last, dob: n.dob, sex: sexFromTitle(n.title), sponsorEmployeeCode: n.sponsorCode }, actorId);
+      namedId.set(n.key, r.externalId);
+      if (r.created) namedAdded++; else namedFound++;
+    }
+
     let added = 0, changed = 0, removed = 0;
     for (const o of ops.orders) {
       const pid = payerId.get(o.payer) ?? null;
       if (o.kind === "remove") { db.prepare("DELETE FROM annual_checkup_orders WHERE id = ?").run(o.orderId); removed++; continue; }
       if (o.kind === "change") { db.prepare("UPDATE annual_checkup_orders SET status = ?, payer_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(o.status, pid, o.orderId); changed++; continue; }
       const userId = "userId" in o.subject ? o.subject.userId : null;
-      const extId = "placeholder" in o.subject ? (externalId.get(`${o.subject.placeholder.payer}#${o.subject.placeholder.sortNo}`) as number) : null;
+      const extId = "placeholder" in o.subject ? (externalId.get(`${o.subject.placeholder.payer}#${o.subject.placeholder.sortNo}`) as number) : "named" in o.subject ? (namedId.get(o.subject.named) as number) : null;
       db.prepare("INSERT INTO annual_checkup_orders (round_id, user_id, external_id, payer_id, test_id, status) VALUES (?,?,?,?,?,?)").run(rid, userId, extId, pid, o.testId, o.status);
       added++;
     }
@@ -343,6 +394,6 @@ export function commitImport(db: Database.Database, parsed: ParsedWorkbook, inpu
       queueNo: x.queueNo
     })));
     logPersonaAction(actorId, "annual_checkup.import", rid);
-    return { roundId: rid, created, ordersAdded: added, ordersChanged: changed, ordersRemoved: removed, externalsAdded, skippedRows: plan.needsFix, conflicts: plan.orders.conflict, queueAdded: q.added, queueChanged: q.changed };
+    return { roundId: rid, created, ordersAdded: added, ordersChanged: changed, ordersRemoved: removed, externalsAdded, namedAdded, namedFound, skippedRows: plan.needsFix, conflicts: plan.orders.conflict, queueAdded: q.added, queueChanged: q.changed };
   })();
 }

@@ -9,6 +9,8 @@ import { parseCheckupWorkbook } from "@/lib/annual-checkup-xlsx";
 //   mode            "preview" (writes nothing, returns the plan) | "commit" (needs planHash from the preview)
 //   roundId         an existing round to import into again; or name [+ yearBe, startDate, endDate, location] for a new one
 //   planHash        the hash the preview returned — the commit is refused if anything changed since
+//   externalPayers  JSON array of outside paying companies whose unmatched people become outside examinees (group ข)
+//   externalRows    JSON array of sheet row numbers ticked one by one — nothing is created unless ticked
 //   skipUnresolved  "1" to import only the rows that were understood (the rest stay for a later import)
 // Allowed: super_admin, or clinic staff holding the recorder flag (canImportCheckup).
 
@@ -36,6 +38,8 @@ export async function POST(req: Request) {
     roundId: Number.isInteger(roundId) && roundId > 0 ? roundId : null, name: field(form, "name"),
     yearBe: Number.isInteger(yearBe) && yearBe > 2400 ? yearBe : null, startDate: start, endDate: end, location: field(form, "location")
   };
+  const list = (k: string): unknown[] => { try { const v = JSON.parse(field(form, k) ?? "[]"); return Array.isArray(v) ? v : []; } catch { return []; } };
+  input.externals = { payers: list("externalPayers").filter((x): x is string => typeof x === "string"), rows: list("externalRows").filter((x): x is number => Number.isInteger(x)) };
   const mode = field(form, "mode") === "commit" ? "commit" : "preview";
 
   const parsed = parseCheckupWorkbook(Buffer.from(await file.arrayBuffer()));
