@@ -111,6 +111,17 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   ok("a revoked link cannot be opened", (G.verifyAccessLink(l2.token, "1988-03-04") as { reason: string }).reason === "revoked");
   ok("a person without a date of birth cannot be given a link", (() => { const e2 = Number(db.prepare("INSERT INTO annual_checkup_externals (round_id, payer_id, full_name) VALUES (?,?,?)").run(r70, px, "ไม่มีวันเกิด").lastInsertRowid); const o2 = Number(db.prepare("INSERT INTO annual_checkup_orders (round_id, external_id, payer_id, test_id) VALUES (?,?,?,(SELECT id FROM annual_checkup_tests WHERE code = 'GLUCOSE'))").run(r70, e2, px).lastInsertRowid); G.recordResult(R, o2, { valueNum: 90 }); G.verifyAllForSubject(D, r70, { externalId: e2 }, U); G.saveConclusion(D, r70, { externalId: e2 }, { summary: "normal" }, U); G.releaseSubject(D, r70, { externalId: e2 }, U); return err(() => G.createAccessLink(R, r70, e2, 7)) === "dob_required"; })());
 
+  // ── the A5 PDF ──
+  const PDF = await import("../src/lib/health-report/report-pdf");
+  const pages = (b: Buffer) => (b.toString("latin1").match(/\/Type \/Page\b/g) ?? []).length;
+  const pdf = await PDF.generateReportPdf(rep, { consultUrl: "https://example.com/consult" });
+  ok("the booklet renders as a PDF: cover, content pages, back cover", pdf.subarray(0, 5).toString() === "%PDF-" && pages(pdf) >= 6);
+  ok("it is A5 (419.5 × 595.3 pt)", /MediaBox \[0 0 419\.5\d* 595\.2\d*\]/.test(pdf.toString("latin1")));
+  const noQr = await PDF.generateReportPdf(rep, { consultUrl: null });
+  ok("without a consult link the booklet still renders", noQr.subarray(0, 5).toString() === "%PDF-");
+  const PD = await import("../src/lib/health-report/pdf-data");
+  ok("file name is English, upper case: HEALTHREPORTA5_<CODE>_<YEAR>", /HEALTHREPORTA5_IKG-W47_2026\.pdf/.test(PD.reportDisposition(rd)));
+
   cleanup();
   if (failed) { console.error(`\n${failed} failed`); process.exit(1); }
   console.log("\nAll health view tests passed");

@@ -54,6 +54,7 @@ export default function PersonPage({ params }: { params: { roundId: string; key:
       {header.kind === "external" && subject.externalId != null && conclusion?.released_at && (
         <AccessLinkPanel roundId={roundId} externalId={subject.externalId} links={listAccessLinks(user, roundId, subject.externalId)} hasDob={!!getSubjectDob(user, subject)} />
       )}
+      {conclusion?.released_at && <a href={`/api/annual-checkup/report-pdf?roundId=${roundId}&subject=${params.key}`} target="_blank" rel="noopener" className="btn-secondary text-sm inline-block min-h-[44px] leading-[44px] ml-2">ดาวน์โหลดเล่มผล PDF (A5)</a>}
       <SubmitPanel roundId={roundId} subject={params.key} submission={clinical.submission} released={!!conclusion?.released_at}
         allRecorded={rows.filter((x) => x.order_status !== "waived").every((x) => x.result_id != null)} />
       {approver && <UnlockPanel unlockedUntil={unlockExpiry(user)} />}

@@ -27,5 +27,5 @@ export default function LinkReportPage({ params }: { params: { token: string } }
   const texts = Object.fromEntries((db.prepare("SELECT key, title_th, body_th FROM annual_checkup_explanations").all() as Array<{ key: string; title_th: string | null; body_th: string }>).map((r) => [r.key, { title: r.title_th, body: r.body_th }]));
   const consultUrl = (db.prepare("SELECT value FROM annual_checkup_config WHERE key = 'consult_url'").get() as { value: string | null } | undefined)?.value?.trim() || null;
   const report = buildReport(d, loadItems(db), texts, new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10));
-  return <Shell><HealthReportView report={report} consultUrl={consultUrl} fileHref={(id) => `/api/annual-checkup/link/file/${id}`} /></Shell>;
+  return <Shell><HealthReportView report={report} consultUrl={consultUrl} pdfHref="/api/annual-checkup/link/report-pdf" fileHref={(id) => `/api/annual-checkup/link/file/${id}`} /></Shell>;
 }
