@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { post } from "../../../../shared";
+import { post, upload } from "../../../../shared";
 import { apiUrl } from "@/lib/url";
 import { bmi, bmiCategory, DEFAULT_THRESHOLDS, FLAG_TH, flagResult, globulin, HEARING_FREQS, implausible, indirectBilirubin, interpretHearing, interpretSpirometry, isCritical, refLabel, type Flag } from "@/lib/health-report/interpret";
 import type { Ref } from "@/lib/health-report/catalog";
@@ -9,7 +9,7 @@ import type { Ref } from "@/lib/health-report/catalog";
 type Vals = Record<string, string>;                          // what is typed (numbers stay text so "7." can be typed)
 type Saved = Record<string, number | string | null>;
 export type EntryItem = { code: string; en: string; th: string; unit: string | null; kind: "number" | "choice" | "text" | "file"; choices: string[] | null; normal: string[] | "any" | null; refs: Ref[]; refText: string | null; plausible: [number, number] | null; decimals: number | null; computed: "bmi" | "globulin" | "indirect_bili" | null };
-export type EntryTest = { orderId: number; testCode: string; locked: boolean; items: EntryItem[]; values: Saved };
+export type EntryTest = { orderId: number; testCode: string; locked: boolean; items: EntryItem[]; values: Saved; file: { href: string } | null };
 export type EntryTab = { key: string; th: string; en: string; tests: EntryTest[] };
 
 const FLAG_CLS: Record<Flag, string> = { normal: "text-emerald-700", low: "text-sky-700 font-semibold", high: "text-rose-700 font-semibold", abnormal: "text-rose-700 font-semibold", info: "text-slate-500" };
@@ -117,10 +117,18 @@ export default function EntryClient({ tabs, sex, age, enzymeMultiple }: { tabs: 
                 <span aria-live="polite" className={st?.s === "error" ? "text-rose-600" : ""}>{st?.s === "saving" ? "กำลังบันทึก…" : st?.s === "saved" ? `บันทึกแล้ว ${st.at}` : st?.s === "error" ? st.msg : ""}</span>
               </div>
               {x.items.map((it) => {
+                if (it.kind === "file") return (
+                  <div key={it.code} className="border-b border-slate-100 py-2 space-y-1">
+                    <div className="text-sm font-semibold text-slate-800">{it.en} <span className="font-normal text-xs text-slate-500">— {it.th}</span></div>
+                    {x.file ? <a href={x.file.href} target="_blank" rel="noopener" className="text-sm text-brand underline">เปิดไฟล์ที่แนบไว้</a> : <div className="text-xs text-slate-500">ยังไม่ได้แนบไฟล์</div>}
+                    {!x.locked && <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" className="block text-sm min-h-[44px]" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setState((s) => ({ ...s, [x.orderId]: { s: "saving" } })); const r = await upload(x.orderId, f); setState((s) => ({ ...s, [x.orderId]: r.ok ? { s: "saved", at: "แนบไฟล์แล้ว (รีเฟรชเพื่อดูไฟล์)" } : { s: "error", msg: r.message ?? "แนบไฟล์ไม่สำเร็จ" } })); }} />}
+                    <div className="text-[11px] text-slate-400">PDF หรือรูปภาพ (JPG, PNG, WEBP) ไม่เกิน 12 MB — แนบได้ทั้งไฟล์จากหน่วยตรวจภายนอก</div>
+                  </div>
+                );
                 const computedVal = it.computed === "bmi" ? bmiV : it.computed === "globulin" ? glob : it.computed === "indirect_bili" ? ibil : null;
                 const raw = v[it.code] ?? "";
                 const value: number | string | null = it.computed ? computedVal : it.kind === "number" ? num(it.code) : raw === "" ? null : raw;
-                const flag = it.kind === "file" ? null : flagResult({ kind: it.kind, refs: it.refs, normal: it.normal ?? undefined }, value, sex, age);
+                const flag = flagResult({ kind: it.kind, refs: it.refs, normal: it.normal ?? undefined }, value, sex, age);
                 const crit = typeof value === "number" && !it.computed && isCritical({ code: it.code, refs: it.refs }, value, sex, age, th);
                 const odd = typeof value === "number" && !it.computed && it.plausible && implausible({ plausible: it.plausible }, value);
                 const ref = refLabel({ refs: it.refs, refText: it.refText ?? undefined });

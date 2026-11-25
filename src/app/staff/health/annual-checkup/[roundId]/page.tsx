@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { getDb } from "@/lib/db";
+import { normExamCode } from "@/lib/health-report/lab-import";
 import { getRoundLineGaps, getRoundOverview, isAnnualCheckupInvalid } from "@/lib/annual-checkup-db";
 import { requireClinicalUser } from "@/lib/annual-checkup-api";
 
@@ -20,8 +22,14 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
   const lineGaps = getRoundLineGaps(user, roundId);
   const f = searchParams.f ?? "";
   const q = (searchParams.q ?? "").trim().toLowerCase();
+  // the laboratory's examination code per person (AHC69-0001); a scanned tube label (AHC69-0001-R) is cut back to the code
+  const examCode = new Map<string, string>();
+  for (const r of getDb().prepare("SELECT user_id, external_id, exam_code FROM annual_checkup_exam_codes WHERE round_id = ?").all(roundId) as Array<{ user_id: number | null; external_id: number | null; exam_code: string }>) examCode.set(r.user_id != null ? `u${r.user_id}` : `e${r.external_id}`, r.exam_code);
+  const scanned = q ? normExamCode(q) : "";
+  const byScan = scanned ? data.subjects.filter((s) => examCode.get(s.key) === scanned) : [];
+  if (byScan.length === 1) redirect(`/staff/health/annual-checkup/${roundId}/person/${byScan[0].key}`);   // scan a tube → open that person
   const subjects = data.subjects.filter((s) => {
-    if (q && !`${s.label} ${s.code ?? ""}`.toLowerCase().includes(q)) return false;
+    if (q && !`${s.label} ${s.code ?? ""} ${examCode.get(s.key) ?? ""}`.toLowerCase().includes(q)) return false;
     if (f === "todo") return s.recorded < s.required;
     if (f === "verify") return s.recorded === s.required && s.submitted && s.verified < s.required;
     if (f === "release") return s.verified === s.required && s.released < s.required;
@@ -44,6 +52,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
 
       <div className="card flex flex-wrap items-center gap-3">
         <div className="text-sm text-slate-700">ลงผลรายรายการตามหมวดของเล่ม (เช่น น้ำตาลในเลือด หรือ WBC ของทุกคนต่อกัน)</div>
+        <Link href={`/staff/health/annual-checkup/${roundId}/import`} className="btn-secondary text-sm min-h-[44px] leading-[44px] inline-block px-4">นำเข้าผลจากไฟล์แล็บ (Excel)</Link>
         <Link href={`/staff/health/annual-checkup/${roundId}/item/FBS`} className="btn-secondary text-sm min-h-[44px] leading-[44px] inline-block px-4">เปิดหน้ากรอกรายรายการ</Link>
       </div>
 
@@ -67,7 +76,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
           <div className="text-sm font-semibold text-slate-800 mr-2">รายคน ({subjects.length})</div>
           <form method="get" className="flex gap-2">
             {f && <input type="hidden" name="f" value={f} />}
-            <input name="q" defaultValue={searchParams.q ?? ""} placeholder="ค้นหาชื่อหรือรหัสพนักงาน" className="input min-h-[44px] w-56" />
+            <input name="q" defaultValue={searchParams.q ?? ""} placeholder="ค้นหาชื่อ รหัสพนักงาน หรือสแกนบาร์โค้ดหลอด" autoFocus className="input min-h-[44px] w-56" />
             <button type="submit" className="btn-secondary min-h-[44px] px-4">ค้นหา</button>
           </form>
           {FILTERS.map((x) => <Link key={x.v} href={`?${new URLSearchParams({ ...(x.v ? { f: x.v } : {}), ...(q ? { q } : {}) }).toString()}`} className={`chip ${f === x.v ? "chip-active" : ""}`}>{x.th}</Link>)}
@@ -79,7 +88,7 @@ export default function RoundOverviewPage({ params, searchParams }: { params: { 
               const st = state(s);
               return (
                 <tr key={s.key} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                  <td className="py-1.5 pr-3"><Link href={`/staff/health/annual-checkup/${roundId}/person/${s.key}`} className="font-medium text-brand hover:underline">{s.label}</Link><div className="text-[11px] text-slate-400">{s.code ?? "ผู้เข้าตรวจภายนอก"}</div></td>
+                  <td className="py-1.5 pr-3"><Link href={`/staff/health/annual-checkup/${roundId}/person/${s.key}`} className="font-medium text-brand hover:underline">{s.label}</Link><div className="text-[11px] text-slate-400">{s.code ?? "ผู้เข้าตรวจภายนอก"}{examCode.get(s.key) ? ` · ${examCode.get(s.key)}` : ""}</div></td>
                   <td className="py-1.5 pr-3 text-xs text-slate-600">{s.payer}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{s.recorded}/{s.required}</td><td className="py-1.5 pr-3 text-right tabular-nums">{s.verified}/{s.required}</td>
                   <td className="py-1.5 pr-3"><span className={`rounded px-1.5 py-0.5 text-[11px] ${st.cls}`}>{st.th}</span></td>

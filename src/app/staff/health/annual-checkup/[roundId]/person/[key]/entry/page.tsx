@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { getSubjectClinical, getSubjectDob, getSubjectHeader, isAnnualCheckupInvalid, parseSubjectKey } from "@/lib/annual-checkup-db";
 import { requireClinicalUser } from "@/lib/annual-checkup-api";
+import { fileLink } from "@/lib/annual-checkup-session";
 import { SECTIONS } from "@/lib/health-report/catalog";
 import { ageOn } from "@/lib/health-report/interpret";
 import { itemsOfTest, loadItems, valuesFromResult } from "@/lib/health-report/store";
@@ -11,6 +12,9 @@ import EntryClient, { type EntryTab } from "./EntryClient";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "กรอกผลตรวจตามหมวด · NOKHOOK OS PORTAL" };
+
+// the file items (X-ray image, ECG graph) are not typed — they are attached — but the tab must still show them
+const loadItemsOfTestIncludingFiles = (items: ReturnType<typeof loadItems>, testCode: string) => items.filter((i) => i.test === testCode);
 
 export default function EntryPage({ params }: { params: { roundId: string; key: string } }) {
   const user = requireClinicalUser();
@@ -32,7 +36,7 @@ export default function EntryPage({ params }: { params: { roundId: string; key: 
   for (const s of SECTIONS) {
     const tests = clinical.results
       .filter((r) => r.order_status !== "waived")
-      .map((r) => ({ r, items: itemsOfTest(all, r.code as string).filter((i) => i.section === s.key) }))
+      .map((r) => ({ r, items: loadItemsOfTestIncludingFiles(all, r.code as string).filter((i) => i.section === s.key) }))
       .filter((x) => x.items.length > 0);
     if (!tests.length) continue;
     tabs.push({
@@ -40,6 +44,7 @@ export default function EntryPage({ params }: { params: { roundId: string; key: 
       tests: tests.map(({ r, items }) => ({
         orderId: r.order_id as number, testCode: r.code as string, locked: r.result_status != null && r.result_status !== "draft",
         items: items.map((i) => ({ code: i.code, en: i.en, th: i.th, unit: i.unit ?? null, kind: i.kind, choices: i.choices ?? null, normal: i.normal ?? null, refs: i.refs ?? [], refText: i.refText ?? null, plausible: i.plausible ?? null, decimals: i.decimals ?? null, computed: i.computed ?? null })),
+        file: r.has_file && r.result_id ? { href: fileLink(r.result_id as number, user.id) } : null,
         values: valuesFromResult(itemsOfTest(all, r.code as string), { value_num: (r.value_num as number | null) ?? null, value_text: (r.value_text as string | null) ?? null, value_json: (r.value_json as string | null) ?? null })
       }))
     });
