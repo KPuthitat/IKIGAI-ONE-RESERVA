@@ -123,7 +123,7 @@ export const ITEMS: Item[] = [
   n("UA_RBC", "URINE", "ua", "Red blood cell", "การส่องตรวจดูเม็ดเลือดแดงด้วยกล้องจุลทรรศน์", "cells/HPF", [r(0, 2)], [0, 1000]),
   n("UA_WBC", "URINE", "ua", "White blood cell", "การส่องตรวจดูเม็ดเลือดขาวด้วยกล้องจุลทรรศน์", "cells/HPF", [r(0, 5)], [0, 1000]),
   n("UA_EPI", "URINE", "ua", "Epithelium cell", "การส่องตรวจดูเซลล์เยื่อบุด้วยกล้องจุลทรรศน์", "cells/HPF", [r(15, 20)], [0, 1000], { check: true }),   // template prints 15 – 20 (usual lab range is 0 – 5)
-  t("UA_CAST", "URINE", "ua", "Cast", "การส่องตรวจดูตะกอนจากท่อไตด้วยกล้องจุลทรรศน์", { check: true }),
+  t("UA_CAST", "URINE", "ua", "Cast", "การส่องตรวจดูกราบตะกอนด้วยกล้องจุลทรรศน์", { check: true }),
   t("UA_CRYSTAL", "URINE", "ua", "Crystal", "การส่องตรวจดูผลึกสารเคมีด้วยกล้องจุลทรรศน์"),
   t("UA_MUCOUS", "URINE", "ua", "Mucous", "การส่องตรวจดูเมือกด้วยกล้องจุลทรรศน์"),
   c("UA_BACT", "URINE", "ua", "Bacteria/Yeast/Parasite", "การส่องตรวจดูเชื้อก่อโรคด้วยกล้องจุลทรรศน์", ["Not found", "Found"], ["Not found"], { refText: "Not found" }),

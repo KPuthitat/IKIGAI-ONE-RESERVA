@@ -5,6 +5,7 @@
 import type Database from "better-sqlite3";
 import { EXTRA_TESTS, ITEMS, SECTIONS } from "./catalog";
 import { approverOk, CLINIC_BRANCH_SLUG } from "../annual-checkup-schema";
+import { EDU, ITEM_EXPLAIN, SECTION_INTRO } from "./explanations";
 
 export function ensureHealthReportSchema(db: Database.Database): void {
   db.exec(`
@@ -124,6 +125,24 @@ export function ensureHealthReportSchema(db: Database.Database): void {
       active  INTEGER NOT NULL DEFAULT 1
     );
 
+    -- A link for a person who has no account (an outside company's staff): random, expiring, opened only with the date of birth,
+    -- locked for a while after too many wrong tries. Only the hash of the token is kept, so a copy of the database cannot open anyone's results.
+    CREATE TABLE IF NOT EXISTS annual_checkup_access_links (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      round_id       INTEGER NOT NULL REFERENCES annual_checkup_rounds(id),
+      external_id    INTEGER NOT NULL REFERENCES annual_checkup_externals(id),
+      token_hash     TEXT NOT NULL UNIQUE,
+      expires_at     TEXT NOT NULL,
+      failed_count   INTEGER NOT NULL DEFAULT 0,
+      locked_until   TEXT,
+      open_count     INTEGER NOT NULL DEFAULT 0,
+      last_opened_at TEXT,
+      revoked_at     TEXT,
+      created_by     INTEGER NOT NULL REFERENCES users(id),
+      created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_annual_checkup_links_ext ON annual_checkup_access_links(round_id, external_id);
+
     -- Small settings: critical-value thresholds, the consultation link behind the SCAN ME code, …
     CREATE TABLE IF NOT EXISTS annual_checkup_config (
       key        TEXT PRIMARY KEY,
@@ -156,6 +175,14 @@ export function ensureHealthReportSchema(db: Database.Database): void {
       for (const r of it.refs ?? []) addRef.run(id, r.sex, r.ageMin ?? null, r.ageMax ?? null, r.low ?? null, r.high ?? null, r.lowIncl === false ? 0 : 1, r.highIncl === false ? 0 : 1);
     });
     db.prepare("INSERT OR IGNORE INTO annual_checkup_config (key, value) VALUES ('critical_enzyme_multiple', '5')").run();
+  })();
+
+  // The booklet's "what is this test?" texts. By key and only when the key is missing, so an edit is never overwritten.
+  const ex = db.prepare("INSERT OR IGNORE INTO annual_checkup_explanations (key, title_th, body_th) VALUES (?,?,?)");
+  db.transaction(() => {
+    for (const [k, v] of Object.entries(SECTION_INTRO)) ex.run(k, v.title, v.body);
+    for (const [k, body] of Object.entries(ITEM_EXPLAIN)) ex.run(k, null, body);
+    for (const [k, v] of Object.entries(EDU)) ex.run(k, v.title, v.body);
   })();
 
   // Seed the ready-made wording once (an empty table only), so a later edit or deletion is never undone.

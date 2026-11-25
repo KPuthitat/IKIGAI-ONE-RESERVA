@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { getMyAuditTrail, getMyReleasedResults, getMyRounds } from "@/lib/annual-checkup-db";
+import { getMyAuditTrail, getMyReportData, getMyRounds } from "@/lib/annual-checkup-db";
+import { getDb } from "@/lib/db";
+import { buildReport } from "@/lib/health-report/report";
+import { loadItems } from "@/lib/health-report/store";
+import HealthReportView from "@/app/components/HealthReportView";
 import { isViewOpen } from "@/lib/annual-checkup-api";
 import { getActiveConsent, hasConsented } from "@/lib/annual-checkup-employee";
 import { makeFileToken } from "@/lib/annual-checkup-session";
@@ -48,7 +52,11 @@ export default function AnnualResultsPage({ searchParams }: { searchParams: { ro
   if (!isViewOpen(user)) return <div className="space-y-4">{head}<AnnualGate step="pin" /></div>;
 
   const chosen = rounds.find((r) => String(r.id) === searchParams.round) ?? rounds[0];
-  const data = getMyReleasedResults(user, chosen.id);
+  const db = getDb();
+  const rd = getMyReportData(user, chosen.id);
+  const texts = Object.fromEntries((db.prepare("SELECT key, title_th, body_th FROM annual_checkup_explanations").all() as Array<{ key: string; title_th: string | null; body_th: string }>).map((r) => [r.key, { title: r.title_th, body: r.body_th }]));
+  const consultUrl = (db.prepare("SELECT value FROM annual_checkup_config WHERE key = 'consult_url'").get() as { value: string | null } | undefined)?.value?.trim() || null;
+  const report = rd ? buildReport(rd, loadItems(db), texts, new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10)) : null;
   const trail = getMyAuditTrail(user);
   return (
     <div className="space-y-5">
@@ -63,32 +71,9 @@ export default function AnnualResultsPage({ searchParams }: { searchParams: { ro
           ))}
         </div>
       )}
-      <div className="card overflow-x-auto">
-        <div className="px-4 py-3 border-b border-slate-100 font-semibold text-slate-800">{chosen.name}</div>
-        <table className="w-full text-sm">
-          <thead className="text-left text-slate-500"><tr><th className="px-4 py-2">รายการตรวจ</th><th className="px-4 py-2">ผล</th><th className="px-4 py-2">ค่าอ้างอิง</th><th className="px-4 py-2">การแปลผล</th><th className="px-4 py-2">ไฟล์</th></tr></thead>
-          <tbody>
-            {data.results.map((r) => (
-              <tr key={r.result_id as number} className="border-t border-slate-100 align-top">
-                <td className="px-4 py-2 text-slate-800">{r.name_th as string}</td>
-                <td className="px-4 py-2 whitespace-pre-line text-slate-800">{show(r)}</td>
-                <td className="px-4 py-2 text-slate-600">{(r.ref_text as string | null) || "—"}</td>
-                <td className="px-4 py-2">{r.interpretation ? <span className={`px-2 py-0.5 rounded-full text-xs ${INTERP_CLS[r.interpretation as string] ?? ""}`}>{INTERP_TH[r.interpretation as string]}</span> : "—"}</td>
-                <td className="px-4 py-2">{r.has_file ? <a className="text-sky-700 underline" target="_blank" rel="noreferrer" href={`/api/annual-checkup/me/file/${r.result_id}?t=${encodeURIComponent(makeFileToken(r.result_id as number, user.id))}`}>เปิดไฟล์</a> : "—"}</td>
-              </tr>
-            ))}
-            {data.results.length === 0 && <tr><td colSpan={5} className="px-4 py-4 text-slate-500">ไม่มีรายการ</td></tr>}
-          </tbody>
-        </table>
-      </div>
-      {data.conclusion && (
-        <div className="card p-4 space-y-1">
-          <div className="font-semibold text-slate-800">สรุปผลและความเห็นแพทย์</div>
-          {data.conclusion.summary && <div><span className={`px-2 py-0.5 rounded-full text-xs ${INTERP_CLS[data.conclusion.summary] ?? ""}`}>{INTERP_TH[data.conclusion.summary]}</span></div>}
-          <p className="text-sm text-slate-700 whitespace-pre-line">{data.conclusion.doctor_comment || "—"}</p>
-          <div className="text-xs text-slate-500">เปิดผลเมื่อ {when(data.conclusion.released_at)}</div>
-        </div>
-      )}
+      {report
+        ? <HealthReportView report={report} consultUrl={consultUrl} fileHref={(id) => `/api/annual-checkup/me/file/${id}?t=${encodeURIComponent(makeFileToken(id, user.id))}`} />
+        : <div className="card p-5 text-sm text-slate-600">ผลของรอบนี้ยังไม่ได้เปิดให้ดู</div>}
       <div className="card p-4">
         <div className="font-semibold text-slate-800 mb-2">ใครเปิดดูข้อมูลฉัน</div>
         {trail.length === 0 ? <p className="text-sm text-slate-500">ยังไม่มีผู้อื่นเปิดดูข้อมูลของท่าน</p> : (

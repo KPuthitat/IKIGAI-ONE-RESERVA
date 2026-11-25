@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db";
-import { getSubjectClinical, getSubjectHeader, isAnnualCheckupInvalid, isApproverUser, parseSubjectKey } from "@/lib/annual-checkup-db";
+import { getSubjectClinical, getSubjectDob, getSubjectHeader, isAnnualCheckupInvalid, isApproverUser, listAccessLinks, parseSubjectKey } from "@/lib/annual-checkup-db";
+import AccessLinkPanel from "../../../AccessLinkPanel";
 import { isUnlocked, requireClinicalUser, unlockExpiry } from "@/lib/annual-checkup-api";
 import { fileLink } from "@/lib/annual-checkup-session";
 import PersonClient, { type PersonRow } from "../../../PersonClient";
@@ -50,6 +51,9 @@ export default function PersonPage({ params }: { params: { roundId: string; key:
       )}
       <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/entry`} className="btn-primary text-sm inline-block min-h-[44px] leading-[44px]">กรอกผลแบบแท็บตามหมวดของเล่ม</Link>
       <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/review`} className="btn-secondary text-sm inline-block min-h-[44px] leading-[44px] ml-2">หน้าแพทย์ตรวจสอบและเขียนสรุปตามหมวด</Link>
+      {header.kind === "external" && subject.externalId != null && conclusion?.released_at && (
+        <AccessLinkPanel roundId={roundId} externalId={subject.externalId} links={listAccessLinks(user, roundId, subject.externalId)} hasDob={!!getSubjectDob(user, subject)} />
+      )}
       <SubmitPanel roundId={roundId} subject={params.key} submission={clinical.submission} released={!!conclusion?.released_at}
         allRecorded={rows.filter((x) => x.order_status !== "waived").every((x) => x.result_id != null)} />
       {approver && <UnlockPanel unlockedUntil={unlockExpiry(user)} />}

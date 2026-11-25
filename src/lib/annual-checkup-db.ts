@@ -12,6 +12,7 @@
 //
 // Every function takes the actor first and re-reads the actor from the database (never trusts flags the caller passes), and every
 // read or write of a result leaves a row in annual_checkup_audit in the same transaction.
+import crypto from "node:crypto";
 import { getDb, logPersonaAction } from "./db";
 import { approverOk, recorderOk } from "./annual-checkup-schema";
 import { nameWithPrefix } from "./name";
@@ -1358,4 +1359,168 @@ export function listPendingRevisionNotices(limit = 50): Array<{ id: number; user
 }
 export function markRevisionNoticed(id: number): void {
   getDb().prepare("UPDATE annual_checkup_revision_notices SET sent_at = CURRENT_TIMESTAMP WHERE id = ? AND sent_at IS NULL").run(id);
+}
+
+
+// ── the report a person reads (health report PR 5) ─────────────────────────────────────────────────────────────────────
+
+export type ReportResultRow = {
+  code: string; name_th: string; value_num: number | null; value_text: string | null; value_json: string | null; unit: string | null;
+  has_file: number; result_id: number; released_at: string | null;
+};
+export type ReportData = {
+  round: { id: number; name: string; year_be: number | null; exam_date: string | null };
+  person: { kind: "employee" | "external"; label: string; sex: "M" | "F" | null; dob: string | null; employee_code: string | null; company: string | null; position: string | null; department: string | null; user_id: number | null };
+  results: ReportResultRow[];
+  history: Record<number, ReportResultRow[]>;          // year_be → released results of that earlier round (employees only: an outside person has one round)
+  notes: SectionNote[];
+  conclusion: { summary: string | null; doctor_comment: string | null; released_at: string } | null;
+};
+
+const RELEASED_SQL = `
+  SELECT t.code, t.name_th, r.value_num, r.value_text, r.value_json, r.unit, CASE WHEN r.file_path IS NOT NULL THEN 1 ELSE 0 END AS has_file, r.id AS result_id, r.released_at
+    FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id JOIN annual_checkup_results r ON r.order_id = o.id
+   WHERE o.round_id = ? AND r.status = 'released' AND `;
+
+/** Internal: everything the report needs for ONE person, only once their conclusion is released. No authorisation here — callers do it. */
+function collectReportData(roundId: number, subject: AcSubject): ReportData | null {
+  const db = getDb();
+  const ccol = subject.userId != null ? "user_id" : "external_id";
+  const ocol = subject.userId != null ? "o.user_id" : "o.external_id";
+  const id = (subject.userId ?? subject.externalId) as number;
+  const concl = db.prepare(`SELECT summary, doctor_comment, released_at FROM annual_checkup_conclusions WHERE round_id = ? AND ${ccol} = ? AND released_at IS NOT NULL`).get(roundId, id) as ReportData["conclusion"] | undefined;
+  if (!concl) return null;
+  const round = db.prepare("SELECT id, name, year_be, start_date FROM annual_checkup_rounds WHERE id = ?").get(roundId) as { id: number; name: string; year_be: number | null; start_date: string | null } | undefined;
+  if (!round) return null;
+  const results = db.prepare(`${RELEASED_SQL} ${ocol} = ? ORDER BY t.sort_no`).all(roundId, id) as ReportResultRow[];
+  const notes = db.prepare(`SELECT section, summary_text, recommendation_text FROM annual_checkup_section_notes WHERE round_id = ? AND ${ccol} = ?`).all(roundId, id) as SectionNote[];
+  let person: ReportData["person"];
+  if (subject.userId != null) {
+    const u = db.prepare("SELECT display_name, title_prefix, employee_code, gender, dob, job_title FROM users WHERE id = ?").get(subject.userId) as { display_name: string; title_prefix: string | null; employee_code: string | null; gender: string | null; dob: string | null; job_title: string | null } | undefined;
+    if (!u) return null;
+    const co = db.prepare("SELECT p.name_th FROM annual_checkup_orders o LEFT JOIN annual_checkup_payers p ON p.id = o.payer_id WHERE o.round_id = ? AND o.user_id = ? LIMIT 1").get(roundId, subject.userId) as { name_th: string | null } | undefined;
+    const br = db.prepare("SELECT b.name FROM user_branches ub JOIN branches b ON b.id = ub.branch_id WHERE ub.user_id = ? ORDER BY ub.branch_id LIMIT 1").get(subject.userId) as { name: string } | undefined;
+    person = { kind: "employee", label: nameWithPrefix(u.title_prefix, u.display_name), sex: u.gender === "male" ? "M" : u.gender === "female" ? "F" : null, dob: u.dob ? u.dob.slice(0, 10) : null, employee_code: u.employee_code, company: co?.name_th ?? null, position: u.job_title, department: br?.name ?? null, user_id: subject.userId };
+  } else {
+    const e = db.prepare("SELECT e.full_name, e.sex, e.dob, p.name_th AS payer FROM annual_checkup_externals e JOIN annual_checkup_payers p ON p.id = e.payer_id WHERE e.id = ?").get(subject.externalId) as { full_name: string | null; sex: "M" | "F" | null; dob: string | null; payer: string } | undefined;
+    if (!e?.full_name) return null;
+    person = { kind: "external", label: e.full_name, sex: e.sex, dob: e.dob ? e.dob.slice(0, 10) : null, employee_code: null, company: e.payer, position: null, department: null, user_id: null };
+  }
+  const history: ReportData["history"] = {};
+  if (subject.userId != null && round.year_be != null) {
+    const prev = db.prepare(`
+      SELECT r.id, r.year_be FROM annual_checkup_conclusions c JOIN annual_checkup_rounds r ON r.id = c.round_id
+       WHERE c.user_id = ? AND c.released_at IS NOT NULL AND r.id <> ? AND r.year_be IS NOT NULL AND r.year_be < ? ORDER BY r.year_be DESC LIMIT 2
+    `).all(subject.userId, roundId, round.year_be) as Array<{ id: number; year_be: number }>;
+    for (const p of prev) if (!history[p.year_be]) history[p.year_be] = db.prepare(`${RELEASED_SQL} o.user_id = ? ORDER BY t.sort_no`).all(p.id, subject.userId) as ReportResultRow[];
+  }
+  const exam = round.start_date ?? concl.released_at.slice(0, 10);
+  return { round: { id: round.id, name: round.name, year_be: round.year_be, exam_date: exam }, person, results, history, notes, conclusion: concl };
+}
+
+/** The signed-in employee's own released report. Audited as a self view. */
+export function getMyReportData(actor: AcActor, roundId: number): ReportData | null {
+  const a = loadActor(actor);
+  const d = collectReportData(roundId, { userId: a.id });
+  if (d) audit(a.id, "self.view", { user_id: a.id, external_id: null }, roundId, null);
+  return d;
+}
+
+/** The report for clinical staff, after release (used to print / check what the person sees). */
+export function getReportDataClinical(actor: AcActor, roundId: number, subject: AcSubject): ReportData | null {
+  const a = requireRecorder(actor);
+  const d = collectReportData(roundId, subject);
+  if (d) audit(a.id, "subject.view", subjectCols(subject), roundId, null);
+  return d;
+}
+
+// ── links for people without an account ──
+const LINK_MAX_FAILS = 5, LINK_LOCK_MINUTES = 30;
+const sha = (t: string) => crypto.createHash("sha256").update(t).digest("hex");
+const nowSql = () => new Date().toISOString().slice(0, 19).replace("T", " ");
+const plusMin = (m: number) => new Date(Date.now() + m * 60_000).toISOString().slice(0, 19).replace("T", " ");
+
+export type LinkInfo = { id: number; round_id: number; external_id: number; expires_at: string; open_count: number; last_opened_at: string | null; revoked_at: string | null; created_at: string; locked_until: string | null };
+
+/** Make a link for an outside person whose results are released. The token is returned ONCE and never stored (only its hash). */
+export function createAccessLink(actor: AcActor, roundId: number, externalId: number, days: number): { token: string; expires_at: string } {
+  const a = requireRecorder(actor);
+  const db = getDb();
+  const d = Math.min(90, Math.max(1, Math.floor(days)));
+  return guard(() => db.transaction(() => {
+    const e = db.prepare("SELECT dob FROM annual_checkup_externals WHERE id = ? AND round_id = ?").get(externalId, roundId) as { dob: string | null } | undefined;
+    if (!e) throw new AnnualCheckupInvalid("subject_not_found");
+    if (!e.dob) throw new AnnualCheckupInvalid("dob_required");
+    const rel = db.prepare("SELECT 1 FROM annual_checkup_conclusions WHERE round_id = ? AND external_id = ? AND released_at IS NOT NULL").get(roundId, externalId);
+    if (!rel) throw new AnnualCheckupInvalid("not_released");
+    const token = crypto.randomBytes(24).toString("base64url");
+    const expires = plusMin(d * 24 * 60);
+    db.prepare("INSERT INTO annual_checkup_access_links (round_id, external_id, token_hash, expires_at, created_by) VALUES (?,?,?,?,?)").run(roundId, externalId, sha(token), expires, a.id);
+    audit(a.id, "link.create", { user_id: null, external_id: externalId }, roundId, null, `days ${d}`);
+    return { token, expires_at: expires };
+  })());
+}
+
+export function listAccessLinks(actor: AcActor, roundId: number, externalId: number): LinkInfo[] {
+  requireRecorder(actor);
+  return getDb().prepare("SELECT id, round_id, external_id, expires_at, open_count, last_opened_at, revoked_at, created_at, locked_until FROM annual_checkup_access_links WHERE round_id = ? AND external_id = ? ORDER BY id DESC")
+    .all(roundId, externalId) as LinkInfo[];
+}
+export function revokeAccessLink(actor: AcActor, linkId: number): void {
+  const a = requireRecorder(actor);
+  const r = getDb().prepare("UPDATE annual_checkup_access_links SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND revoked_at IS NULL").run(linkId);
+  if (r.changes > 0) audit(a.id, "link.revoke", null, null, null, `link ${linkId}`);
+}
+
+export type LinkState = { id: number; usable: boolean; reason: "ok" | "expired" | "revoked" | "locked"; locked_until: string | null };
+/** Public: what a token is (never says whether a date of birth exists). null = no such link. */
+export function resolveAccessLink(token: string): LinkState | null {
+  if (!/^[A-Za-z0-9_-]{20,80}$/.test(token)) return null;
+  const l = getDb().prepare("SELECT id, expires_at, revoked_at, locked_until FROM annual_checkup_access_links WHERE token_hash = ?").get(sha(token)) as { id: number; expires_at: string; revoked_at: string | null; locked_until: string | null } | undefined;
+  if (!l) return null;
+  const now = nowSql();
+  const reason = l.revoked_at ? "revoked" : l.expires_at <= now ? "expired" : l.locked_until && l.locked_until > now ? "locked" : "ok";
+  return { id: l.id, usable: reason === "ok", reason, locked_until: l.locked_until };
+}
+
+/** Public: check a date of birth (yyyy-mm-dd, Christian era). Wrong answers are counted; five in a row lock the link for 30 minutes. */
+export function verifyAccessLink(token: string, dobIso: string): { ok: true; linkId: number } | { ok: false; reason: "invalid" | "expired" | "revoked" | "locked" | "wrong"; attemptsLeft?: number } {
+  const st = resolveAccessLink(token);
+  if (!st) return { ok: false, reason: "invalid" };
+  if (!st.usable) return { ok: false, reason: st.reason as "expired" | "revoked" | "locked" };
+  const db = getDb();
+  const row = db.prepare("SELECT l.failed_count, e.dob FROM annual_checkup_access_links l JOIN annual_checkup_externals e ON e.id = l.external_id WHERE l.id = ?").get(st.id) as { failed_count: number; dob: string | null };
+  const good = !!row.dob && /^\d{4}-\d{2}-\d{2}$/.test(dobIso) && row.dob.slice(0, 10) === dobIso;
+  if (good) {
+    db.prepare("UPDATE annual_checkup_access_links SET failed_count = 0, locked_until = NULL, open_count = open_count + 1, last_opened_at = CURRENT_TIMESTAMP WHERE id = ?").run(st.id);
+    return { ok: true, linkId: st.id };
+  }
+  const fails = row.failed_count + 1;
+  if (fails >= LINK_MAX_FAILS) db.prepare("UPDATE annual_checkup_access_links SET failed_count = 0, locked_until = ? WHERE id = ?").run(plusMin(LINK_LOCK_MINUTES), st.id);
+  else db.prepare("UPDATE annual_checkup_access_links SET failed_count = ? WHERE id = ?").run(fails, st.id);
+  return fails >= LINK_MAX_FAILS ? { ok: false, reason: "locked" } : { ok: false, reason: "wrong", attemptsLeft: LINK_MAX_FAILS - fails };
+}
+
+/** Public, after the date of birth was accepted: the report behind a link, if the link is still usable. Every call is logged (actor 0 = the link). */
+export function getLinkReportData(linkId: number): ReportData | null {
+  const db = getDb();
+  const l = db.prepare("SELECT round_id, external_id, expires_at, revoked_at FROM annual_checkup_access_links WHERE id = ?").get(linkId) as { round_id: number; external_id: number; expires_at: string; revoked_at: string | null } | undefined;
+  if (!l || l.revoked_at || l.expires_at <= nowSql()) return null;
+  const d = collectReportData(l.round_id, { externalId: l.external_id });
+  if (d) audit(0, "link.view", { user_id: null, external_id: l.external_id }, l.round_id, null, `link ${linkId}`);
+  return d;
+}
+
+/** The file behind a result, opened from a link (a result of THAT person only, released). */
+export function getLinkResultFile(linkId: number, resultId: number): { path: string; mime: string } | null {
+  const db = getDb();
+  const l = db.prepare("SELECT round_id, external_id, expires_at, revoked_at FROM annual_checkup_access_links WHERE id = ?").get(linkId) as { round_id: number; external_id: number; expires_at: string; revoked_at: string | null } | undefined;
+  if (!l || l.revoked_at || l.expires_at <= nowSql()) return null;
+  const r = db.prepare(`
+    SELECT r.file_path, r.file_mime FROM annual_checkup_results r JOIN annual_checkup_orders o ON o.id = r.order_id
+     WHERE r.id = ? AND o.round_id = ? AND o.external_id = ? AND r.status = 'released' AND r.file_path IS NOT NULL
+  `).get(resultId, l.round_id, l.external_id) as { file_path: string; file_mime: string | null } | undefined;
+  if (!r) return null;
+  audit(0, "link.file", { user_id: null, external_id: l.external_id }, l.round_id, resultId, `link ${linkId}`);
+  return { path: r.file_path, mime: r.file_mime ?? "application/octet-stream" };
 }
