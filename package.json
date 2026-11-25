@@ -58,6 +58,7 @@
     "test:corporate-goal": "node --import tsx scripts/test-corporate-goal.ts",
     "test:cost-guardrails": "node --import tsx scripts/test-cost-guardrails.ts",
     "test:health-report": "node --import tsx scripts/test-health-report.ts",
+    "test:health-entry": "node --import tsx scripts/test-health-entry.ts",
     "test:category-mix": "node --import tsx scripts/test-category-mix.ts",
     "test:download-name": "node --import tsx scripts/test-download-name.ts",
     "test:round-summary-pdf": "node --import tsx scripts/test-round-summary-pdf.ts",

@@ -588,6 +588,58 @@ export function getSubjectHeader(actor: AcActor, roundId: number, subject: AcSub
   return { key: subjectKey(subject), kind: "external", label: externalLabel(e.full_name, e.sort_no, e.payer), code: null, payer: e.payer, sex: e.sex };
 }
 
+/** Date of birth of a person in a round (an employee's from users, an outside person's from the round) — for age-banded reference ranges. */
+export function getSubjectDob(actor: AcActor, subject: AcSubject): string | null {
+  requireRecorder(actor);
+  const db = getDb();
+  const row = subject.userId != null
+    ? db.prepare("SELECT dob FROM users WHERE id = ?").get(subject.userId) as { dob: string | null } | undefined
+    : db.prepare("SELECT dob FROM annual_checkup_externals WHERE id = ?").get(subject.externalId) as { dob: string | null } | undefined;
+  const d = row?.dob ?? null;
+  return d && /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : null;
+}
+
+export type ItemSheetRow = {
+  order_id: number; key: string; label: string; code: string | null; payer: string; sex: "M" | "F" | null; dob: string | null;
+  result_status: "draft" | "verified" | "released" | null; value_num: number | null; value_text: string | null; value_json: string | null;
+};
+
+/** Everyone in a round who has this test (not waived), with the stored values — for entering one report item for the whole round. */
+export function getItemSheetRows(actor: AcActor, roundId: number, testCode: string): ItemSheetRow[] {
+  const a = requireRecorder(actor);
+  const db = getDb();
+  const raw = db.prepare(`
+    SELECT o.id AS order_id, o.user_id, o.external_id, u.display_name, u.title_prefix, u.employee_code, u.gender, u.dob AS u_dob, e.full_name, e.sort_no, e.sex AS e_sex, e.dob AS e_dob,
+           COALESCE(p.name_th, ep.name_th, 'ไม่ระบุ') AS payer, r.status AS result_status, r.value_num, r.value_text, r.value_json
+      FROM annual_checkup_orders o JOIN annual_checkup_tests t ON t.id = o.test_id
+      LEFT JOIN users u ON u.id = o.user_id LEFT JOIN annual_checkup_externals e ON e.id = o.external_id
+      LEFT JOIN annual_checkup_payers p ON p.id = o.payer_id LEFT JOIN annual_checkup_payers ep ON ep.id = e.payer_id
+      LEFT JOIN annual_checkup_results r ON r.order_id = o.id
+     WHERE o.round_id = ? AND t.code = ? AND o.status <> 'waived'
+  `).all(roundId, testCode) as Array<Record<string, unknown>>;
+  const rows: ItemSheetRow[] = raw.map((r) => {
+    const emp = r.user_id != null;
+    const d = ((emp ? r.u_dob : r.e_dob) as string | null) ?? null;
+    return {
+      order_id: r.order_id as number, key: emp ? `u${r.user_id}` : `e${r.external_id}`,
+      label: emp ? nameWithPrefix(r.title_prefix as string | null, r.display_name as string) : externalLabel(r.full_name as string | null, r.sort_no as number | null, r.payer as string),
+      code: (r.employee_code as string | null) ?? null, payer: r.payer as string,
+      sex: emp ? (r.gender === "male" ? "M" : r.gender === "female" ? "F" : null) : ((r.e_sex as "M" | "F" | null) ?? null),
+      dob: d && /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : null,
+      result_status: (r.result_status as ItemSheetRow["result_status"]) ?? null, value_num: (r.value_num as number | null) ?? null, value_text: (r.value_text as string | null) ?? null, value_json: (r.value_json as string | null) ?? null
+    };
+  }).sort((x, y) => (x.key[0] === y.key[0] ? x.label.localeCompare(y.label, "th") : x.key[0] === "u" ? -1 : 1));
+  audit(a.id, "test.view", null, roundId, null, testCode);
+  return rows;
+}
+
+/** The stored values of one order's draft/locked result, for merging a single item into it. */
+export function getOrderValues(actor: AcActor, orderId: number): { status: "draft" | "verified" | "released" | null; value_num: number | null; value_text: string | null; value_json: string | null } {
+  requireRecorder(actor);
+  const r = getDb().prepare("SELECT status, value_num, value_text, value_json FROM annual_checkup_results WHERE order_id = ?").get(orderId) as { status: "draft" | "verified" | "released"; value_num: number | null; value_text: string | null; value_json: string | null } | undefined;
+  return r ?? { status: null, value_num: null, value_text: null, value_json: null };
+}
+
 /** Give a "รอเพิ่มรายชื่อ" place its name (people without an account). */
 export function setExternalName(actor: AcActor, externalId: number, d: { fullName: string; sex?: "M" | "F" | null; dob?: string | null }): void {
   const a = requireRecorder(actor);

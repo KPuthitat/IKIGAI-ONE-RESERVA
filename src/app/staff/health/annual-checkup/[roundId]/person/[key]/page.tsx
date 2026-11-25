@@ -48,6 +48,7 @@ export default function PersonPage({ params }: { params: { roundId: string; key:
       {header.kind === "external" && conclusion?.released_at && (
         <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/report`} className="btn-secondary text-sm inline-block">พิมพ์รายงานผลตรวจ (A4) ส่งบริษัทผู้จ่าย</Link>
       )}
+      <Link href={`/staff/health/annual-checkup/${roundId}/person/${params.key}/entry`} className="btn-primary text-sm inline-block min-h-[44px] leading-[44px]">กรอกผลแบบแท็บตามหมวดของเล่ม</Link>
       <SubmitPanel roundId={roundId} subject={params.key} submission={clinical.submission} released={!!conclusion?.released_at}
         allRecorded={rows.filter((x) => x.order_status !== "waived").every((x) => x.result_id != null)} />
       {approver && <UnlockPanel unlockedUntil={unlockExpiry(user)} />}
