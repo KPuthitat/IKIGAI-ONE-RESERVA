@@ -8655,6 +8655,57 @@ function runMigrations(db: Database.Database): void {
   addCashCol("settle_day", "settle_day INTEGER");            // วันเตรียมโอน/ตัดรอบ (1-31) — full-pay paid_date defaults to this
   addCashCol("use_income", "use_income INTEGER NOT NULL DEFAULT 1");   // ใช้รับเงิน
   addCashCol("use_expense", "use_expense INTEGER NOT NULL DEFAULT 1"); // ใช้จ่ายเงิน
+  addCashCol("purpose", "purpose TEXT");                     // หน้าที่บัญชี: savings|working|payroll_tax|procurement|other (owner 2026-11-26)
+
+  // ── Bank reconciliation (owner 2026-11-26: monthly) ───────────────────────────────────────────
+  // A statement file (CSV / Excel from the bank) is imported per account; each line is matched to what the system already knows
+  // (an ACCOUNTA expense / income, or the other side of a transfer between company accounts), or set aside with a reason.
+  // A month is closed per account when every line is matched or explained. Additive only.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bank_statements (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id      INTEGER NOT NULL REFERENCES accounta_cash_accounts(id),
+      file_name       TEXT NOT NULL DEFAULT '',
+      first_date      TEXT, last_date TEXT,
+      opening_balance REAL, closing_balance REAL,
+      line_count      INTEGER NOT NULL DEFAULT 0,
+      chain_breaks    INTEGER NOT NULL DEFAULT 0,
+      imported_by     INTEGER REFERENCES users(id),
+      imported_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS bank_lines (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      statement_id INTEGER NOT NULL REFERENCES bank_statements(id) ON DELETE CASCADE,
+      account_id   INTEGER NOT NULL REFERENCES accounta_cash_accounts(id),
+      period       TEXT NOT NULL,                          -- YYYY-MM of tx_date
+      tx_date      TEXT NOT NULL,
+      description  TEXT NOT NULL DEFAULT '',
+      debit        REAL NOT NULL DEFAULT 0,                -- money out
+      credit       REAL NOT NULL DEFAULT 0,                -- money in
+      balance      REAL,
+      line_hash    TEXT NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'unmatched' CHECK (status IN ('unmatched','matched','ignored')),
+      match_kind   TEXT CHECK (match_kind IN ('expense','income','transfer','explained')),
+      match_ref    INTEGER,                                -- expense id / income id / the other bank line id
+      reason       TEXT NOT NULL DEFAULT '',               -- for 'explained' (bank fee, interest, saving transfer …)
+      auto         INTEGER NOT NULL DEFAULT 0,
+      matched_by   INTEGER REFERENCES users(id),
+      matched_at   TEXT,
+      UNIQUE (account_id, line_hash)
+    );
+    CREATE INDEX IF NOT EXISTS idx_bank_lines_acct_period ON bank_lines(account_id, period, status);
+    CREATE TABLE IF NOT EXISTS bank_recon_periods (
+      account_id        INTEGER NOT NULL REFERENCES accounta_cash_accounts(id),
+      period            TEXT NOT NULL,
+      status            TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+      opening_balance   REAL, closing_balance REAL,
+      total_debit       REAL NOT NULL DEFAULT 0, total_credit REAL NOT NULL DEFAULT 0,
+      note              TEXT NOT NULL DEFAULT '',
+      closed_by         INTEGER REFERENCES users(id),
+      closed_at         TEXT,
+      PRIMARY KEY (account_id, period)
+    );
+  `);
 
   // Per-branch income channels (owner 2026-06-21). Each branch records money
   // through a DIFFERENT set of channels (a restaurant: Cash/QR/Grab/cards; a

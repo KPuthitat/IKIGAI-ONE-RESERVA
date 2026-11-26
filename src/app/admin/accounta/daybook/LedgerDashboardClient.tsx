@@ -8,6 +8,7 @@ import { fmtMoney, grpMoney, parseMoney } from "@/lib/format";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import Combobox, { type ComboOption } from "@/app/components/Combobox";
 import ExpenseEditModal, { type EditableExpense } from "./ExpenseEditModal";
+import { MoveLink } from "../MoveBranch";
 import IncomeEditModal, { type EditableIncome } from "./IncomeEditModal";
 import { STARTUP_CATEGORY_LABEL } from "@/lib/feasibility";
 import Select from "@/app/components/Select";
@@ -666,6 +667,7 @@ function DayDetail({
                         </>
                       ) : (
                         <>
+                          <MoveLink kind="income" id={r.id} summary={`${r.channel ?? "รายรับ"} ฿${fmtMoney(r.amount)}`} />
                           <button type="button" onClick={() => onEditIncome(r)}
                             className="text-[11px] text-slate-500 hover:text-brand">แก้ไข</button>
                           <button type="button" onClick={() => del(r)} disabled={savingId === r.id}
@@ -760,6 +762,7 @@ function DayDetail({
                           )}
                           {/* Credit notes are created via the dedicated flow (negative row) —
                               editing them through the positive-only expense form would corrupt them. */}
+                          {!isCredit && <MoveLink kind="expense" id={e.id} summary={`${e.vendor_name ?? "รายจ่าย"} ฿${fmtMoney(e.amount_total)}`} />}
                           {!isCredit && (
                             <button type="button" onClick={() => onEditExpense(e)} className="text-[10px] text-brand hover:underline mr-2">แก้ไข</button>
                           )}
@@ -1789,6 +1792,7 @@ export default function LedgerDashboardClient({
                         <td className="py-1.5 px-2 text-right font-mono">฿{fmtMoney(e.amount_total)}</td>
                         <td className="py-1.5 px-2 text-right font-mono text-slate-400">{e.vat_amount !== 0 ? fmtMoney(e.vat_amount) : "—"}</td>
                         <td className="py-1.5 px-2 text-right whitespace-nowrap">
+                          {e.doc_type !== "credit_note" && <MoveLink kind="expense" id={e.id} summary={`${e.vendor_name ?? "รายจ่าย"} ฿${fmtMoney(e.amount_total)}`} />}
                           {e.doc_type !== "credit_note" && (
                             <button type="button" onClick={() => setEditExpense(e)} className="text-[11px] text-brand hover:underline mr-2">แก้ไข</button>
                           )}

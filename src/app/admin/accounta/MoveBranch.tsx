@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/url";
 
 type Ref = { id: number; name: string };
@@ -25,6 +26,7 @@ export function MoveBar({ kind, sel, clear, branches, currentBranchId, onDone }:
   const targets = branches.filter((b) => b.id !== currentBranchId);
   const [to, setTo] = useState<string>("");
   const [reason, setReason] = useState("");
+  const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<{ ok: boolean; text: string; blocked: Result[] } | null>(null);
   if (sel.length === 0 && !res) return null;
@@ -35,13 +37,13 @@ export function MoveBar({ kind, sel, clear, branches, currentBranchId, onDone }:
     if (!window.confirm(`ย้าย ${sel.length} รายการไปสาขา ${toName} ใช่หรือไม่?\nวันที่ ยอด และเอกสารเดิมไม่เปลี่ยน ย้ายกลับได้ภายหลัง`)) return;
     setBusy(true); setRes(null);
     try {
-      const r = await fetch(apiUrl("/api/accounta/move-branch"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, ids: sel, toBranchId: Number(to), reason: reason.trim() || null }) });
+      const r = await fetch(apiUrl("/api/accounta/move-branch"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, ids: sel, toBranchId: Number(to), reason: reason.trim() || null, pin }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.ok) { setRes({ ok: false, text: j.message ?? "ย้ายไม่สำเร็จ", blocked: [] }); setBusy(false); return; }
       const results = j.results as Result[];
       const blocked = results.filter((x) => x.status === "blocked" || x.status === "not_found");
       setRes({ ok: true, text: `ย้ายแล้ว ${j.moved} รายการไปสาขา ${toName}${blocked.length ? ` · ย้ายไม่ได้ ${blocked.length} รายการ` : ""}`, blocked });
-      clear(); setReason(""); await onDone();
+      clear(); setReason(""); setPin(""); await onDone();
     } catch { setRes({ ok: false, text: "เชื่อมต่อไม่สำเร็จ ลองอีกครั้ง", blocked: [] }); }
     setBusy(false);
   }
@@ -54,7 +56,8 @@ export function MoveBar({ kind, sel, clear, branches, currentBranchId, onDone }:
           <span className="text-sm text-slate-600">ย้ายไปสาขา</span>
           <select className="input min-h-[44px]" value={to} onChange={(e) => setTo(e.target.value)} aria-label="สาขาปลายทาง"><option value="">— เลือกสาขา —</option>{targets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
           <input className="input min-h-[44px] flex-1 min-w-[140px]" placeholder="เหตุผล (ไม่บังคับ) เช่น ลงผิดสาขา" value={reason} onChange={(e) => setReason(e.target.value)} />
-          <button type="button" className="btn-primary min-h-[44px] px-4" disabled={busy || !to} onClick={go}>{busy ? "กำลังย้าย…" : "ย้ายสาขา"}</button>
+          <input className="input min-h-[44px] w-28 text-center tracking-widest" type="password" inputMode="numeric" maxLength={4} placeholder="PIN" aria-label="PIN ยืนยันการย้าย" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} />
+          <button type="button" className="btn-primary min-h-[44px] px-4" disabled={busy || !to || pin.length !== 4} onClick={go}>{busy ? "กำลังย้าย…" : "ย้ายสาขา"}</button>
           <button type="button" className="btn-secondary min-h-[44px] px-3" disabled={busy} onClick={clear}>ยกเลิกการเลือก</button>
         </div>
       )}
@@ -79,4 +82,72 @@ export function MoveHistory() {
       )}
     </details>
   );
+}
+
+
+// ── move ONE row from where it is shown (daybook) — same rules, PIN every time, always in the move history ──
+type MoveTarget = { kind: "expense" | "income"; id: number; summary: string };
+const MoveCtx = createContext<((t: MoveTarget) => void) | null>(null);
+/** Rows call this to open the "ย้ายสาขา" dialog; null outside a MoveRowProvider (the button is then simply not shown). */
+export const useMoveRow = () => useContext(MoveCtx);
+
+export function MoveRowProvider({ branches, currentBranchId, children }: { branches: Ref[]; currentBranchId: number | null; children: React.ReactNode }) {
+  const router = useRouter();
+  const [t, setT] = useState<MoveTarget | null>(null);
+  const [to, setTo] = useState("");
+  const [reason, setReason] = useState("");
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const targets = branches.filter((b) => b.id !== currentBranchId);
+  const close = () => { setT(null); setTo(""); setReason(""); setPin(""); setErr(null); };
+
+  async function go() {
+    if (!t || !to) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(apiUrl("/api/accounta/move-branch"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: t.kind, ids: [t.id], toBranchId: Number(to), reason: reason.trim() || null, pin }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) { setErr(j.message ?? "ย้ายไม่สำเร็จ"); setPin(""); setBusy(false); return; }
+      const res = (j.results as Result[])[0];
+      if (res.status !== "moved") { setErr(res.status === "blocked" ? res.reason ?? "ย้ายรายการนี้ไม่ได้" : res.status === "same_branch" ? "รายการอยู่สาขานี้แล้ว" : "ไม่พบรายการ"); setBusy(false); return; }
+      setDone(`ย้ายแล้ว: ${t.summary} → ${targets.find((b) => String(b.id) === to)?.name ?? ""} (บันทึกในประวัติการย้ายแล้ว)`);
+      close(); router.refresh();
+    } catch { setErr("เชื่อมต่อไม่สำเร็จ ลองอีกครั้ง"); }
+    setBusy(false);
+  }
+
+  return (
+    <MoveCtx.Provider value={setT}>
+      {children}
+      {done && <div role="status" className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 max-w-[92vw] rounded-xl bg-emerald-700 text-white text-sm px-4 py-2 shadow-lg">{done}<button type="button" className="ml-3 underline min-h-[44px]" onClick={() => setDone(null)}>ปิด</button></div>}
+      {t && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label="ย้ายสาขา">
+          <div className="w-full max-w-md bg-white rounded-2xl p-4 space-y-3 shadow-xl">
+            <div className="font-bold text-slate-800">ย้ายสาขา · {t.kind === "expense" ? "รายจ่าย" : "รายรับ"}</div>
+            <div className="text-sm text-slate-600 break-words">{t.summary}</div>
+            <p className="text-xs text-slate-500">วันที่ ยอด และเอกสารเดิมไม่เปลี่ยน ย้ายกลับได้ภายหลัง และทุกการย้ายถูกบันทึกในประวัติ (ใครย้าย เมื่อไร จากไหนไปไหน)</p>
+            <label className="block text-sm"><span className="label">ย้ายไปสาขา</span>
+              <select className="input w-full min-h-[44px]" value={to} onChange={(e) => setTo(e.target.value)}><option value="">— เลือกสาขา —</option>{targets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+            <label className="block text-sm"><span className="label">เหตุผล (ไม่บังคับ)</span><input className="input w-full min-h-[44px]" maxLength={300} placeholder="เช่น ลงผิดสาขา" value={reason} onChange={(e) => setReason(e.target.value)} /></label>
+            <label className="block text-sm"><span className="label">PIN ของท่าน (ยืนยันการย้าย)</span>
+              <input className="input w-full min-h-[44px] text-center tracking-widest" type="password" inputMode="numeric" maxLength={4} autoComplete="off" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} onKeyDown={(e) => { if (e.key === "Enter" && to && pin.length === 4 && !busy) go(); }} /></label>
+            {err && <div role="alert" className="text-sm text-rose-700">{err}</div>}
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary min-h-[44px] px-4" onClick={close} disabled={busy}>ยกเลิก</button>
+              <button type="button" className="btn-primary min-h-[44px] px-5" disabled={busy || !to || pin.length !== 4} onClick={go}>{busy ? "กำลังย้าย…" : "ย้ายสาขา"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </MoveCtx.Provider>
+  );
+}
+
+/** The small "ย้าย" link a row shows next to แก้ไข / ลบออก. */
+export function MoveLink({ kind, id, summary }: { kind: "expense" | "income"; id: number; summary: string }) {
+  const open = useMoveRow();
+  if (!open) return null;
+  return <button type="button" onClick={() => open({ kind, id, summary })} className="text-[11px] text-slate-500 hover:text-brand mr-2 underline-offset-2 hover:underline" title="ย้ายไปสาขาอื่น (ต้องใส่ PIN)">ย้ายสาขา</button>;
 }

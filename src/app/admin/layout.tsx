@@ -261,6 +261,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/accounta/vendors", label: "ผู้จำหน่าย / คู่ค้า" },
         { href: "/admin/accounta/purchasing", label: "งบ OPEX/CAPEX · PR/PO" },
         { href: "/admin/accounta/cash-accounts", label: "ช่องทางการเงิน / บัญชี" },
+        { href: "/admin/accounta/reconcile", label: "กระทบยอดบัญชีธนาคาร" },
         { href: "/admin/accounta/credit-cards", label: "บัตรเครดิตกรรมการ" },
         ...(isSuperAdmin ? [{ href: "/admin/accounta/access", label: "สิทธิ์เข้าถึงตามสาขา" }] : [])
       ]
