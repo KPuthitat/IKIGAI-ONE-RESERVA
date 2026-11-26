@@ -40,6 +40,10 @@ function Icon({ k }: { k: string }) {
     delivera: <><rect x="1.5" y="7" width="14" height="10" rx="1.5" /><path d="M15.5 10h4l3 3v4h-7zM6.5 20a2 2 0 100-4 2 2 0 000 4zM18.5 20a2 2 0 100-4 2 2 0 000 4z" /></>,
     ir: <><path d="M12 3l9 4v5c0 5-3.5 8-9 9-5.5-1-9-4-9-9V7z" /><path d="M12 8.5v4.5" /><circle cx="12" cy="16" r=".6" fill="currentColor" stroke="none" /></>,
     help: <><circle cx="12" cy="12" r="9" /><path d="M9.2 9a3 3 0 015.6 1c0 2-2.8 2.5-2.8 4" /><circle cx="12" cy="17" r=".6" fill="currentColor" stroke="none" /></>,
+    // roles: shield with a check (permissions), companies: building, quota: speech bubble — distinct from the settings cog
+    roles: <><path d="M12 3l8 3v6c0 4.6-3.2 7.6-8 9-4.8-1.4-8-4.4-8-9V6z" /><path d="M8.6 12.2l2.4 2.4 4.4-4.8" /></>,
+    companies: <><path d="M4 21V5.5L13 3v18M13 8.5h7V21M2.5 21h19" /><path d="M7.5 8.5h2.5M7.5 12h2.5M7.5 15.5h2.5M16 12.5h1.5M16 16h1.5" /></>,
+    quota: <><path d="M4 5h16v11H9.5L5.5 19.5V16H4z" /><path d="M8 10.5h8" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 00.3 1.8 2 2 0 11-2.8 2.8 1.6 1.6 0 00-2.7 1.1 2 2 0 01-4 0 1.6 1.6 0 00-2.6-1.1 2 2 0 11-2.8-2.8A1.6 1.6 0 004 12a2 2 0 010-4 1.6 1.6 0 001.1-2.7 2 2 0 112.8-2.8A1.6 1.6 0 0010 3a2 2 0 014 0 1.6 1.6 0 002.7 1.1 2 2 0 112.8 2.8A1.6 1.6 0 0021 10a2 2 0 010 4 1.6 1.6 0 00-1.6 1z" /></>
   };
   return (
