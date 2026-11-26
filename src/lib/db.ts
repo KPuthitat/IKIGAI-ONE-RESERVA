@@ -3771,6 +3771,75 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
+  // ── Memo → signatures → PR (owner 2026-11-26) ─────────────────────────────────────────────
+  // Every purchase starts as a memo: the author picks who must agree, each person gets a notice and signs (their saved drawn signature
+  // + PIN); when everyone has signed the memo is approved and the author opens the PR from it (items, vendor, amount carry over).
+  // Additive only. Signature images are kept per user, and a snapshot is kept on each signing so a later change never alters a signed memo.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_signatures (
+      user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      image_png  TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS memos (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      memo_no            TEXT NOT NULL UNIQUE,
+      memo_type          TEXT NOT NULL DEFAULT 'purchase' CHECK (memo_type IN ('purchase')),
+      branch_id          INTEGER NOT NULL REFERENCES branches(id),
+      author_id          INTEGER NOT NULL REFERENCES users(id),
+      subject            TEXT NOT NULL,
+      body               TEXT NOT NULL DEFAULT '',
+      category           TEXT NOT NULL DEFAULT '',
+      needed_date        TEXT,
+      vendor_id          INTEGER,
+      vendor_name        TEXT NOT NULL DEFAULT '',
+      vat_rate           REAL NOT NULL DEFAULT 0,
+      subtotal           REAL NOT NULL DEFAULT 0,
+      vat_amount         REAL NOT NULL DEFAULT 0,
+      total              REAL NOT NULL DEFAULT 0,
+      status             TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','pending','approved','rejected','cancelled','pr_opened')),
+      submitted_at       TEXT,
+      approved_at        TEXT,
+      pr_id              INTEGER REFERENCES purchase_requests(id),
+      created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_memos_branch ON memos(branch_id, status);
+    CREATE TABLE IF NOT EXISTS memo_items (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      memo_id     INTEGER NOT NULL REFERENCES memos(id) ON DELETE CASCADE,
+      line_no     INTEGER NOT NULL,
+      description TEXT NOT NULL,
+      qty         REAL NOT NULL DEFAULT 1,
+      unit        TEXT NOT NULL DEFAULT '',
+      unit_price  REAL NOT NULL DEFAULT 0,
+      amount      REAL NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS memo_signers (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      memo_id       INTEGER NOT NULL REFERENCES memos(id) ON DELETE CASCADE,
+      user_id       INTEGER NOT NULL REFERENCES users(id),
+      sort_no       INTEGER NOT NULL DEFAULT 0,
+      status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','signed','rejected')),
+      signed_at     TEXT,
+      comment       TEXT NOT NULL DEFAULT '',
+      signature_png TEXT,
+      UNIQUE (memo_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS memo_events (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      memo_id    INTEGER NOT NULL REFERENCES memos(id) ON DELETE CASCADE,
+      actor_id   INTEGER REFERENCES users(id),
+      action     TEXT NOT NULL,
+      detail     TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  {
+    const prCols = (db.prepare("PRAGMA table_info(purchase_requests)").all() as Array<{ name: string }>).map((c) => c.name);
+    if (!prCols.includes("memo_id")) db.exec("ALTER TABLE purchase_requests ADD COLUMN memo_id INTEGER REFERENCES memos(id)");
+  }
+
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────
   //
   // Three tables that together support "supervisor assigns monthly

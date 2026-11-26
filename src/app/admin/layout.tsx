@@ -26,6 +26,8 @@ import ImpersonationBanner from "../components/ImpersonationBanner";
 import MaintenanceBanner from "../components/MaintenanceBanner";
 import { currentImpersonationContext } from "@/lib/impersonation";
 import { nameWithPrefix } from "@/lib/name";
+import { awaitingMySignature } from "@/lib/memos";
+import { viewerOf } from "@/lib/purchasing";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +125,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // matching the current path is shown. The "Modules" section is always
   // visible so admin can switch back to the picker.
   const isSuperAdmin = user.role === "super_admin";
+  // Memos waiting for this person's signature — badge on the "เบิกจ่าย" entry (owner 2026-11-26). Admins and executives only.
+  let memoAwaiting = 0;
+  const memoUser = user.role !== "staff" || viewerOf(user).isCLevel;
+  if (memoUser) { try { memoAwaiting = awaitingMySignature(user.id).length; } catch { /* the badge is a convenience */ } }
 
   // Branch-gate (owner 2026-06-11): a module can't be opened until a branch
   // is selected. When none is set, every module link routes through the
@@ -196,7 +202,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/service-eval", label: "ประเมินการบริการหน้าร้าน" },
         { href: "/admin/persona/exec-meetings", label: "ประชุมผู้บริหาร" },
         { href: "/admin/persona/special-duty", label: "ตำแหน่งงานค่าตอบแทนพิเศษ" },
-        ...(canImportCheckup(user) ? [{ href: "/admin/persona/annual-checkup", label: "ตรวจสุขภาพประจำปี" }] : []),
         { href: "/admin/persona/policy-notices", label: "ประกาศนโยบาย" },
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
@@ -232,6 +237,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         // on a clinic branch), so the standalone nav link is gone (owner 2026-09-26).
         { href: "/admin/reporta/settings", label: "ตั้งค่ากลุ่ม LINE" }
       ]
+    }] : []),
+    // เบิกจ่าย — Memo → ลงลายมือชื่อ → PR → PO. Open to admins and executives (a signer may have no ACCOUNTA access).
+    ...(memoUser ? [{
+      label: "เบิกจ่าย",
+      pathPrefix: "/admin/memos",
+      items: [{ href: "/admin/memos", label: "Memo ขอซื้อ · ลงนาม", badge: memoAwaiting > 0 ? memoAwaiting : undefined }]
     }] : []),
     // ACCOUNTA — contextual section (owner 2026-06-25). Shown when inside
     // /admin/accounta. The เอกสารรอลงบัญชี inbox + สิทธิ์ matrix live here.
@@ -290,6 +301,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       label: "สุขภาพพนักงาน",
       items: [
         { href: "/admin/persona/health", label: t(lang, "admin.persona.nav.health") },
+        // annual check-up: set up the round, import, queue, stations, permissions, settings (all health menus live in this one group)
+        ...(canImportCheckup(user) ? [{ href: "/admin/persona/annual-checkup", label: "ตรวจสุขภาพประจำปี (จัดรอบ / นำเข้า / ตั้งค่า)" }] : []),
         ...(user.clinical_role === "doctor"
           ? [{ href: "/admin/mounjaro", label: "โครงการควบคุมน้ำหนัก (แพทย์)" }] : []),
         ...(user.is_hr_analytics === 1
