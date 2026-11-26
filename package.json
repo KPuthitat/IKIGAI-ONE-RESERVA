@@ -69,6 +69,7 @@
     "test:health-external-release": "node --import tsx scripts/test-health-external-release.ts",
     "test:health-external-accept": "node --import tsx scripts/test-health-external-accept.ts",
     "test:health-ldl": "node --import tsx scripts/test-health-ldl.ts",
+    "test:memos": "node --import tsx scripts/test-memos.ts",
     "test:health-admin": "node --import tsx scripts/test-health-admin.ts",
     "test:category-mix": "node --import tsx scripts/test-category-mix.ts",
     "test:download-name": "node --import tsx scripts/test-download-name.ts",
