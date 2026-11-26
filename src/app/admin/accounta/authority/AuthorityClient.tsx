@@ -71,11 +71,11 @@ function TierSection({ title, hint, tiers, fallback, ruleText, onSave }: { title
       <div><h2 className="font-bold text-slate-800 break-words">{title}</h2><p className="text-xs text-slate-500">{hint}</p></div>
       {shown && <ul className="text-sm text-slate-600 space-y-0.5">{shown.map((t, i) => <li key={i}>{t.upTo == null ? (shown.length > 1 ? "ยอดที่เกินนั้น" : "ทุกยอด") : `ยอดไม่เกิน ฿${baht(t.upTo)}`}: <b>{ruleText[t.rule]}</b> <span className="text-xs text-slate-400">(ค่าที่ใช้อยู่)</span></li>)}</ul>}
       {rows.map((r, i) => (
-        <div key={i} className="grid gap-2 sm:grid-cols-[10rem_1fr_auto] items-center rounded-xl border border-slate-200 p-2">
+        <div key={i} className="grid gap-2 grid-cols-1 sm:grid-cols-[15rem_1fr_auto] items-center rounded-xl border border-slate-200 p-2">
           {i === last ? <div className="text-sm text-slate-700 px-2">{rows.length > 1 ? "ยอดที่เกินขั้นก่อนหน้า" : "ทุกยอด"}</div>
-            : <label className="flex items-center gap-2 text-sm"><span className="text-slate-600 whitespace-nowrap">ยอดไม่เกิน ฿</span><input className="input min-h-[44px] w-full text-right" inputMode="decimal" value={r.upTo} onChange={(e) => set(i, { upTo: e.target.value.replace(/[^\d.,]/g, "") })} aria-label="ยอดสูงสุดของขั้น" /></label>}
-          <select className="input min-h-[44px]" value={r.rule} onChange={(e) => set(i, { rule: e.target.value as Rule })}>{(Object.keys(ruleText) as Rule[]).map((k) => <option key={k} value={k}>{ruleText[k]}</option>)}</select>
-          <button type="button" className="min-h-[44px] px-3 text-sm text-rose-600" onClick={() => setRows(rows.filter((_, k) => k !== i))}>ลบขั้น</button>
+            : <label className="flex items-center gap-2 text-sm"><span className="text-slate-600 whitespace-nowrap">ยอดไม่เกิน ฿</span><input className="input min-h-[44px] w-full min-w-0 flex-1 text-right" inputMode="decimal" value={r.upTo} onChange={(e) => set(i, { upTo: e.target.value.replace(/[^\d.,]/g, "") })} aria-label="ยอดสูงสุดของขั้น" /></label>}
+          <select className="input min-h-[44px] text-sm" value={r.rule} onChange={(e) => set(i, { rule: e.target.value as Rule })}>{(Object.keys(ruleText) as Rule[]).map((k) => <option key={k} value={k}>{ruleText[k]}</option>)}</select>
+          <button type="button" className="min-h-[44px] px-3 text-sm text-rose-600 justify-self-end" onClick={() => setRows(rows.filter((_, k) => k !== i))}>ลบขั้น</button>
         </div>
       ))}
       <div className="flex flex-wrap gap-2">
