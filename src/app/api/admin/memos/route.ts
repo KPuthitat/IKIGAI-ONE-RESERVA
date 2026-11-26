@@ -5,6 +5,7 @@ import { CAPEX_CATEGORY_NAME } from "@/lib/accounta";
 import { getPr } from "@/lib/purchasing";
 import { awaitingMySignature, canSee, cancelMemo, createMemo, getMemoDetail, getSignature, listMemos, MemoError, openPrFromMemo, rejectMemo, reopenMemo, signerChoices, signMemo, submitMemo, updateMemo, type MemoInput } from "@/lib/memos";
 import { notifyAuthorApproved, notifyAuthorRejected, notifyPrApprovers, notifySigners } from "@/lib/memo-notify";
+import { executiveIds, topExecIds } from "@/lib/pr-authority";
 import { Body, memoBranches, memoError, memoGate } from "@/lib/memos-api";
 
 // Memo → signatures → PR (owner 2026-11-26).
@@ -31,7 +32,8 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true, me: { userId: g.user.id, hasSignature: !!getSignature(g.user.id), isCLevel: g.viewer.isCLevel, role: g.user.role },
     memos: listMemos(g.viewer), awaiting: awaitingMySignature(g.user.id), branches, vendors,
-    categories: listCategories().map((c) => ({ name: c.name, kind: c.name === CAPEX_CATEGORY_NAME ? "capex" : "opex" })), signers: signerChoices().filter((s) => s.id !== g.user.id)
+    categories: listCategories().map((c) => ({ name: c.name, kind: c.name === CAPEX_CATEGORY_NAME ? "capex" : "opex" })), signers: signerChoices().filter((s) => s.id !== g.user.id),
+    accounts: db.prepare("SELECT id, name, last4, purpose FROM accounta_cash_accounts WHERE type = 'bank' AND active = 1 ORDER BY name").all(), executiveIds: executiveIds(), topExecIds: topExecIds()
   });
 }
 
@@ -44,7 +46,7 @@ export async function POST(req: Request) {
     switch (d.action) {
       case "save": {
         if (!d.memo) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
-        const i: MemoInput = { branchId: d.memo.branch_id, subject: d.memo.subject, body: d.memo.body, category: d.memo.category, neededDate: d.memo.needed_date ?? null, vendorId: d.memo.vendor_id ?? null,
+        const i: MemoInput = { kind: d.memo.kind, payAccountId: d.memo.pay_account_id ?? null, fromAccountId: d.memo.from_account_id ?? null, toAccountId: d.memo.to_account_id ?? null, weekStart: d.memo.week_start ?? null, amount: d.memo.amount, branchId: d.memo.branch_id, subject: d.memo.subject, body: d.memo.body, category: d.memo.category, neededDate: d.memo.needed_date ?? null, vendorId: d.memo.vendor_id ?? null,
           vendorName: d.memo.vendor_name, vatRate: d.memo.vat_rate, items: d.memo.items, signerIds: d.memo.signer_ids };
         const id = d.memo.id ? (updateMemo(d.memo.id, i, v), d.memo.id) : createMemo(i, v);
         logPersonaAction(g.user.id, d.memo.id ? "memo.update" : "memo.create", id);

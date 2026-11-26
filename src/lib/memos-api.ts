@@ -24,10 +24,12 @@ export function memoBranches(viewer: Viewer): Array<{ id: number; name: string }
 
 const Item = z.object({ description: z.string().max(200), qty: z.number().positive().max(1_000_000), unit: z.string().max(20).optional(), unit_price: z.number().min(0).max(100_000_000) });
 export const MemoBody = z.object({
-  id: z.number().int().positive().optional(),
-  branch_id: z.number().int().positive(), subject: z.string().min(1).max(200), body: z.string().max(4000).optional(), category: z.string().min(1).max(200),
+  id: z.number().int().positive().optional(), kind: z.enum(["purchase", "funding"]).optional(),
+  pay_account_id: z.number().int().positive().nullable().optional(), from_account_id: z.number().int().positive().nullable().optional(), to_account_id: z.number().int().positive().nullable().optional(),
+  week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), amount: z.number().positive().max(1_000_000_000).optional(),
+  branch_id: z.number().int().positive(), subject: z.string().min(1).max(200), body: z.string().max(4000).optional(), category: z.string().max(200),
   needed_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), vendor_id: z.number().int().positive().nullable().optional(), vendor_name: z.string().max(200).optional(),
-  vat_rate: z.number().optional(), items: z.array(Item).min(1).max(100), signer_ids: z.array(z.number().int().positive()).max(20)
+  vat_rate: z.number().optional(), items: z.array(Item).max(100), signer_ids: z.array(z.number().int().positive()).max(20)
 });
 export const Body = z.object({
   action: z.enum(["save", "submit", "reopen", "cancel", "sign", "reject", "open_pr"]),

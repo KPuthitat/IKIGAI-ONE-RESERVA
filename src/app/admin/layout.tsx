@@ -27,6 +27,7 @@ import MaintenanceBanner from "../components/MaintenanceBanner";
 import { currentImpersonationContext } from "@/lib/impersonation";
 import { nameWithPrefix } from "@/lib/name";
 import { awaitingMySignature } from "@/lib/memos";
+import { countAwaiting as countFundingAwaiting } from "@/lib/funding";
 import { viewerOf } from "@/lib/purchasing";
 
 export const dynamic = "force-dynamic";
@@ -129,6 +130,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   let memoAwaiting = 0;
   const memoUser = user.role !== "staff" || viewerOf(user).isCLevel;
   if (memoUser) { try { memoAwaiting = awaitingMySignature(user.id).length; } catch { /* the badge is a convenience */ } }
+  let fundingAwaiting = 0;
+  if (canModule(user, "accounta.manage")) { try { fundingAwaiting = countFundingAwaiting(); } catch { /* the badge is a convenience */ } }
 
   // Branch-gate (owner 2026-06-11): a module can't be opened until a branch
   // is selected. When none is set, every module link routes through the
@@ -260,6 +263,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/accounta/receivables", label: "ลูกหนี้ค้างชำระ" },
         { href: "/admin/accounta/vendors", label: "ผู้จำหน่าย / คู่ค้า" },
         { href: "/admin/accounta/purchasing", label: "งบ OPEX/CAPEX · PR/PO" },
+        { href: "/admin/accounta/funding", label: "เงินโอนระหว่างบัญชี (ขอเบิกเงิน)", badge: fundingAwaiting > 0 ? fundingAwaiting : undefined },
         { href: "/admin/accounta/cash-accounts", label: "ช่องทางการเงิน / บัญชี" },
         { href: "/admin/accounta/reconcile", label: "กระทบยอดบัญชีธนาคาร" },
         { href: "/admin/accounta/credit-cards", label: "บัตรเครดิตกรรมการ" },

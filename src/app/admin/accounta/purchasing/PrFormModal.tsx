@@ -19,6 +19,7 @@ export default function PrFormModal({ data, editId, defaultBranch, onClose, onSa
   const [title, setTitle] = useState(""); const [reason, setReason] = useState(""); const [needed, setNeeded] = useState("");
   const [vendorId, setVendorId] = useState<string>(""); const [vendorName, setVendorName] = useState("");
   const [vat, setVat] = useState<0 | 7>(0); const [over, setOver] = useState("");
+  const [payAccount, setPayAccount] = useState<string>("");
   const [rows, setRows] = useState<Row[]>([blank()]);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(editId == null);
@@ -30,7 +31,7 @@ export default function PrFormModal({ data, editId, defaultBranch, onClose, onSa
       if (!r.ok) { setErr(r.j.message ?? "โหลดไม่สำเร็จ"); return; }
       const { pr, items } = r.j;
       setBranchId(pr.branchId); setCategory(pr.category); setTitle(pr.title); setReason(pr.reason); setNeeded(pr.neededDate ?? "");
-      setVendorId(pr.vendorId ? String(pr.vendorId) : ""); setVendorName(pr.vendorName); setVat(pr.vatRate === 7 ? 7 : 0); setOver(pr.overBudgetReason);
+      setVendorId(pr.vendorId ? String(pr.vendorId) : ""); setVendorName(pr.vendorName); setVat(pr.vatRate === 7 ? 7 : 0); setOver(pr.overBudgetReason); setPayAccount(pr.payAccountId ? String(pr.payAccountId) : "");
       setRows(items.map((i) => ({ description: i.description, qty: String(i.qty), unit: i.unit, price: String(i.unitPrice) })));
       setLoaded(true);
     })();
@@ -52,7 +53,7 @@ export default function PrFormModal({ data, editId, defaultBranch, onClose, onSa
     try {
       const pr = {
         ...(editId ? { id: editId } : {}), branch_id: branchId, category, title, reason, needed_date: needed || null,
-        vendor_id: vendorId ? Number(vendorId) : null, vendor_name: vendorId ? undefined : vendorName, vat_rate: vat, over_budget_reason: over,
+        vendor_id: vendorId ? Number(vendorId) : null, vendor_name: vendorId ? undefined : vendorName, vat_rate: vat, over_budget_reason: over, pay_account_id: payAccount ? Number(payAccount) : null,
         items: rows.filter((r) => r.description.trim()).map((r) => ({ description: r.description, qty: n(r.qty), unit: r.unit, unit_price: n(r.price) }))
       };
       const s = await api<{ id: number }>(apiUrl("/api/admin/accounta/purchasing"), { method: "POST", body: { action: "save_pr", pr } });
@@ -78,6 +79,9 @@ export default function PrFormModal({ data, editId, defaultBranch, onClose, onSa
               <label className="field"><span>สาขา</span><select className="input" value={branchId} disabled={!!editId} onChange={(e) => { setBranchId(Number(e.target.value)); setVendorId(""); }}>{allowed.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
               <label className="field"><span>หมวดค่าใช้จ่าย <span className={`tag ${kind === "capex" ? "tag-info" : "tag-mute"} ml-1`}>{KIND_LABEL[kind]}</span></span>
                 <select className="input" value={category} onChange={(e) => setCategory(e.target.value)}>{data.categories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}</select></label>
+              <label className="block"><span className="label">จ่ายจากบัญชี</span>
+                <select className="input" value={payAccount} onChange={(e) => setPayAccount(e.target.value)}><option value="">ไม่ระบุ</option>{data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.last4 ? ` · ${a.last4}` : ""}</option>)}</select>
+                <span className="text-[11px] text-slate-500">บัญชีที่เลือกกำหนดว่าใครอนุมัติได้ และกี่คน ตามยอดเงิน</span></label>
               <label className="field sm:col-span-2"><span>เรื่องที่ขอซื้อ</span><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="เช่น เครื่องวัดความดันเพิ่ม 2 เครื่อง" /></label>
               <label className="field sm:col-span-2"><span>เหตุผล / ความจำเป็น</span><textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></label>
               <label className="field"><span>ต้องการใช้ภายในวันที่</span><input type="date" className="input" value={needed} onChange={(e) => setNeeded(e.target.value)} /></label>

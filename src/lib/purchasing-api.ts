@@ -28,7 +28,7 @@ export const PrBody = z.object({
   branch_id: z.number().int().positive(), category: z.string().min(1).max(200), title: z.string().min(1).max(200),
   reason: z.string().max(2000).optional(), needed_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   vendor_id: z.number().int().positive().nullable().optional(), vendor_name: z.string().max(200).optional(),
-  vat_rate: z.number().optional(), over_budget_reason: z.string().max(1000).optional(), items: z.array(Item).min(1).max(100)
+  vat_rate: z.number().optional(), over_budget_reason: z.string().max(1000).optional(), pay_account_id: z.number().int().positive().nullable().optional(), items: z.array(Item).min(1).max(100)
 });
 
 export const Body = z.object({

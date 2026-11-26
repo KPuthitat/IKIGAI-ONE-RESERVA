@@ -9,9 +9,11 @@ type Choice = { id: number; name: string; role: string; cLevel: boolean; hasSign
 type ListData = {
   me: { userId: number; hasSignature: boolean; isCLevel: boolean; role: string }; memos: MemoRow[]; awaiting: MemoRow[];
   branches: Array<{ id: number; name: string }>; vendors: Record<number, Array<{ id: number; name: string }>>; categories: Array<{ name: string; kind: string }>; signers: Choice[];
+  accounts: Array<{ id: number; name: string; last4: string | null; purpose: string | null }>; executiveIds: number[]; topExecIds: number[];
 };
 type FormItem = { description: string; qty: string; unit: string; unit_price: string };
-type Form = { id?: number; branch_id: number; subject: string; body: string; category: string; needed_date: string; vendor_id: number | null; vendor_name: string; vat_rate: 0 | 7; items: FormItem[]; signer_ids: number[] };
+type Form = { id?: number; branch_id: number; subject: string; body: string; category: string; needed_date: string; vendor_id: number | null; vendor_name: string; vat_rate: 0 | 7; items: FormItem[]; signer_ids: number[];
+  kind: "purchase" | "funding"; pay_account_id: number | null; from_account_id: number | null; to_account_id: number | null; week_start: string; amount: string };
 
 const STATUS: Record<MemoStatus, { th: string; cls: string }> = {
   draft: { th: "ร่าง", cls: "bg-slate-100 text-slate-700" }, pending: { th: "รอลงนาม", cls: "bg-amber-100 text-amber-800" }, approved: { th: "ลงนามครบ · เปิด PR ได้", cls: "bg-emerald-100 text-emerald-800" },
@@ -20,7 +22,9 @@ const STATUS: Record<MemoStatus, { th: string; cls: string }> = {
 const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const when = (s: string | null) => (s ? new Date(s.replace(" ", "T") + "Z").toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }) : "—");
 const EVENT_TH: Record<string, string> = { create: "สร้าง Memo", update: "แก้ไข", submit: "ส่งขอลงนาม", sign: "ลงลายมือชื่อ", approved: "ลงนามครบ — อนุมัติ Memo", reject: "ไม่เห็นชอบ", reopen: "ดึงกลับมาแก้ไข", cancel: "ยกเลิก", open_pr: "เปิด PR" };
-const blank = (branch: number): Form => ({ branch_id: branch, subject: "", body: "", category: "", needed_date: "", vendor_id: null, vendor_name: "", vat_rate: 0, items: [{ description: "", qty: "1", unit: "", unit_price: "" }], signer_ids: [] });
+const blank = (branch: number, kind: "purchase" | "funding" = "purchase", accounts: ListData["accounts"] = []): Form => ({ kind, pay_account_id: null, week_start: "", amount: "",
+  from_account_id: kind === "funding" ? (accounts.find((a) => a.purpose === "working") ?? accounts[0])?.id ?? null : null, to_account_id: kind === "funding" ? accounts.find((a) => a.purpose === "procurement")?.id ?? null : null,
+  branch_id: branch, subject: "", body: "", category: "", needed_date: "", vendor_id: null, vendor_name: "", vat_rate: 0, items: [{ description: "", qty: "1", unit: "", unit_price: "" }], signer_ids: [] });
 
 async function call(method: string, path: string, body?: unknown): Promise<{ ok: boolean; status: number; j: Record<string, unknown> }> {
   try {
@@ -40,12 +44,12 @@ function printMemo(m: MemoDetail) {
     body{font-family:'LINE Seed Sans TH',system-ui,sans-serif;color:#0f172a;margin:28px;font-size:14px;line-height:1.55} h1{font-size:20px;margin:0 0 4px} .m{color:#475569;font-size:12px}
     table{width:100%;border-collapse:collapse;margin:10px 0} td,th{border:1px solid #94a3b8;padding:5px 8px;text-align:left} .r{text-align:right} .sigs{display:flex;flex-wrap:wrap;gap:24px;margin-top:28px}
     .sig{width:200px;text-align:center} .img{height:70px;display:flex;align-items:flex-end;justify-content:center;border-bottom:1px solid #334155} .img img{max-height:66px;max-width:190px} .n{margin-top:4px;font-weight:600} .d{font-size:11px;color:#475569}
-  </style></head><body><h1>บันทึกข้อความ (Memo) ขอซื้อ</h1><div class="m">${esc(m.memoNo)} · ${esc(m.branchName)} · ผู้ขอ ${esc(m.authorName)}${m.prNo ? ` · PR ${esc(m.prNo)}` : ""}</div>
+  </style></head><body><h1>บันทึกข้อความ (Memo) ${m.kind === "funding" ? "ขอเบิกเงิน" : "ขอซื้อ"}</h1><div class="m">${esc(m.memoNo)} · ${esc(m.branchName)} · ผู้ขอ ${esc(m.authorName)}${m.prNo ? ` · PR ${esc(m.prNo)}` : ""}</div>
     <p><b>เรื่อง</b> ${esc(m.subject)}</p>${m.body ? `<p>${esc(m.body).replace(/\n/g, "<br>")}</p>` : ""}
-    <p class="m">หมวด ${esc(m.category)} · ผู้จำหน่าย ${esc(m.vendorName || "—")} · วันที่ต้องการ ${esc(m.neededDate ?? "—")}</p>
+    ${m.kind === "funding" ? `<p class="m">โอนจาก ${esc(m.fromAccountName ?? "—")} ไปยัง ${esc(m.toAccountName ?? "—")}${m.weekStart ? ` · สัปดาห์เริ่ม ${esc(m.weekStart)}` : ""}</p><p><b>จำนวนเงินที่ขอเบิก ${baht(m.total)} บาท</b></p>` : `<p class="m">หมวด ${esc(m.category)} · ผู้จำหน่าย ${esc(m.vendorName || "—")} · วันที่ต้องการ ${esc(m.neededDate ?? "—")}${m.payAccountName ? ` · จ่ายจาก ${esc(m.payAccountName)}` : ""}</p>
     <table><thead><tr><th>#</th><th>รายการ</th><th class="r">จำนวน</th><th class="r">ราคา/หน่วย</th><th class="r">รวม</th></tr></thead><tbody>${rows}
     <tr><td colspan="4" class="r">รวมก่อนภาษี</td><td class="r">${baht(m.subtotal)}</td></tr>${m.vatRate ? `<tr><td colspan="4" class="r">VAT ${m.vatRate}%</td><td class="r">${baht(m.vatAmount)}</td></tr>` : ""}
-    <tr><td colspan="4" class="r"><b>ยอดรวม</b></td><td class="r"><b>${baht(m.total)}</b></td></tr></tbody></table>
+    <tr><td colspan="4" class="r"><b>ยอดรวม</b></td><td class="r"><b>${baht(m.total)}</b></td></tr></tbody></table>`}
     <div class="sigs">${sig}</div><script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
   w.document.close();
 }
@@ -101,7 +105,8 @@ export default function MemosClient({ openId }: { openId: number | null }) {
           <button key={k} type="button" className={`chip ${tab === k ? "chip-active" : ""}`} onClick={() => setTab(k)}>{th}</button>)}
         <div className="flex-1" />
         {data.me.hasSignature && <button type="button" className="btn-secondary min-h-[44px] px-4 text-sm" onClick={() => setPad(true)}>ลายเซ็นของฉัน</button>}
-        {data.branches.length > 0 && <button type="button" className="btn-primary min-h-[44px] px-4" onClick={() => { setDetail(null); setForm(blank(defaultBranch)); }}>เขียน Memo ใหม่</button>}
+        {data.branches.length > 0 && <button type="button" className="btn-primary min-h-[44px] px-4" onClick={() => { setDetail(null); setForm(blank(defaultBranch)); }}>เขียน Memo ขอซื้อ</button>}
+        {data.branches.length > 0 && data.accounts.length >= 2 && <button type="button" className="btn-secondary min-h-[44px] px-4" onClick={() => { setDetail(null); setForm(blank(defaultBranch, "funding", data.accounts)); }}>ขอเบิกเงิน (โอนระหว่างบัญชี)</button>}
       </div>
 
       {list.length === 0 ? <div className="card text-sm text-slate-500 text-center py-8">{tab === "sign" ? "ไม่มี Memo รอลงนาม" : "ยังไม่มี Memo"}</div> : (
@@ -110,7 +115,7 @@ export default function MemosClient({ openId }: { openId: number | null }) {
             <li key={m.id}>
               <button type="button" onClick={() => { setForm(null); open(m.id); }} className={`card w-full text-left !p-4 hover:bg-slate-50 min-h-[64px] ${detail?.id === m.id ? "ring-2 ring-brand/40" : ""}`}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0"><div className="font-semibold text-slate-900 break-words">{m.subject}</div><div className="text-xs text-slate-500">{m.memoNo} · {m.branchName} · ผู้ขอ {m.authorName}</div></div>
+                  <div className="min-w-0"><div className="font-semibold text-slate-900 break-words">{m.kind === "funding" && <span className="mr-1.5 rounded bg-violet-100 text-violet-800 text-[11px] px-1.5 py-0.5">ขอเบิกเงิน</span>}{m.subject}</div><div className="text-xs text-slate-500">{m.memoNo} · {m.branchName} · ผู้ขอ {m.authorName}</div></div>
                   <div className="text-right shrink-0"><div className="font-bold tabular-nums">฿{baht(m.total)}</div><span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] ${STATUS[m.status].cls}`}>{STATUS[m.status].th}</span></div>
                 </div>
                 {m.status === "pending" && <div className="mt-2 flex items-center gap-2"><div className="h-2 flex-1 rounded-full bg-slate-200 overflow-hidden"><div className="h-full nk-gradient" style={{ width: `${m.signerCount ? (m.signed / m.signerCount) * 100 : 0}%` }} /></div><span className="text-[11px] text-slate-600">ลงนาม {m.signed}/{m.signerCount}</span></div>}
@@ -123,7 +128,7 @@ export default function MemosClient({ openId }: { openId: number | null }) {
       {form && <MemoForm form={form} data={data} busy={busy} onChange={setForm} onCancel={() => setForm(null)}
         onSave={async (f, send) => {
           setBusy(true); setMsg(null);
-          const body = { id: f.id, branch_id: f.branch_id, subject: f.subject, body: f.body, category: f.category, needed_date: f.needed_date || null, vendor_id: f.vendor_id, vendor_name: f.vendor_name, vat_rate: f.vat_rate,
+          const body = { id: f.id, kind: f.kind, pay_account_id: f.pay_account_id, from_account_id: f.from_account_id, to_account_id: f.to_account_id, week_start: f.week_start || null, amount: f.kind === "funding" ? Number(f.amount) || undefined : undefined, branch_id: f.branch_id, subject: f.subject, body: f.body, category: f.category, needed_date: f.needed_date || null, vendor_id: f.vendor_id, vendor_name: f.vendor_name, vat_rate: f.vat_rate,
             items: f.items.filter((i) => i.description.trim()).map((i) => ({ description: i.description.trim(), qty: Number(i.qty), unit: i.unit, unit_price: Number(i.unit_price) })), signer_ids: f.signer_ids };
           const r = await call("POST", "/api/admin/memos", { action: "save", memo: body });
           if (!r.ok) { setBusy(false); setMsg({ ok: false, text: (r.j.message as string) ?? "บันทึกไม่สำเร็จ" }); return; }
@@ -133,7 +138,8 @@ export default function MemosClient({ openId }: { openId: number | null }) {
         }} />}
 
       {detail && !form && <MemoView m={detail} data={data} busy={busy} act={act} onEdit={() => setForm({ id: detail.id, branch_id: detail.branchId, subject: detail.subject, body: detail.body, category: detail.category, needed_date: detail.neededDate ?? "", vendor_id: detail.vendorId, vendor_name: detail.vendorName,
-        vat_rate: detail.vatRate === 7 ? 7 : 0, items: detail.items.map((i) => ({ description: i.description, qty: String(i.qty), unit: i.unit, unit_price: String(i.unitPrice) })), signer_ids: detail.signers.map((s) => s.userId) })}
+        vat_rate: detail.vatRate === 7 ? 7 : 0, items: detail.items.map((i) => ({ description: i.description, qty: String(i.qty), unit: i.unit, unit_price: String(i.unitPrice) })), signer_ids: detail.signers.map((s) => s.userId),
+          kind: detail.kind, pay_account_id: detail.payAccountId, from_account_id: detail.fromAccountId, to_account_id: detail.toAccountId, week_start: detail.weekStart ?? "", amount: detail.kind === "funding" ? String(detail.total) : "" })}
         onNeedSignature={() => setPad(true)} onClose={() => setDetail(null)} />}
 
       {pad && <SignaturePad current={null} onClose={() => setPad(false)} onSaved={async () => { setPad(false); setMsg({ ok: true, text: "บันทึกลายเซ็นแล้ว" }); await load(); }} />}
@@ -159,10 +165,16 @@ function MemoView({ m, data, busy, act, onEdit, onNeedSignature, onClose }: {
         <div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-0.5 text-xs ${STATUS[m.status].cls}`}>{STATUS[m.status].th}</span><button type="button" className="text-sm text-slate-500 underline min-h-[44px]" onClick={onClose}>ปิด</button></div>
       </div>
       {m.body && <p className="text-sm text-slate-700 whitespace-pre-line">{m.body}</p>}
-      <div className="text-xs text-slate-500">หมวด {m.category} · ผู้จำหน่าย {m.vendorName || "—"} · วันที่ต้องการ {m.neededDate ?? "—"}</div>
+      {m.kind === "funding" ? (
+        <div className="rounded-xl bg-violet-50 border border-violet-200 p-3 text-sm space-y-1">
+          <div>โอนจาก <b>{m.fromAccountName}</b> → <b>{m.toAccountName}</b>{m.weekStart ? ` · สัปดาห์เริ่ม ${m.weekStart}` : ""}</div>
+          <div className="text-lg font-bold tabular-nums">฿{baht(m.total)}</div>
+          {m.status === "approved" && <div className="text-xs text-violet-900">ลงนามครบแล้ว — รอฝ่ายการเงินโอนและบันทึกที่หน้า <a className="underline" href={apiUrl("/admin/accounta/funding")}>เงินโอนระหว่างบัญชี</a></div>}
+        </div>
+      ) : <div className="text-xs text-slate-500">หมวด {m.category} · ผู้จำหน่าย {m.vendorName || "—"} · วันที่ต้องการ {m.neededDate ?? "—"}{m.payAccountName ? ` · จ่ายจาก ${m.payAccountName}` : ""}</div>}
 
       {/* phone: one card per line; wider screens: a table */}
-      <ul className="sm:hidden space-y-2">
+      {m.kind !== "funding" && <><ul className="sm:hidden space-y-2">
         {m.items.map((i) => <li key={i.lineNo} className="rounded-xl bg-slate-50 px-3 py-2"><div className="font-medium break-words">{i.lineNo}. {i.description}</div><div className="flex justify-between text-xs text-slate-600 mt-0.5"><span>{i.qty} {i.unit} × {baht(i.unitPrice)}</span><b className="tabular-nums text-slate-900">{baht(i.amount)}</b></div></li>)}
         {m.vatRate > 0 && <li className="flex justify-between text-sm px-1 text-slate-600"><span>VAT {m.vatRate}%</span><span className="tabular-nums">{baht(m.vatAmount)}</span></li>}
         <li className="flex justify-between px-1 font-bold"><span>ยอดรวม</span><span className="tabular-nums">฿{baht(m.total)}</span></li>
@@ -176,7 +188,7 @@ function MemoView({ m, data, busy, act, onEdit, onNeedSignature, onClose }: {
             <tr><td colSpan={4} className="py-1 text-right font-semibold">ยอดรวม</td><td className="py-1 text-right font-bold tabular-nums">฿{baht(m.total)}</td></tr>
           </tbody>
         </table>
-      </div>
+      </div></>}
 
       <div>
         <div className="font-semibold text-slate-800 text-sm mb-2">ผู้ลงนาม ({m.signed}/{m.signerCount})</div>
@@ -217,7 +229,7 @@ function MemoView({ m, data, busy, act, onEdit, onNeedSignature, onClose }: {
         {isAuthor && m.status === "draft" && <><button type="button" className="btn-secondary min-h-[44px] px-4" onClick={onEdit}>แก้ไข</button>
           <button type="button" className="btn-primary min-h-[44px] px-4" disabled={busy} onClick={() => act("submit", m.id, {}, "ส่งขอลงนามแล้ว — ผู้ลงนามได้รับแจ้งเตือน")}>ส่งขอลงนาม</button></>}
         {isAuthor && (m.status === "pending" || m.status === "rejected") && <button type="button" className="btn-secondary min-h-[44px] px-4" disabled={busy} onClick={() => act("reopen", m.id, {}, "ดึงกลับเป็นร่างแล้ว (ลายเซ็นที่ลงไว้ถูกล้าง)")}>{m.status === "rejected" ? "แก้ไขแล้วส่งใหม่" : "ดึงกลับมาแก้ไข"}</button>}
-        {isAuthor && m.status === "approved" && <button type="button" className="btn-primary min-h-[44px] px-5" disabled={busy} onClick={async () => {
+        {isAuthor && m.status === "approved" && m.kind !== "funding" && <button type="button" className="btn-primary min-h-[44px] px-5" disabled={busy} onClick={async () => {
           const r = await act("open_pr", m.id, obr ? { over_budget_reason: obr } : {}, "เปิด PR แล้ว — ส่งให้ผู้บริหารอนุมัติ");
           if (r && r.detail === "over_budget_reason_required") { const why = window.prompt("ยอดนี้เกินงบ (หรือยังไม่ได้ตั้งงบ) กรุณาระบุเหตุผล"); if (why?.trim()) { setObr(why.trim()); await act("open_pr", m.id, { over_budget_reason: why.trim() }, "เปิด PR แล้ว — ส่งให้ผู้บริหารอนุมัติ"); } }
         }}>เปิด PR จาก Memo</button>}
@@ -239,23 +251,31 @@ function MemoForm({ form, data, busy, onChange, onSave, onCancel }: { form: Form
   const vat = Math.round(subtotal * form.vat_rate) / 100;
   const vendors = data.vendors[form.branch_id] ?? [];
   const toggle = (id: number) => set("signer_ids", form.signer_ids.includes(id) ? form.signer_ids.filter((x) => x !== id) : [...form.signer_ids, id]);
-  const valid = form.subject.trim() && form.category && form.items.some((i) => i.description.trim() && Number(i.qty) > 0) && form.signer_ids.length > 0;
+  const funding = form.kind === "funding";
+  const valid = form.subject.trim() && form.signer_ids.length > 0 && (funding ? Number(form.amount) > 0 && form.from_account_id && form.to_account_id && form.from_account_id !== form.to_account_id : form.category && form.items.some((i) => i.description.trim() && Number(i.qty) > 0));
 
   return (
     <section className="card space-y-3" aria-label="ฟอร์ม Memo">
-      <h2 className="text-lg font-bold text-slate-800">{form.id ? "แก้ไข Memo" : "เขียน Memo ใหม่"}</h2>
+      <h2 className="text-lg font-bold text-slate-800">{form.id ? "แก้ไข Memo" : funding ? "ขอเบิกเงิน — โอนระหว่างบัญชี" : "เขียน Memo ขอซื้อ"}</h2>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-sm"><span className="label">สาขา</span><select className="input w-full min-h-[44px]" value={form.branch_id} onChange={(e) => onChange({ ...form, branch_id: Number(e.target.value), vendor_id: null })} disabled={!!form.id}>{data.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
-        <label className="block text-sm"><span className="label">หมวดค่าใช้จ่าย</span><select className="input w-full min-h-[44px]" value={form.category} onChange={(e) => set("category", e.target.value)}><option value="">เลือกหมวด</option>{data.categories.map((c) => <option key={c.name} value={c.name}>{c.name}{c.kind === "capex" ? " (CAPEX)" : ""}</option>)}</select></label>
+        {funding && <>
+          <label className="block text-sm"><span className="label">โอนจากบัญชี</span><select className="input w-full min-h-[44px]" value={form.from_account_id ?? ""} onChange={(e) => set("from_account_id", e.target.value ? Number(e.target.value) : null)}><option value="">เลือกบัญชี</option>{data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.last4 ? ` · ${a.last4}` : ""}</option>)}</select></label>
+          <label className="block text-sm"><span className="label">ไปยังบัญชี</span><select className="input w-full min-h-[44px]" value={form.to_account_id ?? ""} onChange={(e) => set("to_account_id", e.target.value ? Number(e.target.value) : null)}><option value="">เลือกบัญชี</option>{data.accounts.filter((a) => a.id !== form.from_account_id).map((a) => <option key={a.id} value={a.id}>{a.name}{a.last4 ? ` · ${a.last4}` : ""}</option>)}</select></label>
+          <label className="block text-sm"><span className="label">จำนวนเงินที่ขอ (บาท)</span><input className="input w-full min-h-[44px] text-right" inputMode="decimal" value={form.amount} onChange={(e) => set("amount", e.target.value.replace(/[^\d.]/g, ""))} /></label>
+          <label className="block text-sm"><span className="label">สำหรับสัปดาห์ที่เริ่มวันที่</span><input type="date" className="input w-full min-h-[44px]" value={form.week_start} onChange={(e) => set("week_start", e.target.value)} /></label>
+        </>}
+        {!funding && <label className="block text-sm"><span className="label">จ่ายจากบัญชี</span><select className="input w-full min-h-[44px]" value={form.pay_account_id ?? ""} onChange={(e) => set("pay_account_id", e.target.value ? Number(e.target.value) : null)}><option value="">ยังไม่ระบุ</option>{data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.last4 ? ` · ${a.last4}` : ""}</option>)}</select></label>}
+        {!funding && <label className="block text-sm"><span className="label">หมวดค่าใช้จ่าย</span><select className="input w-full min-h-[44px]" value={form.category} onChange={(e) => set("category", e.target.value)}><option value="">เลือกหมวด</option>{data.categories.map((c) => <option key={c.name} value={c.name}>{c.name}{c.kind === "capex" ? " (CAPEX)" : ""}</option>)}</select></label>}
         <label className="block text-sm sm:col-span-2"><span className="label">เรื่อง</span><input className="input w-full min-h-[44px]" maxLength={200} value={form.subject} onChange={(e) => set("subject", e.target.value)} placeholder="เช่น ขอซื้อเครื่องปรับอากาศ ห้องคลินิก" /></label>
         <label className="block text-sm sm:col-span-2"><span className="label">เหตุผล / รายละเอียด</span><textarea className="input w-full" rows={3} maxLength={4000} value={form.body} onChange={(e) => set("body", e.target.value)} /></label>
-        <label className="block text-sm"><span className="label">วันที่ต้องการของ</span><input type="date" className="input w-full min-h-[44px]" value={form.needed_date} onChange={(e) => set("needed_date", e.target.value)} /></label>
+        {!funding && <><label className="block text-sm"><span className="label">วันที่ต้องการของ</span><input type="date" className="input w-full min-h-[44px]" value={form.needed_date} onChange={(e) => set("needed_date", e.target.value)} /></label>
         <label className="block text-sm"><span className="label">ผู้จำหน่าย</span>
           <select className="input w-full min-h-[44px]" value={form.vendor_id ?? ""} onChange={(e) => onChange({ ...form, vendor_id: e.target.value ? Number(e.target.value) : null, vendor_name: "" })}><option value="">ไม่อยู่ในรายชื่อ (พิมพ์เอง)</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
-        {form.vendor_id == null && <label className="block text-sm sm:col-span-2"><span className="label">ชื่อผู้จำหน่าย</span><input className="input w-full min-h-[44px]" maxLength={200} value={form.vendor_name} onChange={(e) => set("vendor_name", e.target.value)} /></label>}
+        {form.vendor_id == null && <label className="block text-sm sm:col-span-2"><span className="label">ชื่อผู้จำหน่าย</span><input className="input w-full min-h-[44px]" maxLength={200} value={form.vendor_name} onChange={(e) => set("vendor_name", e.target.value)} /></label>}</>}
       </div>
 
-      <div className="space-y-2">
+      {!funding && <div className="space-y-2">
         <div className="text-sm font-semibold text-slate-800">รายการ</div>
         {form.items.map((it, i) => (
           <div key={i} className="grid gap-2 grid-cols-[1fr_5rem] sm:grid-cols-[1fr_6rem_6rem_8rem_auto] items-center rounded-xl border border-slate-200 p-2">
@@ -271,15 +291,16 @@ function MemoForm({ form, data, busy, onChange, onSave, onCancel }: { form: Form
           <label className="flex items-center gap-2 text-sm min-h-[44px]"><input type="checkbox" checked={form.vat_rate === 7} onChange={(e) => set("vat_rate", e.target.checked ? 7 : 0)} />ภาษีมูลค่าเพิ่ม 7%</label>
           <div className="ml-auto text-sm tabular-nums">รวม <b>฿{baht(subtotal + vat)}</b>{form.vat_rate ? <span className="text-slate-500"> (VAT {baht(vat)})</span> : null}</div>
         </div>
-      </div>
+      </div>}
 
       <div className="space-y-2">
         <div className="text-sm font-semibold text-slate-800">ผู้ที่ต้องลงนาม (เลือกได้หลายคน — ลงนามครบทุกคนจึงอนุมัติ Memo)</div>
+        {funding && <p className="text-xs text-violet-800">การเบิกเงินต้องเลือกผู้ลงนามให้ครบตามอำนาจอนุมัติของบัญชีต้นทางและยอดนี้ — ผู้บริหารมีป้ายกำกับ</p>}
         <ul className="grid gap-2 sm:grid-cols-2">
           {data.signers.map((s) => (
             <li key={s.id}><label className={`flex items-center gap-3 rounded-xl border px-3 py-2 min-h-[48px] cursor-pointer ${form.signer_ids.includes(s.id) ? "border-brand bg-brand/5" : "border-slate-200"}`}>
               <input type="checkbox" checked={form.signer_ids.includes(s.id)} onChange={() => toggle(s.id)} />
-              <span className="min-w-0 flex-1"><span className="block text-sm font-medium break-words">{s.name}</span><span className="block text-[11px] text-slate-500">{s.cLevel ? "ผู้บริหาร" : s.role === "super_admin" ? "เจ้าของระบบ" : "แอดมิน"}{s.hasSignature ? "" : " · ยังไม่ตั้งลายเซ็น"}</span></span>
+              <span className="min-w-0 flex-1"><span className="block text-sm font-medium break-words">{s.name}</span><span className="block text-[11px] text-slate-500">{data.topExecIds.includes(s.id) ? "ผู้บริหารสูงสุด" : s.cLevel ? "ผู้บริหาร" : s.role === "super_admin" ? "เจ้าของระบบ" : "แอดมิน"}{s.hasSignature ? "" : " · ยังไม่ตั้งลายเซ็น"}</span></span>
             </label></li>
           ))}
         </ul>
@@ -287,7 +308,7 @@ function MemoForm({ form, data, busy, onChange, onSave, onCancel }: { form: Form
 
       <div className="flex flex-wrap gap-2 justify-end">
         <button type="button" className="btn-secondary min-h-[44px] px-4" onClick={onCancel}>ยกเลิก</button>
-        <button type="button" className="btn-secondary min-h-[44px] px-4" disabled={busy || !form.subject.trim() || !form.category} onClick={() => onSave(form, false)}>บันทึกร่าง</button>
+        <button type="button" className="btn-secondary min-h-[44px] px-4" disabled={busy || !form.subject.trim() || (!funding && !form.category)} onClick={() => onSave(form, false)}>บันทึกร่าง</button>
         <button type="button" className="btn-primary min-h-[44px] px-5" disabled={busy || !valid} onClick={() => onSave(form, true)}>บันทึกและส่งขอลงนาม</button>
       </div>
     </section>

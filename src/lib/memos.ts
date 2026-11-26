@@ -10,32 +10,38 @@
 import { getDb } from "./db";
 import { verifyAdminPin } from "./admin-pin";
 import { createPr, getPr, submitPr, type PrInput, type Viewer, canActOnBranch, isApprover, PurchasingError } from "./purchasing";
+import { eligibleApprovers, executiveIds, ruleFor, topExecIds, RULE_TH, type Rule } from "./pr-authority";
 
 export type MemoStatus = "draft" | "pending" | "approved" | "rejected" | "cancelled" | "pr_opened";
 export type MemoErrorCode =
   | "not_found" | "forbidden" | "bad_status" | "invalid" | "no_items" | "no_signers" | "bad_signer" | "no_signature" | "no_pin" | "wrong_pin" | "not_signer" | "already_signed"
-  | "reject_reason_required" | "bad_signature_image" | "pr_failed";
+  | "reject_reason_required" | "bad_signature_image" | "pr_failed" | "bad_account" | "signers_not_authorised";
 export class MemoError extends Error { constructor(public code: MemoErrorCode, public detail?: string) { super(code); } }
 export const MEMO_ERROR_TH: Record<MemoErrorCode, string> = {
   not_found: "ไม่พบ Memo", forbidden: "ท่านไม่มีสิทธิ์ทำรายการนี้", bad_status: "สถานะของ Memo ไม่ให้ทำรายการนี้", invalid: "ข้อมูลไม่ครบหรือไม่ถูกต้อง",
   no_items: "ต้องมีรายการอย่างน้อย 1 รายการและยอดรวมมากกว่า 0", no_signers: "ต้องเลือกผู้ลงนามอย่างน้อย 1 คน", bad_signer: "ผู้ลงนามต้องเป็นผู้ใช้ที่ทำงานอยู่ และไม่ใช่ผู้เขียน Memo",
   no_signature: "ยังไม่ได้ตั้งลายเซ็น กรุณาวาดลายเซ็นก่อน", no_pin: "ยังไม่ได้ตั้ง PIN", wrong_pin: "PIN ไม่ถูกต้อง", not_signer: "ท่านไม่ได้เป็นผู้ลงนามของ Memo นี้",
   already_signed: "ท่านลงนามหรือปฏิเสธไปแล้ว", reject_reason_required: "กรุณาระบุเหตุผลที่ไม่เห็นชอบ", bad_signature_image: "ลายเซ็นไม่ถูกต้อง (ต้องเป็นภาพ PNG ขนาดไม่เกิน 300 KB)",
-  pr_failed: "เปิด PR ไม่สำเร็จ"
+  pr_failed: "เปิด PR ไม่สำเร็จ", bad_account: "เลือกบัญชีธนาคารไม่ถูกต้อง (ต้องเป็นบัญชีธนาคารที่ใช้งานอยู่ และบัญชีต้นทาง/ปลายทางต้องต่างกัน)",
+  signers_not_authorised: "ผู้ลงนามที่เลือกยังไม่ครบตามอำนาจอนุมัติของยอดนี้"
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export type MemoItemInput = { description: string; qty: number; unit?: string; unit_price: number };
+export type MemoKind = "purchase" | "funding";
 export type MemoInput = {
-  branchId: number; subject: string; body?: string; category: string; neededDate?: string | null; vendorId?: number | null; vendorName?: string;
+  kind?: MemoKind; branchId: number; subject: string; body?: string; category: string; neededDate?: string | null; vendorId?: number | null; vendorName?: string;
   vatRate?: number; items: MemoItemInput[]; signerIds: number[];
+  payAccountId?: number | null;                                   // purchase: the account the PR will be paid from
+  fromAccountId?: number | null; toAccountId?: number | null; weekStart?: string | null; amount?: number;   // funding: SCB → KBANK for one week
 };
 export type MemoSigner = { userId: number; name: string; status: "pending" | "signed" | "rejected"; signedAt: string | null; comment: string; signature: string | null };
 export type MemoRow = {
   id: number; memoNo: string; branchId: number; branchName: string; authorId: number; authorName: string; subject: string; body: string; category: string; neededDate: string | null;
   vendorId: number | null; vendorName: string; vatRate: number; subtotal: number; vatAmount: number; total: number; status: MemoStatus; submittedAt: string | null; approvedAt: string | null;
   prId: number | null; prNo: string | null; createdAt: string; signed: number; signerCount: number;
+  kind: MemoKind; payAccountId: number | null; payAccountName: string | null; fromAccountId: number | null; fromAccountName: string | null; toAccountId: number | null; toAccountName: string | null; weekStart: string | null;
 };
 export type MemoDetail = MemoRow & { items: Array<{ lineNo: number; description: string; qty: number; unit: string; unitPrice: number; amount: number }>; signers: MemoSigner[]; events: Array<{ at: string; actor: string; action: string; detail: string }> };
 
@@ -43,15 +49,19 @@ type Db = {
   id: number; memo_no: string; branch_id: number; branch_name: string; author_id: number; author_name: string; subject: string; body: string; category: string; needed_date: string | null;
   vendor_id: number | null; vendor_name: string; vat_rate: number; subtotal: number; vat_amount: number; total: number; status: MemoStatus; submitted_at: string | null; approved_at: string | null;
   pr_id: number | null; pr_no: string | null; created_at: string; signed: number; signer_count: number;
+  memo_kind: MemoKind; pay_account_id: number | null; pay_account_name: string | null; from_account_id: number | null; from_account_name: string | null; to_account_id: number | null; to_account_name: string | null; week_start: string | null;
 };
 const SELECT = `SELECT m.*, b.name AS branch_name, u.display_name AS author_name, p.pr_no AS pr_no,
     (SELECT COUNT(*) FROM memo_signers s WHERE s.memo_id = m.id AND s.status = 'signed') AS signed,
-    (SELECT COUNT(*) FROM memo_signers s WHERE s.memo_id = m.id) AS signer_count
-  FROM memos m JOIN branches b ON b.id = m.branch_id JOIN users u ON u.id = m.author_id LEFT JOIN purchase_requests p ON p.id = m.pr_id`;
+    (SELECT COUNT(*) FROM memo_signers s WHERE s.memo_id = m.id) AS signer_count,
+         pa.name AS pay_account_name, fa.name AS from_account_name, ta.name AS to_account_name
+  FROM memos m JOIN branches b ON b.id = m.branch_id JOIN users u ON u.id = m.author_id LEFT JOIN purchase_requests p ON p.id = m.pr_id
+  LEFT JOIN accounta_cash_accounts pa ON pa.id = m.pay_account_id LEFT JOIN accounta_cash_accounts fa ON fa.id = m.from_account_id LEFT JOIN accounta_cash_accounts ta ON ta.id = m.to_account_id`;
 const toRow = (r: Db): MemoRow => ({
   id: r.id, memoNo: r.memo_no, branchId: r.branch_id, branchName: r.branch_name, authorId: r.author_id, authorName: r.author_name, subject: r.subject, body: r.body, category: r.category,
   neededDate: r.needed_date, vendorId: r.vendor_id, vendorName: r.vendor_name, vatRate: r.vat_rate, subtotal: r.subtotal, vatAmount: r.vat_amount, total: r.total, status: r.status,
-  submittedAt: r.submitted_at, approvedAt: r.approved_at, prId: r.pr_id, prNo: r.pr_no, createdAt: r.created_at, signed: r.signed, signerCount: r.signer_count
+  submittedAt: r.submitted_at, approvedAt: r.approved_at, prId: r.pr_id, prNo: r.pr_no, createdAt: r.created_at, signed: r.signed, signerCount: r.signer_count,
+  kind: r.memo_kind, payAccountId: r.pay_account_id, payAccountName: r.pay_account_name, fromAccountId: r.from_account_id, fromAccountName: r.from_account_name, toAccountId: r.to_account_id, toAccountName: r.to_account_name, weekStart: r.week_start
 });
 
 function nextNo(): string {
@@ -100,28 +110,54 @@ function checkSigners(ids: number[], authorId: number): number[] {
   }
   return uniq;
 }
-function writeBody(memoId: number, input: MemoInput, authorId: number): void {
+const isBankAccount = (id: number | null | undefined): boolean => id != null && !!getDb().prepare("SELECT 1 FROM accounta_cash_accounts WHERE id = ? AND type = 'bank' AND active = 1").get(id);
+
+/** Funding memos: the signers chosen must be able to satisfy the approval rule of the SOURCE account for this amount (a plain list of friends is not enough). */
+function checkFundingSigners(fromAccountId: number, amount: number, signerIds: number[]): void {
+  const rule: Rule = ruleFor(fromAccountId, amount);
+  const eligible = new Set(eligibleApprovers(fromAccountId, rule));
+  const execs = new Set(executiveIds()), tops = new Set(topExecIds());
+  const chosen = signerIds.filter((id) => eligible.has(id));
+  const okRule = rule === "two_execs_or_top" ? chosen.some((id) => tops.has(id)) || chosen.filter((id) => execs.has(id)).length >= 2 : rule === "top_only" ? chosen.some((id) => tops.has(id)) : chosen.length >= 1;
+  if (!okRule) throw new MemoError("signers_not_authorised", RULE_TH[rule]);
+}
+
+function writeBody(memoId: number, input: MemoInput, authorId: number, kind: MemoKind): void {
   const db = getDb();
-  const items = cleanItems(input.items);
-  const vatRate = input.vatRate === 7 ? 7 : 0;
-  const subtotal = round2(items.reduce((s, i) => s + i.amount, 0));
-  const vatAmount = round2(subtotal * vatRate / 100);
-  let vendorName = (input.vendorName ?? "").trim(), vendorId = input.vendorId ?? null;
-  if (vendorId != null) {
-    const v = db.prepare("SELECT name FROM inventa_suppliers WHERE id = ? AND branch_id = ?").get(vendorId, input.branchId) as { name: string } | undefined;
-    if (!v) throw new MemoError("invalid");
-    vendorName = v.name;
-  }
   const subject = (input.subject ?? "").trim();
-  if (!subject || subject.length > 200 || !String(input.category ?? "").trim()) throw new MemoError("invalid");
-  db.prepare(`UPDATE memos SET subject = ?, body = ?, category = ?, needed_date = ?, vendor_id = ?, vendor_name = ?, vat_rate = ?, subtotal = ?, vat_amount = ?, total = ?, updated_at = datetime('now') WHERE id = ?`)
-    .run(subject, (input.body ?? "").trim().slice(0, 4000), input.category.trim(), input.neededDate || null, vendorId, vendorName, vatRate, subtotal, vatAmount, round2(subtotal + vatAmount), memoId);
+  if (!subject || subject.length > 200) throw new MemoError("invalid");
+  const signerIds = checkSigners(input.signerIds ?? [], authorId);
   db.prepare("DELETE FROM memo_items WHERE memo_id = ?").run(memoId);
-  const ins = db.prepare("INSERT INTO memo_items (memo_id, line_no, description, qty, unit, unit_price, amount) VALUES (?,?,?,?,?,?,?)");
-  items.forEach((i, n) => ins.run(memoId, n + 1, i.description, i.qty, i.unit, i.unit_price, i.amount));
   db.prepare("DELETE FROM memo_signers WHERE memo_id = ?").run(memoId);
+
+  if (kind === "funding") {
+    const amount = round2(Number(input.amount));
+    if (!(amount > 0) || !Number.isFinite(amount)) throw new MemoError("invalid");
+    if (!isBankAccount(input.fromAccountId) || !isBankAccount(input.toAccountId) || input.fromAccountId === input.toAccountId) throw new MemoError("bad_account");
+    if (input.weekStart && !/^\d{4}-\d{2}-\d{2}$/.test(input.weekStart)) throw new MemoError("invalid");
+    if (signerIds.length) checkFundingSigners(input.fromAccountId as number, amount, signerIds);
+    db.prepare(`UPDATE memos SET subject = ?, body = ?, category = '', needed_date = NULL, vendor_id = NULL, vendor_name = '', vat_rate = 0, subtotal = ?, vat_amount = 0, total = ?, from_account_id = ?, to_account_id = ?, pay_account_id = NULL, week_start = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(subject, (input.body ?? "").trim().slice(0, 4000), amount, amount, input.fromAccountId, input.toAccountId, input.weekStart || null, memoId);
+  } else {
+    const items = cleanItems(input.items);
+    const vatRate = input.vatRate === 7 ? 7 : 0;
+    const subtotal = round2(items.reduce((s, i) => s + i.amount, 0));
+    const vatAmount = round2(subtotal * vatRate / 100);
+    let vendorName = (input.vendorName ?? "").trim(), vendorId = input.vendorId ?? null;
+    if (vendorId != null) {
+      const v = db.prepare("SELECT name FROM inventa_suppliers WHERE id = ? AND branch_id = ?").get(vendorId, input.branchId) as { name: string } | undefined;
+      if (!v) throw new MemoError("invalid");
+      vendorName = v.name;
+    }
+    if (!String(input.category ?? "").trim()) throw new MemoError("invalid");
+    if (input.payAccountId != null && !isBankAccount(input.payAccountId)) throw new MemoError("bad_account");
+    db.prepare(`UPDATE memos SET subject = ?, body = ?, category = ?, needed_date = ?, vendor_id = ?, vendor_name = ?, vat_rate = ?, subtotal = ?, vat_amount = ?, total = ?, pay_account_id = ?, from_account_id = NULL, to_account_id = NULL, week_start = NULL, updated_at = datetime('now') WHERE id = ?`)
+      .run(subject, (input.body ?? "").trim().slice(0, 4000), input.category.trim(), input.neededDate || null, vendorId, vendorName, vatRate, subtotal, vatAmount, round2(subtotal + vatAmount), input.payAccountId ?? null, memoId);
+    const ins = db.prepare("INSERT INTO memo_items (memo_id, line_no, description, qty, unit, unit_price, amount) VALUES (?,?,?,?,?,?,?)");
+    items.forEach((i, n) => ins.run(memoId, n + 1, i.description, i.qty, i.unit, i.unit_price, i.amount));
+  }
   const sins = db.prepare("INSERT INTO memo_signers (memo_id, user_id, sort_no) VALUES (?,?,?)");
-  checkSigners(input.signerIds ?? [], authorId).forEach((u, n) => sins.run(memoId, u, n + 1));
+  signerIds.forEach((u, n) => sins.run(memoId, u, n + 1));
 }
 
 export function createMemo(input: MemoInput, viewer: Viewer): number {
@@ -129,8 +165,9 @@ export function createMemo(input: MemoInput, viewer: Viewer): number {
   const db = getDb();
   if (!db.prepare("SELECT 1 FROM branches WHERE id = ?").get(input.branchId)) throw new MemoError("invalid");
   return db.transaction(() => {
-    const id = Number(db.prepare("INSERT INTO memos (memo_no, branch_id, author_id, subject, category) VALUES (?,?,?,?,?)").run(nextNo(), input.branchId, viewer.userId, (input.subject ?? "").trim() || "-", (input.category ?? "").trim()).lastInsertRowid);
-    writeBody(id, input, viewer.userId);
+    const kind: MemoKind = input.kind === "funding" ? "funding" : "purchase";
+    const id = Number(db.prepare("INSERT INTO memos (memo_no, branch_id, author_id, subject, category, memo_kind) VALUES (?,?,?,?,?,?)").run(nextNo(), input.branchId, viewer.userId, (input.subject ?? "").trim() || "-", (input.category ?? "").trim(), kind).lastInsertRowid);
+    writeBody(id, input, viewer.userId, kind);
     log(id, viewer.userId, "create");
     return id;
   })();
@@ -142,7 +179,7 @@ export function updateMemo(id: number, input: MemoInput, viewer: Viewer): void {
   if (cur.authorId !== viewer.userId && viewer.role !== "super_admin") throw new MemoError("forbidden");
   if (cur.status !== "draft") throw new MemoError("bad_status");
   if (input.branchId !== cur.branchId) throw new MemoError("invalid");
-  getDb().transaction(() => { writeBody(id, input, cur.authorId); log(id, viewer.userId, "update"); })();
+  getDb().transaction(() => { writeBody(id, input, cur.authorId, cur.kind); log(id, viewer.userId, "update"); })();
 }
 
 export function submitMemo(id: number, viewer: Viewer): MemoRow {
@@ -150,7 +187,7 @@ export function submitMemo(id: number, viewer: Viewer): MemoRow {
   if (cur.authorId !== viewer.userId && viewer.role !== "super_admin") throw new MemoError("forbidden");
   if (cur.status !== "draft") throw new MemoError("bad_status");
   const db = getDb();
-  if (!(db.prepare("SELECT COUNT(*) n FROM memo_items WHERE memo_id = ?").get(id) as { n: number }).n || !(cur.total > 0)) throw new MemoError("no_items");
+  if ((cur.kind === "purchase" && !(db.prepare("SELECT COUNT(*) n FROM memo_items WHERE memo_id = ?").get(id) as { n: number }).n) || !(cur.total > 0)) throw new MemoError("no_items");
   if (cur.signerCount === 0) throw new MemoError("no_signers");
   db.transaction(() => {
     db.prepare("UPDATE memo_signers SET status = 'pending', signed_at = NULL, comment = '', signature_png = NULL WHERE memo_id = ?").run(id);
@@ -210,7 +247,11 @@ export function signMemo(id: number, userId: number, pin: string): { memo: MemoR
   db.transaction(() => {
     db.prepare("UPDATE memo_signers SET status = 'signed', signed_at = datetime('now'), signature_png = ? WHERE id = ?").run(sig, me.id);
     all = (db.prepare("SELECT COUNT(*) n FROM memo_signers WHERE memo_id = ? AND status <> 'signed'").get(id) as { n: number }).n === 0;
-    if (all) db.prepare("UPDATE memos SET status = 'approved', approved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(id);
+    if (all) {
+      db.prepare("UPDATE memos SET status = 'approved', approved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(id);
+      // an approved funding memo becomes a transfer for finance to make and record
+      if (cur.kind === "funding" && cur.fromAccountId && cur.toAccountId) db.prepare("INSERT OR IGNORE INTO fund_transfers (memo_id, from_account_id, to_account_id, week_start, amount) VALUES (?,?,?,?,?)").run(id, cur.fromAccountId, cur.toAccountId, cur.weekStart, cur.total);
+    }
     log(id, userId, "sign");
     if (all) log(id, null, "approved", "all signers signed");
   })();
@@ -240,12 +281,12 @@ export function rejectMemo(id: number, userId: number, reason: string): MemoRow 
 export function openPrFromMemo(id: number, viewer: Viewer, overBudgetReason?: string): { memo: MemoRow; prId: number } {
   const cur = load(id);
   if (cur.authorId !== viewer.userId && viewer.role !== "super_admin") throw new MemoError("forbidden");
-  if (cur.status !== "approved") throw new MemoError("bad_status");
+  if (cur.status !== "approved" || cur.kind !== "purchase") throw new MemoError("bad_status");
   const db = getDb();
   const items = db.prepare("SELECT description, qty, unit, unit_price FROM memo_items WHERE memo_id = ? ORDER BY line_no").all(id) as MemoItemInput[];
   const input: PrInput = {
     branchId: cur.branchId, category: cur.category, title: cur.subject, reason: `${cur.body}${cur.body ? "\n" : ""}อ้างอิง ${cur.memoNo}`.trim(), neededDate: cur.neededDate,
-    vendorId: cur.vendorId, vendorName: cur.vendorName, vatRate: cur.vatRate, overBudgetReason: overBudgetReason ?? "", items
+    vendorId: cur.vendorId, vendorName: cur.vendorName, vatRate: cur.vatRate, overBudgetReason: overBudgetReason ?? "", payAccountId: cur.payAccountId, items
   };
   try {
     return db.transaction(() => {

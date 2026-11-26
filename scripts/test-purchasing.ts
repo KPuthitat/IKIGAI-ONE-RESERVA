@@ -22,6 +22,8 @@ const ok = (n: string, c: boolean) => { if (c) console.log(`  ✓ ${n}`); else {
   const v = (id: number, role: "admin" | "super_admin", adminBranchIds: number[]) => P.viewerOf({ id, role, adminBranchIds });
   const vMgr = v(mgr, "admin", [nama]), vCeo = v(ceo, "admin", [hypo]), vOwner = v(owner, "super_admin", []), vOther = v(other, "admin", [hypo]);
 
+  // this suite is about the PR / PO flow with a single approver; the amount-based authority rules have their own suite (test-pr-authority.ts)
+  db.prepare("INSERT INTO pr_approval_tiers (account_id, up_to, rule) VALUES (NULL, NULL, 'one_exec')").run();
   const cats = (db.prepare("SELECT name FROM accounta_categories WHERE active = 1 AND name != ?").all(CAPEX_CATEGORY_NAME) as Array<{ name: string }>).map((c) => c.name);
   const opex = cats[0];
   ok("the CapEx category exists and is classified capex; others opex", !!db.prepare("SELECT 1 FROM accounta_categories WHERE name = ?").get(CAPEX_CATEGORY_NAME) && P.kindOfCategory(CAPEX_CATEGORY_NAME) === "capex" && P.kindOfCategory(opex) === "opex");

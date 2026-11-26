@@ -40,6 +40,8 @@ export default function PrDetailModal({ id, me, onClose, onChanged, onEdit }: {
   if (!d) return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}><div className="bg-white rounded-2xl p-6 text-sm text-slate-500">{err ?? "กำลังโหลด…"}</div></div>;
   const { pr, items, bills, linkable, impact } = d; const poRow = d.po;
   const canAct = me.isApprover || me.adminBranchIds.includes(pr.branchId);
+  const canDecide = !!d.authority?.eligible.some((e) => e.id === me.userId) && pr.requestedBy !== me.userId;
+  const alreadyDecided = !!d.authority?.approvals.some((a) => a.userId === me.userId);
   const st = pr.status;
 
   return (
@@ -84,6 +86,23 @@ export default function PrDetailModal({ id, me, onClose, onChanged, onEdit }: {
             <div className="text-slate-600 mt-0.5">งบ ฿{fmtMoney(impact.usage.budget)} · ใช้จริง ฿{fmtMoney(impact.usage.actual)} · ผูกพัน (รวมใบนี้ถ้าอยู่ระหว่างดำเนินการ) ฿{fmtMoney(impact.usage.committed)}</div>
             <div className={`font-semibold ${impact.over ? "text-rose-700" : "text-emerald-700"}`}>คงเหลือหลังใบนี้ ฿{fmtMoney(impact.afterRemaining)}{impact.over ? " (เกินงบ)" : ""}</div>
           </div>
+
+          {/* who must approve, and where it stands */}
+          {d.authority && (
+            <div className="rounded-xl border border-slate-200 px-4 py-3 space-y-1">
+              <div className="flex flex-wrap items-center justify-between gap-2"><div className="font-semibold text-slate-700">การอนุมัติ</div><div className="text-xs text-slate-500">{pr.payAccountName ? `จ่ายจาก ${pr.payAccountName} · ` : "ไม่ได้ระบุบัญชี · "}เกณฑ์: {d.authority.ruleText}</div></div>
+              {d.authority.approvals.length === 0 ? <div className="text-slate-500">ยังไม่มีผู้อนุมัติ{st === "submitted" ? ` — ${d.authority.remainingText}` : ""}</div> : (
+                <ul className="text-sm">{d.authority.approvals.map((a) => <li key={a.userId} className={a.decision === "approve" ? "text-emerald-700" : "text-rose-700"}>{a.decision === "approve" ? "✓ อนุมัติ" : "✕ ไม่อนุมัติ"} · {a.name}{a.top ? " (ผู้บริหารสูงสุด)" : ""} · {a.at}{a.note ? ` — ${a.note}` : ""}</li>)}</ul>
+              )}
+              {st === "submitted" && d.authority.approvals.length > 0 && <div className="text-amber-700 text-sm">{d.authority.remainingText}</div>}
+            </div>
+          )}
+          {d.fund?.over && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 text-sm">
+              ⚠ ใบนี้เกินยอดที่เบิกมาไว้ในบัญชี {pr.payAccountName} อยู่ ฿{fmtMoney(d.fund.shortBy)} (เบิกมาแล้ว ฿{fmtMoney(d.fund.received)} · ผูกพันแล้ว ฿{fmtMoney(d.fund.committed)} · คงเหลือ ฿{fmtMoney(d.fund.remaining)}) — เป็นเพียงคำเตือน อนุมัติได้ ควรให้ฝ่ายจัดซื้อขอเบิกเพิ่ม
+            </div>
+          )}
+          {pr.memoId && <div className="text-xs text-slate-500">เปิดจาก Memo (ลงนามครบแล้ว)</div>}
 
           {pr.decidedAt && (
             <div className={`rounded-xl px-4 py-2 ${st === "rejected" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
@@ -140,7 +159,7 @@ export default function PrDetailModal({ id, me, onClose, onChanged, onEdit }: {
             )}
             {st === "submitted" && (
               <div className="space-y-2">
-                {me.isApprover && !rejecting && (
+                {canDecide && !rejecting && (
                   <div className="flex flex-wrap gap-2">
                     <button type="button" className="btn-success text-sm" disabled={busy} onClick={() => setPin(true)}>อนุมัติ (ใส่ PIN)</button>
                     <button type="button" className="btn-danger text-sm" disabled={busy} onClick={() => setRejecting(true)}>ไม่อนุมัติ</button>
@@ -153,7 +172,7 @@ export default function PrDetailModal({ id, me, onClose, onChanged, onEdit }: {
                   </div>
                 )}
                 {canAct && <button type="button" className="text-sm text-slate-500 hover:underline" disabled={busy} onClick={() => window.confirm("ยกเลิกใบขอซื้อนี้?") && act({ action: "cancel" })}>ยกเลิกใบขอซื้อ</button>}
-                {!me.isApprover && <div className="text-slate-500">รอผู้บริหารพิจารณา</div>}
+                {!canDecide && <div className="text-slate-500">{alreadyDecided ? "ท่านลงความเห็นแล้ว — รอผู้อนุมัติที่เหลือ" : me.isApprover ? "ท่านไม่อยู่ในผู้มีอำนาจอนุมัติใบนี้ (ตามบัญชีและยอดเงิน)" : "รอผู้บริหารพิจารณา"}</div>}
               </div>
             )}
             {st === "rejected" && canAct && (

@@ -10,6 +10,7 @@
 import crypto from "node:crypto";
 import * as XLSX from "xlsx";
 import { getDb } from "./db";
+import { autoMarkFromBank, undoAutoMark } from "./funding";
 
 export class ReconError extends Error { constructor(public code: ReconErrorCode, public detail?: string) { super(code); } }
 export type ReconErrorCode = "not_found" | "bad_file" | "no_columns" | "period_closed" | "unmatched_remain" | "amount_mismatch" | "already_used" | "reason_required" | "no_lines" | "forbidden" | "bad_account" | "bad_status";
@@ -241,13 +242,19 @@ export function autoMatch(accountId: number | null, actorId: number): number {
     const transfers = c.filter((x) => x.kind === "transfer"), others = c.filter((x) => x.kind !== "transfer");
     if (transfers.length === 1 && others.length === 0) {
       const o = db.prepare("SELECT * FROM bank_lines WHERE id = ?").get(transfers[0].ref) as LineRow;
-      if (!isClosed(o.account_id, o.period) && candidatesFor(o.id).filter((x) => x.kind === "transfer").length === 1) { setMatch(l, "transfer", o.id, actorId, true); setMatch(o, "transfer", l.id, actorId, true); n += 2; }
+      if (!isClosed(o.account_id, o.period) && candidatesFor(o.id).filter((x) => x.kind === "transfer").length === 1) { setMatch(l, "transfer", o.id, actorId, true); setMatch(o, "transfer", l.id, actorId, true); n += 2; markFunding(l, o, actorId); }
       continue;
     }
     if (others.length > 1) { const named = others.filter((x) => l.description && x.label.split(" #")[0] && l.description.toLowerCase().includes(x.label.split(" #")[0].toLowerCase())); if (named.length === 1) c = named; else continue; } else c = others;
     if (c.length === 1 && transfers.length === 0) { setMatch(l, c[0].kind as "expense" | "income", c[0].ref, actorId, true); n++; }
   }
   return n;
+}
+
+/** A transfer between two company accounts seen on both statements may be the weekly funding that finance was to make. */
+function markFunding(a: LineRow, b: LineRow, actorId: number): void {
+  const out = a.debit > 0 ? a : b, inn = a.debit > 0 ? b : a;
+  autoMarkFromBank({ id: out.id, account_id: out.account_id, tx_date: out.tx_date, debit: out.debit }, { id: inn.id, account_id: inn.account_id, credit: inn.credit }, actorId);
 }
 
 function lineOf(id: number): LineRow {
@@ -266,6 +273,7 @@ export function matchLine(lineId: number, kind: "expense" | "income" | "transfer
       const o = lineOf(ref);
       if (o.id === l.id || o.status !== "unmatched" || o.account_id === l.account_id || !(same(o.credit, l.debit) && same(o.debit, l.credit))) throw new ReconError("amount_mismatch");
       setMatch(l, "transfer", o.id, actorId, false); setMatch(o, "transfer", l.id, actorId, false);
+      markFunding(l, o, actorId);
       return;
     }
     if (kind === "expense") {
@@ -297,6 +305,7 @@ export function unmatchLine(lineId: number): void {
     const clear = (id: number) => db.prepare("UPDATE bank_lines SET status = 'unmatched', match_kind = NULL, match_ref = NULL, reason = '', auto = 0, matched_by = NULL, matched_at = NULL WHERE id = ?").run(id);
     if (l.match_kind === "transfer" && l.match_ref) { const o = db.prepare("SELECT account_id, period FROM bank_lines WHERE id = ?").get(l.match_ref) as { account_id: number; period: string } | undefined; if (o && isClosed(o.account_id, o.period)) throw new ReconError("period_closed"); clear(l.match_ref); }
     clear(l.id);
+    undoAutoMark(l.id);
   })();
 }
 
