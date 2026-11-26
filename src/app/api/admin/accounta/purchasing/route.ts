@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getDb, logPersonaAction } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { listCategories } from "@/lib/accounta-db";
+import { approvalState } from "@/lib/pr-authority";
+import { fundWarning } from "@/lib/funding";
+import { listBankAccounts } from "@/lib/bank-recon";
 import { CAPEX_CATEGORY_NAME } from "@/lib/accounta";
 import { noticeFlex, pushIndividually } from "@/lib/special-duty-notify";
 import {
@@ -28,7 +31,7 @@ export async function GET(req: Request) {
   if (prId) {
     const pr = getPr(prId);
     if (!pr || !ids.includes(pr.branchId)) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    return NextResponse.json({ ok: true, pr, items: listItems(prId), po: getPo(prId), bills: listLinkedBills(prId), linkable: ["ordered", "received", "closed"].includes(pr.status) ? listLinkableBills(prId) : [], impact: budgetImpact(pr) });
+    return NextResponse.json({ ok: true, authority: approvalState(prId), fund: fundWarning({ id: prId, payAccountId: pr.payAccountId, total: pr.total }), pr, items: listItems(prId), po: getPo(prId), bills: listLinkedBills(prId), linkable: ["ordered", "received", "closed"].includes(pr.status) ? listLinkableBills(prId) : [], impact: budgetImpact(pr) });
   }
 
   const year = Number(q.get("year")) || new Date(Date.now() + 7 * 3600_000).getUTCFullYear();
@@ -40,6 +43,7 @@ export async function GET(req: Request) {
     ok: true, year,
     me: { userId: g.user.id, isApprover: isApprover(g.viewer), adminBranchIds: g.viewer.adminBranchIds },
     branches, vendors,
+    accounts: listBankAccounts().map((a) => ({ id: a.id, name: a.name, last4: a.accountLast4, purpose: a.purpose })),
     categories: listCategories().map((c) => ({ name: c.name, kind: c.name === CAPEX_CATEGORY_NAME ? "capex" : "opex" })),
     usage: usageTable(year, ids),
     prs: listPrs({ branchIds: ids, year })
@@ -48,8 +52,15 @@ export async function GET(req: Request) {
 
 function notifyApprovers(pr: PrRow) {
   const lines = [`${pr.prNo} · ${pr.branchName}`, pr.title, `${pr.kind === "capex" ? "CAPEX" : "OPEX"} · ${pr.category}`, `ยอดรวม ฿${fmt(pr.total)}${pr.overBudget ? " · เกินงบ" : ""}`, `ผู้ขอ ${pr.requestedByName}`];
-  pushIndividually(approverRecipients().map((a) => a.lineUserId), noticeFlex({ title: "มีใบขอซื้อรออนุมัติ", lines, url: `${baseUrl()}/admin/accounta/purchasing?pr=${pr.id}`, button: "เปิดดูและอนุมัติ" }))
+  pushIndividually(approvalState(pr.id).eligible.map((e) => userLine(e.id)), noticeFlex({ title: "มีใบขอซื้อรออนุมัติ", lines, url: `${baseUrl()}/admin/accounta/purchasing?pr=${pr.id}`, button: "เปิดดูและอนุมัติ" }))
     .catch((e) => console.error("purchasing notify approvers", e));
+}
+/** One approval is in but the rule is not met yet: the executives who may still approve are asked. */
+function notifyRemaining(pr: PrRow) {
+  const st = approvalState(pr.id);
+  const to = st.eligible.map((e) => userLine(e.id));
+  pushIndividually(to, noticeFlex({ title: "ใบขอซื้อรออนุมัติต่อ", lines: [`${pr.prNo} · ${pr.title}`, `ยอดรวม ฿${fmt(pr.total)}`, `อนุมัติแล้ว ${st.approveCount} คน — ${st.remainingText}`], url: `${baseUrl()}/admin/accounta/purchasing?pr=${pr.id}`, button: "เปิดดูและอนุมัติ" }))
+    .catch((e) => console.error("purchasing notify remaining", e));
 }
 function notifyRequester(pr: PrRow) {
   const approved = pr.status === "approved";
@@ -72,7 +83,7 @@ export async function POST(req: Request) {
       case "save_pr": {
         if (!d.pr) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
         const i: PrInput = { branchId: d.pr.branch_id, category: d.pr.category, title: d.pr.title, reason: d.pr.reason, neededDate: d.pr.needed_date ?? null,
-          vendorId: d.pr.vendor_id ?? null, vendorName: d.pr.vendor_name, vatRate: d.pr.vat_rate, overBudgetReason: d.pr.over_budget_reason, items: d.pr.items };
+          vendorId: d.pr.vendor_id ?? null, vendorName: d.pr.vendor_name, vatRate: d.pr.vat_rate, overBudgetReason: d.pr.over_budget_reason, payAccountId: d.pr.pay_account_id ?? null, items: d.pr.items };
         const id = d.pr.id ? (updatePr(d.pr.id, i, v), d.pr.id) : createPr(i, v);
         logPersonaAction(g.user.id, d.pr.id ? "purchasing.pr.update" : "purchasing.pr.create", id);
         return NextResponse.json({ ok: true, id, impact: budgetImpact(getPr(id)!) });
@@ -86,7 +97,8 @@ export async function POST(req: Request) {
       case "decide": {
         if (!d.id || d.approve === undefined) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
         if (d.approve) { const bad = pinOk(); if (bad) return bad; }   // approving spends money: PIN
-        const pr = decidePr(d.id, d.approve, d.note ?? "", v); notifyRequester(pr);
+        const pr = decidePr(d.id, d.approve, d.note ?? "", v);
+        if (pr.status === "submitted") notifyRemaining(pr); else notifyRequester(pr);   // still waiting for the rule: tell the executives who may still approve
         logPersonaAction(g.user.id, d.approve ? "purchasing.pr.approve" : "purchasing.pr.reject", d.id);
         return NextResponse.json({ ok: true });
       }

@@ -72,6 +72,7 @@
     "test:memos": "node --import tsx scripts/test-memos.ts",
     "test:bank-recon": "node --import tsx scripts/test-bank-recon.ts",
     "test:pr-authority": "node --import tsx scripts/test-pr-authority.ts",
+    "test:funding": "node --import tsx scripts/test-funding.ts",
     "test:health-admin": "node --import tsx scripts/test-health-admin.ts",
     "test:category-mix": "node --import tsx scripts/test-category-mix.ts",
     "test:download-name": "node --import tsx scripts/test-download-name.ts",
