@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import ChoiceField from "../../../ChoiceField";
 import { glueCompany } from "@/lib/text";
 import { useRouter } from "next/navigation";
 import { post } from "../../../shared";
@@ -75,7 +76,7 @@ export default function ItemSheetClient({ roundId, current, groups, item, people
               <div className="min-w-0"><div className="text-sm font-medium text-slate-800 break-words">{p.label}{p.external && <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] text-sky-800">ภายนอก · {glueCompany(p.payer)}</span>}</div><div className="text-xs text-slate-500">{p.code ?? "ผู้เข้าตรวจภายนอก"} · {p.sex === "M" ? "ชาย" : p.sex === "F" ? "หญิง" : "ไม่ระบุเพศ"}{p.age != null ? ` · ${p.age} ปี` : ""}{p.locked ? " · 🔒\u00A0ตรวจสอบแล้ว" : ""}</div></div>
               <div className="flex items-center gap-2">
                 {item.kind === "choice" ? (
-                  <select data-entry disabled={p.locked} className="input min-h-[44px] w-40" value={raw} onKeyDown={nextField} onChange={(e) => change(p, e.target.value)}><option value="">—</option>{item.choices?.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+                  <ChoiceField value={raw} choices={item.choices ?? []} disabled={p.locked} onKeyDown={nextField} label={item.en} onChange={(v) => change(p, v)} />
                 ) : (
                   <input data-entry disabled={p.locked} inputMode={item.kind === "number" ? "decimal" : "text"} className="input min-h-[44px] w-32 text-right" value={raw} onKeyDown={nextField} aria-label={`${item.en} ของ ${p.label}`}
                     onChange={(e) => { const s = item.kind === "number" ? e.target.value.replace(",", ".") : e.target.value; if (item.kind !== "number" || /^-?\d*\.?\d*$/.test(s)) change(p, s); }} />

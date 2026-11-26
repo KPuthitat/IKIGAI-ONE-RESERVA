@@ -1,8 +1,8 @@
 // Health check-up report catalogue (owner 2026-11-25) — every reportable item of the "AHC x OMH Health" booklet
 // (docs/design/health-report-template.pdf): its section, bilingual name, unit, reference ranges by sex and age, the
 // choices of a pick-list result, and a plausible range used to ask "are you sure?" on a typo (e.g. glucose 1590).
-// Reference values are copied from the template; anything small-print or ambiguous carries `check: true` and is listed in
-// docs/health-report-reference-ranges.md for the doctor to confirm. Seeded into annual_checkup_items / _item_refs once;
+// Reference values are copied from the template and are the owner's standard (2026-11-25: "ค่าอ้างอิงใดๆ ยึดจากเล่มตัวอย่าง"); listed in
+// docs/health-report-reference-ranges.md. Seeded into annual_checkup_items / _item_refs once;
 // after that the database copy (editable in the settings screen) is the truth, so this file never overwrites an edit.
 
 export type Sex = "M" | "F" | "A";
@@ -92,7 +92,7 @@ export const ITEMS: Item[] = [
   n("LYMPH", "CBC", "cbc", "Lymphocyte", "จำนวนเม็ดเลือดขาว ชนิดลิมโฟไซต์", "%", [r(20, 40)], [0, 100]),
   n("MONO", "CBC", "cbc", "Monocyte", "จำนวนเม็ดเลือดขาว ชนิดโมโนไซต์", "%", [r(2, 10)], [0, 100]),
   n("EOS", "CBC", "cbc", "Eosinophil", "จำนวนเม็ดเลือดขาว ชนิดอีโอซิโนฟิล", "%", [r(1, 6)], [0, 100]),
-  n("BASO", "CBC", "cbc", "Basophil", "จำนวนเม็ดเลือดขาว ชนิดเบโซฟิล", "%", [r(0, 2)], [0, 100], { check: true }),   // template prints "< 1 – 2"
+  n("BASO", "CBC", "cbc", "Basophil", "จำนวนเม็ดเลือดขาว ชนิดเบโซฟิล", "%", [r(0, 2)], [0, 100]),   // template prints "< 1 – 2"
   n("RBC", "CBC", "cbc", "RBC Count", "จำนวนเม็ดเลือดแดง", "x 10⁶ cell/µL", [M(4.5, 5.9), F(4.5, 5.1)], [0.5, 12], { decimals: 2 }),
   n("HB", "CBC", "cbc", "Hb (Hemoglobin)", "ความเข้มข้นของโปรตีนฮีโมโกลบินในเลือด", "g/dL", [M(13.5, 17.5), F(12.0, 15.5)], [2, 25], { decimals: 1 }),
   n("HCT", "CBC", "cbc", "Hct (Hematocrit)", "ค่าปริมาณความเข้มข้นของเม็ดเลือดแดง", "%", [M(38.8, 50.0), F(34.9, 44.5)], [8, 75], { decimals: 1 }),
@@ -105,7 +105,7 @@ export const ITEMS: Item[] = [
   n("ESR", "CBC", "cbc", "ESR", "อัตราการตกตะกอนของเม็ดเลือดแดง", "mm/hr", [
     M(undefined, 15, { ageMax: 49, highIncl: false }), F(undefined, 20, { ageMax: 49, highIncl: false }),
     M(undefined, 20, { ageMin: 50, highIncl: false }), F(undefined, 30, { ageMin: 50, highIncl: false })
-  ], [0, 150], { check: true }),   // template: "Age < 50 : Male <15 / Female <20 · Age > 50 : Male <20 / Female <30" (age exactly 50 is read as the older band)
+  ], [0, 150]),   // template: "Age < 50 : Male <15 / Female <20 · Age > 50 : Male <20 / Female <30" (age exactly 50 is read as the older band)
 
   // ── urine analysis ──
   t("UA_COLOR", "URINE", "ua", "Color", "สีของปัสสาวะ", { refText: "Yellow" }),
@@ -122,8 +122,8 @@ export const ITEMS: Item[] = [
   c("UA_KET", "URINE", "ua", "Ketone", "การตรวจหาสารคีโตนในปัสสาวะ", NEG, ["Negative"]),
   n("UA_RBC", "URINE", "ua", "Red blood cell", "การส่องตรวจดูเม็ดเลือดแดงด้วยกล้องจุลทรรศน์", "cells/HPF", [r(0, 2)], [0, 1000]),
   n("UA_WBC", "URINE", "ua", "White blood cell", "การส่องตรวจดูเม็ดเลือดขาวด้วยกล้องจุลทรรศน์", "cells/HPF", [r(0, 5)], [0, 1000]),
-  n("UA_EPI", "URINE", "ua", "Epithelium cell", "การส่องตรวจดูเซลล์เยื่อบุด้วยกล้องจุลทรรศน์", "cells/HPF", [r(15, 20)], [0, 1000], { check: true }),   // template prints 15 – 20 (usual lab range is 0 – 5)
-  t("UA_CAST", "URINE", "ua", "Cast", "การส่องตรวจดูกราบตะกอนด้วยกล้องจุลทรรศน์", { check: true }),
+  n("UA_EPI", "URINE", "ua", "Epithelium cell", "การส่องตรวจดูเซลล์เยื่อบุด้วยกล้องจุลทรรศน์", "cells/HPF", [r(15, 20)], [0, 1000]),   // template prints 15 – 20 (usual lab range is 0 – 5)
+  t("UA_CAST", "URINE", "ua", "Cast", "การส่องตรวจดูกราบตะกอนด้วยกล้องจุลทรรศน์"),
   t("UA_CRYSTAL", "URINE", "ua", "Crystal", "การส่องตรวจดูผลึกสารเคมีด้วยกล้องจุลทรรศน์"),
   t("UA_MUCOUS", "URINE", "ua", "Mucous", "การส่องตรวจดูเมือกด้วยกล้องจุลทรรศน์"),
   c("UA_BACT", "URINE", "ua", "Bacteria/Yeast/Parasite", "การส่องตรวจดูเชื้อก่อโรคด้วยกล้องจุลทรรศน์", ["Not found", "Found"], ["Not found"], { refText: "Not found" }),
@@ -169,25 +169,25 @@ export const ITEMS: Item[] = [
   { code: "ECG_IMAGE", test: "ECG", section: "ecg", en: "Electrocardiogram graph", th: "กราฟคลื่นไฟฟ้าหัวใจ", kind: "file" },
 
   // ── other laboratory ──
-  c("HAV_IGM", "HAV", "other", "Anti-HAV (IgM)", "ตรวจหาภูมิคุ้มกันต่อไวรัสตับอักเสบเอ ชนิด IgM", PN, ["Negative"], { refText: "Positive : ท่านกำลังติดเชื้อ ระยะเฉียบพลัน\nNegative : ไม่พบการติดเชื้อใหม่", check: true }),
-  c("HAV_IGG", "HAV", "other", "Anti-HAV (IgG)", "ตรวจหาภูมิคุ้มกันต่อไวรัสตับอักเสบเอ ชนิด IgG", PN, "any", { refText: "Positive : พบภูมิคุ้มกันจากการหายจากการติดเชื้อ หรือได้รับวัคซีน\nNegative : ไม่พบภูมิคุ้มกัน", check: true }),
-  c("HAV_TOTAL", "HAV", "other", "Anti-HAV (IgM+IgG)(Total)", "ตรวจหาภูมิคุ้มกันต่อไวรัสตับอักเสบเอ แบบรวม", PN, "any", { refText: "Positive : พบภูมิคุ้มกันหรือเคยติดเชื้อ\nNegative : ไม่พบภูมิคุ้มกันและไม่เคยติดเชื้อ", check: true }),
-  c("HBSAG", "HBSAG", "other", "HBsAg", "ตรวจหาแอนติเจนผิวของไวรัสตับอักเสบบี", PN, ["Negative"], { refText: "Positive : พบเชื้อไวรัสตับอักเสบบี\nNegative : ไม่พบเชื้อไวรัสตับอักเสบบี", check: true }),
-  c("ANTI_HBS", "ANTIHBS", "other", "Anti-HBs", "ตรวจหาภูมิคุ้มกันต่อไวรัสตับอักเสบบี", PN, "any", { refText: "Positive : พบภูมิคุ้มกัน หรือรับวัคซีนแล้ว\nNegative : ไม่พบภูมิคุ้มกัน", check: true }),
-  c("ANTI_HBC", "ANTIHBC", "other", "Anti-HBc", "ตรวจหาภูมิคุ้มกันต่อแกนกลางไวรัสตับอักเสบบี", PN, ["Negative"], { refText: "Positive : เคยติดเชื้อมาก่อน\nNegative : ไม่เคยติดเชื้อมาก่อน", check: true }),
-  c("ANTI_HCV", "ANTIHCV", "other", "Anti-HCV", "ตรวจหาภูมิคุ้มกันต่อไวรัสตับอักเสบซี", PN, ["Negative"], { refText: "Positive : พบการติดเชื้อหรือเคยติดเชื้อ\nNegative : ไม่พบการติดเชื้อ", check: true }),
+  c("HAV_IGM", "HAV", "other", "Anti-HAV (IgM)", "ตรวจหาภูมิคุ้มกันต่อไวรัสตับอักเสบเอ ชนิด IgM", PN, ["Negative"], { refText: "Positive : ท่านกำลังติดเชื้อ ระยะเฉียบพลัน\nNegative : ไม่พบการติดเชื้อใหม่" }),
+  c("HAV_IGG", "HAV", "other", "Anti-HAV (IgG)", "ตรวจหาภูมิคุ้มกันต่อไวรัสตับอักเสบเอ ชนิด IgG", PN, "any", { refText: "Positive : พบภูมิคุ้มกันจากการหายจากการติดเชื้อ หรือได้รับวัคซีน\nNegative : ไม่พบภูมิคุ้มกัน" }),
+  c("HAV_TOTAL", "HAV", "other", "Anti-HAV (IgM+IgG)(Total)", "ตรวจหาภูมิคุ้มกันต่อไวรัสตับอักเสบเอ แบบรวม", PN, "any", { refText: "Positive : พบภูมิคุ้มกันหรือเคยติดเชื้อ\nNegative : ไม่พบภูมิคุ้มกันและไม่เคยติดเชื้อ" }),
+  c("HBSAG", "HBSAG", "other", "HBsAg", "ตรวจหาแอนติเจนผิวของไวรัสตับอักเสบบี", PN, ["Negative"], { refText: "Positive : พบเชื้อไวรัสตับอักเสบบี\nNegative : ไม่พบเชื้อไวรัสตับอักเสบบี" }),
+  c("ANTI_HBS", "ANTIHBS", "other", "Anti-HBs", "ตรวจหาภูมิคุ้มกันต่อไวรัสตับอักเสบบี", PN, "any", { refText: "Positive : พบภูมิคุ้มกัน หรือรับวัคซีนแล้ว\nNegative : ไม่พบภูมิคุ้มกัน" }),
+  c("ANTI_HBC", "ANTIHBC", "other", "Anti-HBc", "ตรวจหาภูมิคุ้มกันต่อแกนกลางไวรัสตับอักเสบบี", PN, ["Negative"], { refText: "Positive : เคยติดเชื้อมาก่อน\nNegative : ไม่เคยติดเชื้อมาก่อน" }),
+  c("ANTI_HCV", "ANTIHCV", "other", "Anti-HCV", "ตรวจหาภูมิคุ้มกันต่อไวรัสตับอักเสบซี", PN, ["Negative"], { refText: "Positive : พบการติดเชื้อหรือเคยติดเชื้อ\nNegative : ไม่พบการติดเชื้อ" }),
   c("ANTI_HIV", "HIV", "other", "Anti-HIV", "ตรวจหาภูมิคุ้มกันต่อเชื้อเอชไอวี", PN, ["Negative"], { hidden: true, restricted: true, refText: "(รายงานผลตรวจ ออกให้ในเอกสารอีกฉบับ โดยได้รับความยินยอมจากผู้เข้ารับการตรวจแล้ว)" }),
   c("VDRL", "VDRL", "other", "VDRL", "การตรวจกรองโรคซิฟิลิส", ["Negative", "Positive"], ["Negative"], { refText: "Negative" }),
   n("TSH", "TSH", "other", "TSH : Thyroid-stimulating hormone", "ฮอร์โมนจากต่อมใต้สมองที่กระตุ้นต่อมไทรอยด์", "uIU/mL", [r(0.350, 4.940)], [0.001, 500], { decimals: 3 }),
   n("FT3", "FT3", "other", "Free T3 : Free triiodothyronine", "ฮอร์โมนจากต่อมไทรอยด์ชนิด T3 ในรูปอิสระ", "pg/mL", [r(1.58, 3.91)], [0.1, 50], { decimals: 2 }),
   n("FT4", "FT4", "other", "Free T4 : Thyroxine", "ฮอร์โมนจากต่อมไทรอยด์ชนิด T4 ในรูปอิสระ", "ng/dL", [r(0.70, 1.48)], [0.05, 20], { decimals: 2 }),
-  n("CORTISOL", "CORTISOL", "other", "Cortisol", "ฮอร์โมนจากต่อมหมวกไต", "", [r(0, 2)], [0, 200], { check: true }),   // template prints 0 – 2 with no unit
+  n("CORTISOL", "CORTISOL", "other", "Cortisol", "ฮอร์โมนจากต่อมหมวกไต", "", [r(0, 2)], [0, 200]),   // template prints 0 – 2 with no unit
   n("AFP", "AFP", "other", "AFP : Alpha-fetoprotein", "สารบ่งชี้มะเร็งตับ และความผิดปกติของตับ", "ng/mL", [r(0.0, 10.0)], [0, 100000], { decimals: 1 }),
   n("CEA", "CEA", "other", "CEA : Carcinoembryonic antigen", "สารบ่งชี้มะเร็งลำไส้ใหญ่ และมะเร็งบางชนิด", "ng/mL", [r(0.0, 5.8)], [0, 100000], { decimals: 1 }),
   n("PSA", "PSA", "other", "PSA : Prostate-specific antigen", "สารบ่งชี้มะเร็งต่อมลูกหมาก", "ng/mL", [r(0.0, 4.0)], [0, 100000], { decimals: 2 }),
-  n("CA125", "CA125", "other", "CA125 : Carbohydrate antigen 125", "สารบ่งชี้มะเร็งรังไข่", "ng/mL", [r(0, 35)], [0, 100000], { check: true }),
-  n("CA153", "CA153", "other", "CA153 : Cancer antigen 153", "สารบ่งชี้มะเร็งเต้านม", "ng/mL", [r(0, 25)], [0, 100000], { check: true }),
-  n("CA199", "CA199", "other", "CA199 : Carbohydrate antigen 199", "สารบ่งชี้มะเร็งตับอ่อน และทางเดินอาหารบางชนิด", "ng/mL", [r(0, 27)], [0, 100000], { check: true }),
+  n("CA125", "CA125", "other", "CA125 : Carbohydrate antigen 125", "สารบ่งชี้มะเร็งรังไข่", "ng/mL", [r(0, 35)], [0, 100000]),
+  n("CA153", "CA153", "other", "CA153 : Cancer antigen 153", "สารบ่งชี้มะเร็งเต้านม", "ng/mL", [r(0, 25)], [0, 100000]),
+  n("CA199", "CA199", "other", "CA199 : Carbohydrate antigen 199", "สารบ่งชี้มะเร็งตับอ่อน และทางเดินอาหารบางชนิด", "ng/mL", [r(0, 27)], [0, 100000]),
 
   // ── stool ──
   t("ST_COLOR", "STOOLEXAM", "stool", "Color", "สีของอุจจาระ"),

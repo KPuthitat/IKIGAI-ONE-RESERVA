@@ -1,6 +1,6 @@
 # ตารางค่าอ้างอิง — เล่มผลตรวจสุขภาพ (สร้างอัตโนมัติจาก `src/lib/health-report/catalog.ts`)
 
-ค่าทั้งหมดคัดจากเล่มต้นแบบ `docs/design/health-report-template.pdf` · **รายการที่มีเครื่องหมาย ⚠ คือที่ผมอ่านจากต้นแบบแล้วไม่แน่ใจ ขอให้แพทย์ยืนยัน** ·
+ค่าทั้งหมดคัดจากเล่มต้นแบบ `docs/design/health-report-template.pdf` · **ยึดตามเล่มต้นแบบทั้งหมด (เจ้าของยืนยัน 2569-11-25)** ·
 คอลัมน์ "ช่วงที่ยอมรับได้" คือช่วงที่เป็นไปได้ของคนจริง ใช้ถามยืนยันตอนกรอก (เช่น น้ำตาล 1590 จะถามก่อนบันทึก) ไม่ใช่ค่าอ้างอิงทางการแพทย์
 
 ## ข้อมูลส่วนบุคคลและตรวจร่างกาย · General information and physical examination
@@ -38,7 +38,7 @@
 | LYMPH | Lymphocyte | % | 20 – 40 | 0 – 100 |  |
 | MONO | Monocyte | % | 2 – 10 | 0 – 100 |  |
 | EOS | Eosinophil | % | 1 – 6 | 0 – 100 |  |
-| BASO | Basophil | % | 0 – 2 | 0 – 100 | ⚠ ขอให้แพทย์ยืนยัน |
+| BASO | Basophil | % | 0 – 2 | 0 – 100 |  |
 | RBC | RBC Count | x 10⁶ cell/µL | Male : 4.5 – 5.9<br>Female : 4.5 – 5.1 | 0.5 – 12 |  |
 | HB | Hb (Hemoglobin) | g/dL | Male : 13.5 – 17.5<br>Female : 12 – 15.5 | 2 – 25 |  |
 | HCT | Hct (Hematocrit) | % | Male : 38.8 – 50<br>Female : 34.9 – 44.5 | 8 – 75 |  |
@@ -48,7 +48,7 @@
 | RDW | RDW | % | 11.6 – 14.6 | 5 – 40 |  |
 | PLT | Platelet count | x 10³ cell/mm³ | 150 – 450 | 1 – 2000 |  |
 | RBC_MORPH | RBC Morphology |  | ปกติ = Normal |  |  |
-| ESR | ESR | mm/hr | Age < 50 · Male : < 15<br>Age < 50 · Female : < 20<br>Age ≥ 50 · Male : < 20<br>Age ≥ 50 · Female : < 30 | 0 – 150 | ⚠ ขอให้แพทย์ยืนยัน |
+| ESR | ESR | mm/hr | Age < 50 · Male : < 15<br>Age < 50 · Female : < 20<br>Age ≥ 50 · Male : < 20<br>Age ≥ 50 · Female : < 30 | 0 – 150 |  |
 
 ## ผลการตรวจความสมบูรณ์ของปัสสาวะ · Urine analysis : UA
 
@@ -68,8 +68,8 @@
 | UA_KET | Ketone |  | ปกติ = Negative |  |  |
 | UA_RBC | Red blood cell | cells/HPF | 0 – 2 | 0 – 1000 |  |
 | UA_WBC | White blood cell | cells/HPF | 0 – 5 | 0 – 1000 |  |
-| UA_EPI | Epithelium cell | cells/HPF | 15 – 20 | 0 – 1000 | ⚠ ขอให้แพทย์ยืนยัน |
-| UA_CAST | Cast |  | — |  | ⚠ ขอให้แพทย์ยืนยัน |
+| UA_EPI | Epithelium cell | cells/HPF | 15 – 20 | 0 – 1000 |  |
+| UA_CAST | Cast |  | — |  |  |
 | UA_CRYSTAL | Crystal |  | — |  |  |
 | UA_MUCOUS | Mucous |  | — |  |  |
 | UA_BACT | Bacteria/Yeast/Parasite |  | Not found |  |  |
@@ -170,25 +170,25 @@
 
 | รหัส | รายการ | หน่วย | ค่าอ้างอิง | ช่วงที่ยอมรับได้ | หมายเหตุ |
 |---|---|---|---|---|---|
-| HAV_IGM | Anti-HAV (IgM) |  | Positive : ท่านกำลังติดเชื้อ ระยะเฉียบพลัน<br>Negative : ไม่พบการติดเชื้อใหม่ |  | ⚠ ขอให้แพทย์ยืนยัน |
-| HAV_IGG | Anti-HAV (IgG) |  | Positive : พบภูมิคุ้มกันจากการหายจากการติดเชื้อ หรือได้รับวัคซีน<br>Negative : ไม่พบภูมิคุ้มกัน |  | ⚠ ขอให้แพทย์ยืนยัน |
-| HAV_TOTAL | Anti-HAV (IgM+IgG)(Total) |  | Positive : พบภูมิคุ้มกันหรือเคยติดเชื้อ<br>Negative : ไม่พบภูมิคุ้มกันและไม่เคยติดเชื้อ |  | ⚠ ขอให้แพทย์ยืนยัน |
-| HBSAG | HBsAg |  | Positive : พบเชื้อไวรัสตับอักเสบบี<br>Negative : ไม่พบเชื้อไวรัสตับอักเสบบี |  | ⚠ ขอให้แพทย์ยืนยัน |
-| ANTI_HBS | Anti-HBs |  | Positive : พบภูมิคุ้มกัน หรือรับวัคซีนแล้ว<br>Negative : ไม่พบภูมิคุ้มกัน |  | ⚠ ขอให้แพทย์ยืนยัน |
-| ANTI_HBC | Anti-HBc |  | Positive : เคยติดเชื้อมาก่อน<br>Negative : ไม่เคยติดเชื้อมาก่อน |  | ⚠ ขอให้แพทย์ยืนยัน |
-| ANTI_HCV | Anti-HCV |  | Positive : พบการติดเชื้อหรือเคยติดเชื้อ<br>Negative : ไม่พบการติดเชื้อ |  | ⚠ ขอให้แพทย์ยืนยัน |
+| HAV_IGM | Anti-HAV (IgM) |  | Positive : ท่านกำลังติดเชื้อ ระยะเฉียบพลัน<br>Negative : ไม่พบการติดเชื้อใหม่ |  |  |
+| HAV_IGG | Anti-HAV (IgG) |  | Positive : พบภูมิคุ้มกันจากการหายจากการติดเชื้อ หรือได้รับวัคซีน<br>Negative : ไม่พบภูมิคุ้มกัน |  |  |
+| HAV_TOTAL | Anti-HAV (IgM+IgG)(Total) |  | Positive : พบภูมิคุ้มกันหรือเคยติดเชื้อ<br>Negative : ไม่พบภูมิคุ้มกันและไม่เคยติดเชื้อ |  |  |
+| HBSAG | HBsAg |  | Positive : พบเชื้อไวรัสตับอักเสบบี<br>Negative : ไม่พบเชื้อไวรัสตับอักเสบบี |  |  |
+| ANTI_HBS | Anti-HBs |  | Positive : พบภูมิคุ้มกัน หรือรับวัคซีนแล้ว<br>Negative : ไม่พบภูมิคุ้มกัน |  |  |
+| ANTI_HBC | Anti-HBc |  | Positive : เคยติดเชื้อมาก่อน<br>Negative : ไม่เคยติดเชื้อมาก่อน |  |  |
+| ANTI_HCV | Anti-HCV |  | Positive : พบการติดเชื้อหรือเคยติดเชื้อ<br>Negative : ไม่พบการติดเชื้อ |  |  |
 | ANTI_HIV | Anti-HIV |  | (รายงานผลตรวจ ออกให้ในเอกสารอีกฉบับ โดยได้รับความยินยอมจากผู้เข้ารับการตรวจแล้ว) |  | ไม่แสดงในเล่ม · เห็นเฉพาะแพทย์และเจ้าตัว |
 | VDRL | VDRL |  | Negative |  |  |
 | TSH | TSH : Thyroid-stimulating hormone | uIU/mL | 0.35 – 4.94 | 0.001 – 500 |  |
 | FT3 | Free T3 : Free triiodothyronine | pg/mL | 1.58 – 3.91 | 0.1 – 50 |  |
 | FT4 | Free T4 : Thyroxine | ng/dL | 0.7 – 1.48 | 0.05 – 20 |  |
-| CORTISOL | Cortisol |  | 0 – 2 | 0 – 200 | ⚠ ขอให้แพทย์ยืนยัน |
+| CORTISOL | Cortisol |  | 0 – 2 | 0 – 200 |  |
 | AFP | AFP : Alpha-fetoprotein | ng/mL | 0 – 10 | 0 – 100000 |  |
 | CEA | CEA : Carcinoembryonic antigen | ng/mL | 0 – 5.8 | 0 – 100000 |  |
 | PSA | PSA : Prostate-specific antigen | ng/mL | 0 – 4 | 0 – 100000 |  |
-| CA125 | CA125 : Carbohydrate antigen 125 | ng/mL | 0 – 35 | 0 – 100000 | ⚠ ขอให้แพทย์ยืนยัน |
-| CA153 | CA153 : Cancer antigen 153 | ng/mL | 0 – 25 | 0 – 100000 | ⚠ ขอให้แพทย์ยืนยัน |
-| CA199 | CA199 : Carbohydrate antigen 199 | ng/mL | 0 – 27 | 0 – 100000 | ⚠ ขอให้แพทย์ยืนยัน |
+| CA125 | CA125 : Carbohydrate antigen 125 | ng/mL | 0 – 35 | 0 – 100000 |  |
+| CA153 | CA153 : Cancer antigen 153 | ng/mL | 0 – 25 | 0 – 100000 |  |
+| CA199 | CA199 : Carbohydrate antigen 199 | ng/mL | 0 – 27 | 0 – 100000 |  |
 
 ## ตรวจอุจจาระ · Stool examination
 

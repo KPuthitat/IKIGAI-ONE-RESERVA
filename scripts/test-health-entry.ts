@@ -41,7 +41,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   // single-item test: stored like the old screens
   ok("validation: a number is fine, text in a number field is not, an unknown code is not", S.validateValues(of("GLUCOSE"), { FBS: 95 }).length === 0 && S.validateValues(of("GLUCOSE"), { FBS: "abc" }).some((i) => i.problem === "not_a_number") && S.validateValues(of("GLUCOSE"), { NOPE: 1 }).some((i) => i.problem === "unknown_item"));
   ok("validation: glucose 1590 is implausible (asks to confirm), 95 is not", S.validateValues(of("GLUCOSE"), { FBS: 1590 })[0]?.problem === "implausible" && S.validateValues(of("GLUCOSE"), { FBS: 95 }).length === 0);
-  ok("validation: a pick-list accepts only its choices", S.validateValues(of("PHYSICAL"), { EX_HEART: "ปกติ" }).length === 0 && S.validateValues(of("PHYSICAL"), { EX_HEART: "อื่นๆ" })[0]?.problem === "not_a_choice");
+  ok("validation: a pick-list takes its choices and also any typed wording (e.g. Weakly positive); only an absurdly long text is refused", S.validateValues(of("PHYSICAL"), { EX_HEART: "ปกติ" }).length === 0 && S.validateValues(of("PHYSICAL"), { EX_HEART: "Weakly positive" }).length === 0 && S.validateValues(of("PHYSICAL"), { EX_HEART: "x".repeat(201) })[0]?.problem === "too_long");
   ok("validation: BMI is computed, so typing it is refused", S.validateValues(of("PHYSICAL"), { BMI: 22 })[0]?.problem === "unknown_item");
   const gi = S.valuesToInput(of("GLUCOSE"), { FBS: 95 });
   ok("one-item test → value_num", gi.valueNum === 95 && gi.valueText === null && gi.valueJson === null);

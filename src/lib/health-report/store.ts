@@ -69,7 +69,7 @@ export function validateValues(testItems: DbItem[], values: Values): ValidationI
       if (typeof v !== "number" || !Number.isFinite(v)) issues.push({ code, problem: "not_a_number" });
       else if (implausible(it, v)) issues.push({ code, problem: "implausible" });
     } else if (it.kind === "choice") {
-      if (!it.choices?.includes(String(v))) issues.push({ code, problem: "not_a_choice" });
+      if (String(v).length > 200) issues.push({ code, problem: "too_long" });   // any wording is allowed (e.g. "Weakly positive"); the list is a shortcut
     } else if (String(v).length > 1000) issues.push({ code, problem: "too_long" });
   }
   return issues;

@@ -1,27 +1,16 @@
-import type { Metadata } from "next";
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getTestSheet, isAnnualCheckupInvalid, isApproverUser } from "@/lib/annual-checkup-db";
-import { isUnlocked, requireClinicalUser, unlockExpiry } from "@/lib/annual-checkup-api";
-import TestSheetClient from "../../../TestSheetClient";
-import UnlockPanel from "../../../UnlockPanel";
+import { notFound, redirect } from "next/navigation";
+import { getDb } from "@/lib/db";
+import { requireClinicalUser } from "@/lib/annual-checkup-api";
+import { loadItems } from "@/lib/health-report/store";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "ลงผลรายรายการ · NOKHOOK OS PORTAL" };
 
-export default function TestSheetPage({ params }: { params: { roundId: string; code: string } }) {
-  const user = requireClinicalUser();
+// "ลงผลรายรายการ" exists once: the item sheet (/item/<code>). The old per-test sheet opens the first item of that test.
+export default function OldTestSheetRedirect({ params }: { params: { roundId: string; code: string } }) {
+  requireClinicalUser();
   const roundId = Number(params.roundId);
   if (!Number.isInteger(roundId) || roundId <= 0 || !/^[A-Z0-9_]{1,20}$/.test(params.code)) notFound();
-  let sheet: ReturnType<typeof getTestSheet>;
-  try { sheet = getTestSheet(user, roundId, params.code); } catch (e) { if (isAnnualCheckupInvalid(e)) notFound(); throw e; }
-  const approver = isApproverUser(user.id);
-  return (
-    <div className="space-y-4">
-      <Link href={`/staff/health/annual-checkup/${roundId}`} className="text-sm text-slate-500 hover:text-brand">← กลับภาพรวมรอบ</Link>
-      <h1 className="text-xl font-bold text-slate-800">{sheet.test.nameTh}</h1>
-      {approver && <UnlockPanel unlockedUntil={unlockExpiry(user)} />}
-      <TestSheetClient roundId={roundId} valueKind={sheet.test.valueKind} defaultUnit={sheet.test.unit} rows={sheet.rows} isApprover={approver} unlocked={isUnlocked(user)} />
-    </div>
-  );
+  const first = loadItems(getDb()).find((i) => i.test === params.code && !i.hidden && !i.computed && i.kind !== "file");
+  if (!first) redirect(`/staff/health/annual-checkup/${roundId}`);
+  redirect(`/staff/health/annual-checkup/${roundId}/item/${first.code}`);
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSponsorSummary, isAnnualCheckupInvalid, READINESS_TH } from "@/lib/annual-checkup-db";
 import { requireClinicalUser } from "@/lib/annual-checkup-api";
-import PrintButton from "../../person/[key]/report/PrintButton";
+import PrintButton from "../../../PrintButton";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "สรุปสถานะการตรวจสำหรับบริษัท · NOKHOOK OS PORTAL" };

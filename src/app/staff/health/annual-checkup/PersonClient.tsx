@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { glueParen } from "@/lib/text";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Banner, INTERP, INTERP_TH, STATUS_CLS, STATUS_TH, post, upload } from "./shared";
 
@@ -13,10 +14,9 @@ export type PersonRow = {
   has_file: number; verified_at: string | null; released_at: string | null;
   fileHref: string | null; defaultRef: string;
 };
-export type Conclusion = { summary: "normal" | "abnormal" | "follow_up" | null; doctor_comment: string | null; released_at: string | null } | null;
 
-export default function PersonClient({ rows, conclusion, roundId, subject, externalId, needsName, isApprover, unlocked }: {
-  rows: PersonRow[]; conclusion: Conclusion; roundId: number; subject: string; externalId: number | null; needsName: boolean; isApprover: boolean; unlocked: boolean;
+export default function PersonClient({ rows, roundId, subject, externalId, needsName, isApprover, unlocked }: {
+  rows: PersonRow[]; roundId: number; subject: string; externalId: number | null; needsName: boolean; isApprover: boolean; unlocked: boolean;
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -28,9 +28,8 @@ export default function PersonClient({ rows, conclusion, roundId, subject, exter
       <Banner msg={msg} />
       {externalId != null && needsName && <NameForm externalId={externalId} onDone={done} />}
       <div className="space-y-3">
-        {rows.map((r) => <TestRow key={r.order_id} r={r} doctor={doctor} isApprover={isApprover} onDone={done} />)}
+        {rows.map((r) => <TestRow key={r.order_id} r={r} doctor={doctor} isApprover={isApprover} entryHref={`/staff/health/annual-checkup/${roundId}/person/${subject}/entry`} onDone={done} />)}
       </div>
-      {isApprover && <ConclusionCard conclusion={conclusion} roundId={roundId} subject={subject} doctor={doctor} onDone={done} />}
     </div>
   );
 }
@@ -51,7 +50,7 @@ function NameForm({ externalId, onDone }: { externalId: number; onDone: (ok: boo
   );
 }
 
-function TestRow({ r, doctor, isApprover, onDone }: { r: PersonRow; doctor: boolean; isApprover: boolean; onDone: (ok: boolean, t: string) => void }) {
+function TestRow({ r, doctor, isApprover, entryHref, onDone }: { r: PersonRow; doctor: boolean; isApprover: boolean; entryHref: string; onDone: (ok: boolean, t: string) => void }) {
   const isNum = r.value_kind === "number";
   const [value, setValue] = useState(isNum ? (r.value_num != null ? String(r.value_num) : "") : r.value_text ?? "");
   const [unit, setUnit] = useState(r.unit ?? r.test_unit ?? "");
@@ -73,12 +72,24 @@ function TestRow({ r, doctor, isApprover, onDone }: { r: PersonRow; doctor: bool
 
   const save = () => { if (isNum && value.trim() !== "" && !Number.isFinite(Number(value))) { onDone(false, `ค่าของ “${r.name_th}” ต้องเป็นตัวเลข`); return; } return run(() => post("result", { orderId: r.order_id, ...fields() }), `บันทึก “${r.name_th}” แล้ว`); };
   const attach = async (f: File | undefined) => { if (f) await run(() => upload(r.order_id, f), "แนบไฟล์แล้ว"); };
-  const verify = () => run(() => post("verify", { ids: [r.result_id] }).then((x) => ({ ok: !!x.ok && (x.verified as number) === 1, message: x.message ?? "ตรวจสอบไม่สำเร็จ (ยังไม่มีค่า หรือไม่ได้อยู่ในสถานะร่าง)" })), `ตรวจสอบ “${r.name_th}” แล้ว`);
   const revise = async () => { if (await run(() => post("revise", { resultId: r.result_id, reason: why, ...fields() }), `ทำฉบับแก้ไขของ “${r.name_th}” แล้ว (กลับเป็นร่าง ต้องตรวจสอบใหม่)`)) setRevising(false); };
   const saveClinical = () => run(() => post("clinical", { orderId: r.order_id, waiveReason: r.order_status === "waived" ? reason : null, externalLabName: r.order_status === "external_lab" ? lab : null }), "บันทึกแล้ว");
 
   const badge = r.order_status === "waived" ? <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[11px] text-slate-700">งดตรวจ</span>
     : r.order_status === "external_lab" ? <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[11px] text-violet-700">แล็บนอก</span> : null;
+
+  // values are typed in ONE place (the booklet tabs); an ordinary test is a summary line here with a link there.
+  // This screen keeps what only it does: why a test is waived, the outside lab's name + file, and revising a verified result.
+  if (!locked && r.order_status === "ordered") {
+    const shown = r.value_num != null ? String(r.value_num) : r.value_text ?? (r.has_file ? "ไฟล์แนบ" : r.result_id ? "หลายรายการ" : "—");
+    return (
+      <div className="card !py-3 flex items-center gap-3">
+        <div className="min-w-0 flex-1"><div className="font-medium text-slate-800 break-words">{glueParen(r.name_th)}</div><div className="text-xs text-slate-500">{r.result_status ? "ร่าง ยังไม่ตรวจสอบ" : "ยังไม่ลงผล"}</div></div>
+        <div className="text-right shrink-0"><div className="font-bold text-slate-900 whitespace-pre-line">{shown}</div><div className="text-[11px] text-slate-500">{r.unit ?? r.test_unit ?? ""}</div></div>
+        <Link href={entryHref} className="btn-secondary text-xs min-h-[44px] px-3 shrink-0 inline-flex items-center">{r.result_status ? "แก้ไข" : "กรอกผล"}</Link>
+      </div>
+    );
+  }
 
   // a verified / released result is shown as one read-only line; the form opens only when someone needs to revise it
   if (locked && !open) {
@@ -139,7 +150,6 @@ function TestRow({ r, doctor, isApprover, onDone }: { r: PersonRow; doctor: bool
               </label>
             )}
             {r.fileHref && <a className="text-sm text-brand underline" href={r.fileHref} target="_blank" rel="noreferrer">ดูไฟล์ที่แนบ</a>}
-            {r.result_status === "draft" && isApprover && <button type="button" className="btn-secondary" disabled={busy || !doctor} title={doctor ? "" : "ปลดล็อกด้วยเลขใบประกอบก่อน"} onClick={verify}>ตรวจสอบ</button>}
             {locked && isApprover && !revising && <button type="button" className="btn-secondary" disabled={!doctor} title={doctor ? "" : "ปลดล็อกด้วยเลขใบประกอบก่อน"} onClick={() => setRevising(true)}>ทำฉบับแก้ไข</button>}
           </div>
           {r.interpretation && locked && <div className="text-xs text-slate-500">ผลแปล: {INTERP_TH[r.interpretation]}</div>}
@@ -161,32 +171,6 @@ function TestRow({ r, doctor, isApprover, onDone }: { r: PersonRow; doctor: bool
             </div>
           )}
         </>
-      )}
-    </div>
-  );
-}
-
-function ConclusionCard({ conclusion, roundId, subject, doctor, onDone }: { conclusion: Conclusion; roundId: number; subject: string; doctor: boolean; onDone: (ok: boolean, t: string) => void }) {
-  const [summary, setSummary] = useState<string>(conclusion?.summary ?? "");
-  const [comment, setComment] = useState(conclusion?.doctor_comment ?? "");
-  const [busy, setBusy] = useState(false);
-  const released = !!conclusion?.released_at;
-  const run = async (fn: () => Promise<{ ok: boolean; message?: string }>, okText: string) => { setBusy(true); const x = await fn(); setBusy(false); onDone(!!x.ok, x.ok ? okText : x.message ?? "ทำรายการไม่สำเร็จ"); };
-  return (
-    <div className="card space-y-2">
-      <div className="flex items-center gap-2"><div className="text-sm font-semibold text-slate-800">สรุปผลและความเห็นแพทย์</div>{released && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] text-emerald-700">เปิดผลให้พนักงานแล้ว</span>}</div>
-      <div className="grid gap-2 sm:grid-cols-4">
-        <select className="input" value={summary} disabled={!doctor || released} onChange={(e) => setSummary(e.target.value)}><option value="">สรุปผล</option>{INTERP.map((o) => <option key={o.v} value={o.v}>{o.th}</option>)}</select>
-        <textarea className="input sm:col-span-3" rows={3} placeholder="ความเห็นแพทย์" value={comment} disabled={!doctor || released} onChange={(e) => setComment(e.target.value)} />
-      </div>
-      {!doctor && <p className="text-xs text-amber-700">ต้องเป็นแพทย์ผู้อนุมัติและปลดล็อกด้วยเลขใบประกอบจึงจะบันทึกสรุปผลและเปิดผลได้</p>}
-      {doctor && !released && (
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-secondary" disabled={busy} onClick={() => run(() => post("conclusion", { roundId, subject, summary: summary || null, doctorComment: comment || null }), "บันทึกสรุปผลแล้ว")}>บันทึกสรุปผล</button>
-          <button type="button" className="btn-primary" disabled={busy || !conclusion}
-            onClick={() => { if (window.confirm("เปิดผลให้พนักงานดูหรือไม่? พนักงานจะเห็นผลทุกรายการของรอบนี้")) run(() => post("release", { roundId, subject }), "เปิดผลให้พนักงานแล้ว"); }}>เปิดผลให้พนักงาน</button>
-          {!conclusion && <span className="text-xs text-slate-500 self-center">บันทึกสรุปผลก่อนจึงเปิดผลได้ และต้องตรวจสอบทุกรายการแล้ว</span>}
-        </div>
       )}
     </div>
   );

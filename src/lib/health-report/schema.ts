@@ -211,6 +211,11 @@ export function ensureHealthReportSchema(db: Database.Database): void {
     });
     db.prepare("INSERT OR IGNORE INTO annual_checkup_config (key, value) VALUES ('critical_enzyme_multiple', '5')").run();
     db.prepare("INSERT OR IGNORE INTO annual_checkup_config (key, value) VALUES ('ldl_calc_mode', '0')").run();
+    // Owner 2026-11-25: every reference value follows the sample booklet. Items that were waiting for a doctor's confirmation are confirmed once.
+    if (!db.prepare("SELECT 1 FROM annual_checkup_config WHERE key = 'refs_follow_booklet'").get()) {
+      db.prepare("UPDATE annual_checkup_items SET needs_check = 0 WHERE needs_check = 1").run();
+      db.prepare("INSERT INTO annual_checkup_config (key, value) VALUES ('refs_follow_booklet', '1')").run();
+    }
     const pp = db.prepare("INSERT OR IGNORE INTO annual_checkup_payer_prefixes (payer_name, prefix) VALUES (?, ?)");
     pp.run('บริษัท ทรานซิสเตอร์ ริช จำกัด', 'TSR'); pp.run('บริษัท ไพร์ม วัน อาร์คิเทคท์ จำกัด', 'POA');
   })();
