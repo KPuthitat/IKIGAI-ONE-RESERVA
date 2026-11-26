@@ -3840,6 +3840,61 @@ function runMigrations(db: Database.Database): void {
     if (!prCols.includes("memo_id")) db.exec("ALTER TABLE purchase_requests ADD COLUMN memo_id INTEGER REFERENCES memos(id)");
   }
 
+  // ── Approval authority by amount + funding between company accounts (owner 2026-11-26, round 2) ──
+  // A PR names the account it is paid from; how many / which executives must approve it depends on the amount (tiers per account, with a
+  // company-wide fallback). KBANK-style accounts name their own approvers. Weekly funding (SCB → KBANK) is a memo of kind 'funding';
+  // once approved it becomes a transfer to be made and recorded by finance. All additive.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pr_approvals (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      pr_id      INTEGER NOT NULL REFERENCES purchase_requests(id) ON DELETE CASCADE,
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      decision   TEXT NOT NULL CHECK (decision IN ('approve','reject')),
+      note       TEXT NOT NULL DEFAULT '',
+      decided_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (pr_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS pr_approval_tiers (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER REFERENCES accounta_cash_accounts(id) ON DELETE CASCADE,   -- NULL = every account without its own tiers
+      up_to      REAL,                                                              -- tier covers totals up to this amount; NULL = no upper limit
+      rule       TEXT NOT NULL CHECK (rule IN ('one_exec','two_execs_or_top','top_only')),
+      sort_no    INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS account_approvers (
+      account_id INTEGER NOT NULL REFERENCES accounta_cash_accounts(id) ON DELETE CASCADE,
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      PRIMARY KEY (account_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS fund_transfers (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      memo_id          INTEGER NOT NULL UNIQUE REFERENCES memos(id),
+      from_account_id  INTEGER NOT NULL REFERENCES accounta_cash_accounts(id),
+      to_account_id    INTEGER NOT NULL REFERENCES accounta_cash_accounts(id),
+      week_start       TEXT,
+      amount           REAL NOT NULL,                     -- approved amount
+      status           TEXT NOT NULL DEFAULT 'awaiting' CHECK (status IN ('awaiting','transferred','cancelled')),
+      transferred_on   TEXT,
+      actual_amount    REAL,
+      transferred_by   INTEGER REFERENCES users(id),
+      note             TEXT NOT NULL DEFAULT '',
+      out_line_id      INTEGER,                           -- the bank statement lines (reconciliation), when matched
+      in_line_id       INTEGER,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  {
+    const mcols = (db.prepare("PRAGMA table_info(memos)").all() as Array<{ name: string }>).map((c) => c.name);
+    const addM = (n: string, ddl: string) => { if (!mcols.includes(n)) db.exec(`ALTER TABLE memos ADD COLUMN ${ddl}`); };
+    addM("memo_kind", "memo_kind TEXT NOT NULL DEFAULT 'purchase'");           // 'purchase' | 'funding' (memo_type is the first-round column and stays 'purchase')
+    addM("pay_account_id", "pay_account_id INTEGER REFERENCES accounta_cash_accounts(id)");   // purchase: paid from this account
+    addM("from_account_id", "from_account_id INTEGER REFERENCES accounta_cash_accounts(id)"); // funding: SCB …
+    addM("to_account_id", "to_account_id INTEGER REFERENCES accounta_cash_accounts(id)");     // … → KBANK
+    addM("week_start", "week_start TEXT");
+    const pcols = (db.prepare("PRAGMA table_info(purchase_requests)").all() as Array<{ name: string }>).map((c) => c.name);
+    if (!pcols.includes("pay_account_id")) db.exec("ALTER TABLE purchase_requests ADD COLUMN pay_account_id INTEGER REFERENCES accounta_cash_accounts(id)");
+  }
+
   // ── Roster (TC-R, 2026-05) ─────────────────────────────────────
   //
   // Three tables that together support "supervisor assigns monthly
@@ -6110,6 +6165,8 @@ function runMigrations(db: Database.Database): void {
   // invitee picker (and future exec-only broadcasts). Independent of role and of
   // meeting_fee_exempt.
   userCol("is_c_level", "INTEGER NOT NULL DEFAULT 0");
+  // ผู้บริหารสูงสุด (owner 2026-11-26): one approval from this person is enough where the rule says "2 executives or the top executive".
+  userCol("is_top_exec", "INTEGER NOT NULL DEFAULT 0");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS mounjaro_enrollments (

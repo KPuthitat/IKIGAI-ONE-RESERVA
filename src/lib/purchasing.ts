@@ -8,6 +8,7 @@
 //  • Spend commitments: submitted / approved / ordered / received PRs count against the budget until their bills are
 //    linked (closed) — from then on the ACCOUNTA bills are the actual spend, so nothing is counted twice.
 import { getDb } from "./db";
+import { approvalState, canApprove, ruleFor } from "./pr-authority";
 import { CAPEX_CATEGORY_NAME } from "./accounta";
 
 export type Kind = "opex" | "capex";
@@ -15,7 +16,7 @@ export type PrStatus = "draft" | "submitted" | "approved" | "rejected" | "ordere
 
 export type PurchasingErrorCode =
   | "not_found" | "forbidden" | "bad_status" | "no_items" | "invalid_item" | "invalid_category" | "invalid_vendor" | "invalid_amount"
-  | "over_budget_reason_required" | "reject_note_required" | "own_request" | "bill_invalid" | "bill_taken" | "no_bills" | "invalid_branch";
+  | "over_budget_reason_required" | "reject_note_required" | "own_request" | "not_authorised" | "bill_invalid" | "bill_taken" | "no_bills" | "invalid_branch";
 export class PurchasingError extends Error { constructor(public code: PurchasingErrorCode) { super(code); } }
 export const PURCHASING_ERROR_TH: Record<PurchasingErrorCode, string> = {
   not_found: "ไม่พบรายการ",
@@ -29,6 +30,7 @@ export const PURCHASING_ERROR_TH: Record<PurchasingErrorCode, string> = {
   over_budget_reason_required: "ยอดนี้เกินงบคงเหลือของหมวด — ต้องใส่เหตุผลขอเกินงบก่อนส่งอนุมัติ",
   reject_note_required: "ต้องใส่เหตุผลที่ไม่อนุมัติ",
   own_request: "ไม่สามารถอนุมัติใบขอซื้อของตัวเองได้",
+  not_authorised: "ท่านไม่อยู่ในผู้มีอำนาจอนุมัติใบขอซื้อนี้ (ตามบัญชีที่จ่ายและยอดเงิน)",
   bill_invalid: "บิลนี้ผูกไม่ได้ (ต้องเป็นบิลที่ลงบัญชีแล้วของสาขาเดียวกัน)",
   bill_taken: "บิลนี้ผูกกับใบสั่งซื้ออื่นแล้ว",
   no_bills: "ยังไม่ได้ผูกบิล",
@@ -105,28 +107,31 @@ export function usageOf(year: number, branchId: number, category: string): Budge
 export type PrItemInput = { description: string; qty: number; unit?: string; unit_price: number };
 export type PrInput = {
   branchId: number; category: string; title: string; reason?: string; neededDate?: string | null;
-  vendorId?: number | null; vendorName?: string; vatRate?: number; overBudgetReason?: string; items: PrItemInput[];
+  vendorId?: number | null; vendorName?: string; vatRate?: number; overBudgetReason?: string; payAccountId?: number | null; items: PrItemInput[];
 };
 export type PrRow = {
   id: number; prNo: string; branchId: number; branchName: string; kind: Kind; category: string; title: string; reason: string; neededDate: string | null;
   status: PrStatus; vendorId: number | null; vendorName: string; vatRate: number; subtotal: number; vatAmount: number; total: number;
   overBudget: boolean; overBudgetReason: string; requestedBy: number; requestedByName: string; submittedAt: string | null;
   decidedBy: number | null; decidedByName: string | null; decidedAt: string | null; decisionNote: string; createdAt: string; poNo: string | null;
+  payAccountId: number | null; payAccountName: string | null; memoId: number | null;
 };
 type PrDb = {
   id: number; pr_no: string; branch_id: number; branch_name: string; kind: Kind; category: string; title: string; reason: string; needed_date: string | null;
   status: PrStatus; vendor_id: number | null; vendor_name: string; vat_rate: number; subtotal: number; vat_amount: number; total: number;
   over_budget: number; over_budget_reason: string; requested_by: number; requested_by_name: string; submitted_at: string | null;
   decided_by: number | null; decided_by_name: string | null; decided_at: string | null; decision_note: string; created_at: string; po_no: string | null;
+  pay_account_id: number | null; pay_account_name: string | null; memo_id: number | null;
 };
-const PR_SELECT = `SELECT p.*, b.name AS branch_name, ru.display_name AS requested_by_name, du.display_name AS decided_by_name, po.po_no AS po_no
+const PR_SELECT = `SELECT p.*, b.name AS branch_name, ru.display_name AS requested_by_name, du.display_name AS decided_by_name, po.po_no AS po_no, ca.name AS pay_account_name
   FROM purchase_requests p JOIN branches b ON b.id = p.branch_id JOIN users ru ON ru.id = p.requested_by
-  LEFT JOIN users du ON du.id = p.decided_by LEFT JOIN purchase_orders po ON po.pr_id = p.id`;
+  LEFT JOIN users du ON du.id = p.decided_by LEFT JOIN purchase_orders po ON po.pr_id = p.id LEFT JOIN accounta_cash_accounts ca ON ca.id = p.pay_account_id`;
 const toRow = (r: PrDb): PrRow => ({
   id: r.id, prNo: r.pr_no, branchId: r.branch_id, branchName: r.branch_name, kind: r.kind, category: r.category, title: r.title, reason: r.reason, neededDate: r.needed_date,
   status: r.status, vendorId: r.vendor_id, vendorName: r.vendor_name, vatRate: r.vat_rate, subtotal: r.subtotal, vatAmount: r.vat_amount, total: r.total,
   overBudget: r.over_budget === 1, overBudgetReason: r.over_budget_reason, requestedBy: r.requested_by, requestedByName: r.requested_by_name, submittedAt: r.submitted_at,
-  decidedBy: r.decided_by, decidedByName: r.decided_by_name, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: r.created_at, poNo: r.po_no
+  decidedBy: r.decided_by, decidedByName: r.decided_by_name, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: r.created_at, poNo: r.po_no,
+  payAccountId: r.pay_account_id, payAccountName: r.pay_account_name, memoId: r.memo_id
 });
 
 export function getPr(id: number): PrRow | null {
@@ -188,14 +193,21 @@ function writeItems(prId: number, items: ReturnType<typeof cleanItems>): void {
   items.forEach((i, n) => ins.run(prId, n + 1, i.description, i.qty, i.unit, i.unit_price, i.amount));
 }
 
+/** A PR may name the bank account it is paid from; an unknown / non-bank account is refused. */
+function accountOrNull(id: number | null | undefined): number | null {
+  if (id == null) return null;
+  if (!getDb().prepare("SELECT 1 FROM accounta_cash_accounts WHERE id = ? AND type = 'bank' AND active = 1").get(id)) throw new PurchasingError("invalid_item");
+  return id;
+}
+
 export function createPr(input: PrInput, viewer: Viewer): number {
   const c = prepare(input, viewer);
   const db = getDb();
   return db.transaction(() => {
-    const id = Number(db.prepare(`INSERT INTO purchase_requests (pr_no, branch_id, kind, category, title, reason, needed_date, vendor_id, vendor_name, vat_rate, subtotal, vat_amount, total, over_budget_reason, requested_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    const id = Number(db.prepare(`INSERT INTO purchase_requests (pr_no, branch_id, kind, category, title, reason, needed_date, vendor_id, vendor_name, vat_rate, subtotal, vat_amount, total, over_budget_reason, requested_by, pay_account_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(nextNo("PR", "purchase_requests", "pr_no"), input.branchId, kindOfCategory(input.category), input.category, c.title, (input.reason ?? "").trim(), input.neededDate || null,
-        c.vendorId, c.vendorName, c.vatRate, c.subtotal, c.vatAmount, c.total, (input.overBudgetReason ?? "").trim(), viewer.userId).lastInsertRowid);
+        c.vendorId, c.vendorName, c.vatRate, c.subtotal, c.vatAmount, c.total, (input.overBudgetReason ?? "").trim(), viewer.userId, accountOrNull(input.payAccountId)).lastInsertRowid);
     writeItems(id, c.items);
     return id;
   })();
@@ -211,9 +223,9 @@ export function updatePr(id: number, input: PrInput, viewer: Viewer): void {
   const db = getDb();
   db.transaction(() => {
     db.prepare(`UPDATE purchase_requests SET kind = ?, category = ?, title = ?, reason = ?, needed_date = ?, vendor_id = ?, vendor_name = ?, vat_rate = ?, subtotal = ?, vat_amount = ?, total = ?,
-                over_budget_reason = ?, updated_at = datetime('now') WHERE id = ?`)
+                over_budget_reason = ?, pay_account_id = ?, updated_at = datetime('now') WHERE id = ?`)
       .run(kindOfCategory(input.category), input.category, c.title, (input.reason ?? "").trim(), input.neededDate || null, c.vendorId, c.vendorName, c.vatRate, c.subtotal, c.vatAmount, c.total,
-        (input.overBudgetReason ?? "").trim(), id);
+        (input.overBudgetReason ?? "").trim(), accountOrNull(input.payAccountId), id);
     writeItems(id, c.items);
   })();
 }
@@ -243,19 +255,31 @@ export function submitPr(id: number, viewer: Viewer): PrRow {
   const over = budgetImpact(cur).over;
   if (over && !cur.overBudgetReason.trim()) throw new PurchasingError("over_budget_reason_required");
   getDb().prepare("UPDATE purchase_requests SET status = 'submitted', over_budget = ?, submitted_at = datetime('now'), decided_by = NULL, decided_at = NULL, decision_note = '', updated_at = datetime('now') WHERE id = ?").run(over ? 1 : 0, id);
+  getDb().prepare("DELETE FROM pr_approvals WHERE pr_id = ?").run(id);   // a re-sent PR starts its approvals again
   return load(id);
 }
 
-/** Approver decision on a submitted PR. A reason is required to reject; nobody approves their own PR (except super_admin). */
+/**
+ * An executive's decision on a submitted PR. How many approvals are needed, and who may give them, comes from the PR's account and amount
+ * (lib/pr-authority.ts): the PR stays "submitted" until the rule is met, then becomes approved; one rejection (with a reason) rejects it.
+ * Nobody approves their own PR (except a super admin).
+ */
 export function decidePr(id: number, approve: boolean, note: string, viewer: Viewer): PrRow {
   const cur = load(id);
   if (!isApprover(viewer)) throw new PurchasingError("forbidden");
   if (cur.status !== "submitted") throw new PurchasingError("bad_status");
   if (cur.requestedBy === viewer.userId && viewer.role !== "super_admin") throw new PurchasingError("own_request");
+  const rule = ruleFor(cur.payAccountId, cur.total);
+  if (!canApprove(viewer.userId, cur.payAccountId, rule)) throw new PurchasingError("not_authorised");
   const n = (note ?? "").trim();
   if (!approve && !n) throw new PurchasingError("reject_note_required");
-  getDb().prepare("UPDATE purchase_requests SET status = ?, decided_by = ?, decided_at = datetime('now'), decision_note = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(approve ? "approved" : "rejected", viewer.userId, n, id);
+  const db = getDb();
+  db.transaction(() => {
+    db.prepare("INSERT INTO pr_approvals (pr_id, user_id, decision, note) VALUES (?,?,?,?) ON CONFLICT(pr_id, user_id) DO UPDATE SET decision = excluded.decision, note = excluded.note, decided_at = datetime('now')")
+      .run(id, viewer.userId, approve ? "approve" : "reject", n);
+    if (!approve) db.prepare("UPDATE purchase_requests SET status = 'rejected', decided_by = ?, decided_at = datetime('now'), decision_note = ?, updated_at = datetime('now') WHERE id = ?").run(viewer.userId, n, id);
+    else if (approvalState(id).approved) db.prepare("UPDATE purchase_requests SET status = 'approved', decided_by = ?, decided_at = datetime('now'), decision_note = ?, updated_at = datetime('now') WHERE id = ?").run(viewer.userId, n, id);
+  })();
   return load(id);
 }
 
@@ -265,6 +289,7 @@ export function reopenPr(id: number, viewer: Viewer): void {
   if (!canActOnBranch(viewer, cur.branchId)) throw new PurchasingError("forbidden");
   if (cur.status !== "rejected") throw new PurchasingError("bad_status");
   getDb().prepare("UPDATE purchase_requests SET status = 'draft', updated_at = datetime('now') WHERE id = ?").run(id);
+  getDb().prepare("DELETE FROM pr_approvals WHERE pr_id = ?").run(id);
 }
 
 export function cancelPr(id: number, viewer: Viewer): void {
