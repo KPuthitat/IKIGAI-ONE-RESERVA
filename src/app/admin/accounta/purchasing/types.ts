@@ -20,7 +20,7 @@ export type Overview = {
 export type Authority = { rule: string; ruleText: string; approved: boolean; approveCount: number; remainingText: string;
   approvals: Array<{ userId: number; name: string; decision: "approve" | "reject"; note: string; at: string; top: boolean }>; eligible: Array<{ id: number; name: string }> };
 export type Fund = { received: number; committed: number; remaining: number; over: boolean; shortBy: number } | null;
-export type Detail = { authority: Authority; fund: Fund; pr: Pr; items: Item[]; po: Po | null; bills: Bill[]; linkable: Bill[]; impact: { usage: Usage; afterRemaining: number; over: boolean } };
+export type Detail = { flow?: import("@/lib/purchase-flow").Flow; authority: Authority; fund: Fund; pr: Pr; items: Item[]; po: Po | null; bills: Bill[]; linkable: Bill[]; impact: { usage: Usage; afterRemaining: number; over: boolean } };
 
 export const STATUS: Record<PrStatus, { label: string; cls: string }> = {
   draft: { label: "ร่าง", cls: "tag-mute" }, submitted: { label: "รออนุมัติ", cls: "tag-warn" }, approved: { label: "อนุมัติแล้ว", cls: "tag-ok" },

@@ -3,6 +3,7 @@ import { getDb, logPersonaAction } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { listCategories } from "@/lib/accounta-db";
 import { approvalState } from "@/lib/pr-authority";
+import { buildFlow } from "@/lib/purchase-flow";
 import { fundWarning } from "@/lib/funding";
 import { listBankAccounts } from "@/lib/bank-recon";
 import { CAPEX_CATEGORY_NAME } from "@/lib/accounta";
@@ -31,7 +32,7 @@ export async function GET(req: Request) {
   if (prId) {
     const pr = getPr(prId);
     if (!pr || !ids.includes(pr.branchId)) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    return NextResponse.json({ ok: true, authority: approvalState(prId), fund: fundWarning({ id: prId, payAccountId: pr.payAccountId, total: pr.total }), pr, items: listItems(prId), po: getPo(prId), bills: listLinkedBills(prId), linkable: ["ordered", "received", "closed"].includes(pr.status) ? listLinkableBills(prId) : [], impact: budgetImpact(pr) });
+    return NextResponse.json({ ok: true, flow: buildFlow({ prId }), authority: approvalState(prId), fund: fundWarning({ id: prId, payAccountId: pr.payAccountId, total: pr.total }), pr, items: listItems(prId), po: getPo(prId), bills: listLinkedBills(prId), linkable: ["ordered", "received", "closed"].includes(pr.status) ? listLinkableBills(prId) : [], impact: budgetImpact(pr) });
   }
 
   const year = Number(q.get("year")) || new Date(Date.now() + 7 * 3600_000).getUTCFullYear();

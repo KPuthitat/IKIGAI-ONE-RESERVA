@@ -16,7 +16,7 @@ export default function MemosPage({ searchParams }: { searchParams: { id?: strin
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Memo ขอซื้อ · ลงลายมือชื่อ</h1>
-        <p className="text-sm text-slate-500">ทุกการซื้อเริ่มจาก Memo: เลือกผู้ที่เกี่ยวข้อง ทุกคนลงลายมือชื่อครบ จึงเปิด PR ได้ แล้วผู้บริหารอนุมัติ PR → เปิด PO → ซื้อได้</p>
+        <p className="text-sm text-slate-500">ซื้อของใหญ่หรือใช้เงินมากเริ่มจาก Memo: เลือกผู้ที่เกี่ยวข้อง ทุกคนลงลายมือชื่อครบ จึงเปิด PR ได้ แล้วผู้บริหารอนุมัติ PR → เปิด PO → ซื้อได้ (ซื้อของเล็กน้อยเปิด PR ตรงได้เลย) · ดูว่าแต่ละรายการอยู่ขั้นไหนที่หน้า “ติดตามการจัดซื้อ”</p>
       </div>
       <MemosClient openId={searchParams.id ? Number(searchParams.id) || null : null} />
     </div>

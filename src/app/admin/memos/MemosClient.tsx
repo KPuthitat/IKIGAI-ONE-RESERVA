@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { apiUrl } from "@/lib/url";
 import type { MemoDetail, MemoRow, MemoStatus } from "@/lib/memos";
 import SignaturePad from "./SignaturePad";
+import PurchaseFlowChart from "@/app/components/PurchaseFlowChart";
+import type { Flow } from "@/lib/purchase-flow";
 
 type Choice = { id: number; name: string; role: string; cLevel: boolean; hasSignature: boolean };
 type ListData = {
@@ -67,6 +69,7 @@ export default function MemosClient({ openId }: { openId: number | null }) {
   const [data, setData] = useState<ListData | null>(null);
   const [tab, setTab] = useState<"sign" | "mine" | "all">("sign");
   const [detail, setDetail] = useState<MemoDetail | null>(null);
+  const [flow, setFlow] = useState<Flow | null>(null);
   const [form, setForm] = useState<Form | null>(null);
   const [pad, setPad] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -79,7 +82,7 @@ export default function MemosClient({ openId }: { openId: number | null }) {
   }, []);
   const open = useCallback(async (id: number) => {
     const r = await call("GET", `/api/admin/memos?id=${id}`);
-    if (r.ok) setDetail(r.j.memo as MemoDetail); else setMsg({ ok: false, text: "ไม่พบ Memo หรือท่านไม่มีสิทธิ์ดู" });
+    if (r.ok) { setDetail(r.j.memo as MemoDetail); setFlow((r.j.flow as Flow) ?? null); } else setMsg({ ok: false, text: "ไม่พบ Memo หรือท่านไม่มีสิทธิ์ดู" });
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (openId) open(openId); }, [openId, open]);
@@ -159,7 +162,7 @@ export default function MemosClient({ openId }: { openId: number | null }) {
           setBusy(false); setForm(null); setMsg({ ok: true, text: send ? "ส่งขอลงนามแล้ว — ผู้ลงนามได้รับแจ้งเตือน" : "บันทึกร่างแล้ว" }); await load(); await open(id);
         }} />}
 
-      {detail && !form && <MemoView m={detail} data={data} busy={busy} act={act} onEdit={() => setForm({ id: detail.id, branch_id: detail.branchId, subject: detail.subject, body: detail.body, category: detail.category, needed_date: detail.neededDate ?? "", vendor_id: detail.vendorId, vendor_name: detail.vendorName,
+      {detail && !form && <MemoView m={detail} flow={flow} data={data} busy={busy} act={act} onEdit={() => setForm({ id: detail.id, branch_id: detail.branchId, subject: detail.subject, body: detail.body, category: detail.category, needed_date: detail.neededDate ?? "", vendor_id: detail.vendorId, vendor_name: detail.vendorName,
         vat_rate: detail.vatRate === 7 ? 7 : 0, items: detail.items.map((i) => ({ description: i.description, qty: String(i.qty), unit: i.unit, unit_price: String(i.unitPrice), inventa_item_id: i.inventaItemId ?? null })), signer_ids: detail.signers.map((s) => s.userId),
           kind: detail.kind, pay_account_id: detail.payAccountId, from_account_id: detail.fromAccountId, to_account_id: detail.toAccountId, week_start: detail.weekStart ?? "", amount: detail.kind === "funding" ? String(detail.total) : "" })}
         onNeedSignature={() => setPad(true)} onClose={() => setDetail(null)} />}
@@ -169,8 +172,8 @@ export default function MemosClient({ openId }: { openId: number | null }) {
   );
 }
 
-function MemoView({ m, data, busy, act, onEdit, onNeedSignature, onClose }: {
-  m: MemoDetail; data: ListData; busy: boolean; act: (a: string, id: number, x?: Record<string, unknown>, t?: string) => Promise<Record<string, unknown> | null>; onEdit: () => void; onNeedSignature: () => void; onClose: () => void;
+function MemoView({ m, flow, data, busy, act, onEdit, onNeedSignature, onClose }: {
+  m: MemoDetail; flow: Flow | null; data: ListData; busy: boolean; act: (a: string, id: number, x?: Record<string, unknown>, t?: string) => Promise<Record<string, unknown> | null>; onEdit: () => void; onNeedSignature: () => void; onClose: () => void;
 }) {
   const [pin, setPin] = useState("");
   const [reason, setReason] = useState("");
@@ -186,6 +189,7 @@ function MemoView({ m, data, busy, act, onEdit, onNeedSignature, onClose }: {
         <div className="min-w-0"><div className="text-xs text-slate-500">{m.memoNo} · {m.branchName} · ผู้ขอ {m.authorName}</div><h2 className="text-lg font-bold text-slate-900 break-words">{m.subject}</h2></div>
         <div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-0.5 text-xs ${STATUS[m.status].cls}`}>{STATUS[m.status].th}</span><button type="button" className="text-sm text-slate-500 underline min-h-[44px]" onClick={onClose}>ปิด</button></div>
       </div>
+      {flow && <PurchaseFlowChart flow={flow} />}
       {m.body && <p className="text-sm text-slate-700 whitespace-pre-line">{m.body}</p>}
       {m.kind === "funding" ? (
         <div className="rounded-xl bg-violet-50 border border-violet-200 p-3 text-sm space-y-1">

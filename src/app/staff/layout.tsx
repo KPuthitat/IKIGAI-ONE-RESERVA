@@ -134,6 +134,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       label: "จัดซื้อ · เบิกจ่าย",
       pathPrefix: "/staff/inventa",
       items: [
+        { href: "/admin/purchase-flow", label: "ติดตามการจัดซื้อ (Flow)" },
         { href: "/admin/memos", label: "Memo ขอซื้อ · ลงนาม" },
         ...(purchasePrPo ? [{ href: "/admin/accounta/purchasing", label: "ใบขอซื้อ (PR) · ใบสั่งซื้อ (PO)" }] : [])
       ]
