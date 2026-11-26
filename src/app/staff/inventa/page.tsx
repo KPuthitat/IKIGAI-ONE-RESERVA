@@ -4,6 +4,9 @@ import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import type { InventaItem, InventaSupplier, InventaLookup } from "@/lib/inventa";
 import InventaClient from "./InventaClient";
+import Link from "next/link";
+import { lowStockItems } from "@/lib/inventa-stock";
+import { viewerOf } from "@/lib/purchasing";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +50,10 @@ export default function InventaPage() {
     ORDER BY kind, sort_order, value
   `).all(branchId) as InventaLookup[];
 
+  // Below-safety items can start a purchase memo straight from here (owner 2026-11-26) — for the people who may write memos.
+  let lowCount = 0, canMemo = false;
+  try { const v = viewerOf(user); canMemo = branchId != null && (user.role !== "staff" || v.isCLevel); if (canMemo) lowCount = lowStockItems(branchId as number).length; } catch { canMemo = false; }
+
   return (
     <div className="space-y-4">
       {/* pl-11 on mobile clears the floating hamburger (fixed top-3 left-3)
@@ -55,6 +62,12 @@ export default function InventaPage() {
         <h1 className="text-2xl font-bold text-slate-800">{t(lang, "inv.stock.title")}</h1>
         <p className="text-sm text-slate-500">{t(lang, "inv.stock.subtitle")}</p>
       </div>
+      {canMemo && lowCount > 0 && (
+        <div className="card flex flex-wrap items-center gap-3 border-amber-300 bg-amber-50">
+          <div className="flex-1 min-w-[14rem] text-sm text-amber-900">มี <b>{lowCount}</b> รายการที่ต่ำกว่าเกณฑ์สต๊อก — ขอซื้อผ่าน Memo → ลงลายมือชื่อ → PR → PO ได้เลย (รับของแล้วสต๊อกเพิ่มเอง)</div>
+          <Link href={`/admin/memos?lowstock=${branchId}`} className="btn-primary min-h-[44px] px-4 inline-flex items-center">ขอซื้อของที่ต่ำกว่าเกณฑ์ (Memo)</Link>
+        </div>
+      )}
       <InventaClient items={items} suppliers={suppliers} lookups={lookups}
         isSuperAdmin={user.role === "super_admin"} />
     </div>

@@ -2,6 +2,7 @@ import { getMyQueue, getMyRounds, isRecorderEligible } from "@/lib/annual-checku
 import { getSessionUser, canModule, isAdminUnlocked, isAdminCapable } from "@/lib/auth";
 import { ADMIN_MODULES } from "@/lib/admin-modules";
 import { getDb, getSystemSettings } from "@/lib/db";
+import { isApprover, viewerOf } from "@/lib/purchasing";
 import { getLang } from "@/lib/lang-server";
 import { t } from "@/lib/i18n";
 import LogoutButton from "../admin/LogoutButton";
@@ -77,6 +78,9 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   try { myCheckup = getMyRounds(user).length > 0; } catch { myCheckup = false; }
 
   const isAdminUser = isAdminCapable(user);
+  // Purchasing lives next to the stock it feeds (owner 2026-11-26): memo → PR → PO are reachable from INVENTA by the people who can open them.
+  let purchaseMemo = false, purchasePrPo = false;
+  try { const v = viewerOf(user); purchaseMemo = user.role !== "staff" || v.isCLevel; purchasePrPo = canModule(user, "accounta.manage") || isApprover(v); } catch { /* the entries are a convenience */ }
   // Admin mode is driven ONLY by the httpOnly PIN-unlock (owner 2026-09-22:
   // "เข้าระบบแล้วต้องเป็นสิทธิ์พนักงานเท่านั้น"). Everyone is a staff view until they
   // tap "มุมมองผู้ดูแลระบบ" and enter their PIN; the unlock is an httpOnly SESSION
@@ -126,6 +130,14 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           : [])
       ]
     },
+    ...(purchaseMemo ? [{
+      label: "จัดซื้อ · เบิกจ่าย",
+      pathPrefix: "/staff/inventa",
+      items: [
+        { href: "/admin/memos", label: "Memo ขอซื้อ · ลงนาม" },
+        ...(purchasePrPo ? [{ href: "/admin/accounta/purchasing", label: "ใบขอซื้อ (PR) · ใบสั่งซื้อ (PO)" }] : [])
+      ]
+    }] : []),
     {
       label: "PERSONA",
       pathPrefix: "/staff/persona",

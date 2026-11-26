@@ -8,9 +8,9 @@ export type Pr = {
   decidedBy: number | null; decidedByName: string | null; decidedAt: string | null; decisionNote: string; createdAt: string; poNo: string | null;
   payAccountId: number | null; payAccountName: string | null; memoId: number | null;
 };
-export type Item = { lineNo: number; description: string; qty: number; unit: string; unitPrice: number; amount: number };
+export type Item = { lineNo: number; description: string; qty: number; unit: string; unitPrice: number; amount: number; inventaItemId?: number | null };
 export type Bill = { expenseId: number; billDate: string; vendorName: string; description: string; amount: number };
-export type Po = { poNo: string; vendorName: string; total: number; expectedDate: string | null; note: string; issuedAt: string; receivedAt: string | null; receiveNote: string };
+export type Po = { poNo: string; vendorName: string; total: number; expectedDate: string | null; note: string; issuedAt: string; receivedAt: string | null; receiveNote: string; stockAppliedAt: string | null };
 export type Overview = {
   year: number; me: { userId: number; isApprover: boolean; adminBranchIds: number[] };
   branches: Array<{ id: number; name: string }>; vendors: Record<number, Array<{ id: number; name: string }>>;

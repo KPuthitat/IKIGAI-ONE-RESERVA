@@ -5,7 +5,7 @@ import { fmtMoney } from "@/lib/format";
 import { apiUrl } from "@/lib/url";
 import { api, KIND_LABEL, type Detail, type Overview } from "./types";
 
-type Row = { description: string; qty: string; unit: string; price: string };
+type Row = { description: string; qty: string; unit: string; price: string; itemId?: number | null };
 const blank = (): Row => ({ description: "", qty: "1", unit: "", price: "" });
 const n = (s: string) => { const x = Number(s.replace(/,/g, "")); return Number.isFinite(x) ? x : 0; };
 
@@ -32,7 +32,7 @@ export default function PrFormModal({ data, editId, defaultBranch, onClose, onSa
       const { pr, items } = r.j;
       setBranchId(pr.branchId); setCategory(pr.category); setTitle(pr.title); setReason(pr.reason); setNeeded(pr.neededDate ?? "");
       setVendorId(pr.vendorId ? String(pr.vendorId) : ""); setVendorName(pr.vendorName); setVat(pr.vatRate === 7 ? 7 : 0); setOver(pr.overBudgetReason); setPayAccount(pr.payAccountId ? String(pr.payAccountId) : "");
-      setRows(items.map((i) => ({ description: i.description, qty: String(i.qty), unit: i.unit, price: String(i.unitPrice) })));
+      setRows(items.map((i) => ({ description: i.description, qty: String(i.qty), unit: i.unit, price: String(i.unitPrice), itemId: i.inventaItemId ?? null })));
       setLoaded(true);
     })();
   }, [editId]);
@@ -54,7 +54,7 @@ export default function PrFormModal({ data, editId, defaultBranch, onClose, onSa
       const pr = {
         ...(editId ? { id: editId } : {}), branch_id: branchId, category, title, reason, needed_date: needed || null,
         vendor_id: vendorId ? Number(vendorId) : null, vendor_name: vendorId ? undefined : vendorName, vat_rate: vat, over_budget_reason: over, pay_account_id: payAccount ? Number(payAccount) : null,
-        items: rows.filter((r) => r.description.trim()).map((r) => ({ description: r.description, qty: n(r.qty), unit: r.unit, unit_price: n(r.price) }))
+        items: rows.filter((r) => r.description.trim()).map((r) => ({ description: r.description, qty: n(r.qty), unit: r.unit, unit_price: n(r.price), inventa_item_id: r.itemId ?? null }))
       };
       const s = await api<{ id: number }>(apiUrl("/api/admin/accounta/purchasing"), { method: "POST", body: { action: "save_pr", pr } });
       if (!s.ok) { setErr(s.j.message ?? "บันทึกไม่สำเร็จ"); return; }

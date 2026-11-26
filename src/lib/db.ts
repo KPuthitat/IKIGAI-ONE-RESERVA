@@ -3839,6 +3839,13 @@ function runMigrations(db: Database.Database): void {
     const prCols = (db.prepare("PRAGMA table_info(purchase_requests)").all() as Array<{ name: string }>).map((c) => c.name);
     if (!prCols.includes("memo_id")) db.exec("ALTER TABLE purchase_requests ADD COLUMN memo_id INTEGER REFERENCES memos(id)");
   }
+  // Purchasing ↔ INVENTA (owner 2026-11-26): a memo / PR line can point at a stock item; receiving the PO adds the quantity to that item's on-hand once.
+  {
+    const cols = (t: string) => (db.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).map((c) => c.name);
+    if (!cols("memo_items").includes("inventa_item_id")) db.exec("ALTER TABLE memo_items ADD COLUMN inventa_item_id INTEGER");
+    if (!cols("purchase_request_items").includes("inventa_item_id")) db.exec("ALTER TABLE purchase_request_items ADD COLUMN inventa_item_id INTEGER");
+    if (!cols("purchase_orders").includes("stock_applied_at")) db.exec("ALTER TABLE purchase_orders ADD COLUMN stock_applied_at TEXT");
+  }
 
   // ── Approval authority by amount + funding between company accounts (owner 2026-11-26, round 2) ──
   // A PR names the account it is paid from; how many / which executives must approve it depends on the amount (tiers per account, with a

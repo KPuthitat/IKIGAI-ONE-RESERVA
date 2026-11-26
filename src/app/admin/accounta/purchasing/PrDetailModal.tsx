@@ -73,7 +73,7 @@ export default function PrDetailModal({ id, me, onClose, onChanged, onEdit }: {
 
           <table className="w-full">
             <thead><tr className="text-left text-xs text-slate-500 border-b"><th className="py-1">#</th><th>รายการ</th><th className="text-right">จำนวน</th><th className="text-right">ราคา/หน่วย</th><th className="text-right">รวม</th></tr></thead>
-            <tbody>{items.map((i) => <tr key={i.lineNo} className="border-b border-slate-100 last:border-0"><td className="py-1 text-slate-400">{i.lineNo}</td><td>{i.description}</td><td className="text-right tabular-nums">{i.qty}{i.unit ? ` ${i.unit}` : ""}</td><td className="text-right tabular-nums">{fmtMoney(i.unitPrice)}</td><td className="text-right tabular-nums">{fmtMoney(i.amount)}</td></tr>)}</tbody>
+            <tbody>{items.map((i) => <tr key={i.lineNo} className="border-b border-slate-100 last:border-0"><td className="py-1 text-slate-400">{i.lineNo}</td><td>{i.description}{i.inventaItemId ? <span className="ml-1.5 rounded bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.5 align-middle">คลัง</span> : null}</td><td className="text-right tabular-nums">{i.qty}{i.unit ? ` ${i.unit}` : ""}</td><td className="text-right tabular-nums">{fmtMoney(i.unitPrice)}</td><td className="text-right tabular-nums">{fmtMoney(i.amount)}</td></tr>)}</tbody>
             <tfoot className="text-right text-slate-600">
               <tr><td colSpan={4} className="pt-2">ก่อน VAT</td><td className="pt-2 tabular-nums">{fmtMoney(pr.subtotal)}</td></tr>
               {pr.vatRate > 0 && <tr><td colSpan={4}>VAT {pr.vatRate}%</td><td className="tabular-nums">{fmtMoney(pr.vatAmount)}</td></tr>}
@@ -116,6 +116,7 @@ export default function PrDetailModal({ id, me, onClose, onChanged, onEdit }: {
               <div>ผู้ขาย {poRow.vendorName} · ยอด ฿{fmtMoney(poRow.total)} · ออกเมื่อ {poRow.issuedAt}{poRow.expectedDate ? ` · กำหนดส่ง ${poRow.expectedDate}` : ""}</div>
               {poRow.note && <div className="text-xs text-slate-500">{poRow.note}</div>}
               {poRow.receivedAt && <div className="text-emerald-700">รับของแล้ว {poRow.receivedAt}{poRow.receiveNote ? ` — ${poRow.receiveNote}` : ""}</div>}
+              {poRow.stockAppliedAt && items.some((i) => i.inventaItemId) && <div className="text-emerald-700 text-xs">เพิ่มเข้าคลัง INVENTA แล้ว ({poRow.stockAppliedAt}) · รายการที่ผูกกับสินค้าในคลัง</div>}
             </div>
           )}
 
@@ -192,6 +193,7 @@ export default function PrDetailModal({ id, me, onClose, onChanged, onEdit }: {
             )}
             {st === "ordered" && canAct && (
               <div className="space-y-2">
+                {items.some((i) => i.inventaItemId) && <div className="text-xs text-emerald-800">รายการที่มีป้าย “คลัง” จะเพิ่มเข้าสต็อก INVENTA ของสาขาโดยอัตโนมัติเมื่อกด “รับของแล้ว” (ครั้งเดียว)</div>}
                 <input className="input" placeholder="หมายเหตุการรับของ (ถ้ามี)" value={recvNote} onChange={(e) => setRecvNote(e.target.value)} />
                 <button type="button" className="btn-primary text-sm" disabled={busy} onClick={() => act({ action: "receive", note: recvNote })}>รับของแล้ว</button>
               </div>

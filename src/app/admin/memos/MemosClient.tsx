@@ -11,7 +11,8 @@ type ListData = {
   branches: Array<{ id: number; name: string }>; vendors: Record<number, Array<{ id: number; name: string }>>; categories: Array<{ name: string; kind: string }>; signers: Choice[];
   accounts: Array<{ id: number; name: string; last4: string | null; purpose: string | null }>; executiveIds: number[]; topExecIds: number[];
 };
-type FormItem = { description: string; qty: string; unit: string; unit_price: string };
+type FormItem = { description: string; qty: string; unit: string; unit_price: string; inventa_item_id?: number | null; stockHint?: string };
+type LowStock = { itemId: number; name: string; unit: string; onHand: number; safety: number; suggestQty: number; unitCost: number; supplierId: number | null; supplierName: string | null };
 type Form = { id?: number; branch_id: number; subject: string; body: string; category: string; needed_date: string; vendor_id: number | null; vendor_name: string; vat_rate: 0 | 7; items: FormItem[]; signer_ids: number[];
   kind: "purchase" | "funding"; pay_account_id: number | null; from_account_id: number | null; to_account_id: number | null; week_start: string; amount: string };
 
@@ -22,6 +23,14 @@ const STATUS: Record<MemoStatus, { th: string; cls: string }> = {
 const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const when = (s: string | null) => (s ? new Date(s.replace(" ", "T") + "Z").toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }) : "—");
 const EVENT_TH: Record<string, string> = { create: "สร้าง Memo", update: "แก้ไข", submit: "ส่งขอลงนาม", sign: "ลงลายมือชื่อ", approved: "ลงนามครบ — อนุมัติ Memo", reject: "ไม่เห็นชอบ", reopen: "ดึงกลับมาแก้ไข", cancel: "ยกเลิก", open_pr: "เปิด PR" };
+/** Fill a purchase form from below-safety stock items. A single supplier becomes the memo's vendor; rows stay linked to the stock item. */
+function fromLowStock(f: Form, items: LowStock[]): Form {
+  const have = new Set(f.items.map((i) => i.inventa_item_id).filter(Boolean));
+  const rows: FormItem[] = [...f.items.filter((i) => i.description.trim()), ...items.filter((i) => !have.has(i.itemId)).map((i) => ({ description: i.name, qty: String(i.suggestQty), unit: i.unit, unit_price: String(i.unitCost || ""), inventa_item_id: i.itemId, stockHint: `คงเหลือ ${i.onHand} / เกณฑ์ ${i.safety}` }))];
+  const sup = new Set(items.map((i) => i.supplierId));
+  const one = sup.size === 1 ? items[0] : null;
+  return { ...f, subject: f.subject || "ขอซื้อของเข้าคลังตามสต็อกที่ต่ำกว่าเกณฑ์", body: f.body || "สินค้าด้านล่างมียอดคงเหลือต่ำกว่าเกณฑ์สต็อกขั้นต่ำ (ดึงจาก INVENTA)", vendor_id: f.vendor_id ?? (one?.supplierId ?? null), items: rows.length ? rows : f.items };
+}
 const blank = (branch: number, kind: "purchase" | "funding" = "purchase", accounts: ListData["accounts"] = []): Form => ({ kind, pay_account_id: null, week_start: "", amount: "",
   from_account_id: kind === "funding" ? (accounts.find((a) => a.purpose === "working") ?? accounts[0])?.id ?? null : null, to_account_id: kind === "funding" ? accounts.find((a) => a.purpose === "procurement")?.id ?? null : null,
   branch_id: branch, subject: "", body: "", category: "", needed_date: "", vendor_id: null, vendor_name: "", vat_rate: 0, items: [{ description: "", qty: "1", unit: "", unit_price: "" }], signer_ids: [] });
@@ -74,6 +83,19 @@ export default function MemosClient({ openId }: { openId: number | null }) {
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (openId) open(openId); }, [openId, open]);
+  // From INVENTA: /admin/memos?lowstock=<branchId> opens a new purchase memo with the branch's below-safety items already listed.
+  useEffect(() => {
+    if (!data || typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search); const b = Number(sp.get("lowstock"));
+    if (!b || !data.branches.some((x) => x.id === b)) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    (async () => {
+      const r = await call("GET", `/api/admin/memos/low-stock?branch=${b}`);
+      const items = ((r.j.items as LowStock[]) ?? []);
+      if (!items.length) { setMsg({ ok: true, text: "ตอนนี้ไม่มีสินค้าที่ต่ำกว่าเกณฑ์ในคลังของสาขานี้" }); return; }
+      setDetail(null); setForm(fromLowStock(blank(b), items));
+    })();
+  }, [data]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   async function act(action: string, id: number, extra: Record<string, unknown> = {}, okText = "เรียบร้อย"): Promise<Record<string, unknown> | null> {
     setBusy(true); setMsg(null);
@@ -129,7 +151,7 @@ export default function MemosClient({ openId }: { openId: number | null }) {
         onSave={async (f, send) => {
           setBusy(true); setMsg(null);
           const body = { id: f.id, kind: f.kind, pay_account_id: f.pay_account_id, from_account_id: f.from_account_id, to_account_id: f.to_account_id, week_start: f.week_start || null, amount: f.kind === "funding" ? Number(f.amount) || undefined : undefined, branch_id: f.branch_id, subject: f.subject, body: f.body, category: f.category, needed_date: f.needed_date || null, vendor_id: f.vendor_id, vendor_name: f.vendor_name, vat_rate: f.vat_rate,
-            items: f.items.filter((i) => i.description.trim()).map((i) => ({ description: i.description.trim(), qty: Number(i.qty), unit: i.unit, unit_price: Number(i.unit_price) })), signer_ids: f.signer_ids };
+            items: f.items.filter((i) => i.description.trim()).map((i) => ({ description: i.description.trim(), qty: Number(i.qty), unit: i.unit, unit_price: Number(i.unit_price), inventa_item_id: i.inventa_item_id ?? null })), signer_ids: f.signer_ids };
           const r = await call("POST", "/api/admin/memos", { action: "save", memo: body });
           if (!r.ok) { setBusy(false); setMsg({ ok: false, text: (r.j.message as string) ?? "บันทึกไม่สำเร็จ" }); return; }
           const id = r.j.id as number;
@@ -138,7 +160,7 @@ export default function MemosClient({ openId }: { openId: number | null }) {
         }} />}
 
       {detail && !form && <MemoView m={detail} data={data} busy={busy} act={act} onEdit={() => setForm({ id: detail.id, branch_id: detail.branchId, subject: detail.subject, body: detail.body, category: detail.category, needed_date: detail.neededDate ?? "", vendor_id: detail.vendorId, vendor_name: detail.vendorName,
-        vat_rate: detail.vatRate === 7 ? 7 : 0, items: detail.items.map((i) => ({ description: i.description, qty: String(i.qty), unit: i.unit, unit_price: String(i.unitPrice) })), signer_ids: detail.signers.map((s) => s.userId),
+        vat_rate: detail.vatRate === 7 ? 7 : 0, items: detail.items.map((i) => ({ description: i.description, qty: String(i.qty), unit: i.unit, unit_price: String(i.unitPrice), inventa_item_id: i.inventaItemId ?? null })), signer_ids: detail.signers.map((s) => s.userId),
           kind: detail.kind, pay_account_id: detail.payAccountId, from_account_id: detail.fromAccountId, to_account_id: detail.toAccountId, week_start: detail.weekStart ?? "", amount: detail.kind === "funding" ? String(detail.total) : "" })}
         onNeedSignature={() => setPad(true)} onClose={() => setDetail(null)} />}
 
@@ -245,6 +267,15 @@ function MemoView({ m, data, busy, act, onEdit, onNeedSignature, onClose }: {
 }
 
 function MemoForm({ form, data, busy, onChange, onSave, onCancel }: { form: Form; data: ListData; busy: boolean; onChange: (f: Form) => void; onSave: (f: Form, send: boolean) => void; onCancel: () => void }) {
+  const [pullMsg, setPullMsg] = useState("");
+  async function onPullStock() {
+    setPullMsg("");
+    const r = await call("GET", `/api/admin/memos/low-stock?branch=${form.branch_id}`);
+    const items = (r.j.items as LowStock[]) ?? [];
+    if (!r.ok) setPullMsg((r.j.message as string) ?? "ดึงข้อมูลไม่สำเร็จ");
+    else if (!items.length) setPullMsg("ไม่มีสินค้าที่ต่ำกว่าเกณฑ์ในคลังของสาขานี้");
+    else { onChange(fromLowStock(form, items)); setPullMsg(`เพิ่ม ${items.length} รายการจากคลังแล้ว — ตรวจจำนวนและราคาได้`); }
+  }
   const set = <K extends keyof Form>(k: K, v: Form[K]) => onChange({ ...form, [k]: v });
   const setItem = (i: number, patch: Partial<FormItem>) => set("items", form.items.map((x, n) => (n === i ? { ...x, ...patch } : x)));
   const subtotal = form.items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.unit_price) || 0), 0);
@@ -279,15 +310,20 @@ function MemoForm({ form, data, busy, onChange, onSave, onCancel }: { form: Form
         <div className="text-sm font-semibold text-slate-800">รายการ</div>
         {form.items.map((it, i) => (
           <div key={i} className="grid gap-2 grid-cols-[1fr_5rem] sm:grid-cols-[1fr_6rem_6rem_8rem_auto] items-center rounded-xl border border-slate-200 p-2">
-            <input className="input min-h-[44px] col-span-2 sm:col-span-1" placeholder="รายการ" value={it.description} onChange={(e) => setItem(i, { description: e.target.value })} />
+            <div className="col-span-2 sm:col-span-1 min-w-0">
+              <input className="input min-h-[44px] w-full" placeholder="รายการ" value={it.description} onChange={(e) => setItem(i, { description: e.target.value })} />
+              {it.inventa_item_id ? <div className="text-[11px] text-emerald-800 mt-0.5">ผูกกับสินค้าในคลัง — รับของแล้วเพิ่มสต็อกอัตโนมัติ{it.stockHint ? ` · ${it.stockHint}` : ""}</div> : null}
+            </div>
             <input className="input min-h-[44px] text-right" inputMode="decimal" placeholder="จำนวน" aria-label="จำนวน" value={it.qty} onChange={(e) => setItem(i, { qty: e.target.value.replace(/[^\d.]/g, "") })} />
             <input className="input min-h-[44px]" placeholder="หน่วย" aria-label="หน่วย" value={it.unit} maxLength={20} onChange={(e) => setItem(i, { unit: e.target.value })} />
             <input className="input min-h-[44px] text-right" inputMode="decimal" placeholder="ราคา/หน่วย" aria-label="ราคาต่อหน่วย" value={it.unit_price} onChange={(e) => setItem(i, { unit_price: e.target.value.replace(/[^\d.]/g, "") })} />
             <button type="button" className="min-h-[44px] px-3 text-rose-600 text-sm disabled:opacity-30" disabled={form.items.length === 1} onClick={() => set("items", form.items.filter((_, n) => n !== i))} aria-label="ลบรายการ">ลบ</button>
           </div>
         ))}
+        {pullMsg && <p className="text-xs text-slate-600" role="status">{pullMsg}</p>}
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" className="btn-secondary min-h-[44px] px-4 text-sm" onClick={() => set("items", [...form.items, { description: "", qty: "1", unit: "", unit_price: "" }])}>+ เพิ่มรายการ</button>
+          <button type="button" className="btn-secondary min-h-[44px] px-4 text-sm" onClick={onPullStock}>ดึงของที่ต่ำกว่าเกณฑ์จากคลัง</button>
           <label className="flex items-center gap-2 text-sm min-h-[44px]"><input type="checkbox" checked={form.vat_rate === 7} onChange={(e) => set("vat_rate", e.target.checked ? 7 : 0)} />ภาษีมูลค่าเพิ่ม 7%</label>
           <div className="ml-auto text-sm tabular-nums">รวม <b>฿{baht(subtotal + vat)}</b>{form.vat_rate ? <span className="text-slate-500"> (VAT {baht(vat)})</span> : null}</div>
         </div>
