@@ -137,12 +137,6 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         { href: "/staff/persona/orgchart", label: "ผังองค์กร" },
         { href: "/staff/persona/policy-notices", label: "ประกาศนโยบาย" },
         { href: "/staff/persona/payslip", label: "สลิปเงินเดือน" },
-        ...(myQueue || openCheckupRound ? [{ href: "/staff/persona/checkup-queue", label: "ลำดับตรวจสุขภาพประจำปี" }] : []),
-        // clinic staff / doctor: the scan + result screens, also under PERSONA so they are found where the check-up is looked for
-        ...(clinicalCheckup ? [
-          { href: "/staff/health/annual-checkup/queue", label: "สแกน QR ตรวจสุขภาพประจำปี" },
-          { href: "/staff/health/annual-checkup", label: "ลงผลตรวจประจำปี (คลินิก)" }
-        ] : []),
         { href: "/staff/persona/discipline", label: t(lang, "staff.persona.nav.discipline") },
         { href: "/staff/persona/leave", label: t(lang, "staff.nav.leave") },
         { href: "/staff/persona/shift-request", label: "คำขอเปลี่ยนเวลางาน" },
@@ -211,7 +205,12 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       items: [
         { href: "/staff/health/exams", label: "ผลตรวจสุขภาพ" },
         ...(myCheckup ? [{ href: "/staff/health/annual", label: "ผลตรวจสุขภาพประจำปี" }] : []),
-        ...(clinicalCheckup ? [{ href: "/staff/health/annual-checkup", label: "ลงผลตรวจประจำปี (คลินิก)" }] : []),
+        ...(myQueue || openCheckupRound ? [{ href: "/staff/persona/checkup-queue", label: "ลำดับตรวจสุขภาพประจำปี" }] : []),
+        // clinic staff / doctor: scan + result screens — every health menu lives in this one group
+        ...(clinicalCheckup ? [
+          { href: "/staff/health/annual-checkup/queue", label: "สแกน QR ตรวจสุขภาพประจำปี" },
+          { href: "/staff/health/annual-checkup", label: "ลงผลตรวจประจำปี (คลินิก)" }
+        ] : []),
         ...(mjEnrolled
           ? [{ href: "/staff/health/mounjaro", label: "โครงการควบคุมน้ำหนัก" }]
           : [])

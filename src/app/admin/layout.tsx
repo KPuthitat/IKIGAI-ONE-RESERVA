@@ -202,7 +202,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: "/admin/persona/service-eval", label: "ประเมินการบริการหน้าร้าน" },
         { href: "/admin/persona/exec-meetings", label: "ประชุมผู้บริหาร" },
         { href: "/admin/persona/special-duty", label: "ตำแหน่งงานค่าตอบแทนพิเศษ" },
-        ...(canImportCheckup(user) ? [{ href: "/admin/persona/annual-checkup", label: "ตรวจสุขภาพประจำปี" }] : []),
         { href: "/admin/persona/policy-notices", label: "ประกาศนโยบาย" },
         { href: "/admin/persona/leave", label: t(lang, "admin.persona.nav.leave") },
         { href: "/admin/persona/resignation", label: t(lang, "admin.persona.nav.resignation") },
@@ -302,6 +301,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       label: "สุขภาพพนักงาน",
       items: [
         { href: "/admin/persona/health", label: t(lang, "admin.persona.nav.health") },
+        // annual check-up: set up the round, import, queue, stations, permissions, settings (all health menus live in this one group)
+        ...(canImportCheckup(user) ? [{ href: "/admin/persona/annual-checkup", label: "ตรวจสุขภาพประจำปี (จัดรอบ / นำเข้า / ตั้งค่า)" }] : []),
         ...(user.clinical_role === "doctor"
           ? [{ href: "/admin/mounjaro", label: "โครงการควบคุมน้ำหนัก (แพทย์)" }] : []),
         ...(user.is_hr_analytics === 1
