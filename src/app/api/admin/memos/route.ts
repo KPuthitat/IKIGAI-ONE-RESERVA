@@ -5,6 +5,7 @@ import { CAPEX_CATEGORY_NAME } from "@/lib/accounta";
 import { getPr } from "@/lib/purchasing";
 import { awaitingMySignature, canSee, cancelMemo, createMemo, getMemoDetail, getSignature, listMemos, MemoError, openPrFromMemo, rejectMemo, reopenMemo, signerChoices, signMemo, submitMemo, updateMemo, type MemoInput } from "@/lib/memos";
 import { notifyAuthorApproved, notifyAuthorRejected, notifyPrApprovers, notifySigners } from "@/lib/memo-notify";
+import { listBankAccounts } from "@/lib/bank-recon";
 import { executiveIds, topExecIds } from "@/lib/pr-authority";
 import { Body, memoBranches, memoError, memoGate } from "@/lib/memos-api";
 
@@ -33,7 +34,7 @@ export async function GET(req: Request) {
     ok: true, me: { userId: g.user.id, hasSignature: !!getSignature(g.user.id), isCLevel: g.viewer.isCLevel, role: g.user.role },
     memos: listMemos(g.viewer), awaiting: awaitingMySignature(g.user.id), branches, vendors,
     categories: listCategories().map((c) => ({ name: c.name, kind: c.name === CAPEX_CATEGORY_NAME ? "capex" : "opex" })), signers: signerChoices().filter((s) => s.id !== g.user.id),
-    accounts: db.prepare("SELECT id, name, last4, purpose FROM accounta_cash_accounts WHERE type = 'bank' AND active = 1 ORDER BY name").all(), executiveIds: executiveIds(), topExecIds: topExecIds()
+    accounts: listBankAccounts().map((a) => ({ id: a.id, name: a.name, last4: a.accountLast4, purpose: a.purpose })), executiveIds: executiveIds(), topExecIds: topExecIds()
   });
 }
 

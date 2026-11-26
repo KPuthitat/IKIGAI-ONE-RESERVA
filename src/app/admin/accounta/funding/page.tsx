@@ -15,8 +15,8 @@ export default function FundingPage() {
     <div className="space-y-4">
       <div>
         <Link href="/admin/memos" className="text-sm text-slate-500 hover:text-brand">← Memo ขอซื้อ · ลงนาม</Link>
-        <h1 className="text-2xl font-bold text-slate-800 mt-1">เงินโอนระหว่างบัญชี (ขอเบิกเงินรายสัปดาห์)</h1>
-        <p className="text-sm text-slate-500">Memo ขอเบิกเงินที่ลงนามครบแล้วจะมารอที่นี่ — โอนที่ธนาคารแล้วกลับมาบันทึกวันที่และยอดจริง (ใส่ PIN) หรือรอให้ระบบจับคู่เองจากการกระทบยอด statement</p>
+        <h1 className="text-2xl font-bold text-slate-800 mt-1">เงินโอนระหว่างบัญชี</h1>
+        <p className="text-sm text-slate-500">คำขอเบิกเงินรายสัปดาห์ — Memo ขอเบิกเงินที่ลงนามครบแล้วจะมารอที่นี่ — โอนที่ธนาคารแล้วกลับมาบันทึกวันที่และยอดจริง (ใส่ PIN) หรือรอให้ระบบจับคู่เองจากการกระทบยอด statement</p>
       </div>
       <FundingClient />
     </div>
