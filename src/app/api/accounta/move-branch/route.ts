@@ -3,21 +3,21 @@ import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { listMoves, MoveRefused, moveRows } from "@/lib/accounta-move";
 
-// POST {kind: "expense"|"income", ids: number[], toBranchId, reason?} — move bills / income to another branch (one or many).
+// POST {kind: "expense"|"income", ids: number[], toBranchId, reason?, pin} — move bills / income to another branch (one or many).
 //   The user needs ACCOUNTA 'confirm' access on both the source and the target branch. Rows the system owns are refused with a reason.
 // GET  ?limit= — recent moves (history) for the branches the user can see.
 export const dynamic = "force-dynamic";
-const Body = z.object({ kind: z.enum(["expense", "income"]), ids: z.array(z.number().int().positive()).min(1).max(300), toBranchId: z.number().int().positive(), reason: z.string().max(300).nullable().optional() });
+const Body = z.object({ kind: z.enum(["expense", "income"]), ids: z.array(z.number().int().positive()).min(1).max(300), toBranchId: z.number().int().positive(), reason: z.string().max(300).nullable().optional(), pin: z.string().regex(/^\d{4}$/) });
 
 export async function POST(req: Request) {
   const user = requirePermission("accounta.manage");
   const p = Body.safeParse(await req.json().catch(() => ({})));
   if (!p.success) return NextResponse.json({ ok: false, error: "invalid_body", message: "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
   try {
-    const results = moveRows(user, p.data.kind, p.data.ids, p.data.toBranchId, p.data.reason ?? null);
+    const results = moveRows(user, p.data.kind, p.data.ids, p.data.toBranchId, p.data.reason ?? null, p.data.pin);
     return NextResponse.json({ ok: true, results, moved: results.filter((r) => r.status === "moved").length });
   } catch (e) {
-    if (e instanceof MoveRefused) return NextResponse.json({ ok: false, error: e.code, message: e.message }, { status: e.code === "no_access" ? 403 : 422 });
+    if (e instanceof MoveRefused) return NextResponse.json({ ok: false, error: e.code, message: e.message }, { status: e.code === "no_access" ? 403 : e.code === "bad_pin" || e.code === "no_pin" ? 401 : 422 });
     throw e;
   }
 }

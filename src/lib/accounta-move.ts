@@ -5,6 +5,7 @@
 import type Database from "better-sqlite3";
 import { getDb, logPersonaAction } from "./db";
 import { accountaAccessFor } from "./accounta-access";
+import { verifyAdminPin } from "./admin-pin";
 
 export type MoveKind = "expense" | "income";
 export type MoveResult = { id: number; status: "moved" | "same_branch" | "not_found" | "blocked"; reason?: string; from?: string | null };
@@ -31,9 +32,15 @@ export function ensureMoveTable(db: Database.Database): void {
   `);
 }
 
-export class MoveRefused extends Error { constructor(public code: "no_target" | "no_access" | "nothing", msg: string) { super(msg); } }
+export class MoveRefused extends Error { constructor(public code: "no_target" | "no_access" | "nothing" | "bad_pin" | "no_pin", msg: string) { super(msg); } }
 
-export function moveRows(user: { id: number; role: string }, kind: MoveKind, ids: number[], toBranchId: number, reason: string | null): MoveResult[] {
+/** Moving money between branches needs the person's own PIN every time (owner 2026-11-26); a wrong PIN is written to the log as well. */
+export function moveRows(user: { id: number; role: string }, kind: MoveKind, ids: number[], toBranchId: number, reason: string | null, pin: string): MoveResult[] {
+  const p = verifyAdminPin(user.id, (pin ?? "").trim());
+  if (!p.ok) {
+    logPersonaAction(user.id, `accounta.move_branch.pin_failed.${kind}`, toBranchId);
+    throw new MoveRefused(p.reason === "no_pin" ? "no_pin" : "bad_pin", p.reason === "no_pin" ? "ยังไม่ได้ตั้ง PIN (ตั้งที่หน้าลงเวลา)" : "PIN ไม่ถูกต้อง");
+  }
   const db = getDb();
   ensureMoveTable(db);
   const target = db.prepare("SELECT id, name, company_id FROM branches WHERE id = ? AND status != 'closed'").get(toBranchId) as { id: number; name: string; company_id: number | null } | undefined;

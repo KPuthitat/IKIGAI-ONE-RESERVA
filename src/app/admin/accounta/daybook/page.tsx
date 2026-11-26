@@ -8,6 +8,8 @@ import { salesTargetProgress, type SalesTargetProgress } from "@/lib/sales-targe
 import { financialAnalysisEnabled } from "@/lib/financial-analysis";
 import { fmtMoney } from "@/lib/format";
 import LedgerDashboardClient, { type LedgerExpenseRow } from "./LedgerDashboardClient";
+import { MoveRowProvider } from "../MoveBranch";
+import { accountaAccessFor } from "@/lib/accounta-access";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "ACCOUNTA · บัญชีรายรับรายจ่าย" };
@@ -268,6 +270,9 @@ export default function DaybookPage({
   const payCycleWeekday = branch?.company_id != null
     ? ((db.prepare("SELECT pay_cycle_weekday AS w FROM companies WHERE id = ?").get(branch.company_id) as { w: number } | undefined)?.w ?? 1)
     : 1;
+  // branches the user may move a row to (ACCOUNTA confirm access on the target; the source is checked on the server too)
+  const access = accountaAccessFor(user.id, user.role);
+  const moveBranches = (db.prepare("SELECT id, name FROM branches WHERE status != 'closed' ORDER BY display_order, name").all() as Array<{ id: number; name: string }>).filter((b) => access.get(b.id) === "confirm");
   const dash = ledgerDashboard(branchId, period, anchor);
   const trendYear = Number(anchor.slice(0, 4));
   const monthly = monthlyTrend(branchId, trendYear);
@@ -363,7 +368,8 @@ export default function DaybookPage({
           message="ยังคำนวณจุดคุ้มทุนไม่ได้ — ต้องมีข้อมูลรายรับ/รายจ่ายสะสมของสาขานี้ก่อน (อย่างน้อย 1 เดือนที่มียอดขาย และมีต้นทุนคงที่ในบัญชี) แล้วการ์ดจะขึ้นเอง"
         />
       )}
-      <LedgerDashboardClient dash={dash} expenses={expenses} period={period} anchor={anchor}
+      <MoveRowProvider branches={moveBranches} currentBranchId={branchId}>
+        <LedgerDashboardClient dash={dash} expenses={expenses} period={period} anchor={anchor}
         monthly={monthly} trendYear={trendYear} payables={payables}
         cashAccounts={cashAccounts} cashTotal={cashTotal}
         branchId={branchId} companyId={branch?.company_id ?? null} branchName={branch?.name ?? `#${branchId}`}
@@ -375,6 +381,7 @@ export default function DaybookPage({
         projectedMonthlySales={salesTarget.monthlyTarget}
         aiEnabled={financialAnalysisEnabled()}
         payCycleWeekday={payCycleWeekday} />
+      </MoveRowProvider>
     </div>
   );
 }
