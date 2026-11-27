@@ -1,4 +1,5 @@
 // Editing the approval authority (owner only): tiers per account, the account's own approvers, who is the top executive.
+import { quotesRequired } from "./quotes";
 import { getDb, logPersonaAction } from "./db";
 import { accountApproverIds, executiveIds, tiersFor, type Rule, type Tier } from "./pr-authority";
 
@@ -14,7 +15,7 @@ export function authoritySnapshot() {
       WHERE status NOT IN ('disabled','resigned','terminated') AND COALESCE(is_test_account,0) = 0 AND (role IN ('admin','super_admin') OR COALESCE(is_c_level,0) = 1 OR COALESCE(is_top_exec,0) = 1) ORDER BY top DESC, c DESC, display_name`).all() as
     Array<{ id: number; display_name: string; title_prefix: string | null; role: string; c: number; top: number }>)
     .map((u) => ({ id: u.id, name: `${u.title_prefix ?? ""}${u.display_name}`, role: u.role, cLevel: u.c === 1, top: u.top === 1 }));
-  return { accounts, globalTiers: ownTiers(null), defaultTiers: tiersFor(null), people, executiveIds: executiveIds() };
+  return { accounts, globalTiers: ownTiers(null), defaultTiers: tiersFor(null), people, executiveIds: executiveIds(), quotesRequired: quotesRequired() };
 }
 function ownTiers(accountId: number | null): Tier[] {
   const rows = getDb().prepare(`SELECT id, account_id, up_to, rule, sort_no FROM pr_approval_tiers WHERE ${accountId == null ? "account_id IS NULL" : "account_id = ?"} ORDER BY COALESCE(up_to, 1e18), id`).all(...(accountId == null ? [] : [accountId])) as Array<{ id: number; account_id: number | null; up_to: number | null; rule: Rule; sort_no: number }>;

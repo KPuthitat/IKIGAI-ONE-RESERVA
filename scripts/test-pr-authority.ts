@@ -11,6 +11,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   const A = await import("../src/lib/pr-authority");
   const AD = await import("../src/lib/pr-authority-admin");
   const db = getDb();
+  db.prepare("INSERT OR REPLACE INTO purchasing_settings (key, value) VALUES ('quotes_required', '0')").run();   // these checks are about other rules; quote comparison has its own test
   let failed = 0;
   const ok = (n: string, c: boolean) => { if (c) console.log(`  ✓ ${n}`); else { failed++; console.error(`  ✗ FAIL: ${n}`); } };
   const code = (fn: () => unknown): string => { try { fn(); return ""; } catch (e) { return e instanceof P.PurchasingError ? e.code : e instanceof Error ? e.message : String(e); } };

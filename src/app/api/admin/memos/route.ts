@@ -5,6 +5,7 @@ import { CAPEX_CATEGORY_NAME } from "@/lib/accounta";
 import { getPr } from "@/lib/purchasing";
 import { awaitingMySignature, canSee, cancelMemo, createMemo, getMemoDetail, getSignature, listMemos, MemoError, openPrFromMemo, rejectMemo, reopenMemo, signerChoices, signMemo, submitMemo, updateMemo, type MemoInput } from "@/lib/memos";
 import { notifyAuthorApproved, notifyAuthorRejected, notifyPrApprovers, notifySigners } from "@/lib/memo-notify";
+import { buildFlow } from "@/lib/purchase-flow";
 import { listBankAccounts } from "@/lib/bank-recon";
 import { executiveIds, topExecIds } from "@/lib/pr-authority";
 import { Body, memoBranches, memoError, memoGate } from "@/lib/memos-api";
@@ -22,7 +23,7 @@ export async function GET(req: Request) {
     try {
       const m = getMemoDetail(id);
       if (!canSee(g.viewer, m)) return NextResponse.json({ error: "not_found" }, { status: 404 });
-      return NextResponse.json({ ok: true, memo: m, mySigner: m.signers.find((s) => s.userId === g.user.id) ?? null });
+      return NextResponse.json({ ok: true, memo: m, mySigner: m.signers.find((s) => s.userId === g.user.id) ?? null, flow: buildFlow({ memoId: m.id }) });
     } catch (e) { return memoError(e); }
   }
   const db = getDb();

@@ -13,6 +13,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   const F = await import("../src/lib/funding");
   const R = await import("../src/lib/bank-recon");
   const db = getDb();
+  db.prepare("INSERT OR REPLACE INTO purchasing_settings (key, value) VALUES ('quotes_required', '0')").run();   // these checks are about other rules; quote comparison has its own test
   let failed = 0;
   const ok = (n: string, c: boolean) => { if (c) console.log(`  ✓ ${n}`); else { failed++; console.error(`  ✗ FAIL: ${n}`); } };
   const err = (fn: () => unknown): string => { try { fn(); return ""; } catch (e) { return (e as { code?: string }).code ?? String(e); } };

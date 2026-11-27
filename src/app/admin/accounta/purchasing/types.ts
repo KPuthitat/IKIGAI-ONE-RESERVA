@@ -8,9 +8,9 @@ export type Pr = {
   decidedBy: number | null; decidedByName: string | null; decidedAt: string | null; decisionNote: string; createdAt: string; poNo: string | null;
   payAccountId: number | null; payAccountName: string | null; memoId: number | null;
 };
-export type Item = { lineNo: number; description: string; qty: number; unit: string; unitPrice: number; amount: number };
+export type Item = { lineNo: number; description: string; qty: number; unit: string; unitPrice: number; amount: number; inventaItemId?: number | null };
 export type Bill = { expenseId: number; billDate: string; vendorName: string; description: string; amount: number };
-export type Po = { poNo: string; vendorName: string; total: number; expectedDate: string | null; note: string; issuedAt: string; receivedAt: string | null; receiveNote: string };
+export type Po = { poNo: string; vendorName: string; total: number; expectedDate: string | null; note: string; issuedAt: string; receivedAt: string | null; receiveNote: string; stockAppliedAt: string | null };
 export type Overview = {
   year: number; me: { userId: number; isApprover: boolean; adminBranchIds: number[] };
   branches: Array<{ id: number; name: string }>; vendors: Record<number, Array<{ id: number; name: string }>>;
@@ -20,7 +20,7 @@ export type Overview = {
 export type Authority = { rule: string; ruleText: string; approved: boolean; approveCount: number; remainingText: string;
   approvals: Array<{ userId: number; name: string; decision: "approve" | "reject"; note: string; at: string; top: boolean }>; eligible: Array<{ id: number; name: string }> };
 export type Fund = { received: number; committed: number; remaining: number; over: boolean; shortBy: number } | null;
-export type Detail = { authority: Authority; fund: Fund; pr: Pr; items: Item[]; po: Po | null; bills: Bill[]; linkable: Bill[]; impact: { usage: Usage; afterRemaining: number; over: boolean } };
+export type Detail = { flow?: import("@/lib/purchase-flow").Flow; authority: Authority; fund: Fund; pr: Pr; items: Item[]; po: Po | null; bills: Bill[]; linkable: Bill[]; impact: { usage: Usage; afterRemaining: number; over: boolean } };
 
 export const STATUS: Record<PrStatus, { label: string; cls: string }> = {
   draft: { label: "ร่าง", cls: "tag-mute" }, submitted: { label: "รออนุมัติ", cls: "tag-warn" }, approved: { label: "อนุมัติแล้ว", cls: "tag-ok" },

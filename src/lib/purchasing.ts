@@ -8,6 +8,8 @@
 //  • Spend commitments: submitted / approved / ordered / received PRs count against the budget until their bills are
 //    linked (closed) — from then on the ACCOUNTA bills are the actual spend, so nothing is counted twice.
 import { getDb } from "./db";
+import { addStockQty } from "./inventa-stock";
+import { compareProblems } from "./quotes";
 import { approvalState, canApprove, ruleFor } from "./pr-authority";
 import { CAPEX_CATEGORY_NAME } from "./accounta";
 
@@ -16,8 +18,8 @@ export type PrStatus = "draft" | "submitted" | "approved" | "rejected" | "ordere
 
 export type PurchasingErrorCode =
   | "not_found" | "forbidden" | "bad_status" | "no_items" | "invalid_item" | "invalid_category" | "invalid_vendor" | "invalid_amount"
-  | "over_budget_reason_required" | "reject_note_required" | "own_request" | "not_authorised" | "bill_invalid" | "bill_taken" | "no_bills" | "invalid_branch";
-export class PurchasingError extends Error { constructor(public code: PurchasingErrorCode) { super(code); } }
+  | "over_budget_reason_required" | "reject_note_required" | "own_request" | "not_authorised" | "bill_invalid" | "bill_taken" | "no_bills" | "invalid_branch" | "compare_required";
+export class PurchasingError extends Error { constructor(public code: PurchasingErrorCode, public detail?: string) { super(code); } }
 export const PURCHASING_ERROR_TH: Record<PurchasingErrorCode, string> = {
   not_found: "ไม่พบรายการ",
   forbidden: "ไม่มีสิทธิ์ทำรายการนี้",
@@ -34,7 +36,8 @@ export const PURCHASING_ERROR_TH: Record<PurchasingErrorCode, string> = {
   bill_invalid: "บิลนี้ผูกไม่ได้ (ต้องเป็นบิลที่ลงบัญชีแล้วของสาขาเดียวกัน)",
   bill_taken: "บิลนี้ผูกกับใบสั่งซื้ออื่นแล้ว",
   no_bills: "ยังไม่ได้ผูกบิล",
-  invalid_branch: "สาขาไม่ถูกต้อง"
+  invalid_branch: "สาขาไม่ถูกต้อง",
+  compare_required: "ต้องเทียบใบเสนอราคาก่อนส่ง"
 };
 
 export type Viewer = { userId: number; role: "staff" | "admin" | "super_admin"; adminBranchIds: number[]; isCLevel: boolean };
@@ -104,7 +107,7 @@ export function usageOf(year: number, branchId: number, category: string): Budge
 
 // ── purchase requests ────────────────────────────────────────────────────
 
-export type PrItemInput = { description: string; qty: number; unit?: string; unit_price: number };
+export type PrItemInput = { description: string; qty: number; unit?: string; unit_price: number; inventa_item_id?: number | null };
 export type PrInput = {
   branchId: number; category: string; title: string; reason?: string; neededDate?: string | null;
   vendorId?: number | null; vendorName?: string; vatRate?: number; overBudgetReason?: string; payAccountId?: number | null; items: PrItemInput[];
@@ -148,12 +151,13 @@ export function listPrs(args: { branchIds: number[]; year?: number; status?: PrS
   return (getDb().prepare(`${PR_SELECT} WHERE ${where.join(" AND ")} ORDER BY p.id DESC`).all(...vals) as PrDb[]).map(toRow);
 }
 
-function cleanItems(items: PrItemInput[]): Array<{ description: string; qty: number; unit: string; unit_price: number; amount: number }> {
+function cleanItems(items: PrItemInput[]): Array<{ description: string; qty: number; unit: string; unit_price: number; amount: number; inventa_item_id: number | null }> {
   if (!Array.isArray(items) || items.length === 0) throw new PurchasingError("no_items");
   return items.map((i) => {
     const description = (i.description ?? "").trim(), qty = Number(i.qty), price = Number(i.unit_price);
     if (!description || description.length > 200 || !(qty > 0) || !Number.isFinite(price) || price < 0) throw new PurchasingError("invalid_item");
-    return { description, qty, unit: (i.unit ?? "").trim().slice(0, 20), unit_price: round2(price), amount: round2(qty * price) };
+    const itemId = i.inventa_item_id != null && Number.isInteger(Number(i.inventa_item_id)) && Number(i.inventa_item_id) > 0 ? Number(i.inventa_item_id) : null;
+    return { description, qty, unit: (i.unit ?? "").trim().slice(0, 20), unit_price: round2(price), amount: round2(qty * price), inventa_item_id: itemId };
   });
 }
 
@@ -189,8 +193,8 @@ function prepare(input: PrInput, viewer: Viewer) {
 function writeItems(prId: number, items: ReturnType<typeof cleanItems>): void {
   const db = getDb();
   db.prepare("DELETE FROM purchase_request_items WHERE pr_id = ?").run(prId);
-  const ins = db.prepare("INSERT INTO purchase_request_items (pr_id, line_no, description, qty, unit, unit_price, amount) VALUES (?, ?, ?, ?, ?, ?, ?)");
-  items.forEach((i, n) => ins.run(prId, n + 1, i.description, i.qty, i.unit, i.unit_price, i.amount));
+  const ins = db.prepare("INSERT INTO purchase_request_items (pr_id, line_no, description, qty, unit, unit_price, amount, inventa_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+  items.forEach((i, n) => ins.run(prId, n + 1, i.description, i.qty, i.unit, i.unit_price, i.amount, i.inventa_item_id));
 }
 
 /** A PR may name the bank account it is paid from; an unknown / non-bank account is refused. */
@@ -230,10 +234,10 @@ export function updatePr(id: number, input: PrInput, viewer: Viewer): void {
   })();
 }
 
-export type PrItem = { lineNo: number; description: string; qty: number; unit: string; unitPrice: number; amount: number };
+export type PrItem = { lineNo: number; description: string; qty: number; unit: string; unitPrice: number; amount: number; inventaItemId: number | null };
 export function listItems(prId: number): PrItem[] {
-  return (getDb().prepare("SELECT line_no, description, qty, unit, unit_price, amount FROM purchase_request_items WHERE pr_id = ? ORDER BY line_no").all(prId) as Array<{ line_no: number; description: string; qty: number; unit: string; unit_price: number; amount: number }>)
-    .map((r) => ({ lineNo: r.line_no, description: r.description, qty: r.qty, unit: r.unit, unitPrice: r.unit_price, amount: r.amount }));
+  return (getDb().prepare("SELECT line_no, description, qty, unit, unit_price, amount, inventa_item_id FROM purchase_request_items WHERE pr_id = ? ORDER BY line_no").all(prId) as Array<{ line_no: number; description: string; qty: number; unit: string; unit_price: number; amount: number; inventa_item_id: number | null }>)
+    .map((r) => ({ lineNo: r.line_no, description: r.description, qty: r.qty, unit: r.unit, unitPrice: r.unit_price, amount: r.amount, inventaItemId: r.inventa_item_id }));
 }
 
 /** What approving this PR would do to its category's budget (the PR's own value is already inside `committed` once submitted). */
@@ -252,6 +256,8 @@ export function submitPr(id: number, viewer: Viewer): PrRow {
   if (cur.status !== "draft") throw new PurchasingError("bad_status");
   if (listItems(id).length === 0) throw new PurchasingError("no_items");
   if (!(cur.total > 0)) throw new PurchasingError("invalid_amount");
+  const problems = compareProblems("pr", id);   // rival quotes scored and one chosen — or a sole-source reason (owner 2026-11-27)
+  if (problems.length) throw new PurchasingError("compare_required", problems.join(" · "));
   const over = budgetImpact(cur).over;
   if (over && !cur.overBudgetReason.trim()) throw new PurchasingError("over_budget_reason_required");
   getDb().prepare("UPDATE purchase_requests SET status = 'submitted', over_budget = ?, submitted_at = datetime('now'), decided_by = NULL, decided_at = NULL, decision_note = '', updated_at = datetime('now') WHERE id = ?").run(over ? 1 : 0, id);
@@ -301,11 +307,11 @@ export function cancelPr(id: number, viewer: Viewer): void {
 
 // ── PO, receiving, bills ─────────────────────────────────────────────────
 
-export type PoRow = { id: number; poNo: string; prId: number; vendorName: string; total: number; expectedDate: string | null; note: string; issuedAt: string; receivedAt: string | null; receiveNote: string };
+export type PoRow = { id: number; poNo: string; prId: number; vendorName: string; total: number; expectedDate: string | null; note: string; issuedAt: string; receivedAt: string | null; receiveNote: string; stockAppliedAt: string | null };
 export function getPo(prId: number): PoRow | null {
-  const r = getDb().prepare("SELECT id, po_no, pr_id, vendor_name, total, expected_date, note, issued_at, received_at, receive_note FROM purchase_orders WHERE pr_id = ?").get(prId) as
-    { id: number; po_no: string; pr_id: number; vendor_name: string; total: number; expected_date: string | null; note: string; issued_at: string; received_at: string | null; receive_note: string } | undefined;
-  return r ? { id: r.id, poNo: r.po_no, prId: r.pr_id, vendorName: r.vendor_name, total: r.total, expectedDate: r.expected_date, note: r.note, issuedAt: r.issued_at, receivedAt: r.received_at, receiveNote: r.receive_note } : null;
+  const r = getDb().prepare("SELECT id, po_no, pr_id, vendor_name, total, expected_date, note, issued_at, received_at, receive_note, stock_applied_at FROM purchase_orders WHERE pr_id = ?").get(prId) as
+    { id: number; po_no: string; pr_id: number; vendor_name: string; total: number; expected_date: string | null; note: string; issued_at: string; received_at: string | null; receive_note: string; stock_applied_at: string | null } | undefined;
+  return r ? { id: r.id, poNo: r.po_no, prId: r.pr_id, vendorName: r.vendor_name, total: r.total, expectedDate: r.expected_date, note: r.note, issuedAt: r.issued_at, receivedAt: r.received_at, receiveNote: r.receive_note, stockAppliedAt: r.stock_applied_at } : null;
 }
 
 /** Approved PR → PO issued to the vendor (status ordered). A vendor name is required by then. */
@@ -325,14 +331,31 @@ export function issuePo(prId: number, args: { expectedDate?: string | null; note
 }
 
 /** Ordered → received (goods/services arrived). Closes the PR when bills are already linked. */
-export function receivePo(prId: number, note: string, viewer: Viewer): void {
+/** Goods received on a PO add their quantities to INVENTA on-hand — once per PO (stamped), only for lines that point at a stock item of the PR's branch. */
+function applyPoStock(prId: number): number {
+  const db = getDb();
+  const po = db.prepare("SELECT id, stock_applied_at FROM purchase_orders WHERE pr_id = ?").get(prId) as { id: number; stock_applied_at: string | null } | undefined;
+  if (!po || po.stock_applied_at) return 0;
+  const branchId = (db.prepare("SELECT branch_id FROM purchase_requests WHERE id = ?").get(prId) as { branch_id: number }).branch_id;
+  let n = 0;
+  for (const l of db.prepare("SELECT inventa_item_id AS item, SUM(qty) AS qty FROM purchase_request_items WHERE pr_id = ? AND inventa_item_id IS NOT NULL GROUP BY inventa_item_id").all(prId) as Array<{ item: number; qty: number }>) {
+    if (!db.prepare("SELECT 1 FROM inventa_items WHERE id = ? AND branch_id = ?").get(l.item, branchId)) continue;   // never touch another branch's stock
+    if (addStockQty(l.item, l.qty)) n++;
+  }
+  db.prepare("UPDATE purchase_orders SET stock_applied_at = datetime('now') WHERE id = ?").run(po.id);
+  return n;
+}
+
+export function receivePo(prId: number, note: string, viewer: Viewer): { stockLines: number } {
   const cur = load(prId);
   if (!canActOnBranch(viewer, cur.branchId)) throw new PurchasingError("forbidden");
   if (cur.status !== "ordered") throw new PurchasingError("bad_status");
   const db = getDb();
   db.prepare("UPDATE purchase_orders SET received_at = datetime('now'), received_by = ?, receive_note = ? WHERE pr_id = ?").run(viewer.userId, (note ?? "").trim(), prId);
   db.prepare("UPDATE purchase_requests SET status = 'received', updated_at = datetime('now') WHERE id = ?").run(prId);
+  const stockLines = db.transaction(() => applyPoStock(prId))();
   refreshClosed(prId);
+  return { stockLines };
 }
 
 export type LinkedBill = { expenseId: number; billDate: string; vendorName: string; description: string; amount: number };

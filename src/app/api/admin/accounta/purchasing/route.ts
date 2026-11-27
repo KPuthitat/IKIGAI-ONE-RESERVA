@@ -3,6 +3,7 @@ import { getDb, logPersonaAction } from "@/lib/db";
 import { verifyAdminPin } from "@/lib/admin-pin";
 import { listCategories } from "@/lib/accounta-db";
 import { approvalState } from "@/lib/pr-authority";
+import { buildFlow } from "@/lib/purchase-flow";
 import { fundWarning } from "@/lib/funding";
 import { listBankAccounts } from "@/lib/bank-recon";
 import { CAPEX_CATEGORY_NAME } from "@/lib/accounta";
@@ -31,7 +32,7 @@ export async function GET(req: Request) {
   if (prId) {
     const pr = getPr(prId);
     if (!pr || !ids.includes(pr.branchId)) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    return NextResponse.json({ ok: true, authority: approvalState(prId), fund: fundWarning({ id: prId, payAccountId: pr.payAccountId, total: pr.total }), pr, items: listItems(prId), po: getPo(prId), bills: listLinkedBills(prId), linkable: ["ordered", "received", "closed"].includes(pr.status) ? listLinkableBills(prId) : [], impact: budgetImpact(pr) });
+    return NextResponse.json({ ok: true, flow: buildFlow({ prId }), authority: approvalState(prId), fund: fundWarning({ id: prId, payAccountId: pr.payAccountId, total: pr.total }), pr, items: listItems(prId), po: getPo(prId), bills: listLinkedBills(prId), linkable: ["ordered", "received", "closed"].includes(pr.status) ? listLinkableBills(prId) : [], impact: budgetImpact(pr) });
   }
 
   const year = Number(q.get("year")) || new Date(Date.now() + 7 * 3600_000).getUTCFullYear();
@@ -110,7 +111,7 @@ export async function POST(req: Request) {
         logPersonaAction(g.user.id, "purchasing.po.issue", d.id);
         return NextResponse.json({ ok: true, poNo: po.poNo });
       }
-      case "receive": if (!d.id) return NextResponse.json({ error: "invalid_body" }, { status: 400 }); receivePo(d.id, d.note ?? "", v); logPersonaAction(g.user.id, "purchasing.po.receive", d.id); return NextResponse.json({ ok: true });
+      case "receive": if (!d.id) return NextResponse.json({ error: "invalid_body" }, { status: 400 }); const rc = receivePo(d.id, d.note ?? "", v); logPersonaAction(g.user.id, "purchasing.po.receive", d.id); if (rc.stockLines) logPersonaAction(g.user.id, "purchasing.po.stock_in", d.id); return NextResponse.json({ ok: true, stockLines: rc.stockLines });
       case "link_bills": if (!d.id || !d.expense_ids?.length) return NextResponse.json({ error: "invalid_body" }, { status: 400 }); linkBills(d.id, d.expense_ids, v); logPersonaAction(g.user.id, "purchasing.po.link", d.id); return NextResponse.json({ ok: true });
       case "unlink_bill": if (!d.id || !d.expense_id) return NextResponse.json({ error: "invalid_body" }, { status: 400 }); unlinkBill(d.id, d.expense_id, v); return NextResponse.json({ ok: true });
       case "set_budget": {

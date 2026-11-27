@@ -8,7 +8,7 @@ type TierRow = { upTo: string; rule: Rule };
 type Tier = { id: number | null; accountId: number | null; upTo: number | null; rule: Rule };
 type Person = { id: number; name: string; role: string; cLevel: boolean; top: boolean };
 type Account = { id: number; name: string; last4: string | null; purpose: string | null; ownTiers: Tier[]; approverIds: number[]; effective: Tier[] };
-type Snap = { accounts: Account[]; globalTiers: Tier[]; defaultTiers: Tier[]; people: Person[]; executiveIds: number[]; ruleText: Record<Rule, string> };
+type Snap = { quotesRequired: boolean; accounts: Account[]; globalTiers: Tier[]; defaultTiers: Tier[]; people: Person[]; executiveIds: number[]; ruleText: Record<Rule, string> };
 const PURPOSE_TH: Record<string, string> = { savings: "บัญชีออม", working: "เงินหมุนเวียน", payroll_tax: "Payroll + ภาษี", procurement: "จัดซื้อ", other: "อื่นๆ" };
 const baht = (n: number) => n.toLocaleString("th-TH");
 
@@ -29,6 +29,14 @@ export default function AuthorityClient() {
   return (
     <div className="space-y-4">
       {msg && <div role="status" className={`rounded-lg px-4 py-2 text-sm border ${msg.ok ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-rose-50 text-rose-800 border-rose-200"}`}>{msg.text}</div>}
+
+      <section className="card space-y-2" aria-label="กฎเทียบใบเสนอราคา">
+        <h2 className="font-bold text-slate-800">กฎเทียบใบเสนอราคา</h2>
+        <label className="flex items-start gap-3 min-h-[44px] cursor-pointer">
+          <input type="checkbox" className="mt-1 h-5 w-5" checked={snap.quotesRequired} onChange={(e) => act({ action: "set_quotes_required", value: e.target.checked }, e.target.checked ? "เปิดกฎเทียบใบเสนอราคาแล้ว" : "ปิดกฎเทียบใบเสนอราคาแล้ว")} />
+          <span className="text-sm"><b>บังคับเทียบใบเสนอราคาอย่างน้อย 2 ราย</b> (ยกเว้นสินค้า/บริการที่มีเพียงรายเดียวในตลาด — ต้องระบุเหตุผล) ก่อนส่ง Memo หรือ PR · ปิดชั่วคราวได้ถ้าติดขัดช่วงนำร่อง</span>
+        </label>
+      </section>
 
       <section className="card space-y-2" aria-label="ผู้บริหารสูงสุด">
         <h2 className="font-bold text-slate-800">ผู้บริหารสูงสุด</h2>

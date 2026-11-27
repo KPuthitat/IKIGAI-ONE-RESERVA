@@ -3839,6 +3839,51 @@ function runMigrations(db: Database.Database): void {
     const prCols = (db.prepare("PRAGMA table_info(purchase_requests)").all() as Array<{ name: string }>).map((c) => c.name);
     if (!prCols.includes("memo_id")) db.exec("ALTER TABLE purchase_requests ADD COLUMN memo_id INTEGER REFERENCES memos(id)");
   }
+  // Purchasing ↔ INVENTA (owner 2026-11-26): a memo / PR line can point at a stock item; receiving the PO adds the quantity to that item's on-hand once.
+  {
+    const cols = (t: string) => (db.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).map((c) => c.name);
+    if (!cols("memo_items").includes("inventa_item_id")) db.exec("ALTER TABLE memo_items ADD COLUMN inventa_item_id INTEGER");
+    if (!cols("purchase_request_items").includes("inventa_item_id")) db.exec("ALTER TABLE purchase_request_items ADD COLUMN inventa_item_id INTEGER");
+    if (!cols("purchase_orders").includes("stock_applied_at")) db.exec("ALTER TABLE purchase_orders ADD COLUMN stock_applied_at TEXT");
+  }
+  // Quotation comparison (owner 2026-11-27): unless the thing is the only one of its kind, a purchase needs rival quotes — each scored on price and on other
+  // benefits (0–100 %), weighed against each other; the team and the executives pick the winner. Quotes belong to a memo or to a PR (scope) and are copied
+  // to the PR when it is opened from the memo. purchasing_settings holds the on/off switch for the rule.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS purchase_quotes (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      scope          TEXT NOT NULL CHECK (scope IN ('memo','pr')),
+      ref_id         INTEGER NOT NULL,
+      vendor_id      INTEGER,
+      vendor_name    TEXT NOT NULL,
+      quote_no       TEXT NOT NULL DEFAULT '',
+      quote_date     TEXT,
+      valid_until    TEXT,
+      amount         REAL NOT NULL DEFAULT 0,
+      note           TEXT NOT NULL DEFAULT '',
+      price_score    INTEGER NOT NULL DEFAULT 50 CHECK (price_score BETWEEN 0 AND 100),
+      price_reason   TEXT NOT NULL DEFAULT '',
+      benefit_score  INTEGER NOT NULL DEFAULT 50 CHECK (benefit_score BETWEEN 0 AND 100),
+      benefit_reason TEXT NOT NULL DEFAULT '',
+      created_by     INTEGER REFERENCES users(id),
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_purchase_quotes_ref ON purchase_quotes(scope, ref_id);
+    CREATE TABLE IF NOT EXISTS purchase_compare (
+      scope          TEXT NOT NULL CHECK (scope IN ('memo','pr')),
+      ref_id         INTEGER NOT NULL,
+      sole_source    INTEGER NOT NULL DEFAULT 0,
+      sole_reason    TEXT NOT NULL DEFAULT '',
+      weight_price   INTEGER NOT NULL DEFAULT 60 CHECK (weight_price BETWEEN 0 AND 100),
+      chosen_quote_id INTEGER,
+      chosen_reason  TEXT NOT NULL DEFAULT '',
+      chosen_by      INTEGER REFERENCES users(id),
+      chosen_at      TEXT,
+      PRIMARY KEY (scope, ref_id)
+    );
+    CREATE TABLE IF NOT EXISTS purchasing_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  `);
 
   // ── Approval authority by amount + funding between company accounts (owner 2026-11-26, round 2) ──
   // A PR names the account it is paid from; how many / which executives must approve it depends on the amount (tiers per account, with a

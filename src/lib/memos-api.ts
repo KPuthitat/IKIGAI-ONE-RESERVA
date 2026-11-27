@@ -22,7 +22,7 @@ export function memoBranches(viewer: Viewer): Array<{ id: number; name: string }
   return db.prepare(`SELECT id, name FROM branches WHERE id IN (${viewer.adminBranchIds.map(() => "?").join(",")}) ORDER BY display_order, name`).all(...viewer.adminBranchIds) as Array<{ id: number; name: string }>;
 }
 
-const Item = z.object({ description: z.string().max(200), qty: z.number().positive().max(1_000_000), unit: z.string().max(20).optional(), unit_price: z.number().min(0).max(100_000_000) });
+const Item = z.object({ description: z.string().max(200), qty: z.number().positive().max(1_000_000), unit: z.string().max(20).optional(), unit_price: z.number().min(0).max(100_000_000), inventa_item_id: z.number().int().positive().nullable().optional() });
 export const MemoBody = z.object({
   id: z.number().int().positive().optional(), kind: z.enum(["purchase", "funding"]).optional(),
   pay_account_id: z.number().int().positive().nullable().optional(), from_account_id: z.number().int().positive().nullable().optional(), to_account_id: z.number().int().positive().nullable().optional(),
@@ -39,7 +39,7 @@ export const Body = z.object({
 export function memoError(e: unknown) {
   if (e instanceof MemoError) {
     const status = e.code === "not_found" ? 404 : e.code === "forbidden" ? 403 : e.code === "bad_status" || e.code === "already_signed" ? 409 : e.code === "wrong_pin" || e.code === "no_pin" ? 401 : 400;
-    return NextResponse.json({ error: e.code, detail: e.detail, message: MEMO_ERROR_TH[e.code] }, { status });
+    return NextResponse.json({ error: e.code, detail: e.detail, message: e.code === "compare_required" && e.detail ? `${MEMO_ERROR_TH[e.code]}: ${e.detail}` : MEMO_ERROR_TH[e.code] }, { status });
   }
   throw e;
 }

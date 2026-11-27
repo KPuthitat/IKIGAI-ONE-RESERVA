@@ -10,12 +10,13 @@
 import { getDb } from "./db";
 import { verifyAdminPin } from "./admin-pin";
 import { createPr, getPr, submitPr, type PrInput, type Viewer, canActOnBranch, isApprover, PurchasingError } from "./purchasing";
+import { compareProblems, copyCompare } from "./quotes";
 import { eligibleApprovers, executiveIds, ruleFor, topExecIds, RULE_TH, type Rule } from "./pr-authority";
 
 export type MemoStatus = "draft" | "pending" | "approved" | "rejected" | "cancelled" | "pr_opened";
 export type MemoErrorCode =
   | "not_found" | "forbidden" | "bad_status" | "invalid" | "no_items" | "no_signers" | "bad_signer" | "no_signature" | "no_pin" | "wrong_pin" | "not_signer" | "already_signed"
-  | "reject_reason_required" | "bad_signature_image" | "pr_failed" | "bad_account" | "signers_not_authorised";
+  | "reject_reason_required" | "bad_signature_image" | "pr_failed" | "bad_account" | "signers_not_authorised" | "compare_required";
 export class MemoError extends Error { constructor(public code: MemoErrorCode, public detail?: string) { super(code); } }
 export const MEMO_ERROR_TH: Record<MemoErrorCode, string> = {
   not_found: "ไม่พบ Memo", forbidden: "ท่านไม่มีสิทธิ์ทำรายการนี้", bad_status: "สถานะของ Memo ไม่ให้ทำรายการนี้", invalid: "ข้อมูลไม่ครบหรือไม่ถูกต้อง",
@@ -23,12 +24,12 @@ export const MEMO_ERROR_TH: Record<MemoErrorCode, string> = {
   no_signature: "ยังไม่ได้ตั้งลายเซ็น กรุณาวาดลายเซ็นก่อน", no_pin: "ยังไม่ได้ตั้ง PIN", wrong_pin: "PIN ไม่ถูกต้อง", not_signer: "ท่านไม่ได้เป็นผู้ลงนามของ Memo นี้",
   already_signed: "ท่านลงนามหรือปฏิเสธไปแล้ว", reject_reason_required: "กรุณาระบุเหตุผลที่ไม่เห็นชอบ", bad_signature_image: "ลายเซ็นไม่ถูกต้อง (ต้องเป็นภาพ PNG ขนาดไม่เกิน 300 KB)",
   pr_failed: "เปิด PR ไม่สำเร็จ", bad_account: "เลือกบัญชีธนาคารไม่ถูกต้อง (ต้องเป็นบัญชีธนาคารที่ใช้งานอยู่ และบัญชีต้นทาง/ปลายทางต้องต่างกัน)",
-  signers_not_authorised: "ผู้ลงนามที่เลือกยังไม่ครบตามอำนาจอนุมัติของยอดนี้"
+  signers_not_authorised: "ผู้ลงนามที่เลือกยังไม่ครบตามอำนาจอนุมัติของยอดนี้", compare_required: "ต้องเทียบใบเสนอราคาก่อนส่ง"
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export type MemoItemInput = { description: string; qty: number; unit?: string; unit_price: number };
+export type MemoItemInput = { description: string; qty: number; unit?: string; unit_price: number; inventa_item_id?: number | null };
 export type MemoKind = "purchase" | "funding";
 export type MemoInput = {
   kind?: MemoKind; branchId: number; subject: string; body?: string; category: string; neededDate?: string | null; vendorId?: number | null; vendorName?: string;
@@ -43,7 +44,7 @@ export type MemoRow = {
   prId: number | null; prNo: string | null; createdAt: string; signed: number; signerCount: number;
   kind: MemoKind; payAccountId: number | null; payAccountName: string | null; fromAccountId: number | null; fromAccountName: string | null; toAccountId: number | null; toAccountName: string | null; weekStart: string | null;
 };
-export type MemoDetail = MemoRow & { items: Array<{ lineNo: number; description: string; qty: number; unit: string; unitPrice: number; amount: number }>; signers: MemoSigner[]; events: Array<{ at: string; actor: string; action: string; detail: string }> };
+export type MemoDetail = MemoRow & { items: Array<{ lineNo: number; description: string; qty: number; unit: string; unitPrice: number; amount: number; inventaItemId: number | null }>; signers: MemoSigner[]; events: Array<{ at: string; actor: string; action: string; detail: string }> };
 
 type Db = {
   id: number; memo_no: string; branch_id: number; branch_name: string; author_id: number; author_name: string; subject: string; body: string; category: string; needed_date: string | null;
@@ -96,7 +97,8 @@ export function signerChoices(): Array<{ id: number; name: string; role: string;
 
 // ── saving ──
 function cleanItems(items: MemoItemInput[]) {
-  const out = (items ?? []).map((i) => ({ description: String(i.description ?? "").trim(), qty: Number(i.qty), unit: String(i.unit ?? "").trim().slice(0, 20), unit_price: Number(i.unit_price) }))
+  const out = (items ?? []).map((i) => ({ description: String(i.description ?? "").trim(), qty: Number(i.qty), unit: String(i.unit ?? "").trim().slice(0, 20), unit_price: Number(i.unit_price),
+    inventa_item_id: i.inventa_item_id != null && Number.isInteger(Number(i.inventa_item_id)) && Number(i.inventa_item_id) > 0 ? Number(i.inventa_item_id) : null }))
     .filter((i) => i.description);
   if (out.some((i) => !(i.qty > 0) || !(i.unit_price >= 0) || !Number.isFinite(i.qty) || !Number.isFinite(i.unit_price))) throw new MemoError("invalid");
   return out.map((i) => ({ ...i, amount: round2(i.qty * i.unit_price) }));
@@ -153,8 +155,10 @@ function writeBody(memoId: number, input: MemoInput, authorId: number, kind: Mem
     if (input.payAccountId != null && !isBankAccount(input.payAccountId)) throw new MemoError("bad_account");
     db.prepare(`UPDATE memos SET subject = ?, body = ?, category = ?, needed_date = ?, vendor_id = ?, vendor_name = ?, vat_rate = ?, subtotal = ?, vat_amount = ?, total = ?, pay_account_id = ?, from_account_id = NULL, to_account_id = NULL, week_start = NULL, updated_at = datetime('now') WHERE id = ?`)
       .run(subject, (input.body ?? "").trim().slice(0, 4000), input.category.trim(), input.neededDate || null, vendorId, vendorName, vatRate, subtotal, vatAmount, round2(subtotal + vatAmount), input.payAccountId ?? null, memoId);
-    const ins = db.prepare("INSERT INTO memo_items (memo_id, line_no, description, qty, unit, unit_price, amount) VALUES (?,?,?,?,?,?,?)");
-    items.forEach((i, n) => ins.run(memoId, n + 1, i.description, i.qty, i.unit, i.unit_price, i.amount));
+    const stockOk = db.prepare("SELECT 1 FROM inventa_items WHERE id = ? AND branch_id = ?");
+    for (const i of items) if (i.inventa_item_id != null && !stockOk.get(i.inventa_item_id, input.branchId)) throw new MemoError("invalid");   // a stock link must be an item of this branch
+    const ins = db.prepare("INSERT INTO memo_items (memo_id, line_no, description, qty, unit, unit_price, amount, inventa_item_id) VALUES (?,?,?,?,?,?,?,?)");
+    items.forEach((i, n) => ins.run(memoId, n + 1, i.description, i.qty, i.unit, i.unit_price, i.amount, i.inventa_item_id));
   }
   const sins = db.prepare("INSERT INTO memo_signers (memo_id, user_id, sort_no) VALUES (?,?,?)");
   signerIds.forEach((u, n) => sins.run(memoId, u, n + 1));
@@ -189,6 +193,7 @@ export function submitMemo(id: number, viewer: Viewer): MemoRow {
   const db = getDb();
   if ((cur.kind === "purchase" && !(db.prepare("SELECT COUNT(*) n FROM memo_items WHERE memo_id = ?").get(id) as { n: number }).n) || !(cur.total > 0)) throw new MemoError("no_items");
   if (cur.signerCount === 0) throw new MemoError("no_signers");
+  if (cur.kind === "purchase") { const problems = compareProblems("memo", id); if (problems.length) throw new MemoError("compare_required", problems.join(" · ")); }   // rival quotes or a sole-source reason (owner 2026-11-27)
   db.transaction(() => {
     db.prepare("UPDATE memo_signers SET status = 'pending', signed_at = NULL, comment = '', signature_png = NULL WHERE memo_id = ?").run(id);
     db.prepare("UPDATE memos SET status = 'pending', submitted_at = datetime('now'), approved_at = NULL, updated_at = datetime('now') WHERE id = ?").run(id);
@@ -283,7 +288,7 @@ export function openPrFromMemo(id: number, viewer: Viewer, overBudgetReason?: st
   if (cur.authorId !== viewer.userId && viewer.role !== "super_admin") throw new MemoError("forbidden");
   if (cur.status !== "approved" || cur.kind !== "purchase") throw new MemoError("bad_status");
   const db = getDb();
-  const items = db.prepare("SELECT description, qty, unit, unit_price FROM memo_items WHERE memo_id = ? ORDER BY line_no").all(id) as MemoItemInput[];
+  const items = db.prepare("SELECT description, qty, unit, unit_price, inventa_item_id FROM memo_items WHERE memo_id = ? ORDER BY line_no").all(id) as MemoItemInput[];
   const input: PrInput = {
     branchId: cur.branchId, category: cur.category, title: cur.subject, reason: `${cur.body}${cur.body ? "\n" : ""}อ้างอิง ${cur.memoNo}`.trim(), neededDate: cur.neededDate,
     vendorId: cur.vendorId, vendorName: cur.vendorName, vatRate: cur.vatRate, overBudgetReason: overBudgetReason ?? "", payAccountId: cur.payAccountId, items
@@ -292,6 +297,7 @@ export function openPrFromMemo(id: number, viewer: Viewer, overBudgetReason?: st
     return db.transaction(() => {
       const prId = createPr(input, viewer);
       db.prepare("UPDATE purchase_requests SET memo_id = ? WHERE id = ?").run(id, prId);
+      copyCompare(id, prId);   // the PR carries the memo's quote comparison
       submitPr(prId, viewer);
       db.prepare("UPDATE memos SET status = 'pr_opened', pr_id = ?, updated_at = datetime('now') WHERE id = ?").run(prId, id);
       log(id, viewer.userId, "open_pr", getPr(prId)?.prNo ?? String(prId));
@@ -322,8 +328,8 @@ export function awaitingMySignature(userId: number): MemoRow[] {
 export function getMemoDetail(id: number): MemoDetail {
   const m = load(id);
   const db = getDb();
-  const items = (db.prepare("SELECT line_no, description, qty, unit, unit_price, amount FROM memo_items WHERE memo_id = ? ORDER BY line_no").all(id) as Array<{ line_no: number; description: string; qty: number; unit: string; unit_price: number; amount: number }>)
-    .map((r) => ({ lineNo: r.line_no, description: r.description, qty: r.qty, unit: r.unit, unitPrice: r.unit_price, amount: r.amount }));
+  const items = (db.prepare("SELECT line_no, description, qty, unit, unit_price, amount, inventa_item_id FROM memo_items WHERE memo_id = ? ORDER BY line_no").all(id) as Array<{ line_no: number; description: string; qty: number; unit: string; unit_price: number; amount: number; inventa_item_id: number | null }>)
+    .map((r) => ({ lineNo: r.line_no, description: r.description, qty: r.qty, unit: r.unit, unitPrice: r.unit_price, amount: r.amount, inventaItemId: r.inventa_item_id }));
   const signers = (db.prepare(`SELECT s.user_id, s.status, s.signed_at, s.comment, s.signature_png, u.display_name, u.title_prefix FROM memo_signers s JOIN users u ON u.id = s.user_id WHERE s.memo_id = ? ORDER BY s.sort_no`).all(id) as
     Array<{ user_id: number; status: MemoSigner["status"]; signed_at: string | null; comment: string; signature_png: string | null; display_name: string; title_prefix: string | null }>)
     .map((r) => ({ userId: r.user_id, name: `${r.title_prefix ?? ""}${r.display_name}`, status: r.status, signedAt: r.signed_at, comment: r.comment, signature: r.signature_png }));

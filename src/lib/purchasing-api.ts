@@ -22,7 +22,7 @@ export function visibleBranches(user: SessionUser, viewer: Viewer): Array<{ id: 
   return db.prepare(`SELECT id, name FROM branches WHERE id IN (${viewer.adminBranchIds.map(() => "?").join(",")}) ORDER BY display_order, name`).all(...viewer.adminBranchIds) as Array<{ id: number; name: string }>;
 }
 
-const Item = z.object({ description: z.string().max(200), qty: z.number().positive().max(1_000_000), unit: z.string().max(20).optional(), unit_price: z.number().min(0).max(100_000_000) });
+const Item = z.object({ description: z.string().max(200), qty: z.number().positive().max(1_000_000), unit: z.string().max(20).optional(), unit_price: z.number().min(0).max(100_000_000), inventa_item_id: z.number().int().positive().nullable().optional() });
 export const PrBody = z.object({
   id: z.number().int().positive().optional(),
   branch_id: z.number().int().positive(), category: z.string().min(1).max(200), title: z.string().min(1).max(200),
@@ -44,7 +44,7 @@ export const Body = z.object({
 export function purchasingError(e: unknown) {
   if (e instanceof PurchasingError) {
     const status = e.code === "not_found" ? 404 : e.code === "forbidden" ? 403 : e.code === "bad_status" ? 409 : 400;
-    return NextResponse.json({ error: e.code, message: PURCHASING_ERROR_TH[e.code] }, { status });
+    return NextResponse.json({ error: e.code, message: e.code === "compare_required" && e.detail ? `${PURCHASING_ERROR_TH[e.code]}: ${e.detail}` : PURCHASING_ERROR_TH[e.code] }, { status });
   }
   throw e;
 }

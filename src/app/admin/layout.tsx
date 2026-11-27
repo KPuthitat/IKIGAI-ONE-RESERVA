@@ -245,7 +245,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     ...(memoUser ? [{
       label: "เบิกจ่าย",
       pathPrefix: "/admin/memos",
-      items: [{ href: "/admin/memos", label: "Memo ขอซื้อ · ลงนาม", badge: memoAwaiting > 0 ? memoAwaiting : undefined }]
+      items: [
+        { href: "/admin/purchase-flow", label: "ติดตามการจัดซื้อ (Flow)" },
+        { href: "/admin/memos", label: "Memo ขอซื้อ · ลงนาม", badge: memoAwaiting > 0 ? memoAwaiting : undefined },
+        ...(canModule(user, "accounta.manage") || viewerOf(user).isCLevel ? [{ href: "/admin/accounta/purchasing", label: "ใบขอซื้อ (PR) · ใบสั่งซื้อ (PO)" }] : []),
+        { href: "/staff/inventa", label: "คลังสินค้า (INVENTA)" }
+      ]
     }] : []),
     // ACCOUNTA — contextual section (owner 2026-06-25). Shown when inside
     // /admin/accounta. The เอกสารรอลงบัญชี inbox + สิทธิ์ matrix live here.

@@ -11,6 +11,7 @@ const ok = (n: string, c: boolean) => { if (c) console.log(`  ✓ ${n}`); else {
   const P = await import("../src/lib/purchasing");
   const { CAPEX_CATEGORY_NAME } = await import("../src/lib/accounta");
   const db = getDb();
+  db.prepare("INSERT OR REPLACE INTO purchasing_settings (key, value) VALUES ('quotes_required', '0')").run();   // these checks are about other rules; quote comparison has its own test
   const code = (fn: () => unknown): string | null => { try { fn(); return null; } catch (e) { return e instanceof P.PurchasingError ? e.code : `other:${(e as Error).message}`; } };
 
   const co = Number(db.prepare("INSERT INTO companies (name_th) VALUES ('บ')").run().lastInsertRowid);
