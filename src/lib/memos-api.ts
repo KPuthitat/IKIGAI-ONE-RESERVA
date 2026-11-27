@@ -39,7 +39,7 @@ export const Body = z.object({
 export function memoError(e: unknown) {
   if (e instanceof MemoError) {
     const status = e.code === "not_found" ? 404 : e.code === "forbidden" ? 403 : e.code === "bad_status" || e.code === "already_signed" ? 409 : e.code === "wrong_pin" || e.code === "no_pin" ? 401 : 400;
-    return NextResponse.json({ error: e.code, detail: e.detail, message: MEMO_ERROR_TH[e.code] }, { status });
+    return NextResponse.json({ error: e.code, detail: e.detail, message: e.code === "compare_required" && e.detail ? `${MEMO_ERROR_TH[e.code]}: ${e.detail}` : MEMO_ERROR_TH[e.code] }, { status });
   }
   throw e;
 }

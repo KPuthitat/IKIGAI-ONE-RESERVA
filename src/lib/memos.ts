@@ -10,12 +10,13 @@
 import { getDb } from "./db";
 import { verifyAdminPin } from "./admin-pin";
 import { createPr, getPr, submitPr, type PrInput, type Viewer, canActOnBranch, isApprover, PurchasingError } from "./purchasing";
+import { compareProblems, copyCompare } from "./quotes";
 import { eligibleApprovers, executiveIds, ruleFor, topExecIds, RULE_TH, type Rule } from "./pr-authority";
 
 export type MemoStatus = "draft" | "pending" | "approved" | "rejected" | "cancelled" | "pr_opened";
 export type MemoErrorCode =
   | "not_found" | "forbidden" | "bad_status" | "invalid" | "no_items" | "no_signers" | "bad_signer" | "no_signature" | "no_pin" | "wrong_pin" | "not_signer" | "already_signed"
-  | "reject_reason_required" | "bad_signature_image" | "pr_failed" | "bad_account" | "signers_not_authorised";
+  | "reject_reason_required" | "bad_signature_image" | "pr_failed" | "bad_account" | "signers_not_authorised" | "compare_required";
 export class MemoError extends Error { constructor(public code: MemoErrorCode, public detail?: string) { super(code); } }
 export const MEMO_ERROR_TH: Record<MemoErrorCode, string> = {
   not_found: "ไม่พบ Memo", forbidden: "ท่านไม่มีสิทธิ์ทำรายการนี้", bad_status: "สถานะของ Memo ไม่ให้ทำรายการนี้", invalid: "ข้อมูลไม่ครบหรือไม่ถูกต้อง",
@@ -23,7 +24,7 @@ export const MEMO_ERROR_TH: Record<MemoErrorCode, string> = {
   no_signature: "ยังไม่ได้ตั้งลายเซ็น กรุณาวาดลายเซ็นก่อน", no_pin: "ยังไม่ได้ตั้ง PIN", wrong_pin: "PIN ไม่ถูกต้อง", not_signer: "ท่านไม่ได้เป็นผู้ลงนามของ Memo นี้",
   already_signed: "ท่านลงนามหรือปฏิเสธไปแล้ว", reject_reason_required: "กรุณาระบุเหตุผลที่ไม่เห็นชอบ", bad_signature_image: "ลายเซ็นไม่ถูกต้อง (ต้องเป็นภาพ PNG ขนาดไม่เกิน 300 KB)",
   pr_failed: "เปิด PR ไม่สำเร็จ", bad_account: "เลือกบัญชีธนาคารไม่ถูกต้อง (ต้องเป็นบัญชีธนาคารที่ใช้งานอยู่ และบัญชีต้นทาง/ปลายทางต้องต่างกัน)",
-  signers_not_authorised: "ผู้ลงนามที่เลือกยังไม่ครบตามอำนาจอนุมัติของยอดนี้"
+  signers_not_authorised: "ผู้ลงนามที่เลือกยังไม่ครบตามอำนาจอนุมัติของยอดนี้", compare_required: "ต้องเทียบใบเสนอราคาก่อนส่ง"
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -192,6 +193,7 @@ export function submitMemo(id: number, viewer: Viewer): MemoRow {
   const db = getDb();
   if ((cur.kind === "purchase" && !(db.prepare("SELECT COUNT(*) n FROM memo_items WHERE memo_id = ?").get(id) as { n: number }).n) || !(cur.total > 0)) throw new MemoError("no_items");
   if (cur.signerCount === 0) throw new MemoError("no_signers");
+  if (cur.kind === "purchase") { const problems = compareProblems("memo", id); if (problems.length) throw new MemoError("compare_required", problems.join(" · ")); }   // rival quotes or a sole-source reason (owner 2026-11-27)
   db.transaction(() => {
     db.prepare("UPDATE memo_signers SET status = 'pending', signed_at = NULL, comment = '', signature_png = NULL WHERE memo_id = ?").run(id);
     db.prepare("UPDATE memos SET status = 'pending', submitted_at = datetime('now'), approved_at = NULL, updated_at = datetime('now') WHERE id = ?").run(id);
@@ -295,6 +297,7 @@ export function openPrFromMemo(id: number, viewer: Viewer, overBudgetReason?: st
     return db.transaction(() => {
       const prId = createPr(input, viewer);
       db.prepare("UPDATE purchase_requests SET memo_id = ? WHERE id = ?").run(id, prId);
+      copyCompare(id, prId);   // the PR carries the memo's quote comparison
       submitPr(prId, viewer);
       db.prepare("UPDATE memos SET status = 'pr_opened', pr_id = ?, updated_at = datetime('now') WHERE id = ?").run(prId, id);
       log(id, viewer.userId, "open_pr", getPr(prId)?.prNo ?? String(prId));

@@ -9,6 +9,7 @@
 //    linked (closed) — from then on the ACCOUNTA bills are the actual spend, so nothing is counted twice.
 import { getDb } from "./db";
 import { addStockQty } from "./inventa-stock";
+import { compareProblems } from "./quotes";
 import { approvalState, canApprove, ruleFor } from "./pr-authority";
 import { CAPEX_CATEGORY_NAME } from "./accounta";
 
@@ -17,8 +18,8 @@ export type PrStatus = "draft" | "submitted" | "approved" | "rejected" | "ordere
 
 export type PurchasingErrorCode =
   | "not_found" | "forbidden" | "bad_status" | "no_items" | "invalid_item" | "invalid_category" | "invalid_vendor" | "invalid_amount"
-  | "over_budget_reason_required" | "reject_note_required" | "own_request" | "not_authorised" | "bill_invalid" | "bill_taken" | "no_bills" | "invalid_branch";
-export class PurchasingError extends Error { constructor(public code: PurchasingErrorCode) { super(code); } }
+  | "over_budget_reason_required" | "reject_note_required" | "own_request" | "not_authorised" | "bill_invalid" | "bill_taken" | "no_bills" | "invalid_branch" | "compare_required";
+export class PurchasingError extends Error { constructor(public code: PurchasingErrorCode, public detail?: string) { super(code); } }
 export const PURCHASING_ERROR_TH: Record<PurchasingErrorCode, string> = {
   not_found: "ไม่พบรายการ",
   forbidden: "ไม่มีสิทธิ์ทำรายการนี้",
@@ -35,7 +36,8 @@ export const PURCHASING_ERROR_TH: Record<PurchasingErrorCode, string> = {
   bill_invalid: "บิลนี้ผูกไม่ได้ (ต้องเป็นบิลที่ลงบัญชีแล้วของสาขาเดียวกัน)",
   bill_taken: "บิลนี้ผูกกับใบสั่งซื้ออื่นแล้ว",
   no_bills: "ยังไม่ได้ผูกบิล",
-  invalid_branch: "สาขาไม่ถูกต้อง"
+  invalid_branch: "สาขาไม่ถูกต้อง",
+  compare_required: "ต้องเทียบใบเสนอราคาก่อนส่ง"
 };
 
 export type Viewer = { userId: number; role: "staff" | "admin" | "super_admin"; adminBranchIds: number[]; isCLevel: boolean };
@@ -254,6 +256,8 @@ export function submitPr(id: number, viewer: Viewer): PrRow {
   if (cur.status !== "draft") throw new PurchasingError("bad_status");
   if (listItems(id).length === 0) throw new PurchasingError("no_items");
   if (!(cur.total > 0)) throw new PurchasingError("invalid_amount");
+  const problems = compareProblems("pr", id);   // rival quotes scored and one chosen — or a sole-source reason (owner 2026-11-27)
+  if (problems.length) throw new PurchasingError("compare_required", problems.join(" · "));
   const over = budgetImpact(cur).over;
   if (over && !cur.overBudgetReason.trim()) throw new PurchasingError("over_budget_reason_required");
   getDb().prepare("UPDATE purchase_requests SET status = 'submitted', over_budget = ?, submitted_at = datetime('now'), decided_by = NULL, decided_at = NULL, decision_note = '', updated_at = datetime('now') WHERE id = ?").run(over ? 1 : 0, id);

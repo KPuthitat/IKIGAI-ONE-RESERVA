@@ -12,6 +12,7 @@ cleanup(); fs.mkdirSync(path.dirname(TMP), { recursive: true }); process.env.DAT
   const P = await import("../src/lib/purchasing");
   const S = await import("../src/lib/inventa-stock");
   const db = getDb();
+  db.prepare("INSERT OR REPLACE INTO purchasing_settings (key, value) VALUES ('quotes_required', '0')").run();   // these checks are about other rules; quote comparison has its own test
   let failed = 0;
   const ok = (n: string, c: boolean) => { if (c) console.log(`  ✓ ${n}`); else { failed++; console.error(`  ✗ FAIL: ${n}`); } };
   const code = (fn: () => unknown): string => { try { fn(); return ""; } catch (e) { return e instanceof Error && "code" in e ? String((e as { code: string }).code) : e instanceof Error ? e.message : String(e); } };

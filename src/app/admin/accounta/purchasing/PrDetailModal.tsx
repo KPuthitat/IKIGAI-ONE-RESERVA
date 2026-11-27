@@ -5,6 +5,7 @@ import { fmtMoney } from "@/lib/format";
 import { apiUrl } from "@/lib/url";
 import PinPromptModal from "@/app/components/PinPromptModal";
 import PurchaseFlowChart from "@/app/components/PurchaseFlowChart";
+import QuoteCompare from "@/app/components/QuoteCompare";
 import { api, KIND_LABEL, STATUS, type Detail, type Overview } from "./types";
 
 const URL_ = "/api/admin/accounta/purchasing";
@@ -64,6 +65,7 @@ export default function PrDetailModal({ id, me, onClose, onChanged, onEdit }: {
 
         <div className="px-6 py-4 space-y-4 text-sm">
           {d.flow && <PurchaseFlowChart flow={d.flow} />}
+          <QuoteCompare key={pr.id} scope="pr" refId={pr.id} onChanged={load} />
           <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1 text-slate-600">
             <div>ผู้ขอ: <b className="text-slate-800">{pr.requestedByName}</b></div>
             <div>ต้องการภายใน: <b className="text-slate-800">{pr.neededDate ?? "—"}</b></div>

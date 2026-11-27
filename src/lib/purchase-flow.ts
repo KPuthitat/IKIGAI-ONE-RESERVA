@@ -4,6 +4,7 @@ import { getDb } from "./db";
 import { approvalState } from "./pr-authority";
 import { getPo, getPr, listLinkedBills, listItems, listPrs, type PrRow, type Viewer } from "./purchasing";
 import { getMemoDetail, listMemos, type MemoDetail } from "./memos";
+import { getCompare, type Scope } from "./quotes";
 
 export type StepState = "done" | "current" | "todo" | "skipped" | "failed";
 export type FlowPerson = { id?: number; name: string; status: "done" | "waiting" | "rejected"; at?: string | null };
@@ -15,6 +16,14 @@ export type Flow = {
 
 const step = (key: string, label: string, state: StepState, lines: string[] = [], people: FlowPerson[] = []): FlowStep => ({ key, label, state, lines, people });
 const MAX_WAIT = 6;
+/** One line on the chart about the quote comparison: how many rivals and who won, or why none were needed. */
+function compareLine(scope: Scope, id: number): string {
+  const c = getCompare(scope, id);
+  if (c.soleSource) return "เทียบราคา: เป็นรายเดียวในตลาด (ระบุเหตุผลแล้ว)";
+  if (c.quotes.length === 0) return c.required ? "เทียบราคา: ยังไม่มีใบเสนอราคา" : "";
+  const won = c.quotes.find((q) => q.id === c.chosenQuoteId);
+  return `เทียบราคา ${c.quotes.length} ราย${won ? ` · เลือก ${won.vendorName}` : " · ยังไม่ได้เลือก"}`;
+}
 
 /** Build the chart from a memo and/or a PR (either one is enough; the other is found through the link between them). */
 export function buildFlow(args: { memoId?: number | null; prId?: number | null }): Flow {
@@ -37,7 +46,7 @@ export function buildFlow(args: { memoId?: number | null; prId?: number | null }
   } else {
     const memoOk = memo.status !== "draft";
     steps.push(step("memo", "เขียน Memo", memoOk ? "done" : memo.status === "cancelled" ? "failed" : "current",
-      [`${memo.memoNo} · ${memo.authorName}`, memo.status === "draft" ? "ร่าง — ยังไม่ส่งขอลงนาม" : memo.status === "cancelled" ? "ยกเลิก" : ""].filter(Boolean)));
+      [`${memo.memoNo} · ${memo.authorName}`, compareLine("memo", memo.id), memo.status === "draft" ? "ร่าง — ยังไม่ส่งขอลงนาม" : memo.status === "cancelled" ? "ยกเลิก" : ""].filter(Boolean)));
     const people: FlowPerson[] = memo.signers.map((s) => ({ id: s.userId, name: s.name, status: s.status === "signed" ? "done" : s.status === "rejected" ? "rejected" : "waiting", at: s.signedAt }));
     const waiting = people.filter((p) => p.status === "waiting").map((p) => p.name);
     const rejected = people.find((p) => p.status === "rejected");
@@ -54,7 +63,7 @@ export function buildFlow(args: { memoId?: number | null; prId?: number | null }
   // 3–4: PR and its approvals
   const prStarted = !!pr && pr.status !== "draft";
   steps.push(step("pr", "เปิด PR", pr ? (pr.status === "cancelled" ? "failed" : pr.status === "draft" ? "current" : "done") : memo?.status === "approved" ? "current" : "todo",
-    pr ? [`${pr.prNo} · ${pr.requestedByName}`, pr.status === "draft" ? "ร่าง — ยังไม่ส่งอนุมัติ" : ""].filter(Boolean) : memo?.status === "approved" ? ["ดึงรายการจาก Memo มาให้อัตโนมัติ"] : []));
+    pr ? [`${pr.prNo} · ${pr.requestedByName}`, memo ? "" : compareLine("pr", pr.id), pr.status === "draft" ? "ร่าง — ยังไม่ส่งอนุมัติ" : ""].filter(Boolean) : memo?.status === "approved" ? ["ดึงรายการจาก Memo มาให้อัตโนมัติ"] : []));
   if (pr) {
     const ap = pr.status === "draft" ? null : approvalState(pr.id);
     const people: FlowPerson[] = ap ? [...ap.approvals.map((a) => ({ id: a.userId, name: a.name, status: a.decision === "approve" ? "done" as const : "rejected" as const, at: a.at })),

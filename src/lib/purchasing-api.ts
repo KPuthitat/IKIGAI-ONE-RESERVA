@@ -44,7 +44,7 @@ export const Body = z.object({
 export function purchasingError(e: unknown) {
   if (e instanceof PurchasingError) {
     const status = e.code === "not_found" ? 404 : e.code === "forbidden" ? 403 : e.code === "bad_status" ? 409 : 400;
-    return NextResponse.json({ error: e.code, message: PURCHASING_ERROR_TH[e.code] }, { status });
+    return NextResponse.json({ error: e.code, message: e.code === "compare_required" && e.detail ? `${PURCHASING_ERROR_TH[e.code]}: ${e.detail}` : PURCHASING_ERROR_TH[e.code] }, { status });
   }
   throw e;
 }
